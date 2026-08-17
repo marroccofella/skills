@@ -1,4 +1,4 @@
 interface:
-  display_name: "Multi-LLM Review"
+  display_name: "MOMM (Mixture of Model Modality)"
   short_description: "OAuth-only peer review across Codex, Claude, Gemini, and Antigravity"
   default_prompt: "Use $momm to review this change with every available OAuth-authenticated peer."
