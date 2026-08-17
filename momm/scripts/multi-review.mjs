@@ -391,6 +391,14 @@ function classifyFailure(result) {
     .split(/\r?\n/).filter((line) => line.trim() && !/^Warning:/i.test(line.trim())).join("\n");
   const meaningful = dropWarnings(result.stderr) || dropWarnings(result.stdout);
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+  // A retired account tier is a permanent condition, not an auth problem —
+  // classify it first (its message contains "authenticating") so the user is
+  // pointed at the successor route instead of a futile re-login.
+  // Deliberately narrow: bare "unsupported_client" is a generic OAuth error
+  // code any provider can emit and must not trigger tier-specific advice.
+  if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
+    return { status: "ineligible_tier", detail: "provider retired this account tier for this CLI; the antigravity route (agy) is its successor — an enterprise license would be required to revive this one" };
+  }
   // Server-side outages often mention authentication ("token could not be
   // validated ... 503") — classify them before the auth regex so a user is
   // never told to re-login when the provider is simply down. Patterns stay
@@ -658,6 +666,13 @@ const ANSI = {
 };
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+// Exactly one retry, and only for transient provider outages: auth failures,
+// retired tiers, timeouts, and hard errors never retry.
+const PROVIDER_RETRY_DELAY_MS = 3_000;
+function shouldRetryStatus(status) {
+  return status === "provider_unavailable";
+}
+
 // Live progress display on stderr for humans. Mutually exclusive with
 // --stream (NDJSON owns stderr there); stdout stays the lone report either
 // way, so no pipe consumer ever sees UI bytes.
@@ -673,7 +688,7 @@ function createUi(enabled, outStream = process.stderr) {
   let timer = null;
   let frame = 0;
   const out = (text) => outStream.write(text);
-  const statusIcon = { self_excluded: color(ANSI.dim, "⊘"), success: color(ANSI.green, "✓"), authentication_required: color(ANSI.red, "✗"), provider_unavailable: color(ANSI.yellow, "◍"), timeout: color(ANSI.yellow, "◷"), missing: color(ANSI.red, "✗") };
+  const statusIcon = { self_excluded: color(ANSI.dim, "⊘"), success: color(ANSI.green, "✓"), authentication_required: color(ANSI.red, "✗"), provider_unavailable: color(ANSI.yellow, "◍"), ineligible_tier: color(ANSI.dim, "∅"), timeout: color(ANSI.yellow, "◷"), missing: color(ANSI.red, "✗") };
   const verdictBadge = { ACCEPT: color(ANSI.green, "ACCEPT"), MODIFY: color(ANSI.yellow, "MODIFY"), REJECT: color(ANSI.red, "REJECT") };
   // A line wider than the terminal wraps onto extra physical rows and breaks
   // the cursor-up math, so clip to the terminal width (colors are dropped on
@@ -815,6 +830,9 @@ async function selfTest(pretty) {
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
     classifies_5xx_with_auth_wording_as_outage: classifyFailure({ code: 1, stdout: "", stderr: "Error: Authentication token found but could not be validated.\n  Failed to fetch GitHub CLI user login (503): GitHub returned: No server" }).status === "provider_unavailable",
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
+    classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
+    generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
+    retries_outages_only: shouldRetryStatus("provider_unavailable") && !shouldRetryStatus("authentication_required") && !shouldRetryStatus("ineligible_tier") && !shouldRetryStatus("timeout") && !shouldRetryStatus("error") && !shouldRetryStatus("success"),
     classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
     warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
@@ -880,7 +898,14 @@ async function main() {
     results = await Promise.all(uniqueReviewers.map(async (agent) => {
       emitEvent(options.stream, { event: "reviewer.started", reviewer: agent });
       const startedAt = Date.now();
-      const result = await invokeReviewer(agent, sanitized.value, options);
+      let result = await invokeReviewer(agent, sanitized.value, options);
+      // Provider 5xx flaps (observed live with Copilot) usually clear within
+      // seconds — absorb exactly one, and only for outages, never for auth.
+      if (shouldRetryStatus(result.status)) {
+        emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason: result.status });
+        await new Promise((resolve) => setTimeout(resolve, PROVIDER_RETRY_DELAY_MS));
+        result = await invokeReviewer(agent, sanitized.value, options);
+      }
       const info = {
         status: result.status,
         verdict: result.review?.verdict ?? null,
