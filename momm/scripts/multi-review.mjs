@@ -384,13 +384,25 @@ function normalizeReview(agent, payload) {
 function classifyFailure(result) {
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
   if (result.timedOut) return { status: "timeout", detail: "reviewer exceeded the time limit; authentication may require an interactive login" };
-  const combined = `${result.stdout}\n${result.stderr}`.toLowerCase();
-  if (/(?:log[ -]?in|sign[ -]?in|authenticate|authentication|oauth|browser)/.test(combined)) {
-    return { status: "authentication_required", detail: "complete the provider's official browser login" };
-  }
-  // Terminal-capability warnings bury the real failure; drop them from detail.
-  const meaningful = (result.stderr || result.stdout || "")
+  // Terminal-capability warnings bury the real failure; drop them, but fall
+  // back through stdout before surrendering to the bare exit code.
+  const dropWarnings = (text) => String(text || "")
     .split(/\r?\n/).filter((line) => line.trim() && !/^Warning:/i.test(line.trim())).join("\n");
+  const meaningful = dropWarnings(result.stderr) || dropWarnings(result.stdout);
+  const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+  // Server-side outages often mention authentication ("token could not be
+  // validated ... 503") — classify them before the auth regex so a user is
+  // never told to re-login when the provider is simply down. Patterns stay
+  // phrase-qualified ("returned: no server", not bare "no server") so local
+  // configuration errors never masquerade as outages.
+  if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
+    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+  }
+  if (/(?:log[ -]?in|sign[ -]?in|authenticate|authentication|oauth|browser)/.test(combined)) {
+    // Keep the provider's own words: transient service errors can contain
+    // auth-like phrasing, and the raw text is what distinguishes them.
+    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+  }
   return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
 }
 
@@ -634,6 +646,7 @@ async function preflightCheck(reviewers, governor) {
     const entry = { agent, installed: true, version: version.version, ready, auth };
     if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
     if (agent === "gemini") entry.note = "fails closed on individual accounts (enterprise Code Assist only)";
+    if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
     return entry;
   }));
 }
@@ -659,8 +672,17 @@ function createUi(enabled, outStream = process.stderr) {
   let timer = null;
   let frame = 0;
   const out = (text) => outStream.write(text);
-  const statusIcon = { self_excluded: color(ANSI.dim, "⊘"), success: color(ANSI.green, "✓"), authentication_required: color(ANSI.red, "✗"), timeout: color(ANSI.yellow, "◷"), missing: color(ANSI.red, "✗") };
+  const statusIcon = { self_excluded: color(ANSI.dim, "⊘"), success: color(ANSI.green, "✓"), authentication_required: color(ANSI.red, "✗"), provider_unavailable: color(ANSI.yellow, "◍"), timeout: color(ANSI.yellow, "◷"), missing: color(ANSI.red, "✗") };
   const verdictBadge = { ACCEPT: color(ANSI.green, "ACCEPT"), MODIFY: color(ANSI.yellow, "MODIFY"), REJECT: color(ANSI.red, "REJECT") };
+  // A line wider than the terminal wraps onto extra physical rows and breaks
+  // the cursor-up math, so clip to the terminal width (colors are dropped on
+  // clipped lines — correctness beats decoration).
+  function clipToWidth(line, width) {
+    const plain = line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+    // Approximate: counts code units, not display columns — good enough for
+    // this charset, and clamped so degenerate widths can never go negative.
+    return plain.length < width ? line : `${plain.slice(0, Math.max(1, width - 2))}…`;
+  }
   function paint() {
     // header holds embedded newlines — split so renderedLines counts physical
     // terminal lines, or the cursor-up redraw drifts and duplicates output.
@@ -680,9 +702,11 @@ function createUi(enabled, outStream = process.stderr) {
       }
     }
     frame += 1;
+    const width = outStream.columns || 120;
+    const clippedLines = lines.map((line) => clipToWidth(line, width));
     if (renderedLines > 0) out(`\x1b[${renderedLines}F\x1b[J`);
-    out(`${lines.join("\n")}\n`);
-    renderedLines = lines.length;
+    out(`${clippedLines.join("\n")}\n`);
+    renderedLines = clippedLines.length;
   }
   return {
     start(governor, reviewers, inputBytes) {
@@ -784,6 +808,10 @@ async function selfTest(pretty) {
       return true;
     })(),
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
+    classifies_5xx_with_auth_wording_as_outage: classifyFailure({ code: 1, stdout: "", stderr: "Error: Authentication token found but could not be validated.\n  Failed to fetch GitHub CLI user login (503): GitHub returned: No server" }).status === "provider_unavailable",
+    classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
+    classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
+    warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
   };
   const passed = Object.values(tests).every(Boolean);
