@@ -1,0 +1,9 @@
+# Run these inside the Promptus Cosy virtual environment. The portal launcher checks its core set.
+Flask>=3.0
+numpy>=1.26
+soundfile>=0.12
+
+# Delivery QA helpers.
+librosa>=0.10
+torch>=2.0
+transformers>=4.45

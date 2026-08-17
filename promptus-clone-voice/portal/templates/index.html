@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#190A4E">
+  <meta name="color-scheme" content="dark light">
+  <meta name="promptus-portal-token" content="{{ portal_token }}">
+  <title>Promptus F5 Voice Studio</title>
+  <script>
+    (() => {
+      const key = 'promptus-f5-theme';
+      let theme = 'dark';
+      try {
+        theme = localStorage.getItem(key)
+          || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      } catch (_) {}
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-atmosphere" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Voice Studio navigation">
+      <div class="sidebar-top">
+        <a class="brand" href="#studioTop" aria-label="Promptus F5 Voice Studio home">
+          <img src="{{ url_for('static', filename='promptus-logo.png') }}" alt="Promptus">
+          <span>Promptus</span>
+        </a>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light mode" aria-pressed="false">
+          <span class="theme-icon" aria-hidden="true">☼</span><span class="theme-label">Light</span>
+        </button>
+      </div>
+
+      <div class="product-mark">
+        <span class="product-orbit" aria-hidden="true"></span>
+        <div><strong>F5 Voice Studio</strong><small>Local audio workspace</small></div>
+      </div>
+
+      <nav class="workflow-nav" aria-label="Studio workflow">
+        <button class="workflow-step active" data-target="record" type="button" aria-current="step">
+          <span class="step-index">01</span>
+          <span class="step-copy"><strong>Capture</strong><small>Record a reference</small></span>
+          <span class="step-state" aria-hidden="true"></span>
+        </button>
+        <button class="workflow-step locked" data-target="install" type="button" disabled aria-disabled="true">
+          <span class="step-index">02</span>
+          <span class="step-copy"><strong>Install</strong><small>Create the preset</small></span>
+          <span class="step-state" aria-hidden="true"></span>
+        </button>
+        <button class="workflow-step locked" data-target="create" type="button" disabled aria-disabled="true">
+          <span class="step-index">03</span>
+          <span class="step-copy"><strong>Create</strong><small>Generate narration</small></span>
+          <span class="step-state" aria-hidden="true"></span>
+        </button>
+      </nav>
+
+      <section class="operation-hud" id="globalProgress" aria-label="Current operation">
+        <div class="operation-head"><span class="live-indicator" id="globalProgressSignal"></span><strong id="globalProgressLabel">Studio ready</strong><b id="globalProgressPercent">100%</b></div>
+        <div class="progress-track" aria-hidden="true"><span id="globalProgressBar" style="width:100%"></span></div>
+        <p id="globalProgressDetail">Local processing. Your reference stays on this computer.</p>
+      </section>
+
+      <section class="skill-pack" aria-labelledby="skillPackTitle">
+        <div class="skill-pack-head">
+          <strong id="skillPackTitle">Voice cloning skill</strong>
+          <span id="skillVersion" class="skill-version" data-skill-version>checking…</span>
+        </div>
+        <p id="skillPackDetail">The instructions and scripts behind this studio, packaged to install elsewhere.</p>
+        <a id="downloadSkill" class="secondary-button skill-download" href="/api/skill/download" download>
+          <i aria-hidden="true">↓</i><span>Download skill</span>
+        </a>
+        <p class="skill-upstream">F5-TTS core <b id="f5Installed">…</b> installed · latest <span id="f5Latest">checking…</span></p>
+      </section>
+
+      <footer class="sidebar-footer"><span>LOCAL • PRIVATE • CONSENT-FIRST</span><small>F5TTS_v1_Base · Vocos</small></footer>
+    </aside>
+
+    <main class="main-content" id="studioTop">
+      <header class="mobile-bar">
+        <img src="{{ url_for('static', filename='promptus-logo.png') }}" alt="">
+        <div><strong>Promptus</strong><small>F5 Voice Studio</small></div>
+        <span class="mobile-live" id="mobileReadiness"><i class="status-dot working"></i>Checking</span>
+        <button class="theme-toggle icon-only" type="button" data-theme-toggle aria-label="Switch to light mode" aria-pressed="false"><span class="theme-icon" aria-hidden="true">☼</span></button>
+      </header>
+      <nav class="mobile-workflow" aria-label="Voice Studio stages">
+        <button class="mobile-step active" data-target="record" type="button" aria-current="step">Capture</button>
+        <button class="mobile-step locked" data-target="install" type="button" disabled aria-disabled="true">Install</button>
+        <button class="mobile-step locked" data-target="create" type="button" disabled aria-disabled="true">Create</button>
+      </nav>
+
+      <header class="hero">
+        <div class="hero-copy">
+          <div class="hero-meta"><span class="eyebrow">PROMPTUS AUDIO LAB</span><span class="release-chip"><i></i> Production pipeline</span></div>
+          <h1>Make your voice <span>ready to perform.</span></h1>
+          <p class="lede">Capture one clean reference, install a private Promptus-native voice, then direct expressive narration with visible quality checks at every stage.</p>
+          <div class="hero-actions">
+            <button class="primary-button compact-action" type="button" data-target="record">Capture a voice</button>
+            <button id="useInstalledVoice" class="secondary-button compact-action" type="button" data-target="create" disabled>Use an installed voice</button>
+          </div>
+          <div class="trust-row">
+            <span><i class="trust-icon">⌁</i><b>On-device</b> processing</span>
+            <span><i class="trust-icon">✓</i><b>Signal-gated</b> output</span>
+            <span><i class="trust-icon">◉</i><b>Human</b> listening verdict</span>
+          </div>
+        </div>
+        <section class="system-card" aria-labelledby="systemTitle">
+          <div class="system-head"><div><span class="kicker">LIVE SYSTEM</span><h2 id="systemTitle">Promptus stack</h2></div><div class="system-tools"><span class="system-time" id="systemClock">--:--</span><button id="refreshStatus" class="icon-button" type="button" aria-label="Refresh Promptus services">↻</button></div></div>
+          <div id="systemStatus" class="status-grid"><span class="muted">Checking Promptus services…</span></div>
+          <details id="logDiagnostics" class="log-diagnostics" aria-busy="true">
+            <summary><span>Local diagnostics</span><span id="diagnosticsBadge" class="diagnostics-badge" data-tone="working">Checking</span></summary>
+            <div class="diagnostics-body">
+              <p id="diagnosticsState" class="diagnostics-state" role="status" aria-live="polite">Checking local Promptus logs and service evidence…</p>
+              <div class="diagnostics-actions">
+                <button id="refreshDiagnostics" type="button" class="secondary-button" aria-controls="diagnosticsFindings diagnosticsSources" aria-busy="true" disabled>Check local diagnostics</button>
+                <button id="copyDiagnostics" type="button" class="secondary-button quiet-action" aria-controls="diagnosticsCopyStatus" disabled>Copy diagnostic summary</button>
+              </div>
+              <ul id="diagnosticsFindings" class="diagnostics-findings" aria-label="Diagnostic findings"></ul>
+              <div class="diagnostics-sources" aria-labelledby="diagnosticsSourcesTitle">
+                <h3 id="diagnosticsSourcesTitle">Local sources</h3>
+                <ul id="diagnosticsSources"></ul>
+              </div>
+              <p id="diagnosticsPrivacy" class="diagnostics-privacy">Only privacy-safe summaries are shown. Raw logs and absolute paths stay hidden.</p>
+              <p id="diagnosticsCopyStatus" class="diagnostics-copy-status" role="status" aria-live="polite"></p>
+            </div>
+          </details>
+          <div class="system-foot"><span><i class="status-dot ok"></i> Local-only portal</span><span>127.0.0.1</span></div>
+        </section>
+      </header>
+
+      <section class="journey-bar" aria-label="Voice creation progress">
+        <div class="journey-line"><span id="journeyProgress" style="width:8%"></span></div>
+        <div class="journey-labels"><span class="active">Capture</span><span>Verify</span><span>Install</span><span>Direct</span><span>Listen</span></div>
+      </section>
+
+      <section id="record" class="panel stage-panel">
+        <div class="panel-heading">
+          <div class="panel-title"><span class="stage-number">01</span><div><p class="kicker">REFERENCE CAPTURE</p><h2>Give F5 a clean performance</h2></div></div>
+          <div class="time-badge"><strong id="timer">00:00.0</strong><span id="captureRemaining">11.8 seconds available</span></div>
+        </div>
+        <div class="panel-intro"><p>Read this once, naturally. Keep your rhythm expressive and leave no long pauses.</p><span class="privacy-badge">Never uploaded</span></div>
+        <blockquote id="referencePrompt"><span aria-hidden="true">“</span>{{ reference_prompt }}</blockquote>
+          <label class="field transcript-field"><span>Exact words in the recording</span><textarea id="referenceTranscript" rows="3">{{ reference_prompt }}</textarea><small>Keep this exact for the displayed prompt. Uploaded files are transcribed locally and replace this text.</small></label>
+        <div class="recorder">
+          <div class="recorder-head"><span><i class="status-dot" id="recordingStatusDot"></i><b id="recorderState">Microphone standing by</b></span><small>Target 8–11 seconds</small></div>
+          <div class="waveform-shell"><canvas id="meter" width="900" height="120" aria-label="Live microphone level"></canvas><div class="waveform-grid" aria-hidden="true"></div></div>
+          <div class="capture-track" aria-hidden="true"><span id="captureProgress"></span><i class="capture-safe-start"></i><i class="capture-safe-end"></i></div>
+          <div class="capture-labels"><span>0s</span><span>Safe performance window</span><span>11.8s</span></div>
+          <div class="record-actions">
+            <button id="recordButton" type="button" class="record-button"><span class="record-dot"></span><span id="recordLabel">Start recording</span></button>
+            <button id="useFileButton" type="button" class="secondary-button"><span aria-hidden="true">⇧</span> Use an audio file</button>
+            <input id="audioFile" type="file" accept="audio/*" hidden>
+          </div>
+          <p id="recordHint" class="hint" role="status">Use a quiet room and speak at a comfortable level. The studio stops before F5's reference limit.</p>
+          <div id="captureRecovery" class="capture-recovery hidden" aria-labelledby="captureRecoveryTitle">
+            <div>
+              <span class="kicker">TAKE NOT USED</span>
+              <strong id="captureRecoveryTitle">This reference was not accepted</strong>
+              <p id="captureRecoveryText">The rejected take was not installed. Read the displayed words exactly, then start another take when you are ready.</p>
+            </div>
+            <button id="captureRetryButton" type="button" class="secondary-button">Start another take</button>
+          </div>
+        </div>
+        <div id="referenceResult" class="result-card hidden" aria-live="polite">
+          <div class="score-ring" id="scoreRing"><strong id="score">—</strong><span>quality</span></div>
+          <div class="result-main">
+            <div class="result-title"><div><span class="success-kicker">REFERENCE VERIFIED</span><strong>Clean enough to clone</strong></div><span class="verified-seal">✓</span></div>
+            <div class="metric-row"><span><b id="duration">—</b><small>seconds</small></span><span><b id="snr">— dB</b><small>clarity</small></span><span><b id="activity">—%</b><small>speech</small></span></div>
+            <audio id="referenceAudio" controls aria-label="Reference recording"></audio>
+            <div id="warnings" class="warnings"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="install" class="panel stage-panel locked" aria-disabled="true" inert>
+        <div class="panel-heading">
+          <div class="panel-title"><span class="stage-number">02</span><div><p class="kicker">PROMPTUS PRESET</p><h2>Install your local voice</h2></div></div>
+          <span class="f5-badge"><i class="status-dot ok"></i> F5TTS_v1_Base</span>
+        </div>
+        <p class="lock-note"><span aria-hidden="true">02</span><strong>Capture a verified reference first.</strong><small>Recording and quality checks unlock this preset step.</small></p>
+        <div class="form-grid">
+          <label class="field"><span>Voice name</span><input id="voiceName" value="My Studio Voice" maxlength="60"><small>This becomes the searchable name in Promptus.</small></label>
+          <div class="preset-summary"><span>Quality-safe baseline</span><strong>NFE 32 · CFG 2.0 · Native timing</strong><small>Vocos decoding with automatic signal rejection and verified ComfyUI output.</small><div class="tech-pills"><i>24 kHz</i><i>Local GPU</i><i>Fixed reference</i></div></div>
+        </div>
+        <label class="field consent-basis"><span>Consent basis</span><select id="installConsentBasis"><option value="">Choose the documented basis…</option><option value="self">I am the recorded speaker</option><option value="explicit_permission">The speaker gave explicit permission</option></select><small>The selected basis is recorded locally with the reference hash before installation.</small></label>
+        <label class="check"><input id="installConsent" type="checkbox"><span><b>Consent confirmed.</b> This is my voice, or I have the speaker’s explicit permission to clone it.</span></label>
+        <label class="check compact"><input id="replaceVoice" type="checkbox"><span>Replace an existing preset with the same name</span></label>
+        <div class="submit-row"><button id="installButton" type="button" class="primary-button" disabled><span>Install in Promptus</span><i class="button-spinner" aria-hidden="true"></i></button><p id="installMessage" class="message" role="status"></p></div>
+      </section>
+
+      <section id="create" class="panel stage-panel locked" aria-disabled="true" inert>
+        <div class="panel-heading">
+          <div class="panel-title"><span class="stage-number">03</span><div><p class="kicker">EXPRESSIVE NARRATION</p><h2>Direct the performance</h2></div></div>
+          <span id="activeModel" class="model-pill">Choose a voice</span>
+        </div>
+        <p class="lock-note"><span aria-hidden="true">03</span><strong>Choose an installed voice or create one.</strong><small>The local voice library unlocks this narration step automatically.</small></p>
+        <div class="voice-picker" aria-labelledby="voicePickerTitle">
+          <div class="voice-picker-head">
+            <label class="field voice-search"><span id="voicePickerTitle">Installed cloned voice</span><input id="voiceSearch" type="search" placeholder="Search voice name or preset…" autocomplete="off"></label>
+            <button id="refreshVoices" type="button" class="secondary-button"><span aria-hidden="true">↻</span> Refresh</button>
+          </div>
+          <div class="voice-list-head"><strong id="voiceCount">Checking installed voices…</strong><span>One fixed reference per render</span></div>
+          <div id="voiceList" class="voice-list" role="list" aria-label="Installed cloned voices"></div>
+          <p id="voiceEmpty" class="voice-empty hidden">No cloned voices match that search.</p>
+          <p id="voiceDetails" class="voice-details">Reusable fixed-reference F5 voices already available in Promptus.</p>
+        </div>
+
+        <label class="field full narration-field"><span>Narration</span><textarea id="narration" rows="9" maxlength="12000" placeholder="Paste your narration here. Line breaks and punctuation guide F5's pauses and cadence.">The room grows quiet, but the story keeps moving.
+
+Let each pause carry meaning, and each word arrive with purpose.</textarea><small><span id="charCount">0</span> / 12,000 characters</small><small id="narrationWarning" class="warnings"></small></label>
+
+        <div class="direction-head"><div><span class="field-label">Performance direction</span><small>Choose a starting point, then fine-tune only if needed.</small></div><span class="ai-chip" id="directorState">POETIC PRESET</span></div>
+        <div class="styles" role="group" aria-label="Performance style">
+          <button type="button" class="style" data-style="natural" aria-pressed="false"><i>01</i><b>Natural</b><span>Clear and balanced</span></button>
+          <button type="button" class="style active" data-style="poetic" aria-pressed="true"><i>02</i><b>Poetic</b><span>Measured and weighted</span></button>
+          <button type="button" class="style" data-style="intense" aria-pressed="false"><i>03</i><b>Intense</b><span>Slower, stronger guidance</span></button>
+          <button type="button" class="style" data-style="intimate" aria-pressed="false"><i>04</i><b>Intimate</b><span>Close and restrained</span></button>
+        </div>
+
+        <details class="advanced">
+          <summary><span>Advanced F5 controls</span><small>Studio defaults are production-safe</small><i aria-hidden="true">⌄</i></summary>
+          <div class="control-grid">
+            <label class="range-field"><span>Tempo <output id="speedOut">1.07</output></span><input id="speed" type="range" min="0.90" max="1.25" step="0.01" value="1.07"><small>Above 1.0 is slower; below 1.0 is faster.</small></label>
+            <label class="range-field"><span>Quality steps <output id="nfeOut">32</output></span><input id="nfe" type="range" min="16" max="64" step="4" value="32"></label>
+            <label class="range-field"><span>Voice guidance <output id="cfgOut">2.00</output></span><input id="cfg" type="range" min="1.0" max="3.0" step="0.05" value="2.00"></label>
+            <label class="range-field"><span>Segment blend <output id="crossfadeOut">0.15s</output></span><input id="crossfade" type="range" min="0.00" max="0.35" step="0.01" value="0.15"></label>
+            <label class="range-field"><span>Sway sampling <output id="swayOut">-1.00</output></span><input id="sway" type="range" min="-3" max="1" step="0.1" value="-1"></label>
+            <label class="field"><span>Reproducible seed</span><input id="seed" type="number" min="-1" step="1" value="2147483647"><small>Keep one fixed non-negative seed for comparable acceptance runs. Use −1 only for creative random takes.</small></label>
+            <label class="field"><span>Tempo method</span><select id="speedType"><option value="F5TTS">Native F5 timing (recommended)</option><option value="torch-time-stretch">Torch time stretch</option></select><small>TDHS is disabled on node 1.0.26 because it can produce clipped audio.</small></label>
+          </div>
+        </details>
+
+        <label class="field consent-basis"><span>Generation consent basis</span><select id="generateConsentBasis"><option value="">Choose the documented basis…</option><option value="self">I am the recorded speaker</option><option value="explicit_permission">The speaker gave explicit permission</option></select><small>Recorded with the narration hash, exact seed, mode, controls, output metrics, and listening verdict.</small></label>
+        <label class="check"><input id="generateConsent" type="checkbox"><span>Use the selected consented reference for this generation.</span></label>
+        <div class="submit-row"><button id="generateButton" type="button" class="primary-button generate-button" disabled><span>Generate locally</span><i class="button-spinner" aria-hidden="true"></i></button><p id="generateMessage" class="message" role="status"></p></div>
+
+        <div id="jobResult" class="job-monitor hidden">
+          <div class="job-visual"><div class="core-loader" id="spinner"><span></span><i></i></div><div class="job-pulse" aria-hidden="true"></div></div>
+          <div class="job-main">
+            <div class="job-heading"><div><span class="kicker" id="jobKicker">LIVE GENERATION</span><strong id="jobTitle">Generating in Promptus…</strong></div><div class="job-stats"><b id="jobProgressPercent">0%</b><span id="jobElapsed">00:00</span></div></div>
+            <div class="job-progress" role="progressbar" aria-label="Narration generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="jobProgressBar"></span></div>
+            <p id="jobContext" class="job-context"></p>
+            <p id="jobEvent">Preparing F5-TTS</p>
+            <ol id="jobTimeline" class="job-timeline"></ol>
+            <p id="jobRecoveryStatus" class="job-recovery-status hidden" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="jobRecovery" class="job-recovery hidden">
+              <div><strong id="jobRecoveryTitle">One unchanged retry is available</strong><p id="jobRecoveryText"></p></div>
+              <button id="applyRecovery" type="button" class="secondary-button">Retry unchanged</button>
+            </div>
+            <details id="jobTechnical" class="job-technical hidden"><summary>Technical details</summary><pre id="jobTechnicalText"></pre></details>
+            <div id="qualitySummary" class="quality-summary hidden">
+              <div><b id="qaDuration">—</b><span>Duration</span></div><div><b id="qaPeak">—</b><span>Peak</span></div><div><b id="qaRms">—</b><span>RMS</span></div><div><b id="qaSections">—</b><span>Sections</span></div><div><b id="qaClipping">—</b><span>Clipping</span></div><div><b id="qaSilence">—</b><span>Silence</span></div><div><b id="qaDcOffset">—</b><span>DC offset</span></div><div><b id="qaClicks">—</b><span>Possible clicks</span></div><div><b id="qaWordError">—</b><span>Word error</span></div>
+            </div>
+            <audio id="outputAudio" controls class="hidden" aria-label="Generated narration"></audio>
+            <a id="downloadOutput" class="download hidden" download><span aria-hidden="true">↓</span> Download verified narration</a>
+            <div id="expressionPanel" class="expression hidden">
+              <div class="expression-head"><span class="verified-seal">✓</span><div><strong>Signal checks passed</strong><p>Automation can verify the file, not the feeling. Listen once and record the human verdict.</p></div></div>
+              <div class="verdicts" role="group" aria-label="Listening verdict">
+                <button type="button" class="verdict" data-verdict="approved" aria-pressed="false"><i>✓</i><b>Approved</b><span>Delivers as intended</span></button>
+                <button type="button" class="verdict" data-verdict="revise" aria-pressed="false"><i>↻</i><b>Another take</b><span>Close, needs tuning</span></button>
+                <button type="button" class="verdict" data-verdict="rejected" aria-pressed="false"><i>×</i><b>Rejected</b><span>Wrong performance</span></button>
+              </div>
+              <label class="field full"><span>What you heard</span><textarea id="expressionNotes" rows="3" maxlength="2000" placeholder="Pacing, emphasis, breaths, line endings, emotional read — and which setting to change next."></textarea></label>
+              <div class="submit-row"><button id="saveExpression" type="button" class="secondary-button" disabled>Save listening verdict</button><p id="expressionMessage" class="message" role="status"></p></div>
+            </div>
+          </div>
+        </div>
+
+        <section class="recent-jobs" aria-labelledby="recentJobsTitle">
+          <div class="recent-jobs-head"><div><span class="kicker">LOCAL HISTORY</span><h3 id="recentJobsTitle">Recent jobs</h3></div><button id="refreshHistory" type="button" class="icon-button" aria-label="Refresh recent jobs">↻</button></div>
+          <p class="recent-jobs-intro">Sanitized results survive a portal restart; narration text and recognized speech are not copied into history.</p>
+          <ol id="jobHistoryList" class="job-history-list"></ol>
+          <p id="jobHistoryEmpty" class="empty-state">No local job history yet.</p>
+        </section>
+      </section>
+
+      <footer class="app-footer">
+        <span>Promptus F5 Voice Studio</span>
+        <a class="footer-skill" href="/api/skill/download" download>↓ Download skill <b data-skill-version></b></a>
+        <span>Local inference · consent-first · verified output</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

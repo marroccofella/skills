@@ -1,0 +1,4 @@
+interface:
+  display_name: "Promptus Voice Cloning"
+  short_description: "Run consented local voice clones in Promptus"
+  default_prompt: "Use $promptus-clone-voice to diagnose and configure a consented local voice clone in Promptus."

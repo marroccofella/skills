@@ -1,0 +1,67 @@
+{
+  "$schema": "https://tr.designtokens.org/format/",
+  "meta": {
+    "name": "Promptus Live App Theme",
+    "audited": "2026-08-15",
+    "target": "https://app.promptus.ai/"
+  },
+  "color": {
+    "brand": {
+      "darkBlue": { "$value": "#190A4E", "$type": "color" },
+      "darkPurple": { "$value": "#34206D", "$type": "color" },
+      "mediumBlue": { "$value": "#2A1B83", "$type": "color" },
+      "yellow": { "$value": "#FFB02E", "$type": "color" },
+      "yellowDeep": { "$value": "#FF9500", "$type": "color" },
+      "cyan": { "$value": "#12CEC6", "$type": "color" },
+      "iconMuted": { "$value": "#D1CEDC", "$type": "color" }
+    },
+    "semantic": {
+      "success": { "$value": "#22C55E", "$type": "color" },
+      "warning": { "$value": "#FBBF24", "$type": "color" },
+      "danger": { "$value": "#EF4444", "$type": "color" },
+      "text": { "$value": "#FFFFFF", "$type": "color" },
+      "textDark": { "$value": "#34206D", "$type": "color" }
+    },
+    "surface": {
+      "panel": { "$value": "rgba(25, 10, 78, 0.80)", "$type": "color" },
+      "panelSoft": { "$value": "rgba(25, 10, 78, 0.30)", "$type": "color" },
+      "control": { "$value": "rgba(52, 32, 109, 0.40)", "$type": "color" },
+      "nav": { "$value": "rgba(255, 255, 255, 0.30)", "$type": "color" },
+      "border": { "$value": "rgba(18, 206, 198, 0.50)", "$type": "color" }
+    }
+  },
+  "radius": {
+    "compact": { "$value": "4px", "$type": "dimension" },
+    "control": { "$value": "8px", "$type": "dimension" },
+    "panel": { "$value": "12px", "$type": "dimension" },
+    "large": { "$value": "16px", "$type": "dimension" },
+    "pill": { "$value": "9999px", "$type": "dimension" }
+  },
+  "space": {
+    "1": { "$value": "4px", "$type": "dimension" },
+    "2": { "$value": "8px", "$type": "dimension" },
+    "3": { "$value": "12px", "$type": "dimension" },
+    "4": { "$value": "16px", "$type": "dimension" },
+    "5": { "$value": "20px", "$type": "dimension" },
+    "6": { "$value": "24px", "$type": "dimension" },
+    "8": { "$value": "32px", "$type": "dimension" }
+  },
+  "font": {
+    "family": {
+      "$value": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+      "$type": "fontFamily"
+    },
+    "size": {
+      "small": { "$value": "12px", "$type": "dimension" },
+      "label": { "$value": "14px", "$type": "dimension" },
+      "body": { "$value": "16px", "$type": "dimension" },
+      "section": { "$value": "18px", "$type": "dimension" },
+      "page": { "$value": "20px", "$type": "dimension" },
+      "brand": { "$value": "24px", "$type": "dimension" }
+    }
+  },
+  "shadow": {
+    "drawer": { "$value": "0 25px 50px -12px rgba(0,0,0,0.25)", "$type": "shadow" },
+    "card": { "$value": "0 20px 25px -5px rgba(0,0,0,0.10), 0 8px 10px -6px rgba(0,0,0,0.10)", "$type": "shadow" }
+  }
+}

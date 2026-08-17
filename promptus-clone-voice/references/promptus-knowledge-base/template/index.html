@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Promptus App Starter</title>
+  <link rel="stylesheet" href="promptus-theme.css">
+</head>
+<body>
+  <div class="promptus-app">
+    <aside class="p-sidebar" id="sidebar" aria-label="Primary navigation">
+      <div class="p-brand">
+        <img src="assets/promptus-logo.png" alt="Promptus">
+        <strong>Promptus</strong>
+      </div>
+
+      <nav class="p-nav">
+        <button class="p-nav-item is-active" type="button" data-section="create" aria-current="page">
+          <span class="p-nav-icon" aria-hidden="true">▶</span><span>Create</span>
+        </button>
+        <button class="p-nav-item" type="button" data-section="workflows">
+          <span class="p-nav-icon" aria-hidden="true">▦</span><span>Workflows</span>
+        </button>
+        <button class="p-nav-item" type="button" data-section="collection">
+          <span class="p-nav-icon" aria-hidden="true">▤</span><span>Collection</span>
+        </button>
+        <button class="p-nav-item" type="button" data-section="settings">
+          <span class="p-nav-icon" aria-hidden="true">⚙</span><span>Settings</span>
+        </button>
+      </nav>
+
+      <section class="p-sidebar-status" aria-labelledby="service-title">
+        <p id="service-title" class="p-overline">Server status</p>
+        <button class="p-status-row" type="button" data-toggle-status>
+          <span class="p-status-dot is-online" aria-hidden="true"></span>
+          <span>Promptus API</span><small>Online</small>
+        </button>
+        <button class="p-status-row" type="button" data-toggle-status>
+          <span class="p-status-dot" aria-hidden="true"></span>
+          <span>ComfyUI</span><small>Offline</small>
+        </button>
+        <button class="p-status-row" type="button" data-toggle-status>
+          <span class="p-status-dot is-working" aria-hidden="true"></span>
+          <span>Cosy</span><small>Starting</small>
+        </button>
+      </section>
+      <div class="p-version">Promptus-aligned starter · 2026.08</div>
+    </aside>
+
+    <main class="p-main">
+      <header class="p-mobile-header">
+        <button class="p-icon-button" id="menuButton" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation">☰</button>
+        <img src="assets/promptus-logo.png" alt="">
+        <strong>Promptus</strong>
+      </header>
+
+      <section class="p-workspace" data-panel="create">
+        <div class="p-page-heading">
+          <div>
+            <p class="p-overline">Creative workspace</p>
+            <h1>Create with Promptus</h1>
+            <p>Describe what you want, choose where it runs, and keep the advanced controls close when you need them.</p>
+          </div>
+          <div class="p-chip p-chip-local"><span aria-hidden="true">●</span> Local ready</div>
+        </div>
+
+        <form class="p-prompt-card" id="promptForm">
+          <label for="prompt">Enter your prompt</label>
+          <div class="p-prompt-row">
+            <textarea id="prompt" maxlength="600" rows="3" placeholder="Enter your prompt here...">Create a cinematic product image with sculpted light and a deep violet background.</textarea>
+            <button class="p-primary-button" type="submit">Generate</button>
+          </div>
+          <div class="p-prompt-meta">
+            <button class="p-secondary-button" type="button" id="enhanceButton">✨ Enhance prompt</button>
+            <label class="p-switch-label"><input type="checkbox"><span class="p-switch" aria-hidden="true"></span> Meme</label>
+            <span id="promptCount">0 / 600</span>
+          </div>
+        </form>
+
+        <div class="p-control-grid" aria-label="Generation controls">
+          <button class="p-control-card is-selected" type="button" data-select-card>
+            <span class="p-control-icon">▧</span><strong>Image</strong><small>Still visuals and edits</small>
+          </button>
+          <button class="p-control-card" type="button" data-select-card>
+            <span class="p-control-icon">▷</span><strong>Video</strong><small>Motion and animation</small>
+          </button>
+          <button class="p-control-card" type="button" data-select-card>
+            <span class="p-control-icon">♫</span><strong>Audio</strong><small>Speech, sound, music</small>
+          </button>
+          <button class="p-control-card" type="button" data-select-card>
+            <span class="p-control-icon">◇</span><strong>3D</strong><small>Meshes and splats</small>
+          </button>
+        </div>
+
+        <section class="p-panel">
+          <div class="p-panel-heading">
+            <div><p class="p-overline">Model & options</p><h2>Choose an execution path</h2></div>
+            <span class="p-credit"><b>0</b> credits local</span>
+          </div>
+          <div class="p-option-grid">
+            <label class="p-field"><span>Workflow</span><select><option>Promptus: Product image</option><option>Promptus: Image edit</option></select></label>
+            <label class="p-field"><span>Run on</span><select><option>Local GPU</option><option>Promptus Cloud</option><option>Provider API</option></select></label>
+            <label class="p-field"><span>Format</span><select><option>1024 × 1024</option><option>1344 × 768</option><option>768 × 1344</option></select></label>
+          </div>
+          <div class="p-trust-note"><span class="p-chip p-chip-verified">Verified</span><p>This bundled workflow has known dependencies and runs on your selected local service.</p><button class="p-text-button" type="button">View details →</button></div>
+        </section>
+
+        <section class="p-panel">
+          <div class="p-panel-heading">
+            <div><p class="p-overline">Recent workflows</p><h2>Ready to run</h2></div>
+            <button class="p-secondary-button" type="button">Browse all</button>
+          </div>
+          <div class="p-table-wrap">
+            <table class="p-table">
+              <thead><tr><th>Workflow</th><th>Mode</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><strong>Product image</strong><small>Flux · image</small></td><td><span class="p-chip p-chip-local">Local</span></td><td><span class="p-status-inline"><i class="p-status-dot is-online"></i>Installed</span></td><td><button class="p-primary-button p-button-small" type="button">Run</button></td></tr>
+                <tr><td><strong>Short video clip</strong><small>Wan · video</small></td><td><span class="p-chip p-chip-cloud">Cloud</span></td><td><span class="p-status-inline"><i class="p-status-dot is-working"></i>2 models</span></td><td><button class="p-secondary-button p-button-small" type="button">Install</button></td></tr>
+                <tr><td><strong>Local narrator</strong><small>F5 · audio</small></td><td><span class="p-chip p-chip-local">Local</span></td><td><span class="p-status-inline"><i class="p-status-dot is-online"></i>Installed</span></td><td><button class="p-primary-button p-button-small" type="button">Run</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="p-workspace p-empty-panel" data-panel="workflows" hidden><p class="p-overline">CosyTemplates</p><h1>Workflow library</h1><p>Use this panel for verified templates, filters, install state, and trust labels.</p></section>
+      <section class="p-workspace p-empty-panel" data-panel="collection" hidden><p class="p-overline">My collection</p><h1>Your outputs</h1><p>Use this panel for generated images, videos, audio, tags, privacy, sharing, and downloads.</p></section>
+      <section class="p-workspace p-empty-panel" data-panel="settings" hidden><p class="p-overline">Settings</p><h1>App preferences</h1><p>Use this panel for generator defaults, menu customization, animation, sound, and workflow trust settings.</p></section>
+
+      <div class="p-toast" id="toast" role="status" aria-live="polite" hidden>Prompt queued locally.</div>
+    </main>
+    <button class="p-sidebar-scrim" id="sidebarScrim" type="button" aria-label="Close navigation" hidden></button>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

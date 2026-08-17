@@ -1,1 +1,5 @@
 .ensemble_reviews/
+
+# Python bytecode caches embed absolute source paths and must never be committed.
+__pycache__/
+*.py[cod]

@@ -10,6 +10,7 @@ A collection of portable, cross-harness [Agent Skills](https://agentskills.io) �
 | Skill | What it does |
 |-------|--------------|
 | [multi-llm-review](multi-llm-review/) | OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
+| [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 
 ## multi-llm-review
 
@@ -111,6 +112,87 @@ The governor then reproduces each finding with a failing test, fixes what proves
   - [Antigravity CLI](https://antigravity.google/docs/cli/install) — `agy` (Google account)
 
 `demo/stats.py` at the repo root is a deliberately imperfect fixture used for live-testing the ensemble.
+
+## promptus-clone-voice
+
+Clone your own voice locally in [Promptus](https://www.promptus.ai/) with F5-TTS, and refuse to deliver
+anything the machine cannot verify.
+
+```
+   one 7–11.8s reference          ┌──────────────────────────┐
+   ──────────────────────────────▶│  reference preflight     │  length · level · transcript
+                                  └────────────┬─────────────┘  agreement — unsafe presets
+                                               │                are disabled before submission
+                                  ┌────────────▼─────────────┐
+   narration text ───────────────▶│  Cosy → ComfyUI → F5     │  local GPU, nothing uploaded
+                                  └────────────┬─────────────┘
+                                  ┌────────────▼─────────────┐
+                                  │  fail-closed gates       │  clipping · DC offset · dead air
+                                  │  + Whisper word check    │  clicks · ≤5% word error
+                                  └────────────┬─────────────┘
+                                               ▼
+                                     human listening verdict
+                                     (no metric judges cadence)
+```
+
+### Design principles
+
+- **Consent before code.** A preset cannot be installed and a job cannot be submitted without a recorded
+  consent basis — you are the speaker, or you hold their explicit permission. The basis is persisted with
+  the reference hash, not treated as a checkbox.
+- **Fail closed, always.** A check that *cannot run* counts as a failure, never a pass. Missing NumPy,
+  SoundFile or the Whisper cache blocks delivery rather than silently approving it.
+- **A saved file is never proof.** ComfyUI writes before any gate runs, so the output gallery contains
+  refused takes too. Only the portal's own job history separates verified from rejected.
+- **Measure, don't assume.** Every documented figure was measured on a live installation. Where something
+  was inferred rather than observed, the reference documents say so.
+- **Nothing leaves the machine.** Reference recordings, transcripts and renders stay local; the portal
+  binds to `127.0.0.1`. The single outbound request is an anonymous version check.
+
+### Quick start
+
+```bash
+# 1. Link the skill into your harness's skills directory (or copy the folder)
+#    Codex: ~/.agents/skills   Claude Code: ~/.claude/skills
+
+# 2. Read-only diagnostic — checks services, F5 nodes, GPU and catalogue, changes nothing
+& "$env:LOCALAPPDATA/PromptusAI/cosy/venv/Scripts/python.exe" promptus-clone-voice/scripts/diagnose_promptus_voice.py
+
+# 3. Or drive it from the browser
+pwsh -NoProfile -File promptus-clone-voice/portal/start-portal.ps1   # http://127.0.0.1:8765
+```
+
+Or, inside any harness that supports Agent Skills:
+
+> Use $promptus-clone-voice to clone my voice and narrate this text.
+
+### What you get
+
+- **14 scripts** — read-only diagnostics, service management, preset installers, an A/B cadence sweep, a
+  reference auditor with reversible re-levelling, model-storage auditing, and a shared fail-closed verifier.
+- **A local web portal** — record → install → generate, with live progress, restart-safe job history and a
+  listening verdict captured against the render's hash.
+- **Reference documentation** — local architecture and API routes, Promptus naming conventions, how to read
+  the server log, dependency and private-data handling, and an engineer investigation pack of open questions.
+
+### Known open issue
+
+The CLI and the portal post-process audio differently: only the portal normalises the assembled master, so
+an identical voice and seed can pass from one entry point and fail from the other. This is documented rather
+than hidden — see `references/engineer-investigation.md`, question 1. Nothing here claims production
+readiness.
+
+### Requirements
+
+- Windows with the [Promptus desktop app](https://www.promptus.ai/) installed and its ComfyUI + Cosy
+  services running
+- Promptus's own managed Python — the scripts discover the installation themselves; do not create a
+  separate environment
+- The `comfyui-f5-tts` custom node, installed through Promptus's own catalogue
+
+Read [promptus-clone-voice/DISTRIBUTION.md](promptus-clone-voice/DISTRIBUTION.md) before publishing or
+sharing any output: generated speech is a clone of a real person's voice, and this repository deliberately
+contains no voice data of any kind.
 
 ## License
 
