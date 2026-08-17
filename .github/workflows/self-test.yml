@@ -46,6 +46,7 @@ jobs:
       # exact piped artifact; forced persistence failure must warn on stderr
       # and report evidence.persisted=false while still exiting 0.
       - name: Evidence persistence round trip
+        timeout-minutes: 5
         shell: node {0}
         run: |
           const { spawnSync } = require("node:child_process");
@@ -57,19 +58,23 @@ jobs:
           const artifact = "evidence round trip artifact\n";
           const dirs = [];
           const tmp = (label) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), `momm-ci-${label}-`)); dirs.push(d); return d; };
-          const run = (cwd) => spawnSync(process.execPath, [script, "--governor", "claude", "--reviewers", "gemini"], { input: artifact, encoding: "utf8", cwd });
+          // governor codex + reviewers codex => deterministic self-exclusion:
+          // zero subprocess spawns, zero network, independent of runner CLIs.
+          const run = (cwd, extra = []) => spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "codex", ...extra], { input: artifact, encoding: "utf8", cwd, timeout: 120000 });
           try {
             const workDir = tmp("ok");
             let r = run(workDir);
             if (r.status !== 0) throw new Error("run failed: " + r.stderr);
             const report = JSON.parse(r.stdout);
             if (!report.evidence.persisted || !report.evidence.log_indexed) throw new Error("evidence not fully persisted");
+            if (report.evidence.report_sha256_covers !== "stored_report_bytes") throw new Error("digest coverage not declared");
             const stored = fs.readFileSync(path.join(workDir, report.evidence.report_path), "utf8");
             if (createHash("sha256").update(stored).digest("hex") !== report.evidence.report_sha256) throw new Error("report digest mismatch");
             const logLine = JSON.parse(fs.readFileSync(path.join(workDir, ".ensemble_reviews/review-log.jsonl"), "utf8").split("\n").filter(Boolean).pop());
             if (logLine.report_sha256 !== report.evidence.report_sha256) throw new Error("log digest mismatch");
             if (logLine.input_sha256 !== report.input_sha256) throw new Error("log/report input hash mismatch");
             if (report.input_sha256 !== createHash("sha256").update(artifact).digest("hex")) throw new Error("input not bound to artifact");
+            if (report.reviewers[0].attempts !== 1) throw new Error("attempts not recorded");
             const blocked = tmp("blocked");
             fs.writeFileSync(path.join(blocked, ".ensemble_reviews"), "block");
             r = run(blocked);
@@ -85,7 +90,14 @@ jobs:
             if (partialReport.evidence.persisted !== true || partialReport.evidence.log_indexed !== false) throw new Error("partial persistence misreported");
             if (!/evidence persistence failed \(review-log indexing\)/.test(r.stderr)) throw new Error("no stderr warning on indexing failure");
             if (!fs.existsSync(path.join(partial, partialReport.evidence.report_path))) throw new Error("partial run report file missing");
-            console.log("evidence round trip ok: full, blocked, and partial persistence all behave as declared");
+            const streamBlocked = tmp("stream");
+            fs.writeFileSync(path.join(streamBlocked, ".ensemble_reviews"), "block");
+            r = run(streamBlocked, ["--stream"]);
+            if (r.status !== 0) throw new Error("stream run should still exit 0");
+            const events = r.stderr.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+            if (!events.some((e) => e.event === "evidence_error" && e.stage === "report persistence")) throw new Error("no structured evidence_error event");
+            if (JSON.parse(r.stdout).evidence.persisted !== false) throw new Error("stream run persistence misreported");
+            console.log("evidence round trip ok: full, blocked, partial, and stream-pure failure all behave as declared");
           } finally {
             for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
           }
