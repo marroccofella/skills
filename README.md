@@ -4,6 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
+![momm](https://img.shields.io/badge/momm-1.0.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -31,6 +32,51 @@ Have every frontier model on your machine review your code, using only the subsc
     (ChatGPT    (Anthropic   (Google      (GitHub
      OAuth)      OAuth)       OAuth)       OAuth)
 ```
+
+### How a review flows
+
+```mermaid
+flowchart LR
+    A["git diff HEAD<br/>or --input file"] --> B["sanitize<br/>secret redaction + input_sha256"]
+    B --> P["preflight (concurrent)<br/>zero model calls"]
+    B --> D["parallel dispatch<br/>read-only, OAuth env only"]
+    P -."install & login hints".-> U["you"]
+    D --> E["Codex CLI"]
+    D --> F["Claude Code"]
+    D --> G["Antigravity"]
+    D --> H["Copilot CLI"]
+    E --> I["dedup · consensus · insights"]
+    F --> I
+    G --> I
+    H --> I
+    I --> J["content-addressed report<br/>sha256 over stored bytes"]
+    J --> K["governor gate:<br/>reproduce → fix → disposition ledger"]
+```
+
+### When a route is down
+
+Every non-success outcome is a **status, never a finding**, and each one names its own fix:
+
+```mermaid
+flowchart TD
+    S{"route status"} -->|success| OK["review received"]
+    S -->|authentication_required| L["run the shown login command<br/>(browser OAuth, never API keys)"]
+    S -->|provider_unavailable| W["provider outage — momm already<br/>retried once; wait, never re-login"]
+    S -->|ineligible_tier| T["provider retired the account tier —<br/>use the successor route or an org license"]
+    S -->|missing| M["run the shown install command,<br/>then the login command"]
+    S -->|self_excluded| X["governor never reviews its own work"]
+```
+
+| Status you see | What it means | What to do |
+|---|---|---|
+| `authentication_required` | CLI installed, session absent or expired | Run the `login_hint` command shown (each is the provider's official browser login) |
+| `provider_unavailable` | Provider-side outage (5xx); one retry already happened | Wait and re-run; never re-login |
+| `ineligible_tier` | Provider retired this account tier for this CLI | Use the successor route (e.g. Antigravity for consumer Gemini) or an org license |
+| `missing` | CLI not installed | Run the `install_hint` command from `--preflight` |
+| `timeout` | Reviewer exceeded the time limit | Raise `--timeout`, or check the provider's status page |
+| `self_excluded` | This harness governs the run | Nothing — that's the integrity model working |
+
+`node momm/scripts/multi-review.mjs --preflight --pretty` checks every route with **zero model calls** and prints the exact fix for anything that's down. Reports carry `report_schema` and `dispatcher_version`; `--version` prints the release identity.
 
 ### Design principles
 
@@ -112,10 +158,15 @@ The governor then reproduces each finding with a failing test, fixes what proves
 
 - Node.js 18+ (the dispatcher is a single zero-dependency script)
 - At least one reviewer CLI installed and logged in via its official OAuth flow:
-  - [Codex CLI](https://developers.openai.com/codex/cli) — `codex login` (ChatGPT account)
-  - [Claude Code](https://claude.com/claude-code) — `claude /login` (Anthropic account)
-  - [Antigravity CLI](https://antigravity.google/docs/cli/install) — `agy login` (Google account)
-  - [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) — `copilot login` (GitHub account)
+
+  | Route | Install | Login |
+  |---|---|---|
+  | [Codex CLI](https://developers.openai.com/codex/cli) | `npm install -g @openai/codex` | `codex login` (ChatGPT account) |
+  | [Claude Code](https://claude.com/claude-code) | `npm install -g @anthropic-ai/claude-code` | `claude` then `/login` (Anthropic account) |
+  | [Antigravity CLI](https://antigravity.google/docs/cli/install) | official installer (provides `agy`) | `agy login` (Google account) |
+  | [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) | `npm install -g @github/copilot` | `copilot login` (GitHub account) |
+
+  Candidate routes (probed by `--preflight`, adapter pending verification): [Grok CLI](https://x.ai/cli). Gemini CLI remains supported for Standard/Enterprise Code Assist organization licenses only.
 
 `demo/stats.py` at the repo root is a deliberately imperfect fixture used for live-testing the ensemble.
 
