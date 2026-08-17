@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -737,7 +738,11 @@ function createUi(enabled, outStream = process.stderr) {
       const unanimous = verdicts.length > 0 && verdicts.every((v) => v === verdicts[0]);
       const findingsCount = report.findings.length;
       const criticals = report.findings.filter((f) => f.severity === "CRITICAL").length;
-      const verdictText = verdicts.length === 0 ? color(ANSI.red, "no reviews completed") : unanimous ? color(verdicts[0] === "ACCEPT" ? ANSI.green : ANSI.yellow, `unanimous ${verdicts[0]}`) : color(ANSI.yellow, `split ${verdicts.join("/")}`);
+      const external = report.reviewers.filter((r) => r.status !== "self_excluded");
+      const succeeded = external.filter((r) => r.status === "success").length;
+      const ofM = color(ANSI.dim, `${succeeded}/${external.length} routes`);
+      const verdictCore = verdicts.length === 0 ? color(ANSI.red, "no reviews completed") : unanimous ? color(verdicts[0] === "ACCEPT" ? ANSI.green : ANSI.yellow, `unanimous ${verdicts[0]}`) : color(ANSI.yellow, `split ${verdicts.join("/")}`);
+      const verdictText = `${verdictCore} · ${ofM}`;
       const findingsText = findingsCount === 0 ? color(ANSI.dim, "0 findings") : color(criticals ? ANSI.red : ANSI.yellow, `${findingsCount} finding${findingsCount === 1 ? "" : "s"}${criticals ? ` (${criticals} critical)` : ""}`);
       this.stop();
       paint();
@@ -932,7 +937,16 @@ async function main() {
   ui.finish(report);
   process.stdout.write(`${JSON.stringify(report, null, options.pretty ? 2 : 0)}\n`);
   try {
-    fs.mkdirSync(".ensemble_reviews", { recursive: true });
+    // Durable evidence: the complete report is persisted per run and its
+    // digest recorded in the log line, so any later claim about what a run
+    // said resolves to a path plus a sha256 over the exact bytes on disk —
+    // never to memory or summary. Temp-write + rename keeps evidence atomic.
+    const reportsDir = path.join(".ensemble_reviews", "reports");
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const reportJson = `${JSON.stringify(report, null, 2)}\n`;
+    const reportPath = path.join(reportsDir, `${runId}.json`);
+    fs.writeFileSync(`${reportPath}.tmp`, reportJson);
+    fs.renameSync(`${reportPath}.tmp`, reportPath);
     fs.appendFileSync(path.join(".ensemble_reviews", "review-log.jsonl"), `${JSON.stringify({
       timestamp: new Date().toISOString(),
       run_id: runId,
@@ -942,6 +956,8 @@ async function main() {
       findings_count: findings.length,
       finding_ids: findings.map((f) => f.id),
       corroborated_count: report.consensus.corroborated.length,
+      report_path: reportPath.replaceAll("\\", "/"),
+      report_sha256: createHash("sha256").update(reportJson).digest("hex"),
     })}\n`);
   } catch {} // telemetry is best-effort; never fail a review over it
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
