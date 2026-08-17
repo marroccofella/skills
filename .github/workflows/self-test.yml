@@ -40,3 +40,52 @@ jobs:
           console.log(`ok: ${lines.length} stderr line(s), all valid JSON`);
       - name: Legacy install alias forwards (dry run)
         run: node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
+      # Evidence round trip: a run (reviewer CLI absent in CI → fast terminal
+      # status, zero model calls) must persist a report whose logged sha256
+      # matches a fresh read of the file and whose input_sha256 matches the
+      # exact piped artifact; forced persistence failure must warn on stderr
+      # and report evidence.persisted=false while still exiting 0.
+      - name: Evidence persistence round trip
+        shell: node {0}
+        run: |
+          const { spawnSync } = require("node:child_process");
+          const { createHash } = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const os = require("node:os");
+          const script = path.resolve("momm/scripts/multi-review.mjs");
+          const artifact = "evidence round trip artifact\n";
+          const dirs = [];
+          const tmp = (label) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), `momm-ci-${label}-`)); dirs.push(d); return d; };
+          const run = (cwd) => spawnSync(process.execPath, [script, "--governor", "claude", "--reviewers", "gemini"], { input: artifact, encoding: "utf8", cwd });
+          try {
+            const workDir = tmp("ok");
+            let r = run(workDir);
+            if (r.status !== 0) throw new Error("run failed: " + r.stderr);
+            const report = JSON.parse(r.stdout);
+            if (!report.evidence.persisted || !report.evidence.log_indexed) throw new Error("evidence not fully persisted");
+            const stored = fs.readFileSync(path.join(workDir, report.evidence.report_path), "utf8");
+            if (createHash("sha256").update(stored).digest("hex") !== report.evidence.report_sha256) throw new Error("report digest mismatch");
+            const logLine = JSON.parse(fs.readFileSync(path.join(workDir, ".ensemble_reviews/review-log.jsonl"), "utf8").split("\n").filter(Boolean).pop());
+            if (logLine.report_sha256 !== report.evidence.report_sha256) throw new Error("log digest mismatch");
+            if (logLine.input_sha256 !== report.input_sha256) throw new Error("log/report input hash mismatch");
+            if (report.input_sha256 !== createHash("sha256").update(artifact).digest("hex")) throw new Error("input not bound to artifact");
+            const blocked = tmp("blocked");
+            fs.writeFileSync(path.join(blocked, ".ensemble_reviews"), "block");
+            r = run(blocked);
+            if (r.status !== 0) throw new Error("blocked run should still exit 0");
+            const blockedReport = JSON.parse(r.stdout);
+            if (blockedReport.evidence.persisted !== false || blockedReport.evidence.log_indexed !== false) throw new Error("blocked persistence not reported");
+            if (!/evidence persistence failed \(report persistence\)/.test(r.stderr)) throw new Error("no stderr warning on persistence failure");
+            const partial = tmp("partial");
+            fs.mkdirSync(path.join(partial, ".ensemble_reviews", "review-log.jsonl"), { recursive: true });
+            r = run(partial);
+            if (r.status !== 0) throw new Error("partial run should still exit 0");
+            const partialReport = JSON.parse(r.stdout);
+            if (partialReport.evidence.persisted !== true || partialReport.evidence.log_indexed !== false) throw new Error("partial persistence misreported");
+            if (!/evidence persistence failed \(review-log indexing\)/.test(r.stderr)) throw new Error("no stderr warning on indexing failure");
+            if (!fs.existsSync(path.join(partial, partialReport.evidence.report_path))) throw new Error("partial run report file missing");
+            console.log("evidence round trip ok: full, blocked, and partial persistence all behave as declared");
+          } finally {
+            for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
+          }

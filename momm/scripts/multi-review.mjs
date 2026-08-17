@@ -905,6 +905,9 @@ async function main() {
     run_id: runId,
     governor: options.governor,
     input_bytes: byteLength,
+    // Binds this report to the exact sanitized artifact the reviewers
+    // received — byte count alone cannot distinguish same-length inputs.
+    input_sha256: createHash("sha256").update(sanitized.value).digest("hex"),
     secret_redactions: sanitized.redactions,
     project_rules_applied: Boolean(options.projectRules),
     preflight: preflightEntries,
@@ -927,39 +930,61 @@ async function main() {
     insights: buildInsights(findings, results),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
+  // Durable evidence, persisted BEFORE the stdout report so the emitted
+  // report can carry the persistence outcome. The stored file is the
+  // canonical record: its digest covers the exact bytes on disk, and
+  // input_sha256 binds it to the exact sanitized artifact reviewers received
+  // (input_bytes alone cannot distinguish same-length artifacts). The stored
+  // file cannot describe its own persistence, so `evidence` exists only in
+  // the stdout copy. Failure is never silent: it warns on stderr and reports
+  // evidence.persisted=false, but never fails the review itself.
+  // persisted = the report file itself; log_indexed = its review-log line.
+  // Tracked separately so a successfully written report is never misreported
+  // when only the log append fails.
+  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null };
+  const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
+  try {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    const reportJson = `${JSON.stringify(report, null, 2)}\n`;
+    try {
+      fs.writeFileSync(`${reportPath}.tmp`, reportJson);
+      fs.renameSync(`${reportPath}.tmp`, reportPath);
+    } catch (error) {
+      try { fs.rmSync(`${reportPath}.tmp`, { force: true }); } catch {}
+      throw error;
+    }
+    evidence.persisted = true;
+    evidence.report_path = reportPath.replaceAll("\\", "/");
+    evidence.report_sha256 = createHash("sha256").update(reportJson).digest("hex");
+    fs.appendFileSync(path.join(".ensemble_reviews", "review-log.jsonl"), `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      run_id: runId,
+      governor: options.governor,
+      input_bytes: byteLength,
+      input_sha256: report.input_sha256,
+      reviewer_status: Object.fromEntries(results.map((r) => [r.agent, r.status])),
+      findings_count: findings.length,
+      finding_ids: findings.map((f) => f.id),
+      corroborated_count: report.consensus.corroborated.length,
+      report_path: evidence.report_path,
+      report_sha256: evidence.report_sha256,
+    })}\n`);
+    evidence.log_indexed = true;
+  } catch (error) {
+    evidence.error = clipped(error?.message ?? String(error), 300);
+    const stage = evidence.persisted ? "review-log indexing" : "report persistence";
+    process.stderr.write(`WARNING: evidence persistence failed (${stage}) — ${evidence.error}\n`);
+  }
   emitEvent(options.stream, {
     event: "final",
     run_id: runId,
     findings: findings.length,
     corroborated: report.consensus.corroborated.length,
     agreement_score: report.insights.agreement_score,
+    evidence_persisted: evidence.persisted,
   });
   ui.finish(report);
-  process.stdout.write(`${JSON.stringify(report, null, options.pretty ? 2 : 0)}\n`);
-  try {
-    // Durable evidence: the complete report is persisted per run and its
-    // digest recorded in the log line, so any later claim about what a run
-    // said resolves to a path plus a sha256 over the exact bytes on disk —
-    // never to memory or summary. Temp-write + rename keeps evidence atomic.
-    const reportsDir = path.join(".ensemble_reviews", "reports");
-    fs.mkdirSync(reportsDir, { recursive: true });
-    const reportJson = `${JSON.stringify(report, null, 2)}\n`;
-    const reportPath = path.join(reportsDir, `${runId}.json`);
-    fs.writeFileSync(`${reportPath}.tmp`, reportJson);
-    fs.renameSync(`${reportPath}.tmp`, reportPath);
-    fs.appendFileSync(path.join(".ensemble_reviews", "review-log.jsonl"), `${JSON.stringify({
-      timestamp: new Date().toISOString(),
-      run_id: runId,
-      governor: options.governor,
-      input_bytes: byteLength,
-      reviewer_status: Object.fromEntries(results.map((r) => [r.agent, r.status])),
-      findings_count: findings.length,
-      finding_ids: findings.map((f) => f.id),
-      corroborated_count: report.consensus.corroborated.length,
-      report_path: reportPath.replaceAll("\\", "/"),
-      report_sha256: createHash("sha256").update(reportJson).digest("hex"),
-    })}\n`);
-  } catch {} // telemetry is best-effort; never fail a review over it
+  process.stdout.write(`${JSON.stringify({ ...report, evidence }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
 }
 
