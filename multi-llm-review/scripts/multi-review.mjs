@@ -99,6 +99,7 @@ Options:
   --timeout <seconds>       Per-reviewer timeout (default: 120)
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
+  --stream                  Emit NDJSON progress events on stderr while reviewers run
   --pretty                  Pretty-print JSON
   --help                    Show this help`;
 }
@@ -111,6 +112,7 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
     strict: false,
+    stream: false,
     pretty: false,
     doctor: false,
     selfTest: false,
@@ -131,6 +133,7 @@ function parseArgs(argv) {
     else if (arg === "--timeout") options.timeoutMs = Math.max(1, Number(next())) * 1000;
     else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
     else if (arg === "--strict") options.strict = true;
+    else if (arg === "--stream") options.stream = true;
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--self-test") options.selfTest = true;
@@ -461,10 +464,17 @@ function fingerprint(finding) {
 
 function rationalize(results) {
   const grouped = new Map();
+  const byId = new Map();
   for (const result of results) {
     if (result.status !== "success") continue;
     for (const finding of result.review.findings) {
-      const key = fingerprint(finding);
+      // Reviewers that independently coin the identical slug for the same file
+      // are agreeing even when their wording differs — merge on (file, id)
+      // first, then fall back to the wording fingerprint. Fallback ids embed
+      // the agent name, so they can never collide across reviewers.
+      const idKey = `${(finding.target_file || "").toLowerCase()}|${finding.id.toLowerCase()}`;
+      const key = byId.get(idKey) ?? fingerprint(finding);
+      byId.set(idKey, key);
       const existing = grouped.get(key);
       if (!existing) grouped.set(key, { ...finding, sources: [result.agent] });
       else if (!existing.sources.includes(result.agent)) existing.sources.push(result.agent);
@@ -472,6 +482,44 @@ function rationalize(results) {
   }
   const rank = { CRITICAL: 0, WARNING: 1, NITPICK: 2 };
   return [...grouped.values()].sort((left, right) => rank[left.severity] - rank[right.severity]);
+}
+
+// Progress events go to stderr so stdout stays a single parseable report —
+// every existing pipe/--strict consumer is unaffected by --stream.
+function emitEvent(enabled, payload) {
+  if (!enabled) return;
+  try {
+    process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), ...payload })}\n`);
+  } catch {}
+}
+
+const SEVERITY_RANK = { CRITICAL: 3, WARNING: 2, NITPICK: 1 };
+
+function buildInsights(findings, results) {
+  const corroborated = findings.filter((f) => f.sources.length >= 2);
+  const uniqueByReviewer = {};
+  for (const f of findings) {
+    if (f.sources.length === 1) (uniqueByReviewer[f.sources[0]] ??= []).push(f.id);
+  }
+  const verdictSplit = {};
+  for (const r of results) {
+    if (r.review?.verdict) verdictSplit[r.review.verdict] = (verdictSplit[r.review.verdict] || 0) + 1;
+  }
+  const byFile = new Map();
+  for (const f of findings) {
+    const file = f.target_file || "(unspecified)";
+    const entry = byFile.get(file) || { file, findings: 0, max_severity: "NITPICK" };
+    entry.findings += 1;
+    if ((SEVERITY_RANK[f.severity] || 0) > (SEVERITY_RANK[entry.max_severity] || 0)) entry.max_severity = f.severity;
+    byFile.set(file, entry);
+  }
+  return {
+    agreement_score: findings.length ? Number((corroborated.length / findings.length).toFixed(2)) : null,
+    verdict_split: verdictSplit,
+    unique_findings_by_reviewer: uniqueByReviewer,
+    risk_heatmap: [...byFile.values()].sort((a, b) =>
+      (SEVERITY_RANK[b.max_severity] - SEVERITY_RANK[a.max_severity]) || (b.findings - a.findings)),
+  };
 }
 
 async function readAllStdin() {
@@ -569,7 +617,22 @@ async function main() {
     }
   } catch { options.projectRules = null; }
   const uniqueReviewers = [...new Set(options.reviewers)];
-  const results = await Promise.all(uniqueReviewers.map((agent) => invokeReviewer(agent, sanitized.value, options)));
+  emitEvent(options.stream, { event: "dispatch", governor: options.governor, reviewers: uniqueReviewers, input_bytes: byteLength });
+  const results = await Promise.all(uniqueReviewers.map(async (agent) => {
+    emitEvent(options.stream, { event: "reviewer.started", reviewer: agent });
+    const startedAt = Date.now();
+    const result = await invokeReviewer(agent, sanitized.value, options);
+    emitEvent(options.stream, {
+      event: "reviewer.completed",
+      reviewer: agent,
+      status: result.status,
+      verdict: result.review?.verdict ?? null,
+      findings: result.review?.findings.length ?? 0,
+      critical: result.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0,
+      duration_ms: Date.now() - startedAt,
+    });
+    return result;
+  }));
   const findings = rationalize(results);
   // Join key linking this report, the run log, and governor dispositions.
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -596,8 +659,16 @@ async function main() {
       corroborated: findings.filter((f) => f.sources.length >= 2).map((f) => f.id),
       single_source: findings.filter((f) => f.sources.length === 1).map((f) => f.id),
     },
+    insights: buildInsights(findings, results),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
+  emitEvent(options.stream, {
+    event: "final",
+    run_id: runId,
+    findings: findings.length,
+    corroborated: report.consensus.corroborated.length,
+    agreement_score: report.insights.agreement_score,
+  });
   process.stdout.write(`${JSON.stringify(report, null, options.pretty ? 2 : 0)}\n`);
   try {
     fs.mkdirSync(".ensemble_reviews", { recursive: true });
