@@ -11,6 +11,13 @@ Use one canonical skill directory. Link or install that directory with the harne
 | Other Agent Skills hosts | Point the documented skill parent at the canonical directory, or use `scripts/install.mjs --custom-dir <parent>` | Supported without harness-specific assumptions |
 | Hosts without Agent Skills | Invoke `node scripts/multi-review.mjs --governor other` as a command/tool | Workflow available, but not native skill discovery |
 
+## Install commands
+
+- Every detected harness at once: `node multi-llm-review/scripts/install.mjs --target all`
+- Individually: `--target codex` (links `~/.agents/skills`), `--target claude` (links `~/.claude/skills`), `--target gemini` (uses the native `gemini skills link`)
+- Any other Agent Skills host: `--custom-dir <that-host's-skill-parent>`
+- Hosts without skills support: skip installation and pipe into `scripts/multi-review.mjs` directly
+
 ## Adapter status
 
 - Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.

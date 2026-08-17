@@ -1,6 +1,11 @@
 # skills
 
-A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others).
+![CI](https://github.com/marroccofella/skills/actions/workflows/self-test.yml/badge.svg)
+![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
+
+A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Skill | What it does |
 |-------|--------------|
@@ -32,10 +37,15 @@ Have every frontier model on your machine review your code, using only the subsc
 - **Every voice heard, none obeyed blindly.** Reviewer improvement suggestions get an explicit apply/reject disposition, logged to `.ensemble_reviews/dispositions.jsonl` with the run's `run_id`.
 - **Termination-proof dispatcher.** Layered Windows/Unix process-tree cleanup (tree kill → child-kill backstop → hard deadline → explicit exit) guarantees the dispatcher always returns a structured report, even in kill-restricted sandboxes.
 
+### What this is not
+
+This is **not** a multi-agent coding system. Reviewers never write code, run your tests, or touch your files — the agent you are talking to remains the only writer, and it must reproduce any finding with a failing test before acting on it. Reviewer output is treated as untrusted data throughout.
+
 ### Quick start
 
 ```bash
-# 1. Link the skill into your user-level skills directory (Windows)
+# 1. Link the skill into your user-level skills directory
+#    (junctions on Windows, symlinks on Linux/macOS — install.mjs handles both)
 node multi-llm-review/scripts/install.mjs --target all
 
 # 2. Check which reviewer CLIs are installed and authenticated (no model calls)
@@ -49,7 +59,48 @@ Or, inside any harness that supports Agent Skills, simply ask:
 
 > Use $multi-llm-review to review my current changes.
 
+Harness discovery in one line: Codex reads `~/.agents/skills`, Claude Code reads `~/.claude/skills`, and Gemini/Antigravity use their native `skills link` command — `install.mjs --target all` covers the lot.
+
 See [multi-llm-review/SKILL.md](multi-llm-review/SKILL.md) for the full protocol, [references/invocation-prompts.md](multi-llm-review/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](multi-llm-review/references/harness-compatibility.md) for per-harness discovery details.
+
+<details>
+<summary><b>Example report</b> (real run: Codex governing, Claude + Antigravity reviewing a small Python diff)</summary>
+
+```json
+{
+  "policy": "oauth-only",
+  "run_id": "rev_20260816_xxxx",
+  "governor": "codex",
+  "reviewers": [
+    { "agent": "codex", "status": "self_excluded" },
+    { "agent": "claude", "status": "success", "verdict": "MODIFY", "confidence": 0.9 },
+    { "agent": "antigravity", "status": "success", "verdict": "MODIFY", "confidence": 1 }
+  ],
+  "findings": [
+    {
+      "id": "zero-division-empty-items",
+      "severity": "CRITICAL",
+      "target_file": "calc.py",
+      "issue": "The average function raises a ZeroDivisionError when called with an empty collection.",
+      "test_suggestion": "Call average([]) and verify it raises ValueError rather than ZeroDivisionError.",
+      "sources": ["antigravity"]
+    },
+    {
+      "id": "average-consumes-generator",
+      "severity": "NITPICK",
+      "target_file": "calc.py",
+      "issue": "average() calls sum() then len(), so generator input is exhausted and fails with TypeError.",
+      "sources": ["claude"]
+    }
+  ],
+  "consensus": { "corroborated": [], "single_source": ["zero-division-empty-items", "average-consumes-generator"] },
+  "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+}
+```
+
+The governor then reproduces each finding with a failing test, fixes what proves real, and records an explicit apply/reject disposition for every reviewer suggestion.
+
+</details>
 
 ### Requirements
 

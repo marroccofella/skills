@@ -1,0 +1,27 @@
+name: Skill safety suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  self-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # Zero model calls: the self-test exercises env scrubbing, recursion
+      # guards, JSON parsing, and forced-timeout settlement deterministically.
+      - name: Safety self-test
+        run: node multi-llm-review/scripts/multi-review.mjs --self-test --pretty
+      - name: Doctor (no model calls)
+        run: node multi-llm-review/scripts/multi-review.mjs --doctor --pretty
