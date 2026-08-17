@@ -51,10 +51,13 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 #    (junctions on Windows, symlinks on Linux/macOS — install.mjs handles both)
 node momm/scripts/install.mjs --target all
 
-# 2. Check which reviewer CLIs are installed and authenticated (no model calls)
-node momm/scripts/multi-review.mjs --doctor --pretty
+# 2. Check every route — install state, auth evidence, and the exact login
+#    command for anything that's down (no model calls)
+node momm/scripts/multi-review.mjs --preflight --pretty
 
-# 3. Review your current changes (replace "claude" with your driving agent)
+# 3. Review your current changes (replace "claude" with your driving agent).
+#    In a terminal you get a live progress display — spinners per reviewer,
+#    verdict badges, login hints on auth failures, and a consensus summary.
 git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --pretty
 ```
 
@@ -111,7 +114,8 @@ The governor then reproduces each finding with a failing test, fixes what proves
 - At least one reviewer CLI installed and logged in via its official OAuth flow:
   - [Codex CLI](https://developers.openai.com/codex/cli) — `codex login` (ChatGPT account)
   - [Claude Code](https://claude.com/claude-code) — `claude /login` (Anthropic account)
-  - [Antigravity CLI](https://antigravity.google/docs/cli/install) — `agy` (Google account)
+  - [Antigravity CLI](https://antigravity.google/docs/cli/install) — `agy login` (Google account)
+  - [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) — `copilot login` (GitHub account)
 
 `demo/stats.py` at the repo root is a deliberately imperfect fixture used for live-testing the ensemble.
 
