@@ -25,11 +25,11 @@ Have every frontier model on your machine review your code, using only the subsc
               │  tests, commits)           │    reproducing findings
               └─────────────┬──────────────┘
                             │ dispatches diff (read-only)
-              ┌─────────────┼──────────────┐
-              ▼             ▼              ▼
-          Codex CLI    Claude Code     Antigravity
-         (ChatGPT      (Anthropic      (Google
-          OAuth)        OAuth)          OAuth)
+         ┌───────────┬────┴──────┬─────────────┐
+         ▼           ▼           ▼             ▼
+     Codex CLI  Claude Code  Antigravity  Copilot CLI
+    (ChatGPT    (Anthropic   (Google      (GitHub
+     OAuth)      OAuth)       OAuth)       OAuth)
 ```
 
 ### Design principles
