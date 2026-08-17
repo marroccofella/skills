@@ -1,0 +1,22 @@
+# Harness compatibility
+
+Use one canonical skill directory. Link or install that directory with the harness's documented mechanism; never copy credentials.
+
+| Harness | Discovery/invocation | Status |
+| --- | --- | --- |
+| Codex desktop, CLI, IDE | User skills under `~/.agents/skills`; invoke as `$multi-llm-review` | Standards-compliant core supported |
+| Gemini CLI | Run `gemini skills link <skill-directory> --scope user --consent` | Native link verified with local Gemini CLI 0.55.1; reviewer requires an eligible enterprise account |
+| Claude Code | User skills under `~/.claude/skills` (junction active); CLI 2.1.233 installed | Verified as governor and as reviewer adapter |
+| Antigravity CLI | Workspace skills use `.agents/skills`; global discovery is linked under the documented `~/.gemini/config/skills` and migration-compatible `~/.gemini/antigravity-cli/skills` locations | CLI 1.1.13 verified as governor-compatible and as a read-only reviewer adapter |
+| Other Agent Skills hosts | Point the documented skill parent at the canonical directory, or use `scripts/install.mjs --custom-dir <parent>` | Supported without harness-specific assumptions |
+| Hosts without Agent Skills | Invoke `node scripts/multi-review.mjs --governor other` as a command/tool | Workflow available, but not native skill discovery |
+
+## Adapter status
+
+- Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.
+- Gemini reviewer: enabled when Gemini is not the governor; run headlessly in plan mode. CLI 0.55.1 is installed, but individual-account service was retired; it remains useful for eligible enterprise accounts and otherwise fails closed.
+- Claude reviewer: enabled when Claude is not the governor; verified against CLI 2.1.233 (`-p` + `--output-format json` + `--permission-mode plan`). Requires a one-time `claude` browser login; fails closed as `authentication_required` until then.
+- Antigravity reviewer: enabled when Antigravity is not the governor; verified against CLI 1.1.13 using `--new-project`, `--mode=plan`, `--sandbox`, structured JSON output, and a temporary sanitized artifact. Never add `--dangerously-skip-permissions` or `--disable-slash-commands` to this adapter.
+- Grok reviewer: disabled until a verified official OAuth-only CLI is available.
+
+`All known harnesses` cannot mean every current and future agent product: discovery paths and skill support are product-specific and change over time. Preserve portability by keeping `SKILL.md` standards-compliant, using relative resource paths, and adding only verified links or adapters.
