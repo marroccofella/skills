@@ -1,4 +1,4 @@
 interface:
   display_name: "Multi-LLM Review"
   short_description: "OAuth-only peer review across Codex, Claude, Gemini, and Antigravity"
-  default_prompt: "Use $multi-llm-review to review this change with every available OAuth-authenticated peer."
+  default_prompt: "Use $momm to review this change with every available OAuth-authenticated peer."

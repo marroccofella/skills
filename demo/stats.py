@@ -1,4 +1,4 @@
-"""Small stats helpers (demo fixture for multi-llm-review)."""
+"""Small stats helpers (demo fixture for momm)."""
 
 
 def total(items):

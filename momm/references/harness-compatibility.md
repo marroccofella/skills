@@ -4,7 +4,7 @@ Use one canonical skill directory. Link or install that directory with the harne
 
 | Harness | Discovery/invocation | Status |
 | --- | --- | --- |
-| Codex desktop, CLI, IDE | User skills under `~/.agents/skills`; invoke as `$multi-llm-review` | Standards-compliant core supported |
+| Codex desktop, CLI, IDE | User skills under `~/.agents/skills`; invoke as `$momm` | Standards-compliant core supported |
 | Gemini CLI | Run `gemini skills link <skill-directory> --scope user --consent` | Native link verified with local Gemini CLI 0.55.1; reviewer requires an eligible enterprise account |
 | Claude Code | User skills under `~/.claude/skills` (junction active); CLI 2.1.233 installed | Verified as governor and as reviewer adapter |
 | Antigravity CLI | Workspace skills use `.agents/skills`; global discovery is linked under the documented `~/.gemini/config/skills` and migration-compatible `~/.gemini/antigravity-cli/skills` locations | CLI 1.1.13 verified as governor-compatible and as a read-only reviewer adapter |
@@ -13,7 +13,7 @@ Use one canonical skill directory. Link or install that directory with the harne
 
 ## Install commands
 
-- Every detected harness at once: `node multi-llm-review/scripts/install.mjs --target all`
+- Every detected harness at once: `node momm/scripts/install.mjs --target all`
 - Individually: `--target codex` (links `~/.agents/skills`), `--target claude` (links `~/.claude/skills`), `--target gemini` (uses the native `gemini skills link`)
 - Any other Agent Skills host: `--custom-dir <that-host's-skill-parent>`
 - Hosts without skills support: skip installation and pipe into `scripts/multi-review.mjs` directly

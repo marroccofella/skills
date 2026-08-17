@@ -9,10 +9,12 @@ A collection of portable, cross-harness [Agent Skills](https://agentskills.io) �
 
 | Skill | What it does |
 |-------|--------------|
-| [multi-llm-review](multi-llm-review/) | OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
+| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 
-## multi-llm-review
+## momm — Mixture of Model Modality
+
+> **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. A deprecated alias remains at [`multi-llm-review/`](multi-llm-review/) whose scripts forward to `momm/scripts/`, so existing commands and skill links keep working with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The alias will be removed in a future release.
 
 Have every frontier model on your machine review your code, using only the subscriptions you already pay for — zero API keys, ever.
 
@@ -47,22 +49,22 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 ```bash
 # 1. Link the skill into your user-level skills directory
 #    (junctions on Windows, symlinks on Linux/macOS — install.mjs handles both)
-node multi-llm-review/scripts/install.mjs --target all
+node momm/scripts/install.mjs --target all
 
 # 2. Check which reviewer CLIs are installed and authenticated (no model calls)
-node multi-llm-review/scripts/multi-review.mjs --doctor --pretty
+node momm/scripts/multi-review.mjs --doctor --pretty
 
 # 3. Review your current changes (replace "claude" with your driving agent)
-git diff HEAD | node multi-llm-review/scripts/multi-review.mjs --governor claude --pretty
+git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --pretty
 ```
 
 Or, inside any harness that supports Agent Skills, simply ask:
 
-> Use $multi-llm-review to review my current changes.
+> Use $momm to review my current changes.
 
 Harness discovery in one line: Codex reads `~/.agents/skills`, Claude Code reads `~/.claude/skills`, and Gemini/Antigravity use their native `skills link` command — `install.mjs --target all` covers the lot.
 
-See [multi-llm-review/SKILL.md](multi-llm-review/SKILL.md) for the full protocol, [references/invocation-prompts.md](multi-llm-review/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](multi-llm-review/references/harness-compatibility.md) for per-harness discovery details.
+See [momm/SKILL.md](momm/SKILL.md) for the full protocol, [references/invocation-prompts.md](momm/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](momm/references/harness-compatibility.md) for per-harness discovery details.
 
 <details>
 <summary><b>Example report</b> (real run: Codex governing, Claude + Antigravity reviewing a small Python diff)</summary>
