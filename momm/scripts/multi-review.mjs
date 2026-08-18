@@ -472,7 +472,7 @@ function normalizeReview(agent, payload) {
 
 function classifyFailure(result) {
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
-  if (result.timedOut) return { status: "timeout", detail: "reviewer exceeded the time limit; authentication may require an interactive login" };
+  if (result.timedOut) return { status: "timeout", detail: "reviewer exceeded the time limit (timeout_ms in this report scales with input size unless --timeout is set) — re-run, raise --timeout, or if this route was never logged in, complete its browser login first" };
   // Terminal-capability warnings bury the real failure; drop them, but fall
   // back through stdout before surrendering to the bare exit code.
   const dropWarnings = (text) => String(text || "")

@@ -458,6 +458,7 @@
     claude: "Claude Code · Anthropic OAuth",
     antigravity: "Antigravity CLI (agy) · Google OAuth",
     copilot: "GitHub Copilot CLI · GitHub OAuth",
+    grok: "Grok CLI · xAI OAuth",
     gemini: "Gemini CLI · Google OAuth (tier-blocked)",
   };
   const GLYPH = { success: ["✓", "g-ok"], self_excluded: ["⊘", "g-self"], authentication_required: ["✗", "g-bad"], provider_unavailable: ["◍", "g-warn"], timeout: ["◷", "g-warn"], error: ["✗", "g-bad"], missing: ["✗", "g-bad"] };
@@ -859,7 +860,7 @@
       const unanimous = verdicts.length > 0 && unique.length === 1;
       const critical = rpt.findings.filter((f) => f.severity === "CRITICAL").length;
       if (!verdicts.length) return `No reviews completed — ${ok}/${external.length} routes`;
-      if (findings > 0) return `${findings} finding${findings === 1 ? "" : "s"}${critical ? ` (${critical} critical)` : ""} — ${unanimous ? `unanimous ${unique[0]}` : `split ${unique.join("/")}`}`;
+      if (findings > 0) return `${findings} finding${findings === 1 ? "" : "s"}${critical ? ` (${critical} critical)` : ""} — ${unanimous ? `unanimous ${unique[0]}` : `split ${unique.join("/")}`}${ok < external.length ? ` · ${ok}/${external.length} routes` : ""}`;
       return `${unanimous ? `Unanimous ${unique[0]}` : `Split ${unique.join("/")}`} — ${ok}/${external.length} routes clean`;
     }
     if (findings > 0) return `${findings} finding${findings === 1 ? "" : "s"} — summary record`;
@@ -957,7 +958,8 @@
       const firstLine = shortDetail(reviewer.detail);
       const hasMore = String(reviewer.detail).trim() !== firstLine;
       message = `<p class="message-detail">${esc(firstLine)}</p>${hasMore ? `<details class="raw-detail"><summary>Show raw provider detail</summary><p class="message-detail">${esc(reviewer.detail)}</p></details>` : ""}`;
-    } else message = `<p class="none">No message was stored for status ${esc(reviewer.status)}.</p>`;
+    } else if (reviewer.status === "success") message = `<p class="none">This reviewer returned its verdict without a prose summary — its suggestions below are the substance of the review.</p>`;
+    else message = `<p class="none">No message was stored for status ${esc(reviewer.status)}.</p>`;
     const suggestions = reviewer.suggested_improvements?.length ? `<ul class="sugg">${reviewer.suggested_improvements.map((suggestion) => `<li>${esc(suggestion)}</li>`).join("")}</ul>` : "";
     return `<article class="rev-card${isGovernor ? " governor-card" : ""}" style="--agent-color:${m.color}">
       <div class="rev-head"><div class="rev-identity">${avatar(reviewer.agent)}<span class="rev-identity-copy"><span class="role-label">${isGovernor ? "Governor · our model" : "Peer reviewer"}</span><span class="rev-name">${esc(m.label)}</span><span class="rev-harness">${esc(HARNESS[reviewer.agent] ?? "Harness identity")}</span></span></div>${badge}${reviewer.persona ? `<span class="persona-chip" title="Assigned persona — shapes the review's angle, never the truthfulness of findings">${esc(reviewer.persona)}</span>` : ""}${(reviewer.attempts ?? 1) > 1 ? `<span class="persona-chip" title="First attempt hit a provider outage; retried once">retried</span>` : ""}${reviewer.duration_ms != null ? `<span class="conf">${(reviewer.duration_ms / 1000).toFixed(1)}s</span>` : ""}${reviewer.confidence != null ? `<span class="conf">confidence ${reviewer.confidence}</span>` : ""}<button class="mini-btn" type="button" data-speech-key="${esc(speechKey)}">${icon("play")} Read ${esc(m.label)}</button></div>
