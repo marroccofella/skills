@@ -92,13 +92,24 @@ function buildContract(agent, options = {}) {
   return `${REVIEW_PROMPT}${personaText}${rules}`;
 }
 
-// Large artifacts take reviewers proportionally longer — a 36KB skill diff
-// timed out two routes at the flat default (run rev_20260818022308_w0xb).
-// Unless the user set --timeout explicitly, scale: +1.5s per KB beyond 20KB,
-// capped at 5 minutes.
+// Large artifacts take reviewers proportionally longer — observed live:
+// codex finished a 14KB review at 102s and timed out at 19KB under the flat
+// 120s default (runs aqv6, hga2); a 36KB diff timed out two routes (w0xb).
+// Unless the user set --timeout explicitly, scale from 8KB at +4s per KB,
+// capped at 5 minutes. A timeout is a cap, not a delay: fast routes still
+// return the moment they finish, so generosity only costs time where a
+// verdict was previously being lost.
 function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
-  if (explicit || byteLength <= 20_000) return requestedMs;
-  return Math.min(300_000, requestedMs + Math.ceil((byteLength - 20_000) / 1024) * 3_000);
+  if (explicit || byteLength <= 8_000) return requestedMs;
+  return Math.min(300_000, requestedMs + Math.ceil((byteLength - 8_000) / 1024) * 4_000);
+}
+
+// Some routes read dense code slower than others — measured, not assumed:
+// grok exceeded every 120s window it was given while peers finished in
+// 30-100s. Its cap gets 1.5x headroom (still bounded by 6 minutes).
+const AGENT_TIMEOUT_MULTIPLIER = { grok: 1.5 };
+function agentTimeoutMs(agent, baseMs) {
+  return Math.min(360_000, Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1)));
 }
 
 function grokCommand() {
@@ -616,7 +627,7 @@ async function invokeReviewer(agent, artifact, options) {
   let result;
   let cleanupError = null;
   try {
-    result = await runProcess(command, args, { input, timeoutMs: options.timeoutMs, env: cleanOauthEnv(), cwd });
+    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs), env: cleanOauthEnv(), cwd });
   } finally {
     if (temporaryDirectory) {
       try {
@@ -977,9 +988,11 @@ async function selfTest(pretty) {
     classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
-      && effectiveTimeoutMs(36_227, 120_000, false) > 120_000
+      && effectiveTimeoutMs(14_000, 120_000, false) > 140_000
+      && effectiveTimeoutMs(36_227, 120_000, false) > 220_000
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
+    slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
     retries_outages_only: shouldRetryStatus("provider_unavailable") && !shouldRetryStatus("authentication_required") && !shouldRetryStatus("ineligible_tier") && !shouldRetryStatus("timeout") && !shouldRetryStatus("error") && !shouldRetryStatus("success"),
     retry_wiring_exact_call_counts: await (async () => {
       const outageCalls = [];
