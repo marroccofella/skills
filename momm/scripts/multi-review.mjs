@@ -167,7 +167,7 @@ function usage() {
 
 Options:
   --input, --patch <file>    Review a file instead of git diff HEAD/stdin
-  --reviewers <csv>         Requested peers (default: codex,claude,antigravity,copilot)
+  --reviewers <csv>         Requested peers (default: codex,claude,antigravity,copilot,grok)
   --timeout <seconds>       Per-reviewer timeout (default: 120)
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
@@ -185,7 +185,7 @@ function parseArgs(argv) {
   const options = {
     governor: normalizeAgentName(process.env.GOVERNING_AGENT),
     input: null,
-    reviewers: ["codex", "claude", "antigravity", "copilot"],
+    reviewers: ["codex", "claude", "antigravity", "copilot", "grok"],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
     strict: false,
@@ -411,7 +411,8 @@ function unwrapReviewPayload(stdout) {
     if (candidate?.structured_output && Array.isArray(candidate.structured_output.findings)) {
       return candidate.structured_output;
     }
-    for (const field of ["response", "result", "message", "content", "structured_output"]) {
+    // "text" is Grok CLI's json-mode wrapper field (verified live on 1.0.5).
+    for (const field of ["response", "result", "message", "content", "structured_output", "text"]) {
       if (typeof candidate?.[field] === "string") {
         const nested = extractJsonObjects(candidate[field]).find((item) => Array.isArray(item?.findings));
         if (nested) return nested;
@@ -935,6 +936,7 @@ async function selfTest(pretty) {
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
     parses_nested_json: parsed?.verdict === "ACCEPT",
     parses_antigravity_structured_output: parsedStructured?.verdict === "ACCEPT",
+    parses_grok_text_wrapper: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" }), stopReason: "end_turn" }))?.verdict === "ACCEPT",
     normalizes_agy_alias: normalizeAgentName("agy") === "antigravity",
     normalizes_copilot_aliases: normalizeAgentName("github-copilot") === "copilot" && normalizeAgentName("gh-copilot") === "copilot",
     login_hints_cover_all_adapters: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof LOGIN_HINTS[agent] === "string"),
