@@ -1,6 +1,6 @@
 {
   "schema": "momm-evidence-export/1",
-  "generated": "2026-08-18T00:00:39.321Z",
+  "generated": "2026-08-18T00:08:07.441Z",
   "source": "github.com/marroccofella/skills · momm dispatcher telemetry (Claude project workspace)",
   "sanitization": "user home and workspace paths normalized; Promptus Skills project excluded (private); reports contain no reviewed artifact text by design",
   "note": "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
@@ -484,6 +484,48 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817235809_61zx.json",
       "report_sha256": "2c07e0bdb5724e3440bc1ced042debfcc759de269646163908073631483ebd05",
+      "report_sha256_covers": "stored_report_bytes"
+    },
+    {
+      "timestamp": "2026-08-18T00:05:55.865Z",
+      "run_id": "rev_20260818000555_ky8p",
+      "governor": "claude",
+      "input_bytes": 76,
+      "input_sha256": "3b999b52f7fcedb14010f1066655aa44595b7f7fa0498cefc4a77fcc1616ecb9",
+      "reviewer_status": {
+        "codex": "success",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success"
+      },
+      "findings_count": 0,
+      "finding_ids": [],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260818000555_ky8p.json",
+      "report_sha256": "683a876cf55948be3ac095774ffbe97a3d1361dc113e40c6b183992615994908",
+      "report_sha256_covers": "stored_report_bytes"
+    },
+    {
+      "timestamp": "2026-08-18T00:06:13.321Z",
+      "run_id": "rev_20260818000613_yfm2",
+      "governor": "claude",
+      "input_bytes": 81,
+      "input_sha256": "deba17c05b2fd057591335598a841d9223894f6cb4fea64e4c1b0e98d0be36ce",
+      "reviewer_status": {
+        "codex": "success",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success"
+      },
+      "findings_count": 3,
+      "finding_ids": [
+        "missing-loop-increment-infinite-loop",
+        "infinite-loop",
+        "missing-loop-increment"
+      ],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260818000613_yfm2.json",
+      "report_sha256": "78e10edfad2599f681685ad9bde9bd45a25656c8594f4c3f4308eb987e7fe381",
       "report_sha256_covers": "stored_report_bytes"
     }
   ],
@@ -2056,6 +2098,293 @@
             {
               "file": "momm/scripts/multi-review.mjs",
               "findings": 4,
+              "max_severity": "WARNING"
+            }
+          ]
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
+    },
+    "rev_20260818000555_ky8p": {
+      "stored_report_sha256": "683a876cf55948be3ac095774ffbe97a3d1361dc113e40c6b183992615994908",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260818000555_ky8p",
+        "governor": "claude",
+        "input_bytes": 76,
+        "input_sha256": "3b999b52f7fcedb14010f1066655aa44595b7f7fa0498cefc4a77fcc1616ecb9",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.99,
+            "summary": "The BASIC program correctly prints the integers 1 through 10 in ascending order and then terminates; no concrete defects or meaningful regressions are present.",
+            "suggested_improvements": []
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 1,
+            "summary": "The provided BASIC program correctly implements a loop from 1 to 10 and prints each integer sequentially before terminating. No defects, regressions, or syntax errors were found.",
+            "suggested_improvements": []
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.95,
+            "summary": "This is a simple, correct BASIC program that counts from 1 to 10 using a FOR loop. The logic is sound with proper loop initialization, iteration, and termination. No defects, security issues, race conditions, or type errors are present. The code follows classic BASIC syntax conventions and accomplishes its stated purpose without error.",
+            "suggested_improvements": [
+              "Consider adding a descriptive message in the PRINT statement, e.g., 'PRINT \"Count: \"; I' for better output clarity",
+              "The trailing empty line (line 6) could be removed for cleaner formatting"
+            ]
+          }
+        ],
+        "findings": [],
+        "consensus": {
+          "corroborated": [],
+          "single_source": []
+        },
+        "insights": {
+          "agreement_score": null,
+          "verdict_split": {
+            "ACCEPT": 3
+          },
+          "unique_findings_by_reviewer": {},
+          "risk_heatmap": []
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
+    },
+    "rev_20260818000613_yfm2": {
+      "stored_report_sha256": "78e10edfad2599f681685ad9bde9bd45a25656c8594f4c3f4308eb987e7fe381",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260818000613_yfm2",
+        "governor": "claude",
+        "input_bytes": 81,
+        "input_sha256": "deba17c05b2fd057591335598a841d9223894f6cb4fea64e4c1b0e98d0be36ce",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "MODIFY",
+            "confidence": 0.99,
+            "summary": "The intended counting loop is broken because its counter is never updated; add an increment after printing before evaluating the loop condition.",
+            "suggested_improvements": []
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "REJECT",
+            "confidence": 1,
+            "summary": "The program attempts to count from 1 to 10 in BASIC but fails to increment the loop variable I, resulting in a critical infinite loop defect where 1 is printed continuously.",
+            "suggested_improvements": [
+              "Use an idiomatic FOR I = 1 TO 10 ... NEXT I loop construct instead of manual GOTO branching.",
+              "Insert line 35 LET I = I + 1 before line 40 if maintaining the GOTO control flow structure."
+            ]
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "REJECT",
+            "confidence": 1,
+            "summary": null,
+            "suggested_improvements": [
+              "Add LET I = I + 1 statement between lines 30 and 40 to increment the counter",
+              "Change condition from I < 10 to I <= 10 to include 10 in the count range as the comment suggests",
+              "Consider using a FOR-NEXT loop construct if available in the BASIC dialect (e.g., FOR I = 1 TO 10: PRINT I: NEXT I) for more idiomatic and safer iteration"
+            ]
+          }
+        ],
+        "findings": [
+          {
+            "id": "missing-loop-increment-infinite-loop",
+            "severity": "CRITICAL",
+            "target_file": "C:\\\\Users\\\\marro\\\\AppData\\\\Local\\\\Temp\\\\momm-agy-5ZKoJz\\\\artifact.txt",
+            "line_range": [
+              3,
+              4
+            ],
+            "issue": "The loop counter I is never incremented, causing the condition I < 10 to always evaluate to true and creating an infinite loop.",
+            "rationale": "Without an increment statement (such as LET I = I + 1), I remains 1 indefinitely, printing 1 forever and never reaching the END statement.",
+            "test_suggestion": "Execute the program in a BASIC interpreter and observe that it outputs 1 endlessly without reaching line 50 END.",
+            "sources": [
+              "antigravity"
+            ]
+          },
+          {
+            "id": "infinite-loop",
+            "severity": "CRITICAL",
+            "target_file": "artifact.txt",
+            "line_range": [
+              3,
+              4
+            ],
+            "issue": "The loop counter I is never incremented, causing an infinite loop that prints 1 forever",
+            "rationale": "Line 40 jumps back to line 30 when I < 10, but I is initialized to 1 on line 20 and never modified, so the condition I < 10 is always true and the program will print 1 indefinitely without ever reaching the END statement",
+            "test_suggestion": "10 REM COUNT FROM ONE TO TEN\n20 LET I = 1\n30 PRINT I\n35 LET I = I + 1\n40 IF I <= 10 GOTO 30\n50 END",
+            "sources": [
+              "copilot"
+            ]
+          },
+          {
+            "id": "missing-loop-increment",
+            "severity": "WARNING",
+            "target_file": null,
+            "line_range": [
+              30,
+              40
+            ],
+            "issue": "The loop never increments I, so it prints 1 indefinitely instead of counting from one to ten.",
+            "rationale": "I remains 1, making the condition I < 10 permanently true and preventing the program from reaching END.",
+            "test_suggestion": "Run the program and verify that it emits ten lines containing 1 through 10 and then terminates; the current program repeatedly emits 1 without terminating.",
+            "sources": [
+              "codex"
+            ]
+          }
+        ],
+        "consensus": {
+          "corroborated": [],
+          "single_source": [
+            "missing-loop-increment-infinite-loop",
+            "infinite-loop",
+            "missing-loop-increment"
+          ]
+        },
+        "insights": {
+          "agreement_score": 0,
+          "verdict_split": {
+            "MODIFY": 1,
+            "REJECT": 2
+          },
+          "unique_findings_by_reviewer": {
+            "antigravity": [
+              "missing-loop-increment-infinite-loop"
+            ],
+            "copilot": [
+              "infinite-loop"
+            ],
+            "codex": [
+              "missing-loop-increment"
+            ]
+          },
+          "risk_heatmap": [
+            {
+              "file": "C:\\\\Users\\\\marro\\\\AppData\\\\Local\\\\Temp\\\\momm-agy-5ZKoJz\\\\artifact.txt",
+              "findings": 1,
+              "max_severity": "CRITICAL"
+            },
+            {
+              "file": "artifact.txt",
+              "findings": 1,
+              "max_severity": "CRITICAL"
+            },
+            {
+              "file": "(unspecified)",
+              "findings": 1,
               "max_severity": "WARNING"
             }
           ]
