@@ -718,6 +718,7 @@ function authEvidence(agent) {
     if (agent === "claude") return fs.existsSync(path.join(home, ".claude", ".credentials.json")) ? "present" : "absent";
     if (agent === "copilot") return fs.existsSync(path.join(home, ".copilot", "config.json")) ? "present" : "absent";
     if (agent === "gemini") return fs.existsSync(path.join(home, ".gemini", "oauth_creds.json")) ? "present" : "absent";
+    if (agent === "grok") return fs.existsSync(path.join(home, ".grok", "auth.json")) ? "present" : "absent";
     if (agent === "antigravity") return fs.existsSync(path.join(home, ".gemini")) ? "present" : "absent";
   } catch {}
   return "unknown";
