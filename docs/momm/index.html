@@ -260,6 +260,7 @@
     <div class="route" style="--rc:#c195ff"><b class="cp">Copilot</b><small>GitHub OAuth</small><div class="p">Pragmatic, detail-dense suggestions.</div></div>
     <div class="route" style="--rc:#ff7a7a"><b class="gk">Grok</b><small>xAI OAuth</small><div class="p">Ships as the Innovator persona by default.</div></div>
   </div>
+  <p class="install-note">Every route uses its provider's official CLI and browser login — including Grok via <a href="https://x.ai/cli">xAI's official CLI</a>, adapter live-verified in the <a href="../evidence/">sealed ledger</a>. Why “modality”? Each model family is treated as a distinct modality of judgment over the same artifact — and the roadmap extends to literal modalities: visual review of rendered UIs and structural review over ASTs are the planned sibling skills.</p>
 </div></section>
 
 <section><div class="wrap">
@@ -298,6 +299,27 @@
     <li><p>Review your changes (or just tell your agent “use momm”). Your private dashboard is one more command: <code style="display:inline;padding:1px 6px">node skills/momm/scripts/ledger.mjs --open</code></p>
       <code>git diff HEAD | node skills/momm/scripts/multi-review.mjs --governor claude --pretty</code></li>
   </ol>
+  <p class="install-note">Repository conventions: drop a <code style="display:inline;padding:1px 6px">.reviewrules</code> file at your repo root (style constraints, review priorities, forbidden patterns) — it is injected into every reviewer's prompt, and the report confirms it was applied. Release gates: add <code style="display:inline;padding:1px 6px">--min-success N</code> to fail loudly if timeouts thin the coalition below quorum.</p>
+
+  <h3 class="big" style="margin-top:34px">What a sealed report looks like.</h3>
+  <p class="install-note">Illustrative specimen — fields are exact, values composited across real runs, comments and ellipses added for reading. Actual reports are strict JSON; browse real ones in <a href="../evidence/">the ledger</a>.</p>
+  <pre style="background:#060808;border:1px solid var(--border);border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:12px;line-height:1.6;color:var(--muted)">{
+  "report_schema": "momm-report/1",
+  "dispatcher_version": "1.2.0",
+  "run_id": "rev_20260818HHMMSS_xxxx",
+  "input_sha256": "3b999b52…",            <span style="color:#5c6f60">// binds the report to the exact reviewed bytes</span>
+  "quorum": { "required": 2, "achieved": 4, "met": true },
+  "reviewers": [
+    { "agent": "grok", "verdict": "ACCEPT", "confidence": 0.96,
+      "persona": "innovator", "attempts": 1, "duration_ms": 20607 }, …
+  ],
+  "findings": [                            <span style="color:#5c6f60">// claims, not verdicts — each needs reproduction</span>
+    { "id": "…", "severity": "CRITICAL", "target_file": "…",
+      "line_range": [20, 21], "issue": "…", "test_suggestion": "…" }
+  ],
+  "evidence": { "persisted": true, "report_sha256": "…",
+                "report_sha256_covers": "stored_report_bytes" }
+}</pre>
 </div></section>
 
 <footer class="site"><div class="wrap">
@@ -309,14 +331,14 @@
     <a href="https://42.uk" rel="me">42.uk</a>
     <a href="https://www.promptus.ai" rel="external">Promptus</a>
   </nav>
-  <p class="fine">MIT licensed. This site sets no cookies, runs no trackers, and calls no third-party services. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe; voice-cloning workflows in this repo run locally via <a href="https://www.promptus.ai">Promptus</a> with recorded consent. RELAX. IT'S ALREADY OVER.</p>
+  <p class="fine">MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services — it sends nothing anywhere. The skill is the opposite by design: when <i>you</i> run a review, your diff goes to the model providers you have deliberately logged into — that is its entire purpose, under your OAuth sessions, never keys. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe; voice-cloning workflows in this repo run locally via <a href="https://www.promptus.ai">Promptus</a> with recorded consent. RELAX. IT'S ALREADY OVER.</p>
 </div></footer>
 
 <script>
 // Replay of real recorded events from run rev_20260818014036_4t6d.
 const LINES = [
   ["dim", 'dispatch  governor=claude  reviewers=codex,claude,antigravity,copilot,grok  input=76 bytes'],
-  ["dim", 'preflight  all 5 routes up — install + auth evidence verified, zero model calls'],
+  ["dim", 'preflight  5 routes ready · 4 will review — the governor self-excludes'],
   ["dim", 'claude       ⊘ self-excluded — the governor never reviews its own work'],
   ["cx",  'codex        ✓ ACCEPT   confidence 0.99   11.6s'],
   ["ag",  'antigravity  ✓ ACCEPT   confidence 1.00   11.8s'],
