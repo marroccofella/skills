@@ -24,7 +24,7 @@ if (Number.isFinite(nodeMajor) && nodeMajor < 18) {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_BYTES = 120_000;
 const MAX_OUTPUT_BYTES = 2_000_000;
-const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "other"]);
+const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"]);
 const VALID_SEVERITIES = new Set(["CRITICAL", "WARNING", "NITPICK"]);
 const VALID_VERDICTS = new Set(["ACCEPT", "MODIFY", "REJECT"]);
 
@@ -1029,6 +1029,7 @@ async function selfTest(pretty) {
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
+    every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
     quorum_rejects_invalid_values: ["abc", "0", "-2", "2.5", ""].every((value) => { try { parseArgs(["--governor", "codex", "--min-success", value]); return false; } catch { return true; } }) && parseArgs(["--governor", "codex", "--min-success", "3"]).minSuccess === 3,
     retries_outages_only: shouldRetryStatus("provider_unavailable") && !shouldRetryStatus("authentication_required") && !shouldRetryStatus("ineligible_tier") && !shouldRetryStatus("timeout") && !shouldRetryStatus("error") && !shouldRetryStatus("success"),
     retry_wiring_exact_call_counts: await (async () => {
@@ -1087,7 +1088,7 @@ async function main() {
 
   const currentDepth = Number.parseInt(process.env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;
   if (currentDepth > 0) throw new Error("Nested multi-LLM dispatch is blocked to prevent recursive harness calls");
-  if (!VALID_GOVERNORS.has(options.governor)) throw new Error("--governor is required and must be codex, gemini, claude, antigravity, copilot, or other");
+  if (!VALID_GOVERNORS.has(options.governor)) throw new Error("--governor is required and must be codex, gemini, claude, antigravity, copilot, grok, or other");
   if (!Number.isFinite(options.timeoutMs) || !Number.isFinite(options.maxBytes)) throw new Error("Timeout and size limits must be numbers");
 
   const rawArtifact = await collectArtifact(options);
