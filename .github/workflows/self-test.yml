@@ -25,6 +25,37 @@ jobs:
         run: node momm/scripts/multi-review.mjs --self-test --pretty
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
+      - name: Public evidence is sanitized and sealed
+        shell: node {0}
+        run: |
+          const { createHash } = require("node:crypto");
+          const fs = require("node:fs");
+          const sourcePath = "docs/evidence/momm-evidence.json";
+          const sourceBytes = fs.readFileSync(sourcePath);
+          const source = JSON.parse(sourceBytes.toString("utf8"));
+          const html = fs.readFileSync("docs/evidence/index.html", "utf8");
+          const match = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/);
+          if (!match) throw new Error("public evidence page has no embedded data block");
+          const embedded = JSON.parse(match[1]);
+          const forbidden = [
+            /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"']+/i,
+            /[A-Za-z]:[\\/]+1code projects[\\/]+Claude/i,
+            /(^|[\s"'(])\/(Users|home)\/[^/\s"']+/i,
+          ];
+          const scan = (label, value, at = "$") => {
+            if (typeof value === "string") {
+              if (forbidden.some((pattern) => pattern.test(value))) throw new Error(`${label} leaks a local path at ${at}: ${value}`);
+              return;
+            }
+            if (Array.isArray(value)) return value.forEach((item, index) => scan(label, item, `${at}[${index}]`));
+            if (value && typeof value === "object") for (const [key, item] of Object.entries(value)) scan(label, item, `${at}.${key}`);
+          };
+          scan("momm-evidence.json", source);
+          scan("index.html embedded data", embedded);
+          const expected = fs.readFileSync(`${sourcePath}.sha256`, "utf8").trim().split(/\s+/)[0];
+          const actual = createHash("sha256").update(sourceBytes).digest("hex");
+          if (actual !== expected) throw new Error(`public evidence digest mismatch: ${actual} != ${expected}`);
+          console.log("public evidence contains no local home/workspace paths and matches its sidecar");
       # Legacy multi-llm-review alias must keep working until removal, and
       # with --stream its stderr must stay pure NDJSON (deprecation line included).
       - name: Legacy alias forwards

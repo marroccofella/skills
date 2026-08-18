@@ -3,7 +3,7 @@
   "generated": "2026-08-18T00:08:07.441Z",
   "source": "github.com/marroccofella/skills · momm dispatcher telemetry (Claude project workspace)",
   "sanitization": "user home and workspace paths normalized; Promptus Skills project excluded (private); reports contain no reviewed artifact text by design",
-  "note": "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
+  "note": "stored_report_sha256 records the exact private source-report bytes; path normalization means the sanitized report objects may not byte-match those private files. The published sidecar separately seals this export.",
   "runs": [
     {
       "timestamp": "2026-08-17T04:28:27.692Z",
@@ -2303,7 +2303,7 @@
           {
             "id": "missing-loop-increment-infinite-loop",
             "severity": "CRITICAL",
-            "target_file": "C:\\\\Users\\\\marro\\\\AppData\\\\Local\\\\Temp\\\\momm-agy-5ZKoJz\\\\artifact.txt",
+            "target_file": "<temp>/momm-agy-5ZKoJz/artifact.txt",
             "line_range": [
               3,
               4
@@ -2373,7 +2373,7 @@
           },
           "risk_heatmap": [
             {
-              "file": "C:\\\\Users\\\\marro\\\\AppData\\\\Local\\\\Temp\\\\momm-agy-5ZKoJz\\\\artifact.txt",
+              "file": "<temp>/momm-agy-5ZKoJz/artifact.txt",
               "findings": 1,
               "max_severity": "CRITICAL"
             },
