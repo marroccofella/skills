@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.0.0";
+const MOMM_VERSION = "1.1.0";
 const REPORT_SCHEMA = "momm-report/1";
 
 // Fail immediately with an actionable message on unsupported runtimes —
@@ -191,6 +191,8 @@ Options:
   --timeout <seconds>       Per-reviewer timeout (default: 120)
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
+  --min-success <n>         Exit 3 unless at least n external reviews succeeded (quorum
+                            gate: stops timeouts silently thinning a release review)
   --stream                  Emit NDJSON progress events on stderr while reviewers run
   --preflight               Check every route (install + auth evidence) and exit; zero model calls
   --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
@@ -242,6 +244,13 @@ function parseArgs(argv) {
     else if (arg === "--preflight") options.preflight = true;
     else if (arg === "--store-input") options.storeInput = true;
     else if (arg === "--label") options.label = clipped(next(), 120);
+    else if (arg === "--min-success") {
+      const raw = next();
+      const parsed = Number.parseInt(raw, 10);
+      // A quorum that silently weakens on a typo is worse than none.
+      if (!Number.isInteger(parsed) || parsed < 1 || String(parsed) !== raw.trim()) throw new Error(`--min-success requires a positive integer, got "${raw}"`);
+      options.minSuccess = parsed;
+    }
     else if (arg === "--personas") {
       options.personas = {};
       for (const pair of next().split(",")) {
@@ -718,7 +727,17 @@ async function readAllStdin() {
 }
 
 async function collectArtifact(options) {
-  if (options.input) return fs.readFileSync(path.resolve(options.input), "utf8");
+  if (options.input) {
+    const resolved = path.resolve(options.input);
+    // Stale-input detection: a gate once ran against an outdated file and
+    // reviewed already-fixed code. One fd serves both fstat and read, so the
+    // recorded mtime describes exactly the bytes reviewed (no stat/read race).
+    const fd = fs.openSync(resolved, "r");
+    try {
+      options.inputMtime = fs.fstatSync(fd).mtime.toISOString();
+      return fs.readFileSync(fd, "utf8");
+    } finally { fs.closeSync(fd); }
+  }
   if (!process.stdin.isTTY) {
     const input = await readAllStdin();
     if (input.trim()) return input;
@@ -993,6 +1012,7 @@ async function selfTest(pretty) {
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
+    quorum_rejects_invalid_values: ["abc", "0", "-2", "2.5", ""].every((value) => { try { parseArgs(["--governor", "codex", "--min-success", value]); return false; } catch { return true; } }) && parseArgs(["--governor", "codex", "--min-success", "3"]).minSuccess === 3,
     retries_outages_only: shouldRetryStatus("provider_unavailable") && !shouldRetryStatus("authentication_required") && !shouldRetryStatus("ineligible_tier") && !shouldRetryStatus("timeout") && !shouldRetryStatus("error") && !shouldRetryStatus("success"),
     retry_wiring_exact_call_counts: await (async () => {
       const outageCalls = [];
@@ -1102,6 +1122,7 @@ async function main() {
     throw error;
   }
   const preflightEntries = await preflightPromise;
+  const externalSuccesses = results.filter((result) => result.agent !== options.governor && result.status === "success").length;
   const findings = rationalize(results);
   // Join key linking this report, the run log, and governor dispositions.
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1116,6 +1137,9 @@ async function main() {
     // Binds this report to the exact sanitized artifact the reviewers
     // received — byte count alone cannot distinguish same-length inputs.
     input_sha256: createHash("sha256").update(sanitized.value).digest("hex"),
+    ...(options.inputMtime ? { input_modified: options.inputMtime } : {}),
+    // The gate configuration rides in the evidence, not just the exit code.
+    ...(options.minSuccess ? { quorum: { required: options.minSuccess, achieved: externalSuccesses, met: externalSuccesses >= options.minSuccess } } : {}),
     // Privacy default: the artifact itself is NOT stored — only its hash.
     // --store-input opts a run into carrying the sanitized text, for demos
     // and public evidence where the input is already public.
@@ -1212,6 +1236,10 @@ async function main() {
   }
   process.stdout.write(`${JSON.stringify({ ...report, evidence }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
+  if (options.minSuccess && externalSuccesses < options.minSuccess) {
+    process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
+    process.exitCode = 3;
+  }
 }
 
 main().catch((error) => {
