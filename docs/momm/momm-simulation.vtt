@@ -1,13 +1,13 @@
 WEBVTT
 
-00:00:00.000 --> 00:12.800
-This is MOMM — Mixture of Model Modality. One agent writes the code. Every other frontier model on the machine reviews it. Watch.
+00:00.000 --> 00:08.500
+This is MOMM — pronounced "mom" — Mixture of Model Modality. One agent writes the code. Every other frontier model on the machine reviews it. Watch.
 
-00:12.800 --> 00:29.800
+00:08.500 --> 00:19.800
 Your agent pipes a diff to the dispatcher. Preflight checks every route — Codex, Antigravity, Copilot, Grok — then dispatches them all in parallel. OAuth only. Not one API key.
 
-00:29.800 --> 00:47.800
+00:19.800 --> 00:31.800
 Each reviewer returns a structured verdict. The governor never reviews its own work, and no finding is trusted on authority — every claim must be reproduced before a single line changes.
 
-00:47.800 --> 01:02.410
+00:31.800 --> 00:41.530
 The whole conversation is sealed — content-addressed, hash-bound to the exact input. Evidence, not vibes. MOMM: built by the coalition it commands.

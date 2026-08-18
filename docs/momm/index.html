@@ -134,7 +134,7 @@
 <body>
 
 <header class="hero"><div class="wrap">
-  <div class="wordmark"><b>◆ MOMM</b> · MIXTURE OF MODEL MODALITY</div>
+  <div class="wordmark"><b>◆ MOMM</b> · MIXTURE OF MODEL MODALITY · <span style="letter-spacing:normal;text-transform:none">pronounced “mom”</span></div>
   <h1>Every frontier model on your machine, <em>reviewing your code together.</em></h1>
   <p class="sub">MOMM is an Agent Skill for AI coding agents. Your agent dispatches a diff to the <i>other</i> installed LLM CLIs — OpenAI Codex, Claude Code, Google Antigravity, GitHub Copilot, xAI Grok — which review it in parallel and return structured, deduplicated findings. Your agent stays the sole writer, must reproduce every claim before acting, and seals the whole conversation as content-addressed evidence.</p>
   <div class="badges">
@@ -164,6 +164,7 @@
   <h2>Why MOMM exists</h2>
   <h3 class="big">The gap: agents grading their own homework.</h3>
   <p class="lead">Every AI coding agent reviews its own output with the same model that wrote it — same blind spots in, same blind spots out. Cross-model review existed only as copy-paste between chat windows: no protocol, no evidence, and a pocketful of API keys you pay for twice. MOMM closes that gap: the models you <i>already subscribe to</i> become a standing peer-review coalition, with an integrity protocol machines actually follow.</p>
+  <p class="lead" style="margin-top:14px">Look closely at today's AI coding harnesses and the weakness is structural, not incidental. The model that writes a change also judges it — and models measurably prefer their own output, so the judge is biased by construction. There is no adversarial pass: nothing in the loop is <i>rewarded</i> for finding what the writer missed. Review artifacts live in scrollback — when the session ends, the reasoning evaporates, unauditable. And when teams do wire up second opinions, it's pay-per-token API keys duct-taped through environment variables, running <i>beside</i> the agent instead of inside its own gated workflow. MOMM turns each weakness into a rule: a governor that cannot grade its own homework, rival models with nothing to protect, findings that are claims until reproduced, and every word sealed under a hash — using only the OAuth subscriptions already on the machine.</p>
   <div class="grid">
     <div class="card"><h4><span>◇</span>Monoculture risk</h4><p>One model family means correlated failures. MOMM's proof case: a NaN bug froze every ghost in a game on level 1 — the author's own green test suite missed it; a rival model caught it in one pass.</p></div>
     <div class="card"><h4><span>◇</span>Self-certification</h4><p>An agent that writes, reviews, and approves is a rubber stamp. MOMM's governor self-excludes, and reviewers can't write — separation of powers, enforced in code.</p></div>
@@ -230,7 +231,7 @@
     <div class="card"><h4><span>◈</span>Termination-proof containment</h4><p>Every reviewer subprocess runs inside a layered kill chain — process-tree kill → child-kill backstop → referenced hard deadline → explicit flush-then-exit — so even a kill-restricted sandbox always gets its structured report back. Every adapter must route through it; the protocol forbids simplifying it.</p></div>
     <div class="card"><h4><span>◈</span>Fail-closed identity</h4><p>Reviewer subprocesses receive an environment scrubbed of every known API-key variable (<code style="font-size:11px">OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, XAI_API_KEY…</code>). A route without an official OAuth session cannot silently fall back — it returns a status with its exact login command.</p></div>
   </div>
-  <p class="lead" style="margin-top:16px">Verified by 27 deterministic self-tests plus a CI matrix across 3 operating systems × 3 Node versions on every push — including forced-failure drills for evidence persistence and stream purity. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
+  <p class="lead" style="margin-top:16px">Verified by 27 deterministic self-tests plus a CI matrix across 3 operating systems × 3 Node versions on every push — including forced-failure drills for evidence persistence and stream purity. Requirements: Node.js 18+; on Windows, run from a context permitted to terminate its own process tree (the containment chain uses <code style="font-size:11px">taskkill /T</code>) — restricted sandboxes are the documented exception. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
 </div></section>
 
 <section class="reveal"><div class="wrap">
@@ -279,13 +280,7 @@
   <h2>Evidence, not vibes</h2>
   <h3 class="big">Every claim resolves to a hash.</h3>
   <p class="lead">Reports are content-addressed (sha256 over stored bytes) and bound to the exact reviewed input by its own hash. Every reviewer suggestion gets an explicit applied-or-rejected disposition with named evidence. Release gates can demand a quorum — timeouts cannot silently thin the coalition. And MOMM eats its own cooking: every version of MOMM was reviewed by MOMM, and the sealed ledger is public.</p>
-  <div class="stats">
-    <div class="stat"><b>44+</b><span>reviews of this project</span></div>
-    <div class="stat"><b>30+</b><span>sealed transcripts</span></div>
-    <div class="stat"><b>140+</b><span>explicit dispositions</span></div>
-    <div class="stat"><b>2</b><span>CRITICALs its own tests missed</span></div>
-  </div>
-  <p class="lead" style="margin-top:18px">Browse it yourself: <a href="../evidence/">the public evidence ledger</a> — who said what, what was applied, what was rejected and why.</p>
+  <p class="lead" style="margin-top:18px">The numbers live in one place — the <b>Measured, not marketed</b> section above, computed from the ledger itself. Browse the raw material: <a href="../evidence/">the public evidence ledger</a> — who said what, what was applied, what was rejected and why.</p>
 </div></section>
 
 <section><div class="wrap">
@@ -331,7 +326,7 @@
     <a href="https://42.uk" rel="me">42.uk</a>
     <a href="https://www.promptus.ai" rel="external">Promptus</a>
   </nav>
-  <p class="fine">MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services — it sends nothing anywhere. The skill is the opposite by design: when <i>you</i> run a review, your diff goes to the model providers you have deliberately logged into — that is its entire purpose, under your OAuth sessions, never keys. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe; voice-cloning workflows in this repo run locally via <a href="https://www.promptus.ai">Promptus</a> with recorded consent. RELAX. IT'S ALREADY OVER.</p>
+  <p class="fine">MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services — it sends nothing anywhere. The skill is the opposite by design: when <i>you</i> run a review, your diff goes to the model providers you have deliberately logged into — that is its entire purpose, under your OAuth sessions, never keys. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe · voice by <a href="https://www.promptus.ai">Promptus</a> (consent disclosure at the video above). RELAX. IT'S ALREADY OVER.</p>
 </div></footer>
 
 <script>

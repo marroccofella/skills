@@ -15,3 +15,7 @@ def maximum(items):
         if value > result:
             result = value
     return result
+
+
+def median(items):
+    return items[len(items) // 2]
