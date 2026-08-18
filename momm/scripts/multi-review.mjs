@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.2.0";
+const MOMM_VERSION = "1.3.0";
 const REPORT_SCHEMA = "momm-report/1";
 
 // Fail immediately with an actionable message on unsupported runtimes —
@@ -110,6 +110,20 @@ function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
 const AGENT_TIMEOUT_MULTIPLIER = { grok: 1.5 };
 function agentTimeoutMs(agent, baseMs) {
   return Math.min(360_000, Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1)));
+}
+
+// A local path as a clickable link — chat UIs and terminals linkify
+// file:// URLs. The formatter is pure (testable on every platform with
+// explicit inputs); only toFileUrl touches the real filesystem semantics.
+function formatFileUrl(absolutePath) {
+  const encoded = absolutePath.replaceAll("\\", "/").split("/").map(encodeURIComponent).join("/")
+    .replace(/^([A-Za-z])%3A/, "$1:"); // drive-letter colon only, anchored
+  if (encoded.startsWith("//")) return `file:${encoded}`;   // UNC //server/share
+  if (encoded.startsWith("/")) return `file://${encoded}`;  // POSIX /home/...
+  return `file:///${encoded}`;                              // Windows C:/...
+}
+function toFileUrl(localPath) {
+  return formatFileUrl(path.resolve(localPath));
 }
 
 function grokCommand() {
@@ -992,6 +1006,9 @@ async function selfTest(pretty) {
       && !buildContract("codex", {}).includes("Persona —")
       && personaFor("grok", { personas: { grok: "futureproof" } }) === "futureproof",
     version_identity_declared: /^\d+\.\d+\.\d+$/.test(MOMM_VERSION) && /^momm-report\/\d+$/.test(REPORT_SCHEMA),
+    file_urls_are_clickable: formatFileUrl("C:\\some dir\\ledger.html") === "file:///C:/some%20dir/ledger.html"
+      && formatFileUrl("/home/user/my project/ledger.html") === "file:///home/user/my%20project/ledger.html"
+      && formatFileUrl("\\\\server\\share\\ledger.html") === "file://server/share/ledger.html",
     version_flag_process_level: await (async () => {
       const out = await runProcess(process.execPath, [fileURLToPath(import.meta.url), "--version"], { timeoutMs: 15_000 });
       return out.code === 0 && new RegExp(`^momm ${MOMM_VERSION.replaceAll(".", "\\.")} `).test(out.stdout);
@@ -1230,9 +1247,25 @@ async function main() {
     agreement_score: report.insights.agreement_score,
     evidence_persisted: evidence.persisted,
   });
+  // Refresh the user's private dashboard so the link below is always
+  // current, then surface it: in the report for harnesses (SKILL.md tells
+  // the governor to relay it in chat) and on stderr for humans. Fail-soft —
+  // a ledger problem must never fail a review.
+  if (evidence.persisted) {
+    try {
+      const ledgerScript = path.join(path.dirname(fileURLToPath(import.meta.url)), "ledger.mjs");
+      if (fs.existsSync(ledgerScript)) {
+        const built = await runProcess(process.execPath, [ledgerScript], { timeoutMs: 15_000 });
+        if (built.code === 0) evidence.ledger_url = toFileUrl(path.join(".ensemble_reviews", "ledger.html"));
+      }
+    } catch {}
+  }
   ui.finish(report);
   if (evidence.error && !options.stream) {
     process.stderr.write(`WARNING: evidence persistence failed (${evidence.failed_stage}) — ${evidence.error}\n`);
+  }
+  if (evidence.ledger_url && !options.stream) {
+    process.stderr.write(`Your private ledger (this run included): ${evidence.ledger_url}\n`);
   }
   process.stdout.write(`${JSON.stringify({ ...report, evidence }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
