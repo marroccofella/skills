@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOMM — Mixture of Model Modality</title>
+<meta name="description" content="OAuth-only multi-model peer code review for AI coding agents. Codex, Claude, Antigravity, Copilot and Grok review your diff in parallel while your own agent stays the sole writer — with content-addressed evidence, reviewer personas, and quorum gates. Zero API keys, ever.">
+<link rel="canonical" href="https://marroccofella.github.io/skills/momm/">
+<meta name="version" content="1.2.0">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MOMM — Mixture of Model Modality">
+<meta property="og:description" content="Have every frontier model on your machine review your code, using only the subscriptions you already pay for. Five reviewer routes, sealed evidence, zero API keys.">
+<meta property="og:url" content="https://marroccofella.github.io/skills/momm/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="MOMM — Mixture of Model Modality">
+<meta name="twitter:description" content="OAuth-only multi-model peer code review for AI coding agents. Five routes, sealed evidence, zero API keys.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "MOMM (Mixture of Model Modality)",
+  "alternateName": "momm",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux (Node.js 18+)",
+  "softwareVersion": "1.2.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "url": "https://marroccofella.github.io/skills/momm/",
+  "downloadUrl": "https://github.com/marroccofella/skills",
+  "codeRepository": "https://github.com/marroccofella/skills",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "description": "OAuth-only multi-model peer code review for AI coding agents and Agent Skills harnesses. Dispatches a git diff to locally installed Codex, Claude Code, Antigravity, GitHub Copilot and Grok CLIs in parallel; the driving agent remains the sole writer and must reproduce findings before acting. Content-addressed evidence reports, reviewer personas, quorum gates, and a private per-user dashboard.",
+  "featureList": "Five OAuth reviewer routes; zero API keys (fail-closed); reviewer personas (innovator, socratic, futureproof); content-addressed evidence with input binding; quorum gates; live terminal UI; private local dashboards; public sealed evidence ledger",
+  "sameAs": ["https://github.com/marroccofella/skills", "https://42.uk", "https://www.promptus.ai"]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "What is MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "MOMM (Mixture of Model Modality) is an Agent Skill that lets the AI coding agent you are talking to dispatch your code diff to every other frontier-model CLI installed on your machine — Codex, Claude Code, Antigravity, GitHub Copilot, and Grok — for parallel peer review. Your agent stays the sole writer and must reproduce any finding before acting on it." } },
+    { "@type": "Question", "name": "Does MOMM need API keys?", "acceptedAnswer": { "@type": "Answer", "text": "No — and it refuses them. MOMM is OAuth-only: it uses the provider CLIs' official browser logins (the subscriptions you already pay for) and strips every known API-key environment variable from reviewer subprocesses. A route that is not logged in fails closed." } },
+    { "@type": "Question", "name": "How do I install MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "git clone https://github.com/marroccofella/skills then node skills/momm/scripts/install.mjs --target all — this links the skill into every detected AI harness (Claude Code, Codex, Gemini, Antigravity). Then run node skills/momm/scripts/multi-review.mjs --preflight to see the exact install and login command for any route that is not ready." } },
+    { "@type": "Question", "name": "How do I know reviewer feedback was really used?", "acceptedAnswer": { "@type": "Answer", "text": "Every run persists a content-addressed report (sha256 over the stored bytes, bound to the exact reviewed input by its own hash). Every reviewer suggestion receives an explicit applied-or-rejected disposition with named evidence. The project reviews its own code with MOMM and publishes the sealed ledger." } }
+  ]
+}
+</script>
+<style>
+  :root {
+    --bg: #080a0a; --panel: #111316; --panel2: #0d1010; --border: #1f2a22;
+    --text: #e6ffe6; --muted: #9be29b; --dim: #5c6f60;
+    --accent: #00ff99; --accent-dim: #00cc88; --link: #8ef0c6;
+    --warn: #ffd166; --crit: #ff7a7a; --blue: #66b8ff; --purple: #c195ff;
+    --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.65 var(--mono); }
+  a { color: var(--link); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 22px; }
+
+  header.hero { padding: 72px 0 40px; border-bottom: 1px solid var(--border); }
+  .wordmark { font-size: 15px; letter-spacing: .12em; color: var(--muted); }
+  .wordmark b { color: var(--accent); font-size: 18px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.15; margin: 18px 0 14px; text-wrap: balance; max-width: 21ch; }
+  h1 em { color: var(--accent); font-style: normal; }
+  .sub { color: var(--muted); max-width: 62ch; margin: 0 0 26px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 26px; }
+  .badge { border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px; font-size: 12px; color: var(--muted); }
+  .badge.hot { border-color: var(--accent-dim); color: var(--accent); }
+  .install { background: var(--panel); border: 1px solid var(--accent-dim); border-radius: 10px; padding: 14px 16px; overflow-x: auto; white-space: nowrap; font-size: 13.5px; }
+  .install b { color: var(--accent); font-weight: 400; user-select: none; }
+  .install-note { color: var(--dim); font-size: 12px; margin-top: 8px; }
+
+  section { padding: 46px 0; border-bottom: 1px solid var(--border); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .14em; color: var(--accent-dim); margin: 0 0 6px; }
+  h3.big { font-size: clamp(20px, 3vw, 27px); margin: 0 0 14px; text-wrap: balance; }
+  p.lead { color: var(--muted); max-width: 68ch; }
+
+  .term { background: #060808; border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; font-size: 12.5px; line-height: 1.7; min-height: 300px; box-shadow: 0 0 40px rgba(0,255,153,.05); }
+  .term .tbar { color: var(--dim); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px; }
+  .term .line { white-space: pre-wrap; word-break: break-word; opacity: 0; }
+  .term .line.show { opacity: 1; transition: opacity .18s; }
+  .ok { color: var(--accent); } .dim { color: var(--dim); } .warn { color: var(--warn); }
+  .ag { color: var(--blue); } .cp { color: var(--purple); } .cx { color: #38e6a4; } .gk { color: var(--crit); }
+  .caret::after { content: "▊"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .term .line { opacity: 1 !important; } .caret::after { animation: none; } }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .card h4 { margin: 0 0 8px; font-size: 14.5px; }
+  .card h4 span { margin-right: 8px; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .routes { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 22px; }
+  .route { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; border-top: 3px solid var(--rc, var(--accent-dim)); }
+  .route b { display: block; font-size: 15px; }
+  .route small { color: var(--dim); font-size: 11.5px; display: block; margin-top: 2px; }
+  .route .p { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  blockquote { border-left: 3px solid var(--accent-dim); margin: 14px 0; padding: 6px 16px; color: var(--text); background: var(--panel2); border-radius: 0 10px 10px 0; max-width: 72ch; }
+  blockquote footer { color: var(--dim); font-size: 12px; margin-top: 6px; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 20px; }
+  .stat b { display: block; font-size: 24px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
+
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 12px; }
+  ol.steps li { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px 14px 58px; position: relative; }
+  ol.steps li::before { counter-increment: s; content: "0" counter(s); position: absolute; left: 16px; top: 14px; color: var(--accent); font-weight: 700; }
+  ol.steps code { display: block; background: #060808; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; overflow-x: auto; white-space: nowrap; font-size: 12.5px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  footer.site { padding: 40px 0 60px; color: var(--dim); font-size: 12.5px; }
+  footer.site nav { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 16px; }
+  .fine { max-width: 78ch; }
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <div class="wordmark"><b>◆ MOMM</b> · MIXTURE OF MODEL MODALITY</div>
+  <h1>Every frontier model on your machine, <em>reviewing your code together.</em></h1>
+  <p class="sub">MOMM is an Agent Skill for AI coding agents. Your agent dispatches a diff to the <i>other</i> installed LLM CLIs — OpenAI Codex, Claude Code, Google Antigravity, GitHub Copilot, xAI Grok — which review it in parallel and return structured, deduplicated findings. Your agent stays the sole writer, must reproduce every claim before acting, and seals the whole conversation as content-addressed evidence.</p>
+  <div class="badges">
+    <span class="badge hot">zero API keys — OAuth only, fail-closed</span>
+    <span class="badge">5 reviewer routes</span>
+    <span class="badge">v1.2.0 · MIT</span>
+    <span class="badge">any Agent Skills harness</span>
+    <span class="badge">no accounts · no trackers · no cookies</span>
+  </div>
+  <div class="install"><b>$</b> git clone https://github.com/marroccofella/skills &amp;&amp; node skills/momm/scripts/install.mjs --target all</div>
+  <p class="install-note">Links the skill into every AI harness it detects. Then just tell your agent: <i>“Use momm to review my current changes.”</i></p>
+</div></header>
+
+<section><div class="wrap">
+  <h2>A real run, replayed</h2>
+  <h3 class="big">This is what your agent sees.</h3>
+  <p class="lead">Recorded events from an actual five-route review in this project’s public ledger — run <a href="../evidence/">rev_20260818014036_4t6d</a>, unanimous ACCEPT.</p>
+  <div class="term" id="term" role="log" aria-live="polite" aria-label="Animated replay of a recorded momm review: reviewer verdicts appear line by line">
+    <div class="tbar">$ git diff HEAD | node momm/scripts/multi-review.mjs --governor claude</div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>The coalition</h2>
+  <h3 class="big">Five minds. One gate. No blind trust.</h3>
+  <p class="lead">Reviewers are read-only diagnostic instruments — their output is evidence, never instructions. The governor (your agent) self-excludes from reviewing its own work, and no finding is acted on by vote: it must be reproduced first.</p>
+  <div class="routes">
+    <div class="route" style="--rc:#38e6a4"><b class="cx">Codex</b><small>OpenAI · ChatGPT OAuth</small><div class="p">Relentless on correctness and edge cases.</div></div>
+    <div class="route" style="--rc:#ff9f66"><b style="color:#ff9f66">Claude</b><small>Anthropic OAuth</small><div class="p">Governs or reviews — never both in one run.</div></div>
+    <div class="route" style="--rc:#66b8ff"><b class="ag">Antigravity</b><small>Google OAuth</small><div class="p">Structured, schema-constrained verdicts.</div></div>
+    <div class="route" style="--rc:#c195ff"><b class="cp">Copilot</b><small>GitHub OAuth</small><div class="p">Pragmatic, detail-dense suggestions.</div></div>
+    <div class="route" style="--rc:#ff7a7a"><b class="gk">Grok</b><small>xAI OAuth</small><div class="p">Ships as the Innovator persona by default.</div></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Personas</h2>
+  <h3 class="big">Give the ensemble a personality spread.</h3>
+  <p class="lead">Optional angles that shape a reviewer’s voice — never the schema, never the truthfulness of findings. Real output from the ledger:</p>
+  <blockquote>“How can a program claim to count from one to ten when it lacks a mechanism to advance its state?”
+    <footer>— Antigravity as the <b>Socratic challenger</b>, opening its verdict on a planted infinite loop</footer></blockquote>
+  <blockquote>“Turn the loop into a tiny audiovisual sequencer — map I to a PLAY scale degree so 1..10 is counted, heard, and could later drive a sprite, Morse blink, or seven-segment bitmap from the same index.”
+    <footer>— Grok as the <b>Innovator</b>, reviewing a defect-free 10-line BASIC program</footer></blockquote>
+  <blockquote>“Document the intended BASIC dialect, since conditional-branch syntax and interpreter behavior vary across implementations.”
+    <footer>— Codex as the <b>Future-proofer</b></footer></blockquote>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Evidence, not vibes</h2>
+  <h3 class="big">Every claim resolves to a hash.</h3>
+  <p class="lead">Reports are content-addressed (sha256 over stored bytes) and bound to the exact reviewed input by its own hash. Every reviewer suggestion gets an explicit applied-or-rejected disposition with named evidence. Release gates can demand a quorum — timeouts cannot silently thin the coalition. And MOMM eats its own cooking: every version of MOMM was reviewed by MOMM, and the sealed ledger is public.</p>
+  <div class="stats">
+    <div class="stat"><b>44+</b><span>reviews of this project</span></div>
+    <div class="stat"><b>30+</b><span>sealed transcripts</span></div>
+    <div class="stat"><b>140+</b><span>explicit dispositions</span></div>
+    <div class="stat"><b>2</b><span>CRITICALs its own tests missed</span></div>
+  </div>
+  <p class="lead" style="margin-top:18px">Browse it yourself: <a href="../evidence/">the public evidence ledger</a> — who said what, what was applied, what was rejected and why.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Get started</h2>
+  <h3 class="big">Three commands to a five-model review.</h3>
+  <ol class="steps">
+    <li><p>Clone and link into every detected harness (Claude Code, Codex, Gemini, Antigravity — junctions on Windows, symlinks elsewhere):</p>
+      <code>git clone https://github.com/marroccofella/skills && node skills/momm/scripts/install.mjs --target all</code></li>
+    <li><p>Check every route — zero model calls; prints the exact install/login command for anything that’s down:</p>
+      <code>node skills/momm/scripts/multi-review.mjs --preflight --pretty</code></li>
+    <li><p>Review your changes (or just tell your agent “use momm”). Your private dashboard is one more command: <code style="display:inline;padding:1px 6px">node skills/momm/scripts/ledger.mjs --open</code></p>
+      <code>git diff HEAD | node skills/momm/scripts/multi-review.mjs --governor claude --pretty</code></li>
+  </ol>
+</div></section>
+
+<footer class="site"><div class="wrap">
+  <nav>
+    <a href="https://github.com/marroccofella/skills">GitHub</a>
+    <a href="https://github.com/marroccofella/skills/releases/tag/momm-1.2.0">Release 1.2.0</a>
+    <a href="../evidence/">Public evidence</a>
+    <a href="../">All skills</a>
+    <a href="https://42.uk" rel="me">42.uk</a>
+    <a href="https://www.promptus.ai" rel="external">Promptus</a>
+  </nav>
+  <p class="fine">MIT licensed. This site sets no cookies, runs no trackers, and calls no third-party services. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe; voice-cloning workflows in this repo run locally via <a href="https://www.promptus.ai">Promptus</a> with recorded consent. RELAX. IT'S ALREADY OVER.</p>
+</div></footer>
+
+<script>
+// Replay of real recorded events from run rev_20260818014036_4t6d.
+const LINES = [
+  ["dim", 'dispatch  governor=claude  reviewers=codex,claude,antigravity,copilot,grok  input=76 bytes'],
+  ["dim", 'preflight  all 5 routes up — install + auth evidence verified, zero model calls'],
+  ["dim", 'claude       ⊘ self-excluded — the governor never reviews its own work'],
+  ["cx",  'codex        ✓ ACCEPT   confidence 0.99   11.6s'],
+  ["ag",  'antigravity  ✓ ACCEPT   confidence 1.00   11.8s'],
+  ["cp",  'copilot      ✓ ACCEPT   confidence 0.95   13.5s'],
+  ["gk",  'grok         ✓ ACCEPT   confidence 0.96   20.6s   [innovator]'],
+  ["ok",  '✔ unanimous ACCEPT · 4/4 routes · 0 findings · evidence sealed sha256✓'],
+  ["dim", 'report → .ensemble_reviews/reports/rev_20260818014036_4t6d.json'],
+];
+const term = document.getElementById("term");
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+LINES.forEach(([cls, text], i) => {
+  const el = document.createElement("div");
+  el.className = "line " + cls;
+  el.textContent = text;
+  term.appendChild(el);
+  const reveal = () => { el.classList.add("show"); if (i === LINES.length - 1) el.classList.add("caret"); };
+  // 600ms initial beat, then 650ms per line — the cadence of the real run
+  // compressed ~20x so the whole replay lands in about six seconds.
+  if (reduced) reveal(); else setTimeout(reveal, 600 + i * 650);
+});
+</script>
+</body>
+</html>
