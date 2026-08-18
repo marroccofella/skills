@@ -1,6 +1,6 @@
 {
   "schema": "momm-evidence-export/1",
-  "generated": "2026-08-17T23:47:12.065Z",
+  "generated": "2026-08-18T00:00:39.321Z",
   "source": "github.com/marroccofella/skills · momm dispatcher telemetry (Claude project workspace)",
   "sanitization": "user home and workspace paths normalized; Promptus Skills project excluded (private); reports contain no reviewed artifact text by design",
   "note": "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
@@ -460,6 +460,30 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817233742_47qr.json",
       "report_sha256": "e18b8807f06db5c3d0ebb3df8cc072aa15576b8a661f3aa478b79c1ea5a09cd1",
+      "report_sha256_covers": "stored_report_bytes"
+    },
+    {
+      "timestamp": "2026-08-17T23:58:09.529Z",
+      "run_id": "rev_20260817235809_61zx",
+      "governor": "claude",
+      "input_bytes": 14227,
+      "input_sha256": "35ef5de3d36032047e8be62ffe0d4c9706128b7bbd17a43225f5788071706659",
+      "reviewer_status": {
+        "codex": "success",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success"
+      },
+      "findings_count": 4,
+      "finding_ids": [
+        "candidate-route-ui-misclassified",
+        "version-parse-empty-string",
+        "runtime-guard-runs-after-parse",
+        "missing-note-field-conditional"
+      ],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260817235809_61zx.json",
+      "report_sha256": "2c07e0bdb5724e3440bc1ced042debfcc759de269646163908073631483ebd05",
       "report_sha256_covers": "stored_report_bytes"
     }
   ],
@@ -1842,6 +1866,202 @@
         },
         "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
       }
+    },
+    "rev_20260817235809_61zx": {
+      "stored_report_sha256": "2c07e0bdb5724e3440bc1ced042debfcc759de269646163908073631483ebd05",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260817235809_61zx",
+        "governor": "claude",
+        "input_bytes": 14227,
+        "input_sha256": "35ef5de3d36032047e8be62ffe0d4c9706128b7bbd17a43225f5788071706659",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "MODIFY",
+            "confidence": 0.91,
+            "summary": "The report-version additions are straightforward and additive, but the new candidate-route handling misreports its state in the live UI, and the runtime guard does not fully deliver the compatibility behavior claimed by its comment.",
+            "suggested_improvements": [
+              "Add process-level tests for `--version` output and exit status instead of only validating the constant formats.",
+              "Render preflight failures from an explicit status/reason field rather than inferring the reason from `installed` and `auth`.",
+              "Prefer linking to verified installation instructions over presenting an unpinned remote PowerShell script piped directly into `iex`."
+            ]
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 1,
+            "summary": "This change adds dispatcher versioning, report schema tagging, early Node.js runtime version enforcement, actionable install hints for missing routes (including candidate route grok), and self-test validations. The implementation is clean, robust, and backwards-compatible with no defects found.",
+            "suggested_improvements": [
+              "Consider dynamically tailoring INSTALL_HINTS by process.platform (e.g., win32 vs POSIX) for tools like grok rather than providing a combined string.",
+              "Add grok authentication guidance to LOGIN_HINTS once the grok CLI adapter and auth flow are finalized."
+            ]
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.92,
+            "summary": null,
+            "suggested_improvements": [
+              "Consider using parseInt(process.versions.node.split('.')[0], 10) instead of Number() for more explicit parsing with radix specification",
+              "The INSTALL_HINTS and LOGIN_HINTS could be combined into a single data structure with { install, login } properties to avoid maintaining parallel maps",
+              "The preflight function's knownAdapters Set could be derived from INSTALL_HINTS keys to keep the list in one place",
+              "The 'grok' special case in preflightCheck (lines 149-154) duplicates logic that could be generalized with a 'candidate' flag in the adapter metadata",
+              "commandVersion is called but not defined in this diff - ensure it handles empty/malformed version strings gracefully",
+              "The color() function calls could be memoized if performance becomes a concern with many route status messages"
+            ]
+          }
+        ],
+        "findings": [
+          {
+            "id": "candidate-route-ui-misclassified",
+            "severity": "WARNING",
+            "target_file": "momm/scripts/multi-review.mjs",
+            "line_range": [
+              797,
+              799
+            ],
+            "issue": "An installed but unsupported Grok candidate is displayed by the live UI as an authentication problem (`auth n/a`) and its adapter-pending note is discarded.",
+            "rationale": "Users are directed toward authentication troubleshooting even though the actual blocker is that no verified adapter exists, contradicting the new route-status guidance and obscuring the only actionable diagnosis.",
+            "test_suggestion": "Put a stub `grok` executable returning a version on PATH, invoke a normal run with `--reviewers grok --ui`, and assert the preflight display says the adapter is unverified rather than `auth n/a`.",
+            "sources": [
+              "codex"
+            ]
+          },
+          {
+            "id": "version-parse-empty-string",
+            "severity": "WARNING",
+            "target_file": "momm/scripts/multi-review.mjs",
+            "line_range": [
+              98,
+              98
+            ],
+            "issue": "Node version parsing will silently convert empty string to NaN, causing the check to pass incorrectly",
+            "rationale": "If process.versions.node is malformed or empty, Number('') returns 0 (falsy but not NaN), and Number(undefined) returns NaN which fails < 18 check, but Number('') === 0 which passes the check when it shouldn't. This could allow execution on unsupported runtimes if the version string is unexpectedly empty.",
+            "test_suggestion": "const fakeProcess = { versions: { node: '' } }; const nodeMajor = Number(fakeProcess.versions.node.split('.')[0]); console.assert(nodeMajor < 18); // should fail but nodeMajor is NaN",
+            "sources": [
+              "copilot"
+            ]
+          },
+          {
+            "id": "runtime-guard-runs-after-parse",
+            "severity": "NITPICK",
+            "target_file": "momm/scripts/multi-review.mjs",
+            "line_range": [
+              9,
+              15
+            ],
+            "issue": "The Node-version guard cannot provide its promised actionable message on runtimes too old to parse syntax used elsewhere in the module.",
+            "rationale": "ES modules are parsed before top-level code executes, so an older Node release encountering unsupported syntax such as nullish coalescing exits with a syntax error before reaching this check.",
+            "test_suggestion": "docker run --rm -v \"$PWD:/src\" -w /src node:12 node momm/scripts/multi-review.mjs --version",
+            "sources": [
+              "codex"
+            ]
+          },
+          {
+            "id": "missing-note-field-conditional",
+            "severity": "NITPICK",
+            "target_file": "momm/scripts/multi-review.mjs",
+            "line_range": [
+              211,
+              211
+            ],
+            "issue": "The note field is conditionally appended but not all code paths set the note field",
+            "rationale": "The preflight output checks `e.note` before rendering it, which is good defensive coding, but earlier in the code (lines 160-161) note is only set for missing adapters, not for installed-but-not-ready cases. This inconsistency means some paths may not have a note field at all, making the conditional necessary but highlighting structural inconsistency.",
+            "test_suggestion": null,
+            "sources": [
+              "copilot"
+            ]
+          }
+        ],
+        "consensus": {
+          "corroborated": [],
+          "single_source": [
+            "candidate-route-ui-misclassified",
+            "version-parse-empty-string",
+            "runtime-guard-runs-after-parse",
+            "missing-note-field-conditional"
+          ]
+        },
+        "insights": {
+          "agreement_score": 0,
+          "verdict_split": {
+            "MODIFY": 1,
+            "ACCEPT": 2
+          },
+          "unique_findings_by_reviewer": {
+            "codex": [
+              "candidate-route-ui-misclassified",
+              "runtime-guard-runs-after-parse"
+            ],
+            "copilot": [
+              "version-parse-empty-string",
+              "missing-note-field-conditional"
+            ]
+          },
+          "risk_heatmap": [
+            {
+              "file": "momm/scripts/multi-review.mjs",
+              "findings": 4,
+              "max_severity": "WARNING"
+            }
+          ]
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
     }
   },
   "dispositions": [
@@ -2620,6 +2840,78 @@
       "suggestion": "Named constant for CI subprocess timeout",
       "disposition": "rejected",
       "reason": "single-use value in a test script; inline with comment"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "codex",
+      "suggestion": "Render candidate routes distinctly in live UI (finding candidate-route-ui-misclassified)",
+      "disposition": "applied",
+      "reason": "candidates (auth n/a + note) now render their note dimmed instead of a misleading auth label"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "copilot",
+      "suggestion": "parseInt with radix for node version (finding version-parse-empty-string)",
+      "disposition": "applied",
+      "reason": "Number.parseInt(v,10) with Number.isFinite guard; non-finite parse never blocks"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "codex",
+      "suggestion": "Guard runs after parse (finding runtime-guard-runs-after-parse)",
+      "disposition": "rejected",
+      "reason": "accepted limitation, now documented in-code: pre-ES2020 runtimes die at parse; the guard covers parseable-but-unsupported versions"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "antigravity",
+      "suggestion": "note field not set on all paths (finding missing-note-field-conditional)",
+      "disposition": "rejected",
+      "reason": "note is optional by design; all renderers null-guard it"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "codex",
+      "suggestion": "Process-level --version test",
+      "disposition": "applied",
+      "reason": "self-test spawns the script with --version and asserts exit 0 plus version line"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "codex",
+      "suggestion": "Link docs instead of iex one-liner for grok",
+      "disposition": "rejected",
+      "reason": "hint quotes the vendor's official documented install command and cites x.ai/cli as its source"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "antigravity",
+      "suggestion": "Platform-tailored install hints",
+      "disposition": "rejected",
+      "reason": "single string names both paths; zero-dependency simplicity wins"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "copilot",
+      "suggestion": "Merge INSTALL_HINTS/LOGIN_HINTS into one map",
+      "disposition": "rejected",
+      "reason": "parallel maps are simple and both are completeness-tested"
+    },
+    {
+      "timestamp": "2026-08-18T00:02:00Z",
+      "run_id": "rev_20260817235809_61zx",
+      "reviewer": "copilot",
+      "suggestion": "Derive knownAdapters from INSTALL_HINTS keys",
+      "disposition": "rejected",
+      "reason": "INSTALL_HINTS includes non-adapter candidates (grok); explicit set is the safer source of truth"
     }
   ]
 }
