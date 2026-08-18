@@ -92,6 +92,15 @@ function buildContract(agent, options = {}) {
   return `${REVIEW_PROMPT}${personaText}${rules}`;
 }
 
+// Large artifacts take reviewers proportionally longer — a 36KB skill diff
+// timed out two routes at the flat default (run rev_20260818022308_w0xb).
+// Unless the user set --timeout explicitly, scale: +1.5s per KB beyond 20KB,
+// capped at 5 minutes.
+function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
+  if (explicit || byteLength <= 20_000) return requestedMs;
+  return Math.min(300_000, requestedMs + Math.ceil((byteLength - 20_000) / 1024) * 3_000);
+}
+
 function grokCommand() {
   // The installer targets ~/.grok/bin and appends to the user PATH, which a
   // long-lived session may not have picked up yet — resolve directly.
@@ -211,7 +220,7 @@ function parseArgs(argv) {
     if (arg === "--governor") options.governor = normalizeAgentName(next());
     else if (arg === "--input" || arg === "--patch") options.input = next();
     else if (arg === "--reviewers") options.reviewers = next().split(",").map(normalizeAgentName).filter(Boolean);
-    else if (arg === "--timeout") options.timeoutMs = Math.max(1, Number(next())) * 1000;
+    else if (arg === "--timeout") { options.timeoutMs = Math.max(1, Number(next())) * 1000; options.timeoutExplicit = true; }
     else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
     else if (arg === "--strict") options.strict = true;
     else if (arg === "--stream") options.stream = true;
@@ -964,6 +973,10 @@ async function selfTest(pretty) {
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
     classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
+    timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
+      && effectiveTimeoutMs(36_227, 120_000, false) > 120_000
+      && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
+      && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     retries_outages_only: shouldRetryStatus("provider_unavailable") && !shouldRetryStatus("authentication_required") && !shouldRetryStatus("ineligible_tier") && !shouldRetryStatus("timeout") && !shouldRetryStatus("error") && !shouldRetryStatus("success"),
     retry_wiring_exact_call_counts: await (async () => {
       const outageCalls = [];
@@ -1028,6 +1041,7 @@ async function main() {
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
   const sanitized = sanitizeText(rawArtifact);
+  options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
   try {
     if (fs.existsSync(".reviewrules")) {
       options.projectRules = clipped(fs.readFileSync(".reviewrules", "utf8"), 4000) || null;
@@ -1090,6 +1104,7 @@ async function main() {
     // and public evidence where the input is already public.
     ...(options.storeInput ? { input_text: sanitized.value } : {}),
     secret_redactions: sanitized.redactions,
+    timeout_ms: options.timeoutMs,
     project_rules_applied: Boolean(options.projectRules),
     preflight: preflightEntries,
     reviewers: results.map((result) => ({
