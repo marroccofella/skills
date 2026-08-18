@@ -1062,7 +1062,7 @@ async function main() {
       };
       emitEvent(options.stream, { event: "reviewer.completed", reviewer: agent, ...info });
       ui.complete(agent, info);
-      return result;
+      return { ...result, duration_ms: info.duration_ms };
     }));
   } catch (error) {
     ui.stop();
@@ -1089,6 +1089,7 @@ async function main() {
       agent: result.agent,
       status: result.status,
       attempts: result.attempts ?? 1,
+      duration_ms: result.duration_ms ?? null,
       persona: result.agent === options.governor ? null : personaFor(result.agent, options),
       detail: result.detail || null,
       verdict: result.review?.verdict || null,
