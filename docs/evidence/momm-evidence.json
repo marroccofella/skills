@@ -1,6 +1,6 @@
 {
   "schema": "momm-evidence-export/1",
-  "generated": "2026-08-18T02:09:05.792Z",
+  "generated": "2026-08-18T02:29:39.131Z",
   "source": "github.com/marroccofella/skills · momm dispatcher telemetry (Claude project workspace)",
   "sanitization": "user home and workspace paths normalized; Promptus Skills project excluded (private); reports contain no reviewed artifact text by design",
   "note": "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
@@ -25,7 +25,8 @@
         "median-no-tests-added",
         "median-empty-input-handling"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "stats.py median fixture · Codex governing"
     },
     {
       "timestamp": "2026-08-17T15:22:33.202Z",
@@ -44,7 +45,8 @@
         "median-even-length",
         "median-empty-input"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "stats.py median fixture"
     },
     {
       "timestamp": "2026-08-17T15:40:00.636Z",
@@ -60,7 +62,8 @@
       "finding_ids": [
         "legacy-stream-invalid-ndjson"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "momm rename commit"
     },
     {
       "timestamp": "2026-08-17T16:30:31.841Z",
@@ -75,7 +78,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "count_to_ten.py demo"
     },
     {
       "timestamp": "2026-08-17T16:32:00.790Z",
@@ -90,7 +94,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "Copilot adapter diff"
     },
     {
       "timestamp": "2026-08-17T16:33:16.242Z",
@@ -102,7 +107,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "count_to_ten.py · relative-path verify"
     },
     {
       "timestamp": "2026-08-17T17:16:48.874Z",
@@ -114,7 +120,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "diagnostic probe"
     },
     {
       "timestamp": "2026-08-17T17:18:38.279Z",
@@ -137,7 +144,8 @@
         "preflight-bypasses-governor-validation",
         "terminal-ui-embedded-newlines-cursor-drift"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "preflight + live UI feature diff"
     },
     {
       "timestamp": "2026-08-17T17:20:52.929Z",
@@ -157,7 +165,8 @@
         "ui-exception-handling-incomplete",
         "auth-evidence-path-traversal"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "full working diff · copilot solo"
     },
     {
       "timestamp": "2026-08-17T17:26:00.774Z",
@@ -176,7 +185,8 @@
         "ui-redraw-ignores-terminal-wrapping",
         "warning-filter-discards-stdout-error"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "outage classification + UI clipping diff"
     },
     {
       "timestamp": "2026-08-17T17:27:20.457Z",
@@ -188,7 +198,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "diagnostic probe"
     },
     {
       "timestamp": "2026-08-17T17:28:16.307Z",
@@ -200,7 +211,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "diagnostic probe"
     },
     {
       "timestamp": "2026-08-17T17:29:02.195Z",
@@ -218,7 +230,8 @@
         "overbroad-provider-outage-match",
         "terminal-width-miscalculation"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "classification fixes diff"
     },
     {
       "timestamp": "2026-08-17T19:31:00.489Z",
@@ -242,7 +255,8 @@
         "empty-sequence-index-error",
         "even-length-median"
       ],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "stats.py median fixture · evidence demo"
     },
     {
       "timestamp": "2026-08-17T19:38:45.047Z",
@@ -257,7 +271,8 @@
       },
       "findings_count": 0,
       "finding_ids": [],
-      "corroborated_count": 0
+      "corroborated_count": 0,
+      "subject": "count.bas · BASIC counter"
     },
     {
       "timestamp": "2026-08-17T20:05:11.720Z",
@@ -271,7 +286,8 @@
       "finding_ids": [],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews\\reports\\rev_20260817200511_4g47.json",
-      "report_sha256": "7015ebe91a5d6a4ed9ce932b42ceeec6bb4c12bfe893461be73c77674418a7b3"
+      "report_sha256": "7015ebe91a5d6a4ed9ce932b42ceeec6bb4c12bfe893461be73c77674418a7b3",
+      "subject": "diagnostic probe"
     },
     {
       "timestamp": "2026-08-17T20:06:08.284Z",
@@ -291,7 +307,8 @@
       ],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews\\reports\\rev_20260817200608_0d0l.json",
-      "report_sha256": "65e5013bb39cfb5f4dd8ed60953aa0b4611b0636bacbf7b4f4f3fe78c1d84bec"
+      "report_sha256": "65e5013bb39cfb5f4dd8ed60953aa0b4611b0636bacbf7b4f4f3fe78c1d84bec",
+      "subject": "evidence digest feature diff"
     },
     {
       "timestamp": "2026-08-17T20:07:03.584Z",
@@ -305,7 +322,8 @@
       "finding_ids": [],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817200703_ibf9.json",
-      "report_sha256": "9747a18786ddca515853e36be9b80e384470ced6fd91d3fd81ebc25cb0d81627"
+      "report_sha256": "9747a18786ddca515853e36be9b80e384470ced6fd91d3fd81ebc25cb0d81627",
+      "subject": "diagnostic probe"
     },
     {
       "timestamp": "2026-08-17T22:58:57.814Z",
@@ -327,7 +345,8 @@
       ],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817225857_fxre.json",
-      "report_sha256": "afddc9752b514e7513f94d1ec5f7b340e0b0efcdd5a20622fb88895568a68c51"
+      "report_sha256": "afddc9752b514e7513f94d1ec5f7b340e0b0efcdd5a20622fb88895568a68c51",
+      "subject": "evidence hardening audit"
     },
     {
       "timestamp": "2026-08-17T23:08:39.185Z",
@@ -335,7 +354,8 @@
       "event": "evidence_backfill",
       "note": "report persisted retroactively; original log line predates the evidence store (b43d146) and carries no report_path/report_sha256",
       "report_path": ".ensemble_reviews/reports/rev_20260817193845_imso.json",
-      "report_sha256": "a552de1c727a93254b040139749e0a9cfc88ee6a9a32e12e7eed2f27a3a1595d"
+      "report_sha256": "a552de1c727a93254b040139749e0a9cfc88ee6a9a32e12e7eed2f27a3a1595d",
+      "subject": "count.bas · BASIC counter"
     },
     {
       "timestamp": "2026-08-17T23:10:04.823Z",
@@ -358,7 +378,8 @@
       ],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817231004_2r2g.json",
-      "report_sha256": "7ad4dcda67fdbad44e449cf7ecb0ef9c2a28cdbd198531837731b960885fad38"
+      "report_sha256": "7ad4dcda67fdbad44e449cf7ecb0ef9c2a28cdbd198531837731b960885fad38",
+      "subject": "input binding + stream purity diff"
     },
     {
       "timestamp": "2026-08-17T23:16:51.347Z",
@@ -393,7 +414,8 @@
       ],
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817231735_89dm.json",
-      "report_sha256": "7c3fee9b8da3ac93b7569de51846e06619985a1e7bb991119e12407daf7f0a55"
+      "report_sha256": "7c3fee9b8da3ac93b7569de51846e06619985a1e7bb991119e12407daf7f0a55",
+      "subject": "tier classification + retry diff"
     },
     {
       "timestamp": "2026-08-17T23:21:22.873Z",
@@ -460,7 +482,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817233742_47qr.json",
       "report_sha256": "e18b8807f06db5c3d0ebb3df8cc072aa15576b8a661f3aa478b79c1ea5a09cd1",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "evidence persistence diff"
     },
     {
       "timestamp": "2026-08-17T23:58:09.529Z",
@@ -484,7 +507,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260817235809_61zx.json",
       "report_sha256": "2c07e0bdb5724e3440bc1ced042debfcc759de269646163908073631483ebd05",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "momm 1.0 release diff"
     },
     {
       "timestamp": "2026-08-18T00:05:55.865Z",
@@ -549,7 +573,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818012311_bs4c.json",
       "report_sha256": "35778b396599e0f2630525756fe6c26e8fca8eaba2940dbe3021586d54484c45",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "buggy BASIC · personas demo"
     },
     {
       "timestamp": "2026-08-18T01:25:47.347Z",
@@ -571,7 +596,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818012547_ntjc.json",
       "report_sha256": "9b229c87c6b4aeef7d95517bb487909eb8b70250cd0f1d4ad143138e63849290",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "grok adapter + personas diff"
     },
     {
       "timestamp": "2026-08-18T01:38:58.353Z",
@@ -591,7 +617,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818013858_qv88.json",
       "report_sha256": "15ddc921b43ca6299eef8c24a9ca8ac39076bb24a016ea8ab34048eb88ba9569",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "count.bas · grok debut"
     },
     {
       "timestamp": "2026-08-18T01:39:45.738Z",
@@ -607,7 +634,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818013945_bvkn.json",
       "report_sha256": "ae171b33715ec78014d27923ac1955684f55123920743e4beeec861b8a2c6cc5",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "count.bas · grok solo"
     },
     {
       "timestamp": "2026-08-18T01:40:36.290Z",
@@ -627,7 +655,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818014036_4t6d.json",
       "report_sha256": "dcf0390270b5adab7e8020ce61007a4aec33590d7c6775ab9b291d970cd0a5bf",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "count.bas · first five-route run"
     },
     {
       "timestamp": "2026-08-18T01:53:45.058Z",
@@ -647,7 +676,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818015345_2fb4.json",
       "report_sha256": "5e3670e1caafa86812bade32dd569bd422e65576f7b4cbc4eca9aa2cc48863d5",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "count.bas · flagship with timings"
     },
     {
       "timestamp": "2026-08-18T02:07:34.477Z",
@@ -667,7 +697,8 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818020734_e692.json",
       "report_sha256": "4c5aa076fdcf88e9540a3a1e65a6754c3f38014a2e0148e33e157430c41e308b",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "count.bas · stored input"
     },
     {
       "timestamp": "2026-08-18T02:08:04.477Z",
@@ -692,7 +723,33 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818020804_zk7p.json",
       "report_sha256": "d3502570b4085fa3a6f6c4985dbd0f70968b50dfbacdfb3484ff95b0db3400b5",
-      "report_sha256_covers": "stored_report_bytes"
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "buggy BASIC · infinite loop caught"
+    },
+    {
+      "timestamp": "2026-08-18T02:23:08.192Z",
+      "run_id": "rev_20260818022308_w0xb",
+      "governor": "claude",
+      "input_bytes": 36227,
+      "input_sha256": "e96eb00eda287fcd405da02678dc6de99e662f7e8a007d69c1d67f2024a372f1",
+      "reviewer_status": {
+        "codex": "timeout",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success",
+        "grok": "timeout"
+      },
+      "findings_count": 2,
+      "finding_ids": [
+        "h-drop-case-inconsistency",
+        "regex-escaping-apostrophe"
+      ],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260818022308_w0xb.json",
+      "report_sha256": "585ce20fa369b1f0026665ea60d776a75f9c53e38c036f1699eff5bd3bf783bd",
+      "report_sha256_covers": "stored_report_bytes",
+      "subject": "yorkshire-pudding skill",
+      "source_workspace": "yorkshire-pudding scratchpad clone"
     }
   ],
   "reports": {
@@ -3711,6 +3768,188 @@
               "file": "artifact.txt",
               "findings": 1,
               "max_severity": "CRITICAL"
+            }
+          ]
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
+    },
+    "rev_20260818022308_w0xb": {
+      "stored_report_sha256": "585ce20fa369b1f0026665ea60d776a75f9c53e38c036f1699eff5bd3bf783bd",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260818022308_w0xb",
+        "governor": "claude",
+        "input_bytes": 36227,
+        "input_sha256": "e96eb00eda287fcd405da02678dc6de99e662f7e8a007d69c1d67f2024a372f1",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          },
+          {
+            "agent": "grok",
+            "installed": true,
+            "version": "grok 1.0.5 (5115b46bc9)",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "timeout",
+            "attempts": 1,
+            "duration_ms": 120232,
+            "persona": null,
+            "detail": "reviewer exceeded the time limit; authentication may require an interactive login",
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "duration_ms": 52,
+            "persona": null,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 45727,
+            "persona": null,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 1,
+            "summary": "This change introduces the yorkshire-pudding skill, providing comprehensive documentation, reference guides, worked examples, CI integration, and a zero-dependency deterministic prose translation script (yorkshirify.mjs). The implementation is high quality, robustly handles edge cases like code blocks, URLs, and template placeholders, and passes its self-test suite without defects.",
+            "suggested_improvements": [
+              "Use cased(m, 'were') and cased(m, \"weren't\") during were-levelling to preserve ALL-CAPS inputs (e.g., 'WAS' -> 'WERE').",
+              "Support multiline whitespace in definite article reduction regex (e.g., \\s+ instead of [ \\t]+) so line-wrapped phrases like 'The\\ncat' reduce properly.",
+              "Add explicit validation for missing trailing arguments in CLI flags (--input, --level) before accessing argv[++i]."
+            ]
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 34245,
+            "persona": null,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.92,
+            "summary": null,
+            "suggested_improvements": [
+              "Consider caching the compiled regexes in yorkshirify() for repeated calls - currently every invocation recompiles ~60+ regexes from the lexicon",
+              "The g-dropping regex /\\b([A-Za-z]+)ing\\b/g iterates all -ing words then checks for vowels in stem; pre-filtering with /\\b([A-Za-z]*[aeiouy][A-Za-z]*)ing\\b/g would reduce unnecessary stem checks",
+              "The protect/restore mechanism uses \\x00 sentinels which could theoretically collide with null bytes in input; UUID-style placeholders would be safer though this is extremely unlikely in text input",
+              "runSelfTest() could batch console output and use a single write for better performance in CI environments with slow I/O",
+              "The cased() function searches for /[a-z]/i to find the first letter in output but for inputs like \"'Appen\" this returns index 1; consider documenting this apostrophe-aware behavior or caching the regex"
+            ]
+          },
+          {
+            "agent": "grok",
+            "status": "timeout",
+            "attempts": 1,
+            "duration_ms": 120263,
+            "persona": "innovator",
+            "detail": "reviewer exceeded the time limit; authentication may require an interactive login",
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          }
+        ],
+        "findings": [
+          {
+            "id": "h-drop-case-inconsistency",
+            "severity": "NITPICK",
+            "target_file": "yorkshire-pudding/scripts/yorkshirify.mjs",
+            "line_range": [
+              786,
+              790
+            ],
+            "issue": "H-dropping logic duplicates case handling for capital letters when cased() already handles this",
+            "rationale": "The ternary check /^[A-Z]/.test(m) followed by conditional cased() call is redundant since cased() already preserves capitalization patterns, leading to unnecessary complexity",
+            "test_suggestion": "yorkshirify('Have', 'broad') should equal \"'Ave\"; yorkshirify('HAVE', 'broad') should equal \"'AVE\"",
+            "sources": [
+              "copilot"
+            ]
+          },
+          {
+            "id": "regex-escaping-apostrophe",
+            "severity": "NITPICK",
+            "target_file": "yorkshire-pudding/scripts/yorkshirify.mjs",
+            "line_range": [
+              789,
+              789
+            ],
+            "issue": "Building regex with escapeRegex on h-dropped word rest may incorrectly escape apostrophes that are already in the lexicon output",
+            "rationale": "If any lexicon output contains an apostrophe (like 'appen from 'having'), the rest variable passed to escapeRegex could produce unexpected escaping, though current H_WORDS list does not trigger this",
+            "test_suggestion": "Add \"haven't\" to H_WORDS and verify yorkshirify(\"haven't\", 'broad') works correctly",
+            "sources": [
+              "copilot"
+            ]
+          }
+        ],
+        "consensus": {
+          "corroborated": [],
+          "single_source": [
+            "h-drop-case-inconsistency",
+            "regex-escaping-apostrophe"
+          ]
+        },
+        "insights": {
+          "agreement_score": 0,
+          "verdict_split": {
+            "ACCEPT": 2
+          },
+          "unique_findings_by_reviewer": {
+            "copilot": [
+              "h-drop-case-inconsistency",
+              "regex-escaping-apostrophe"
+            ]
+          },
+          "risk_heatmap": [
+            {
+              "file": "yorkshire-pudding/scripts/yorkshirify.mjs",
+              "findings": 2,
+              "max_severity": "NITPICK"
             }
           ]
         },

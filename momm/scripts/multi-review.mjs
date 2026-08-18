@@ -184,6 +184,8 @@ Options:
   --preflight               Check every route (install + auth evidence) and exit; zero model calls
   --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
                             for shareable demos; by default only its sha256 is stored)
+  --label <text>            Human subject for this run (e.g. "auth refactor"), carried in the
+                            report and run log so ledgers can name runs by what was reviewed
   --personas <csv>          Assign reviewer personas, e.g. grok=innovator,antigravity=socratic,copilot=futureproof
                             (available: innovator, socratic, futureproof; grok defaults to innovator; personas shape tone, never findings)
   --ui / --no-ui            Force the live progress display on/off (default: on when stderr is a TTY and --stream is absent)
@@ -228,6 +230,7 @@ function parseArgs(argv) {
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--preflight") options.preflight = true;
     else if (arg === "--store-input") options.storeInput = true;
+    else if (arg === "--label") options.label = clipped(next(), 120);
     else if (arg === "--personas") {
       options.personas = {};
       for (const pair of next().split(",")) {
@@ -1094,6 +1097,7 @@ async function main() {
     dispatcher_version: MOMM_VERSION,
     policy: "oauth-only",
     run_id: runId,
+    ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
     input_bytes: byteLength,
     // Binds this report to the exact sanitized artifact the reviewers
@@ -1158,6 +1162,7 @@ async function main() {
     fs.appendFileSync(path.join(".ensemble_reviews", "review-log.jsonl"), `${JSON.stringify({
       timestamp: new Date().toISOString(),
       run_id: runId,
+      ...(options.label ? { label: options.label } : {}),
       governor: options.governor,
       input_bytes: byteLength,
       input_sha256: report.input_sha256,
