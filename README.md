@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.1.0-00cc88)
+![momm](https://img.shields.io/badge/momm-1.2.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -107,6 +107,14 @@ node momm/scripts/multi-review.mjs --preflight --pretty
 #    verdict badges, login hints on auth failures, and a consensus summary.
 git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --pretty
 ```
+
+Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
+
+```bash
+node momm/scripts/ledger.mjs --open
+```
+
+This project's own (deliberately public, sanitized, CI-sealed) evidence is browsable at **[marroccofella.github.io/skills/evidence](https://marroccofella.github.io/skills/evidence/)** — user ledgers are architecturally separate from it: GitHub Pages has no authentication, so momm never routes private review data through it.
 
 Or, inside any harness that supports Agent Skills, simply ask:
 

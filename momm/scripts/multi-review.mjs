@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.1.0";
+const MOMM_VERSION = "1.2.0";
 const REPORT_SCHEMA = "momm-report/1";
 
 // Fail immediately with an actionable message on unsupported runtimes —
