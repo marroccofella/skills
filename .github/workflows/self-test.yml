@@ -25,6 +25,8 @@ jobs:
         run: node momm/scripts/multi-review.mjs --self-test --pretty
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
+      - name: Yorkshire pudding self-test
+        run: node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
       - name: Public evidence is sanitized and sealed
         shell: node {0}
         run: |

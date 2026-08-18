@@ -12,6 +12,7 @@ A collection of portable, cross-harness [Agent Skills](https://agentskills.io) �
 |-------|--------------|
 | [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
+| [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
 
 ## momm — Mixture of Model Modality
 
@@ -252,6 +253,64 @@ readiness.
 Read [promptus-clone-voice/DISTRIBUTION.md](promptus-clone-voice/DISTRIBUTION.md) before publishing or
 sharing any output: generated speech is a clone of a real person's voice, and this repository deliberately
 contains no voice data of any kind.
+
+## yorkshire-pudding
+
+Turns owt and everything into Yorkshire speak — even code — wi'out breaking a single build.
+
+```
+   owt at all ──────────▶ ┌─────────────────────────┐
+   prose · jokes · docs   │  gravy level?           │   mild    a splash o' gravy
+   commit messages        │  mild / proper / broad  │   proper  t'full seasoning
+   comments · docstrings  └───────────┬─────────────┘   broad   swimmin' in it
+                                      │
+                          ┌───────────▼─────────────┐
+                          │  zone rules for code:   │   identifiers, keys, URLs,
+                          │  translate what humans  │   regexes, placeholders and
+                          │  read, never what       │   logic are never touched —
+                          │  machines parse         │   t'tests still pass after
+                          └───────────┬─────────────┘
+                                      ▼
+                            "T'cat sat on t'mat."
+```
+
+### Quick start
+
+```bash
+# Deterministic prose pass (zero dependencies, no subprocesses, no network)
+echo "Nothing was doing anything, something else." | node yorkshire-pudding/scripts/yorkshirify.mjs
+# -> Nowt were doin' owt, summat else.
+
+# Full strength
+node yorkshire-pudding/scripts/yorkshirify.mjs --input README.md --level broad
+
+# The deterministic suite CI runs
+node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
+```
+
+Or, inside any harness that supports Agent Skills:
+
+> Use $yorkshire-pudding to translate this file into broad Yorkshire.
+
+### Design principles
+
+- **Never break owt.** For code, only comments, docstrings, and verified
+  human-facing strings are translated; identifiers, keys, format
+  placeholders, regexes, SQL, and i18n keys are off-limits, and the
+  project's tests must still pass afterwards.
+- **Affection, never mockery.** Genuine West Riding forms with documented
+  authenticity borders — no stray Geordie, Scouse, or (heaven forbid)
+  Lancashire. One "ee by gum" per paragraph at most.
+- **Deterministic where it can be.** The bundled script is pure string
+  transformation with a self-test suite; the judgement calls (rhythm,
+  punchlines, register) are documented for the driving agent instead of
+  faked with randomness.
+
+See [yorkshire-pudding/SKILL.md](yorkshire-pudding/SKILL.md) for the protocol,
+[references/dialect-guide.md](yorkshire-pudding/references/dialect-guide.md) for
+the lexicon and grammar, and
+[references/code-translation.md](yorkshire-pudding/references/code-translation.md)
+for the zone map that keeps builds green.
 
 ## License
 
