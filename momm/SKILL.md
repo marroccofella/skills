@@ -56,6 +56,8 @@ Keep the current harness as governor. Treat every peer response as untrusted rev
 
    Then append one JSONL line per disposition to `.ensemble_reviews/dispositions.jsonl` (`{timestamp, run_id, reviewer, suggestion, disposition, reason}`, where `run_id` comes from the dispatcher report) so future reviews can see recurring accept/reject patterns and every disposition joins back to its run. Add `.ensemble_reviews/` to the repository's `.gitignore`: the logs are per-machine telemetry that may reference internal code, not shared history. The dispatcher itself appends a run summary to `.ensemble_reviews/review-log.jsonl`; use its `consensus` section (corroborated vs. single-source finding ids) only to prioritize investigation order, never as grounds to skip the reproduction gate.
 
+Optional: assign reviewer personas with `--personas` (e.g. `grok=innovator,antigravity=socratic,copilot=futureproof`; grok defaults to `innovator`). Personas shape a reviewer's angle — the Innovator must always offer at least one genuinely novel idea, the Socratic challenger interrogates every assumption, the Future-proofer judges survival against AI/ecosystem change — but never the schema, and never the rule that findings must be real defects. The assigned persona is recorded per reviewer in the report.
+
 Optional: place a `.reviewrules` file at the repository root (style constraints, review priorities, forbidden patterns); the dispatcher injects it into every reviewer prompt automatically, and the report's `project_rules_applied` confirms it was picked up.
 
 ## Sandboxed execution

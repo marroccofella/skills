@@ -166,7 +166,9 @@ The governor then reproduces each finding with a failing test, fixes what proves
   | [Antigravity CLI](https://antigravity.google/docs/cli/install) | official installer (provides `agy`) | `agy login` (Google account) |
   | [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) | `npm install -g @github/copilot` | `copilot login` (GitHub account) |
 
-  Candidate routes (probed by `--preflight`, adapter pending verification): [Grok CLI](https://x.ai/cli). Gemini CLI remains supported for Standard/Enterprise Code Assist organization licenses only.
+  Also adapted: [Grok CLI](https://x.ai/cli) (`irm https://x.ai/cli/install.ps1 | iex`, then `grok login`) — fails closed until first login; defaults to the `innovator` persona. Gemini CLI remains supported for Standard/Enterprise Code Assist organization licenses only.
+
+  **Reviewer personas** (`--personas grok=innovator,antigravity=socratic,copilot=futureproof`): optional angles for the ensemble — the *Innovator* always brings at least one genuinely novel idea, the *Socratic challenger* interrogates every assumption, the *Future-proofer* judges survival against AI and ecosystem change. Personas shape tone and suggestions, never the schema and never the truthfulness of findings; each report records who wore which.
 
 `demo/stats.py` at the repo root is a deliberately imperfect fixture used for live-testing the ensemble.
 
