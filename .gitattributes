@@ -1,0 +1,4 @@
+# The public evidence export is sealed by a sha256 sidecar over its exact
+# bytes — newline conversion on Windows checkouts must never rewrite it.
+docs/evidence/** text eol=lf
+*.mjs text eol=lf
