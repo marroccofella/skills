@@ -384,3 +384,72 @@
     if (btn) btn.click();
   }
 </script>
+<style>
+  /* Tooltip layer — additive enhancement; explains momm concepts in place. */
+  .momm-tip { border-bottom: 1px dotted currentColor; cursor: help; position: relative; }
+  .momm-tip:focus-visible { outline: 2px solid var(--accent-dim, #00cc88); outline-offset: 2px; }
+  .momm-tip::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 50;
+    width: max-content; max-width: 300px; white-space: normal;
+    background: var(--panel, #111316); color: var(--text, #e6ffe6);
+    border: 1px solid var(--accent-dim, #00cc88); border-radius: 8px;
+    padding: 8px 10px; font-size: 11.5px; line-height: 1.45; font-weight: 400;
+    text-transform: none; letter-spacing: normal;
+    opacity: 0; visibility: hidden; transition: opacity .12s ease;
+    pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  .momm-tip:hover::after, .momm-tip:focus-visible::after { opacity: 1; visibility: visible; }
+  @media (prefers-reduced-motion: reduce) { .momm-tip::after { transition: none; } }
+</style>
+<script>
+(() => {
+  // Explanations keyed by the exact label text the page renders. Applied by
+  // observation (MutationObserver), so dynamically re-rendered panels keep
+  // their tooltips without touching the app's own render code.
+  const TIPS = {
+    "runs recorded": "Every momm dispatch logged on this machine — including failures and tiny diagnostic runs. The ledger favors honesty over curation.",
+    "full transcripts": "Runs whose complete report — every reviewer's words — is stored as a file whose sha256 fingerprint is recorded. If a quote and the stored file disagree, the file wins.",
+    "findings raised": "Defects reviewers claimed, across all runs. A finding is a claim, not a fact: the governor must reproduce each one before acting on it.",
+    "dispositions": "The governor's written verdict on every reviewer suggestion — applied (with the verification named) or rejected (with the reason). Nothing is silently dropped.",
+    "projects": "Workspaces on this machine that carry their own momm telemetry.",
+    "full transcript": "The complete verbatim report is stored and hash-sealed for this run — drill in to read exactly what each reviewer said.",
+    "summary only": "This run predates the per-run evidence store, so only its summary log line survives: statuses and finding ids, but no verbatim transcript.",
+    "dispositions only": "The session that ran this review didn't persist its run log — only the governor's suggestion-by-suggestion triage survives.",
+    "governor": "The AI harness driving the session. It coordinates the review, reproduces findings, and applies fixes — but never reviews its own work.",
+    "auth ok": "Strongest evidence: a live status command confirmed this session just before the snapshot.",
+    "auth present": "A login artifact exists on disk, so this route is probably ready — but only an actual dispatch proves a live session.",
+    "needs attention": "This route is installed but not ready — the hint beside it is the exact command to fix it.",
+    "ACCEPT": "This reviewer found no defects worth blocking on.",
+    "MODIFY": "This reviewer wants changes before the work is finalized — read its findings and suggestions.",
+    "REJECT": "This reviewer judged the change materially wrong as submitted.",
+    "self_excluded": "Integrity rule: the harness that governs a run never reviews its own work, so its seat is deliberately empty.",
+    "authentication_required": "The CLI is installed but has no live session. The fix is the provider's official browser login — never an API key.",
+    "provider_unavailable": "The provider's service was down (5xx). momm already retried once; wait and re-run — re-logging-in won't help.",
+    "ineligible_tier": "The provider retired this account tier for this CLI. Use the successor route or an organization license.",
+    "corroborated": "How many findings were raised independently by two or more reviewers — agreement at the finding level, which matters more than any single score.",
+  };
+  const PREFIX_TIPS = [
+    ["confidence", "The reviewer's own 0–1 estimate of how sure it is about its verdict. Self-reported, not a measured accuracy."],
+    ["input sha256", "Fingerprint of the exact artifact the reviewers received. Byte counts can collide; hashes don't."],
+    ["report ", "This run's full report is content-addressed: the sha256 covers the exact bytes of the stored file, so quotes are checkable against it."],
+  ];
+  const SELECTORS = ".stat .l, .tag, .badge, .chip span, .conf, .kv span b, .sha, .run-meta span, .primary-card *, .routes span";
+  const annotate = (root) => {
+    for (const el of root.querySelectorAll(SELECTORS)) {
+      if (el.classList.contains("momm-tip") || el.querySelector?.(".momm-tip")) continue;
+      const text = (el.textContent ?? "").trim();
+      let tip = TIPS[text];
+      if (!tip) { const hit = PREFIX_TIPS.find(([p]) => text.toLowerCase().startsWith(p)); tip = hit?.[1]; }
+      if (!tip) continue;
+      el.classList.add("momm-tip");
+      el.setAttribute("data-tip", tip);
+      el.setAttribute("tabindex", "0");
+    }
+  };
+  annotate(document);
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) annotate(n);
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+</script>
