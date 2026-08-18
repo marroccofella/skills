@@ -1,6 +1,6 @@
 {
   "schema": "momm-evidence-export/1",
-  "generated": "2026-08-18T01:56:10.701Z",
+  "generated": "2026-08-18T02:09:05.792Z",
   "source": "github.com/marroccofella/skills · momm dispatcher telemetry (Claude project workspace)",
   "sanitization": "user home and workspace paths normalized; Promptus Skills project excluded (private); reports contain no reviewed artifact text by design",
   "note": "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
@@ -647,6 +647,51 @@
       "corroborated_count": 0,
       "report_path": ".ensemble_reviews/reports/rev_20260818015345_2fb4.json",
       "report_sha256": "5e3670e1caafa86812bade32dd569bd422e65576f7b4cbc4eca9aa2cc48863d5",
+      "report_sha256_covers": "stored_report_bytes"
+    },
+    {
+      "timestamp": "2026-08-18T02:07:34.477Z",
+      "run_id": "rev_20260818020734_e692",
+      "governor": "claude",
+      "input_bytes": 76,
+      "input_sha256": "3b999b52f7fcedb14010f1066655aa44595b7f7fa0498cefc4a77fcc1616ecb9",
+      "reviewer_status": {
+        "codex": "success",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success",
+        "grok": "success"
+      },
+      "findings_count": 0,
+      "finding_ids": [],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260818020734_e692.json",
+      "report_sha256": "4c5aa076fdcf88e9540a3a1e65a6754c3f38014a2e0148e33e157430c41e308b",
+      "report_sha256_covers": "stored_report_bytes"
+    },
+    {
+      "timestamp": "2026-08-18T02:08:04.477Z",
+      "run_id": "rev_20260818020804_zk7p",
+      "governor": "claude",
+      "input_bytes": 81,
+      "input_sha256": "deba17c05b2fd057591335598a841d9223894f6cb4fea64e4c1b0e98d0be36ce",
+      "reviewer_status": {
+        "codex": "success",
+        "claude": "self_excluded",
+        "antigravity": "success",
+        "copilot": "success",
+        "grok": "success"
+      },
+      "findings_count": 4,
+      "finding_ids": [
+        "infinite-loop-counter-not-incremented",
+        "infinite-loop-missing-increment",
+        "infinite-loop-no-increment",
+        "missing-counter-increment"
+      ],
+      "corroborated_count": 0,
+      "report_path": ".ensemble_reviews/reports/rev_20260818020804_zk7p.json",
+      "report_sha256": "d3502570b4085fa3a6f6c4985dbd0f70968b50dfbacdfb3484ff95b0db3400b5",
       "report_sha256_covers": "stored_report_bytes"
     }
   ],
@@ -3298,6 +3343,376 @@
           },
           "unique_findings_by_reviewer": {},
           "risk_heatmap": []
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
+    },
+    "rev_20260818020734_e692": {
+      "stored_report_sha256": "4c5aa076fdcf88e9540a3a1e65a6754c3f38014a2e0148e33e157430c41e308b",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260818020734_e692",
+        "governor": "claude",
+        "input_bytes": 76,
+        "input_sha256": "3b999b52f7fcedb14010f1066655aa44595b7f7fa0498cefc4a77fcc1616ecb9",
+        "input_text": "10 REM COUNT FROM ONE TO TEN\n20 FOR I = 1 TO 10\n30 PRINT I\n40 NEXT I\n50 END\n",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          },
+          {
+            "agent": "grok",
+            "installed": true,
+            "version": "grok 1.0.5 (5115b46bc9)",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 10302,
+            "persona": null,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.99,
+            "summary": "The BASIC program correctly prints the integers 1 through 10 and then terminates; no concrete defects or missing tests are apparent for this trivial change.",
+            "suggested_improvements": []
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "duration_ms": 43,
+            "persona": null,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 10965,
+            "persona": null,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 1,
+            "summary": "The code is a valid and correct classic BASIC program that iterates from 1 to 10 and prints each integer. It contains no defects, regressions, or safety issues.",
+            "suggested_improvements": []
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 15392,
+            "persona": null,
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.95,
+            "summary": "This is a simple, correct BASIC program that counts from 1 to 10. The logic is straightforward: a FOR loop iterates from 1 to 10, printing each value. The program structure is valid with proper loop initialization, body, and termination. No defects, security issues, race conditions, type errors, or compatibility breaks were found. The code accomplishes its stated purpose correctly.",
+            "suggested_improvements": [
+              "The END statement on line 50 is unnecessary in most BASIC implementations as the program will naturally terminate after NEXT I",
+              "Line numbers increment by 10 which is a classic BASIC convention for allowing insertions, but modern BASIC dialects often don't require line numbers at all"
+            ]
+          },
+          {
+            "agent": "grok",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 27038,
+            "persona": "innovator",
+            "detail": null,
+            "verdict": "ACCEPT",
+            "confidence": 0.93,
+            "summary": "A classic numbered BASIC 1-to-10 FOR/NEXT that matches its REM, pairs correctly, and terminates cleanly. No logic, type, security, or compatibility defects in ordinary Microsoft-style BASIC; it is a complete, idiomatic teaching snippet.",
+            "suggested_improvements": [
+              "Spell the loop bound once (e.g. N=10: FOR I=1 TO N) so the limit is a single named constant instead of a magic 10.",
+              "If the dialect supports it, PRINT I; to keep the count on one line — same logic, denser output.",
+              "Inventive idea: keep the same 1-to-10 walk but treat I as a phase and PRINT STRING$(I, \"*\") (or PLAY a mapped note) so the loop becomes a tiny generative score/histogram instead of only a numeral dump."
+            ]
+          }
+        ],
+        "findings": [],
+        "consensus": {
+          "corroborated": [],
+          "single_source": []
+        },
+        "insights": {
+          "agreement_score": null,
+          "verdict_split": {
+            "ACCEPT": 4
+          },
+          "unique_findings_by_reviewer": {},
+          "risk_heatmap": []
+        },
+        "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
+      }
+    },
+    "rev_20260818020804_zk7p": {
+      "stored_report_sha256": "d3502570b4085fa3a6f6c4985dbd0f70968b50dfbacdfb3484ff95b0db3400b5",
+      "report": {
+        "report_schema": "momm-report/1",
+        "dispatcher_version": "1.0.0",
+        "policy": "oauth-only",
+        "run_id": "rev_20260818020804_zk7p",
+        "governor": "claude",
+        "input_bytes": 81,
+        "input_sha256": "deba17c05b2fd057591335598a841d9223894f6cb4fea64e4c1b0e98d0be36ce",
+        "input_text": "10 REM COUNT FROM ONE TO TEN\n20 LET I = 1\n30 PRINT I\n40 IF I < 10 GOTO 30\n50 END\n",
+        "secret_redactions": 0,
+        "project_rules_applied": false,
+        "preflight": [
+          {
+            "agent": "codex",
+            "installed": true,
+            "version": "codex-cli 0.147.0",
+            "ready": true,
+            "auth": "ok"
+          },
+          {
+            "agent": "claude",
+            "role": "governor",
+            "ready": false,
+            "note": "self-excluded (governor never reviews its own work)"
+          },
+          {
+            "agent": "antigravity",
+            "installed": true,
+            "version": "1.1.13",
+            "ready": true,
+            "auth": "present",
+            "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+          },
+          {
+            "agent": "copilot",
+            "installed": true,
+            "version": "GitHub Copilot CLI 1.0.80.\nRun 'copilot update' to check for updates.",
+            "ready": true,
+            "auth": "present"
+          },
+          {
+            "agent": "grok",
+            "installed": true,
+            "version": "grok 1.0.5 (5115b46bc9)",
+            "ready": true,
+            "auth": "present"
+          }
+        ],
+        "reviewers": [
+          {
+            "agent": "codex",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 23038,
+            "persona": null,
+            "detail": null,
+            "verdict": "MODIFY",
+            "confidence": 1,
+            "summary": "The program does not fulfill its stated purpose because its loop counter is never updated, resulting in an infinite loop.",
+            "suggested_improvements": [
+              "Insert a statement such as `35 LET I = I + 1` before the conditional jump."
+            ]
+          },
+          {
+            "agent": "claude",
+            "status": "self_excluded",
+            "attempts": 1,
+            "duration_ms": 48,
+            "persona": null,
+            "detail": null,
+            "verdict": null,
+            "confidence": null,
+            "summary": null,
+            "suggested_improvements": null
+          },
+          {
+            "agent": "antigravity",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 25328,
+            "persona": null,
+            "detail": null,
+            "verdict": "REJECT",
+            "confidence": 1,
+            "summary": "The program fails to count from 1 to 10 because the counter variable I is never incremented before jumping back to line 30, resulting in an infinite loop.",
+            "suggested_improvements": [
+              "Use an idiomatic FOR I = 1 TO 10 ... NEXT I loop structure instead of manual GOTO branching."
+            ]
+          },
+          {
+            "agent": "copilot",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 18930,
+            "persona": null,
+            "detail": null,
+            "verdict": "REJECT",
+            "confidence": 1,
+            "summary": null,
+            "suggested_improvements": [
+              "Add 'LET I = I + 1' statement between lines 30 and 40 to increment the counter",
+              "Alternatively, use a FOR-NEXT loop construct if the BASIC dialect supports it: 'FOR I = 1 TO 10: PRINT I: NEXT I' would be more idiomatic"
+            ]
+          },
+          {
+            "agent": "grok",
+            "status": "success",
+            "attempts": 1,
+            "duration_ms": 29808,
+            "persona": "innovator",
+            "detail": null,
+            "verdict": "REJECT",
+            "confidence": 0.97,
+            "summary": "The listing sets I to 1 and prints it, then branches back to the PRINT whenever I is still below 10 without ever changing I, so it infinite-loops instead of counting to ten. This is a complete functional miss, not a style niggle; REJECT until an increment (or a FOR/NEXT) exists and the loop actually terminates at 10.",
+            "suggested_improvements": [
+              "Replace the hand-rolled GOTO loop with the idiomatic `FOR I = 1 TO 10: PRINT I: NEXT I` so the increment, bound, and exit are one construct.",
+              "Hoist the comparison into a named limit (`LET N = 10`) so the comment, bound, and future reuse cannot drift apart.",
+              "Inventive idea: treat the counter as a tiny state machine — `ON I GOSUB` ten one-line printers, or emit the whole run as a single generated string (`\"1 2 3 ... 10\"`) built by a recurrence — then you can unit-test the output blob, replay it as `SOUND I*44,2` ticks, or serialize it as DATA statements for a self-checking listing."
+            ]
+          }
+        ],
+        "findings": [
+          {
+            "id": "infinite-loop-counter-not-incremented",
+            "severity": "CRITICAL",
+            "target_file": "<temp>/momm-agy-jWt2KB/artifact.txt",
+            "line_range": [
+              3,
+              4
+            ],
+            "issue": "Variable I is never incremented, causing an infinite loop that repeatedly prints 1 instead of counting from 1 to 10.",
+            "rationale": "Because I is initialized to 1 and never incremented, the condition I < 10 remains true indefinitely, preventing the program from terminating or counting.",
+            "test_suggestion": "Execute the program under a bounded step interpreter and assert that line 50 is reached and numbers 1 through 10 are printed.",
+            "sources": [
+              "antigravity"
+            ]
+          },
+          {
+            "id": "infinite-loop-missing-increment",
+            "severity": "CRITICAL",
+            "target_file": "artifact.txt",
+            "line_range": [
+              3,
+              4
+            ],
+            "issue": "The loop never increments variable I, creating an infinite loop that prints 1 forever",
+            "rationale": "Line 40 jumps back to line 30 when I < 10, but I is never modified after its initial assignment to 1 on line 20, so the condition will always be true and the program will never reach line 50 (END)",
+            "test_suggestion": "Run this BASIC program in any interpreter - it will print '1' infinitely and never terminate",
+            "sources": [
+              "copilot"
+            ]
+          },
+          {
+            "id": "infinite-loop-no-increment",
+            "severity": "CRITICAL",
+            "target_file": null,
+            "line_range": [
+              30,
+              40
+            ],
+            "issue": "I is never incremented, so `IF I < 10 GOTO 30` jumps forever and reprints 1.",
+            "rationale": "The program claims to count from one to ten but livelocks on the first value, never reaching END and hanging any interpreter or batch runner.",
+            "test_suggestion": "Run under a step/instruction cap (e.g. 50 statements) and assert printed tokens equal 1..10; this listing yields an unbounded stream of 1s and never hits line 50.",
+            "sources": [
+              "grok"
+            ]
+          },
+          {
+            "id": "missing-counter-increment",
+            "severity": "WARNING",
+            "target_file": null,
+            "line_range": [
+              30,
+              40
+            ],
+            "issue": "The loop never increments I, so it prints 1 indefinitely and never reaches END.",
+            "rationale": "Because I remains 1, the condition I < 10 is always true and execution repeatedly jumps to line 30 instead of counting from one to ten.",
+            "test_suggestion": "Run the program with a one-second timeout and assert that it terminates after producing exactly the lines 1 through 10; the current program times out while repeatedly printing 1.",
+            "sources": [
+              "codex"
+            ]
+          }
+        ],
+        "consensus": {
+          "corroborated": [],
+          "single_source": [
+            "infinite-loop-counter-not-incremented",
+            "infinite-loop-missing-increment",
+            "infinite-loop-no-increment",
+            "missing-counter-increment"
+          ]
+        },
+        "insights": {
+          "agreement_score": 0,
+          "verdict_split": {
+            "MODIFY": 1,
+            "REJECT": 3
+          },
+          "unique_findings_by_reviewer": {
+            "antigravity": [
+              "infinite-loop-counter-not-incremented"
+            ],
+            "copilot": [
+              "infinite-loop-missing-increment"
+            ],
+            "grok": [
+              "infinite-loop-no-increment"
+            ],
+            "codex": [
+              "missing-counter-increment"
+            ]
+          },
+          "risk_heatmap": [
+            {
+              "file": "(unspecified)",
+              "findings": 2,
+              "max_severity": "CRITICAL"
+            },
+            {
+              "file": "<temp>/momm-agy-jWt2KB/artifact.txt",
+              "findings": 1,
+              "max_severity": "CRITICAL"
+            },
+            {
+              "file": "artifact.txt",
+              "findings": 1,
+              "max_severity": "CRITICAL"
+            }
+          ]
         },
         "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing."
       }

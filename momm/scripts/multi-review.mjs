@@ -173,6 +173,8 @@ Options:
   --strict                  Exit 2 unless every requested non-governor peer succeeds
   --stream                  Emit NDJSON progress events on stderr while reviewers run
   --preflight               Check every route (install + auth evidence) and exit; zero model calls
+  --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
+                            for shareable demos; by default only its sha256 is stored)
   --personas <csv>          Assign reviewer personas, e.g. grok=innovator,antigravity=socratic,copilot=futureproof
                             (available: innovator, socratic, futureproof; grok defaults to innovator; personas shape tone, never findings)
   --ui / --no-ui            Force the live progress display on/off (default: on when stderr is a TTY and --stream is absent)
@@ -216,6 +218,7 @@ function parseArgs(argv) {
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--preflight") options.preflight = true;
+    else if (arg === "--store-input") options.storeInput = true;
     else if (arg === "--personas") {
       options.personas = {};
       for (const pair of next().split(",")) {
@@ -1082,6 +1085,10 @@ async function main() {
     // Binds this report to the exact sanitized artifact the reviewers
     // received — byte count alone cannot distinguish same-length inputs.
     input_sha256: createHash("sha256").update(sanitized.value).digest("hex"),
+    // Privacy default: the artifact itself is NOT stored — only its hash.
+    // --store-input opts a run into carrying the sanitized text, for demos
+    // and public evidence where the input is already public.
+    ...(options.storeInput ? { input_text: sanitized.value } : {}),
     secret_redactions: sanitized.redactions,
     project_rules_applied: Boolean(options.projectRules),
     preflight: preflightEntries,

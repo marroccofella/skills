@@ -106,6 +106,10 @@ jobs:
             if (logLine.input_sha256 !== report.input_sha256) throw new Error("log/report input hash mismatch");
             if (report.input_sha256 !== createHash("sha256").update(artifact).digest("hex")) throw new Error("input not bound to artifact");
             if (report.reviewers[0].attempts !== 1) throw new Error("attempts not recorded");
+            if ("input_text" in report) throw new Error("input stored without --store-input (privacy default broken)");
+            r = run(workDir, ["--store-input"]);
+            if (r.status !== 0) throw new Error("store-input run failed");
+            if (JSON.parse(r.stdout).input_text !== artifact) throw new Error("--store-input did not persist the artifact");
             const blocked = tmp("blocked");
             fs.writeFileSync(path.join(blocked, ".ensemble_reviews"), "block");
             r = run(blocked);
