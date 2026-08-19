@@ -13,6 +13,8 @@ A collection of portable, cross-harness [Agent Skills](https://agentskills.io) �
 | [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 | [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
+| [myrepo](myrepo/) | Publish a project to GitHub as its own repository with a live in-browser Pages site — 42.uk-themed docs, a local-path + secret-file + inline-credential + git-history privacy scan, symlink guards, and live-URL verification. Confirms visibility and previews with `--dry-run` before any public push. |
+| [myvoice](myvoice/) | Short callable name for **promptus-clone-voice** — consented local F5-TTS voice cloning in Promptus, fail-closed signal/word gates and a recorded human listening verdict before acceptance. |
 
 ## momm — Mixture of Model Modality
 
