@@ -7,8 +7,45 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.4.0";
+const MOMM_VERSION = "1.5.0";
 const REPORT_SCHEMA = "momm-report/1";
+const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
+
+// Only bare dotted-numeric versions are ever trusted — a compromised or MITM'd
+// versions.json cannot inject terminal escapes, NaN, or garbage this way.
+const VERSION_RE = /^\d+(\.\d+){0,3}$/;
+function isNewerVersion(a, b) {
+  if (!VERSION_RE.test(a) || !VERSION_RE.test(b)) return false;
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x > y; }
+  return false;
+}
+const updateCheckDisabled = () => { const v = (process.env.NO_UPDATE_CHECK ?? process.env.MOMM_NO_UPDATE_CHECK ?? "").toLowerCase(); return v !== "" && v !== "0" && v !== "false"; };
+
+// Cached-daily, fail-silent update check. Skipped entirely in stream mode
+// (machines get the version from the report; nothing should delay NDJSON) and
+// on the offline/opt-out paths. No telemetry: a plain unauthenticated GET of a
+// public file, format-validated before it is ever cached or printed.
+async function checkForUpdate(current, { stream = false } = {}) {
+  if (stream || updateCheckDisabled()) return null;
+  const cacheFile = path.join(os.tmpdir(), ".momm-update-check");
+  const isSymlink = () => { try { return fs.lstatSync(cacheFile).isSymbolicLink(); } catch { return false; } };
+  try {
+    const lst = fs.lstatSync(cacheFile);
+    if (!lst.isSymbolicLink() && Date.now() - lst.mtimeMs < 864e5) {
+      const c = fs.readFileSync(cacheFile, "utf8").trim();
+      return VERSION_RE.test(c) && isNewerVersion(c, current) ? c : null;
+    }
+  } catch {}
+  try {
+    const res = await fetch(VERSIONS_URL, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return null;
+    const latest = String((await res.json())?.momm ?? "");
+    if (!VERSION_RE.test(latest)) return null;
+    if (!isSymlink()) { try { fs.writeFileSync(cacheFile, latest, { mode: 0o600 }); } catch {} }
+    return isNewerVersion(latest, current) ? latest : null;
+  } catch { return null; }
+}
 
 // Private evidence is owner-only. On a shared machine another user must not be
 // able to read your reviewer transcripts or (with --store-input) your code.
@@ -1049,6 +1086,9 @@ async function selfTest(pretty) {
       && !buildContract("codex", {}).includes("Persona —")
       && personaFor("grok", { personas: { grok: "futureproof" } }) === "futureproof",
     version_identity_declared: /^\d+\.\d+\.\d+$/.test(MOMM_VERSION) && /^momm-report\/\d+$/.test(REPORT_SCHEMA),
+    semver_compare_correct: isNewerVersion("1.5.0", "1.4.0") && isNewerVersion("1.10.0", "1.9.0") && !isNewerVersion("1.4.0", "1.4.0") && !isNewerVersion("1.4.0", "1.5.0") && isNewerVersion("2.0.0", "1.9.9"),
+    version_compare_rejects_junk: !isNewerVersion("1.5.0-beta", "1.4.0") && !isNewerVersion("9.9.9; rm -rf", "1.0.0") && !isNewerVersion("1.4.0", "not-a-version") && VERSION_RE.test("1.5.0") && !VERSION_RE.test("1.5.0\n"),
+    update_check_disable_respects_falsey: (() => { const s = process.env.NO_UPDATE_CHECK; process.env.NO_UPDATE_CHECK = "0"; const off0 = updateCheckDisabled(); process.env.NO_UPDATE_CHECK = "1"; const off1 = updateCheckDisabled(); if (s === undefined) delete process.env.NO_UPDATE_CHECK; else process.env.NO_UPDATE_CHECK = s; return off0 === false && off1 === true; })(),
     file_urls_are_clickable: formatFileUrl("C:\\some dir\\ledger.html") === "file:///C:/some%20dir/ledger.html"
       && formatFileUrl("/home/user/my project/ledger.html") === "file:///home/user/my%20project/ledger.html"
       && formatFileUrl("\\\\server\\share\\ledger.html") === "file://server/share/ledger.html",
@@ -1119,7 +1159,12 @@ async function main() {
     return;
   }
   if (options.help) { process.stdout.write(`${usage()}\n`); return; }
-  if (options.version) { process.stdout.write(`momm ${MOMM_VERSION} (report schema ${REPORT_SCHEMA}, node ${process.versions.node})\n`); return; }
+  if (options.version) {
+    process.stdout.write(`momm ${MOMM_VERSION} (report schema ${REPORT_SCHEMA}, node ${process.versions.node})\n`);
+    const newer = await checkForUpdate(MOMM_VERSION);
+    if (newer) process.stdout.write(`update available: ${newer} — run \`git pull\` in the skills repo\n`);
+    return;
+  }
   if (options.selfTest) { await selfTest(options.pretty); return; }
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
@@ -1336,7 +1381,16 @@ async function main() {
   if (evidence.ledger_url && !options.stream && !ui.rendered) {
     process.stderr.write(`\n  ◆ Your private momm ledger (this run included, owner-only): ${evidence.ledger_url}\n\n`);
   }
-  process.stdout.write(`${JSON.stringify({ ...report, evidence }, null, options.pretty ? 2 : 0)}\n`);
+  // Version confession + update awareness: the version is always in the
+  // report (dispatcher_version); here it is also surfaced to humans, with an
+  // update notice if a newer release is published.
+  const newer = await checkForUpdate(MOMM_VERSION, { stream: options.stream });
+  if (!options.stream) {
+    process.stderr.write(`  momm ${MOMM_VERSION}${newer ? `  ↑ update available: ${newer} — run \`git pull\` in the skills repo (or re-run install.mjs)` : ""}\n`);
+  }
+  // dispatcher_version already lives inside the report; update_available is an
+  // additive, optional field (unknown-field-safe, so REPORT_SCHEMA is unchanged).
+  process.stdout.write(`${JSON.stringify({ ...report, evidence, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
   if (options.minSuccess && externalSuccesses < options.minSuccess) {
     process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);

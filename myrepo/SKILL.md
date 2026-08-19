@@ -42,4 +42,6 @@ Scaffolded docs carry the 42.uk identity: the `◆` mark, the project title and 
 
 `--dir <path>` project dir · `--private` (no Pages) · `--no-pages` · `--force-docs` overwrite README/LICENSE · `--allow-paths` skip the privacy scan (confirm first) · `--dry-run` · `--version`.
 
+Every publish is recorded to an owner-only local log at `~/.myrepo/publishes.jsonl` (which myrepo version pushed what, where, and what the scan found) — your debuggable audit trail. Each run confesses its version and checks for updates (fail-silent, cached daily; disable with `NO_UPDATE_CHECK=1`).
+
 Companion skills: **momm** (review the code before you ship it) and **myvoice** (add a consented local voice). A good flow is *momm → fix → myrepo*.

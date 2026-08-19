@@ -11,12 +11,53 @@
 // what will be pushed). --dry-run previews safely.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const MYREPO_VERSION = "1.1.0";
+const MYREPO_VERSION = "1.2.0";
 const TAGLINE = "RELAX. IT'S ALREADY OVER.";
+const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const VERSION_RE = /^\d+(\.\d+){0,3}$/;
+function isNewerVersion(a, b) {
+  if (!VERSION_RE.test(a) || !VERSION_RE.test(b)) return false;
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x > y; }
+  return false;
+}
+// Cached-daily, fail-silent. Format-validated before caching or printing so a
+// compromised versions.json cannot inject anything. Disable with NO_UPDATE_CHECK.
+async function checkForUpdate(current) {
+  const off = (process.env.NO_UPDATE_CHECK ?? "").toLowerCase();
+  if (off !== "" && off !== "0" && off !== "false") return null;
+  const cacheFile = path.join(os.tmpdir(), ".myrepo-update-check");
+  const isSymlink = () => { try { return fs.lstatSync(cacheFile).isSymbolicLink(); } catch { return false; } };
+  try { const lst = fs.lstatSync(cacheFile); if (!lst.isSymbolicLink() && Date.now() - lst.mtimeMs < 864e5) { const c = fs.readFileSync(cacheFile, "utf8").trim(); return VERSION_RE.test(c) && isNewerVersion(c, current) ? c : null; } } catch {}
+  try {
+    const res = await fetch(VERSIONS_URL, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return null;
+    const latest = String((await res.json())?.myrepo ?? "");
+    if (!VERSION_RE.test(latest)) return null;
+    if (!isSymlink()) { try { fs.writeFileSync(cacheFile, latest, { mode: 0o600 }); } catch {} }
+    return isNewerVersion(latest, current) ? latest : null;
+  } catch { return null; }
+}
+// Owner-only audit trail of everything published: which myrepo version pushed
+// what, when, where, and what the scan found. Lives outside any repo.
+function recordPublish(entry) {
+  try {
+    const dir = path.join(os.homedir(), ".myrepo");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try { fs.chmodSync(dir, 0o700); } catch {}
+    const logPath = path.join(dir, "publishes.jsonl");
+    const fresh = !fs.existsSync(logPath);
+    fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), myrepo_version: MYREPO_VERSION, ...entry }) + "\n");
+    if (fresh) { try { fs.chmodSync(logPath, 0o600); } catch {} }
+    return logPath;
+  } catch { return null; }
+}
 
 function parseArgs(argv) {
   const o = { dir: ".", private: false, dryRun: false, pages: true, forceDocs: false, allowPaths: false, title: null, name: null, desc: "" };
@@ -353,8 +394,13 @@ async function main() {
     log(pagesLive ? "✓" : "⚠", pagesLive ? `live and serving: ${pagesUrl}` : `Pages enabled but not yet 200 (build can lag a few minutes): ${pagesUrl}`);
   }
 
-  process.stdout.write(`${JSON.stringify({ repo: `https://github.com/${login}/${o.name}`, visibility: o.private ? "private" : "public", pages_url: pagesUrl, pages_live: pagesLive, has_app: hasIndex }, null, 2)}\n`);
-  process.stderr.write(`\n  ◆ Published: https://github.com/${login}/${o.name}${pagesUrl ? `\n  ▶ Live in browser: ${pagesUrl}${pagesLive ? "" : " (building…)"}` : ""}\n\n`);
+  const repoUrl = `https://github.com/${login}/${o.name}`;
+  const manifestPath = recordPublish({ repo: repoUrl, visibility: o.private ? "private" : "public", pages_url: pagesUrl, pages_live: pagesLive, has_app: hasIndex });
+  process.stdout.write(`${JSON.stringify({ repo: repoUrl, visibility: o.private ? "private" : "public", pages_url: pagesUrl, pages_live: pagesLive, has_app: hasIndex, myrepo_version: MYREPO_VERSION, publish_log: manifestPath }, null, 2)}\n`);
+  process.stderr.write(`\n  ◆ Published: ${repoUrl}${pagesUrl ? `\n  ▶ Live in browser: ${pagesUrl}${pagesLive ? "" : " (building…)"}` : ""}\n`);
+  // Version confession + update awareness.
+  const newer = await checkForUpdate(MYREPO_VERSION);
+  process.stderr.write(`  myrepo ${MYREPO_VERSION}${newer ? `  ↑ update available: ${newer} — git pull in the skills repo` : ""}${manifestPath ? `  ·  logged to ${manifestPath.replaceAll("\\", "/")}` : ""}\n\n`);
 }
 
 main().catch((e) => { process.stderr.write(`myrepo failed: ${e.message}\n`); process.exit(1); });

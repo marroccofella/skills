@@ -72,4 +72,6 @@ Run the dispatcher from an approved or unrestricted execution context. Reviewers
 
 Run `node scripts/multi-review.mjs --preflight` for a per-route readiness check with exact login commands, or `--doctor` for the full environment report — both make zero model calls and never read credential contents. Ask the user to complete each provider's official interactive browser login when required.
 
+Every run confesses its version (`dispatcher_version` in the report and on stderr) and is update-aware: it checks the published version once a day (a fail-silent, cached, unauthenticated GET of the repo's `versions.json` — no telemetry) and prints a one-line notice if a newer release exists. Disable with `NO_UPDATE_CHECK=1`.
+
 Read [references/harness-compatibility.md](references/harness-compatibility.md) only when installing, linking, adding a harness, or diagnosing discovery. Do not invent discovery folders or CLI flags.
