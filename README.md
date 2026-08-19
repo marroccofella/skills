@@ -8,6 +8,14 @@
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Install every skill (one command)
+
+```bash
+git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target all
+```
+
+Links every skill in this repo into each AI harness it detects (Claude Code, Codex, Gemini, Antigravity) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. `--dry-run` previews; `--target codex,claude` picks specific harnesses. Update anytime with `git pull` (no reinstall). Per-skill installs still work via each skill's own path.
+
 | Skill | What it does |
 |-------|--------------|
 | [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
