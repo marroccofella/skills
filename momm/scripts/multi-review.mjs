@@ -1273,6 +1273,11 @@ async function main() {
     fs.appendFileSync(logPath, `${JSON.stringify({
       timestamp: new Date().toISOString(),
       run_id: runId,
+      // Version provenance in the quick-scan line too, so ledgers and
+      // cross-run audits know which dispatcher produced each run without
+      // opening every sealed report (which also carries reviewer CLI versions).
+      dispatcher_version: MOMM_VERSION,
+      report_schema: REPORT_SCHEMA,
       ...(options.label ? { label: options.label } : {}),
       governor: options.governor,
       input_bytes: byteLength,
