@@ -78,6 +78,21 @@ jobs:
           if (!html.includes("ledger smoke")) throw new Error("ledger missing run label");
           const outside = fs.readdirSync(dir).filter((f) => f !== ".ensemble_reviews");
           if (outside.length) throw new Error("ledger wrote outside the private zone: " + outside.join(","));
+          // On POSIX runners, prove private evidence is owner-only (0600 files,
+          // 0700 dirs) so another user on a shared machine cannot read another's
+          // reviewer transcripts. Windows uses NTFS ACLs, not mode bits.
+          if (process.platform !== "win32") {
+            const er = path.join(dir, ".ensemble_reviews");
+            const mode = (p) => fs.statSync(p).mode & 0o777;
+            const dirMode = mode(er), ledgerMode = mode(path.join(er, "ledger.html"));
+            const reportFile = path.join(er, "reports", fs.readdirSync(path.join(er, "reports"))[0]);
+            const reportMode = mode(reportFile), logMode = mode(path.join(er, "review-log.jsonl"));
+            if (dirMode & 0o077) throw new Error(".ensemble_reviews is group/other-accessible: " + dirMode.toString(8));
+            if (ledgerMode & 0o077) throw new Error("ledger.html is group/other-readable: " + ledgerMode.toString(8));
+            if (reportMode & 0o077) throw new Error("report is group/other-readable: " + reportMode.toString(8));
+            if (logMode & 0o077) throw new Error("review-log is group/other-readable: " + logMode.toString(8));
+            console.log("private evidence is owner-only (dir 0" + dirMode.toString(8) + ", files 0600)");
+          }
           fs.rmSync(dir, { recursive: true, force: true });
           console.log("private ledger builds from telemetry and writes only inside .ensemble_reviews/");
       - name: Legacy alias forwards

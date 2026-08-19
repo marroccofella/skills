@@ -7,8 +7,30 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.3.1";
+const MOMM_VERSION = "1.4.0";
 const REPORT_SCHEMA = "momm-report/1";
+
+// Private evidence is owner-only. On a shared machine another user must not be
+// able to read your reviewer transcripts or (with --store-input) your code.
+// POSIX honors these; Windows ignores the bits but its per-user profile/temp
+// dirs already isolate users, so this is correct on both.
+const PRIVATE_DIR_MODE = 0o700;   // drwx------
+const PRIVATE_FILE_MODE = 0o600;  // -rw-------
+
+// Recursively force owner-only on the whole evidence tree — dirs 0700, files
+// 0600 — so pre-1.4 world-readable reports/logs are tightened too, not just
+// new ones. Best-effort and idempotent; a chmod failure never fails a review.
+function hardenPrivateTree(root) {
+  try {
+    const stat = fs.statSync(root);
+    if (stat.isDirectory()) {
+      try { fs.chmodSync(root, PRIVATE_DIR_MODE); } catch {}
+      for (const entry of fs.readdirSync(root)) hardenPrivateTree(path.join(root, entry));
+    } else {
+      try { fs.chmodSync(root, PRIVATE_FILE_MODE); } catch {}
+    }
+  } catch {}
+}
 
 // Fail immediately with an actionable message on unsupported runtimes —
 // a cryptic syntax error on old Node is not a first-run experience.
@@ -863,7 +885,7 @@ async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep
 // way, so no pipe consumer ever sees UI bytes.
 function createUi(enabled, outStream = process.stderr) {
   if (!enabled) {
-    return { start() {}, preflight() {}, complete() {}, finish() {}, stop() {} };
+    return { rendered: false, start() {}, preflight() {}, complete() {}, finish() {}, stop() {} };
   }
   const color = process.env.NO_COLOR ? (_c, text) => text : (c, text) => `${c}${text}${ANSI.reset}`;
   const rows = new Map();
@@ -910,7 +932,8 @@ function createUi(enabled, outStream = process.stderr) {
     out(`${clippedLines.join("\n")}\n`);
     renderedLines = clippedLines.length;
   }
-  return {
+  const api = {
+    rendered: false,
     start(governor, reviewers, inputBytes) {
       header = `\n  ${color(ANSI.bold, "◆ MOMM")} ${color(ANSI.dim, "— Mixture of Model Modality")}\n  ${color(ANSI.dim, `governor ${governor} · ${reviewers.length} routes · ${inputBytes.toLocaleString()} bytes · oauth-only`)}`;
       for (const agent of reviewers) rows.set(agent, { startedAt: Date.now(), done: false });
@@ -938,7 +961,7 @@ function createUi(enabled, outStream = process.stderr) {
       const row = rows.get(agent);
       if (row) Object.assign(row, info, { done: true, endedAt: Date.now() });
     },
-    finish(report) {
+    finish(report, ledgerUrl) {
       const verdicts = report.reviewers.filter((r) => r.verdict).map((r) => r.verdict);
       const unanimous = verdicts.length > 0 && verdicts.every((v) => v === verdicts[0]);
       const findingsCount = report.findings.length;
@@ -951,13 +974,17 @@ function createUi(enabled, outStream = process.stderr) {
       const findingsText = findingsCount === 0 ? color(ANSI.dim, "0 findings") : color(criticals ? ANSI.red : ANSI.yellow, `${findingsCount} finding${findingsCount === 1 ? "" : "s"}${criticals ? ` (${criticals} critical)` : ""}`);
       this.stop();
       paint();
-      out(`\n  ${color(ANSI.bold, "✔")} ${verdictText} · ${findingsText} · ${color(ANSI.dim, report.run_id)}\n\n`);
+      out(`\n  ${color(ANSI.bold, "✔")} ${verdictText} · ${findingsText} · ${color(ANSI.dim, report.run_id)}\n`);
+      if (ledgerUrl) out(`  ${color(ANSI.green, "◆")} your private ledger: ${color(ANSI.cyan, ledgerUrl)} ${color(ANSI.dim, "(owner-only, local)")}\n`);
+      out("\n");
+      api.rendered = true;
     },
     stop() {
       if (timer) { clearInterval(timer); timer = null; }
       out("\x1b[?25h");
     },
   };
+  return api;
 }
 
 async function doctor(pretty) {
@@ -1046,6 +1073,7 @@ async function selfTest(pretty) {
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
     every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
+    private_evidence_is_owner_only: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
     sanitizer_no_offset_leak: sanitizeText("token sk-ant-abcdefghijklmnop end").value === "token [REDACTED] end"
       && sanitizeText("api_key=supersecretvalue").value === "api_key=[REDACTED]",
     severity_merge_takes_max: (() => {
@@ -1230,7 +1258,7 @@ async function main() {
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     const reportJson = `${JSON.stringify(report, null, 2)}\n`;
     try {
-      fs.writeFileSync(`${reportPath}.tmp`, reportJson);
+      fs.writeFileSync(`${reportPath}.tmp`, reportJson, { mode: PRIVATE_FILE_MODE });
       fs.renameSync(`${reportPath}.tmp`, reportPath);
     } catch (error) {
       try { fs.rmSync(`${reportPath}.tmp`, { force: true }); } catch {}
@@ -1239,7 +1267,10 @@ async function main() {
     evidence.persisted = true;
     evidence.report_path = reportPath.replaceAll("\\", "/");
     evidence.report_sha256 = createHash("sha256").update(reportJson).digest("hex");
-    fs.appendFileSync(path.join(".ensemble_reviews", "review-log.jsonl"), `${JSON.stringify({
+    // appendFileSync creates-if-missing without the truncation race an
+    // existsSync-then-write pair would introduce under concurrent runs.
+    const logPath = path.join(".ensemble_reviews", "review-log.jsonl");
+    fs.appendFileSync(logPath, `${JSON.stringify({
       timestamp: new Date().toISOString(),
       run_id: runId,
       ...(options.label ? { label: options.label } : {}),
@@ -1255,6 +1286,8 @@ async function main() {
       report_sha256_covers: REPORT_DIGEST_COVERS,
     })}\n`);
     evidence.log_indexed = true;
+    // One sweep tightens the current report, the log, and any legacy files.
+    hardenPrivateTree(".ensemble_reviews");
   } catch (error) {
     evidence.error = clipped(error?.message ?? String(error), 300);
     evidence.failed_stage = evidence.persisted ? "review-log indexing" : "report persistence";
@@ -1286,12 +1319,17 @@ async function main() {
       }
     } catch {}
   }
-  ui.finish(report);
+  // The link is surfaced three ways so no consumer can miss it: a structured
+  // stream event for machines, a prominent line in the live UI, and a plain
+  // stderr line otherwise. SKILL.md still asks the governor to relay it in
+  // chat — but a governor that forgets can no longer hide it from the user.
+  if (evidence.ledger_url) emitEvent(options.stream, { event: "ledger", url: evidence.ledger_url });
+  ui.finish(report, evidence.ledger_url);
   if (evidence.error && !options.stream) {
     process.stderr.write(`WARNING: evidence persistence failed (${evidence.failed_stage}) — ${evidence.error}\n`);
   }
-  if (evidence.ledger_url && !options.stream) {
-    process.stderr.write(`Your private ledger (this run included): ${evidence.ledger_url}\n`);
+  if (evidence.ledger_url && !options.stream && !ui.rendered) {
+    process.stderr.write(`\n  ◆ Your private momm ledger (this run included, owner-only): ${evidence.ledger_url}\n\n`);
   }
   process.stdout.write(`${JSON.stringify({ ...report, evidence }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;

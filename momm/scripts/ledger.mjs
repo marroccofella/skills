@@ -86,8 +86,14 @@ const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
 ${rows || '<p class="dim">No runs recorded yet.</p>'}
 <p class="dim">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them.</p>`;
 
+// The ledger renders your reviewer transcripts — owner-only, like the reports.
+// Remove any prior file first so writeFileSync always creates fresh at mode
+// 0600 (its mode arg is ignored when overwriting), leaving no world-readable
+// window between write and chmod.
 const outPath = path.join(er, "ledger.html");
-fs.writeFileSync(outPath, html);
+try { fs.rmSync(outPath, { force: true }); } catch {}
+fs.writeFileSync(outPath, html, { mode: 0o600 });
+try { fs.chmodSync(er, 0o700); } catch {}
 process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — this file stays in .ensemble_reviews/, which the momm protocol keeps out of git.)\n`);
 if (process.argv.includes("--open")) {
   const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", outPath]] : process.platform === "darwin" ? ["open", [outPath]] : ["xdg-open", [outPath]];
