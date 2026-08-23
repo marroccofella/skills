@@ -21,7 +21,7 @@ const localVersionsFile = path.join(skillsRoot, "versions.json");
 const publishedVersionsUrl = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const governors = new Set(GOVERNOR_IDS);
 const setupApiSchema = "momm-setup/3";
-const setupUiVersion = "1.10.0";
+const setupUiVersion = "1.10.1";
 const sessionToken = crypto.randomBytes(24).toString("hex");
 const jobs = new Map();
 const latestJobs = new Map();
@@ -1280,9 +1280,9 @@ async function selfTest() {
     })(),
     antigravity_two_column_models_parse: extractModelNames("gemini-3-pro    Flagship model\ngemini-3-flash\tFast model").join(",") === "gemini-3-pro,gemini-3-flash",
     isolated_probe_ignores_rules_and_writes_nothing: probeIsolation.passed,
-    version_comparison: compareVersions("1.10.0", "1.9.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
+    version_comparison: compareVersions("1.10.1", "1.9.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
     controller_startup_parses: parseArgs(["--governor", "gemini", "--no-browser"]).governor === "gemini",
-    api_schema_versioned: setupApiSchema === "momm-setup/3" && setupUiVersion === "1.10.0",
+    api_schema_versioned: setupApiSchema === "momm-setup/3" && setupUiVersion === "1.10.1",
     myskills_health_runner_present: fs.existsSync(myskillsScript),
     assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
   };
