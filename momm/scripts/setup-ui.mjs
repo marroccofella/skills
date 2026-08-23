@@ -910,25 +910,27 @@ async function probeIsolationSelfTest() {
   fs.mkdirSync(fakeBin);
   const sentinel = `PROJECT_RULE_SENTINEL_${crypto.randomBytes(8).toString("hex")}`;
   fs.writeFileSync(path.join(probe, ".reviewrules"), sentinel);
-  const fakeProvider = path.join(fakeBin, "fake-provider.mjs");
+  const fakeProvider = path.join(fakeBin, "fake-provider.cjs");
   fs.writeFileSync(fakeProvider, `
-import fs from "node:fs";
-const args = process.argv.slice(2);
-let input = "";
-for await (const chunk of process.stdin) input += chunk.toString("utf8");
-if (args[0] === "--version") process.stdout.write("codex 0.0.0-test\\n");
-else if (args[0] === "login" && args[1] === "status") process.stdout.write("Logged in for isolated test\\n");
-else {
-  const forbidden = Object.entries(process.env).filter(([name, value]) => /CANARY|API_KEY|SECRET_KEY|BASE_URL|ENDPOINT|GH_TOKEN|GITHUB_TOKEN|AWS_PROFILE|BEDROCK|VERTEX/i.test(name) || /MUST_NOT_ESCAPE/.test(value)).map(([name]) => name);
-  fs.writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify({ args, input, forbidden, cwd: process.cwd() }));
-  process.stdout.write(JSON.stringify({ verdict: "ACCEPT", confidence: 1, findings: [], summary: "isolated setup probe ok", suggested_improvements: [] }));
-}
+const fs = require("node:fs");
+(async () => {
+  const args = process.argv.slice(2);
+  let input = "";
+  for await (const chunk of process.stdin) input += chunk.toString("utf8");
+  if (args[0] === "--version") process.stdout.write("codex 0.0.0-test\\n");
+  else if (args[0] === "login" && args[1] === "status") process.stdout.write("Logged in for isolated test\\n");
+  else {
+    const forbidden = Object.entries(process.env).filter(([name, value]) => /CANARY|API_KEY|SECRET_KEY|BASE_URL|ENDPOINT|GH_TOKEN|GITHUB_TOKEN|AWS_PROFILE|BEDROCK|VERTEX/i.test(name) || /MUST_NOT_ESCAPE/.test(value)).map(([name]) => name);
+    fs.writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify({ args, input, forbidden, cwd: process.cwd() }));
+    process.stdout.write(JSON.stringify({ verdict: "ACCEPT", confidence: 1, findings: [], summary: "isolated setup probe ok", suggested_improvements: [] }));
+  }
+})().catch((error) => { process.stderr.write(String(error && error.stack || error)); process.exitCode = 1; });
 `, { mode: 0o700 });
   if (process.platform === "win32") {
     fs.writeFileSync(path.join(fakeBin, "codex.cmd"), `@"${process.execPath}" "${fakeProvider}" %*\r\n`);
   } else {
     const wrapper = path.join(fakeBin, "codex");
-    fs.writeFileSync(wrapper, `#!${process.execPath}\nimport "${fakeProvider.replaceAll("\\", "\\\\")}";\n`, { mode: 0o700 });
+    fs.writeFileSync(wrapper, `#!/usr/bin/env node\nrequire(${JSON.stringify(fakeProvider)});\n`, { mode: 0o700 });
     fs.chmodSync(wrapper, 0o700);
   }
   const envSource = { ...process.env };
