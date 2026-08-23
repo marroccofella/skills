@@ -19,7 +19,7 @@
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   background:
     radial-gradient(circle at 8% 3%, rgba(75, 143, 106, .12), transparent 28rem),
     radial-gradient(circle at 92% 20%, rgba(205, 137, 66, .1), transparent 24rem),

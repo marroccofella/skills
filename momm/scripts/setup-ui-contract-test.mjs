@@ -258,6 +258,8 @@ contract("interactive controls retain 44px targets and visible focus", () => {
 });
 
 contract("320px maintenance actions wrap without horizontal overflow", () => {
+  const bodyRule = cssRules.find((rule) => rule.selectors.includes("body"));
+  assert(bodyRule && /min-width\s*:\s*0(?:px)?(?:\s*;|$)/i.test(bodyRule.declarations), "body retains a rigid minimum width that can overflow beside a vertical scrollbar");
   assert(/\.skill-actions\s*\{[^}]*flex-wrap\s*:\s*wrap/i.test(css), "skill actions do not wrap");
   const mobile = css.slice(css.indexOf("@media (max-width: 520px)"));
   assert(/\.health-card-head\s*\{[^}]*flex-direction\s*:\s*column/i.test(mobile), "mobile health header does not stack");
