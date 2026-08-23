@@ -82,9 +82,9 @@ function platformKey() {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 }
 
-function actionCommand(provider, action) {
+function actionCommand(provider, action, platform = platformKey()) {
   if (provider === "skills" && ["update", "diff", "commit"].includes(action)) {
-    const windows = platformKey() === "win32";
+    const windows = platform === "win32";
     const quoted = windows
       ? `'${skillsRoot.replaceAll("'", "''")}'`
       : `'${skillsRoot.replaceAll("'", `'\\''`)}'`;
@@ -94,11 +94,11 @@ function actionCommand(provider, action) {
       : `cd ${quoted} && git status --short && git diff --stat && git diff`;
     return windows
       ? `Set-Location ${quoted}; git status; Write-Host ''; Write-Host 'Review the files above. Stage only what you intend with git add, then run git commit with your own message.'`
-      : `cd ${quoted} && git status; printf '\nReview the files above. Stage only what you intend with git add, then run git commit with your own message.\n'`;
+      : `cd ${quoted} && git status; printf '%s\\n' '' 'Review the files above. Stage only what you intend with git add, then run git commit with your own message.'`;
   }
   const record = providers[provider] || skillTools[provider];
   if (!record || !["login", "install", "update", "models"].includes(action)) return null;
-  return record[action]?.[platformKey()] || null;
+  return record[action]?.[platform] || null;
 }
 
 function actionNote(provider, action) {
@@ -1058,6 +1058,12 @@ async function selfTest() {
     CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth-session",
   });
   const [probeIsolation, authorityIntegration] = await Promise.all([probeIsolationSelfTest(), authorityIntegrationSelfTest()]);
+  const terminalCommandMatrix = ["win32", "darwin", "linux"].flatMap((platform) => [
+    ...Object.entries(providers).flatMap(([name, record]) => ["login", "install", "models", ...(record.update ? ["update"] : [])]
+      .map((action) => actionCommand(name, action, platform))),
+    ...["update", "diff", "commit"].map((action) => actionCommand("skills", action, platform)),
+    ...["install", "login"].map((action) => actionCommand("github-cli", action, platform)),
+  ]);
   const tests = {
     provider_allowlist: Object.keys(providers).join(",") === "codex,claude,antigravity,copilot,grok,gemini",
     every_controller_supported: ["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"].every((name) => governors.has(name)),
@@ -1065,8 +1071,7 @@ async function selfTest() {
     unknown_provider_rejected: actionCommand("unknown", "login") === null,
     unknown_action_rejected: actionCommand("claude", "delete") === null,
     commands_are_fixed: Object.entries(providers).every(([name, record]) => ["login", "install", "models"].every((action) => actionCommand(name, action)) && (!record.update || actionCommand(name, "update"))),
-    terminal_commands_single_line: terminalCommandIsSafe(actionCommand("claude", "login"))
-      && terminalCommandIsSafe(actionCommand("skills", "commit"))
+    terminal_commands_single_line: terminalCommandMatrix.every(terminalCommandIsSafe)
       && !terminalCommandIsSafe("git status\nsecond command"),
     official_route_fixes: actionCommand("antigravity", "login") === "agy"
       && actionCommand("claude", "login") === "claude auth login"
