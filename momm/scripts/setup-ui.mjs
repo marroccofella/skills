@@ -971,23 +971,28 @@ const fs = require("node:fs");
       "--label", SETUP_PROBE_LABEL, "--setup-probe",
     ], { input: arbitraryInput, cwd: probe, timeoutMs: 30_000, envSource, setupProbeAuthorization: { capability: arbitraryCapability, binding: arbitraryBinding } });
     const files = fs.readdirSync(probe).sort();
-    return result.code === 0
-      && report?.setup_probe === true
-      && report?.setup_probe_authorized === true
-      && report?.project_rules_applied === false
-      && report?.evidence?.persisted === false
-      && report?.evidence?.skipped === "isolated_setup_probe"
-      && report?.reviewers?.[0]?.status === "success"
-      && !result.stdout.includes(sentinel)
-      && capture?.input?.includes(SETUP_PROBE_INPUT)
-      && !capture?.input?.includes(sentinel)
-      && !capture?.input?.includes("PROJECT_RULE_SENTINEL")
-      && path.resolve(capture?.cwd || "") === path.resolve(probe)
-      && Array.isArray(capture?.forbidden) && capture.forbidden.length === 0
-      && !JSON.stringify(capture).includes("CANARY_MUST_NOT_ESCAPE")
-      && forged.code !== 0 && /active Setup Center capability/.test(forged.stderr)
-      && arbitrary.code !== 0 && /exact synthetic validation payload/.test(arbitrary.stderr)
-      && files.length === 1 && files[0] === ".reviewrules";
+    let canonicalCwdMatches = false;
+    try { canonicalCwdMatches = fs.realpathSync(capture?.cwd || "") === fs.realpathSync(probe); } catch {}
+    const checks = {
+      dispatcher_completed: result.code === 0,
+      report_is_authorized_probe: report?.setup_probe === true && report?.setup_probe_authorized === true,
+      report_declares_isolation: report?.project_rules_applied === false
+        && report?.evidence?.persisted === false
+        && report?.evidence?.skipped === "isolated_setup_probe",
+      reviewer_succeeded: report?.reviewers?.[0]?.status === "success",
+      project_rule_not_returned: !result.stdout.includes(sentinel),
+      fixed_input_only: capture?.input?.includes(SETUP_PROBE_INPUT)
+        && !capture?.input?.includes(sentinel)
+        && !capture?.input?.includes("PROJECT_RULE_SENTINEL"),
+      canonical_probe_directory: canonicalCwdMatches,
+      forbidden_environment_absent: Array.isArray(capture?.forbidden)
+        && capture.forbidden.length === 0
+        && !JSON.stringify(capture).includes("CANARY_MUST_NOT_ESCAPE"),
+      direct_probe_rejected: forged.code !== 0 && /active Setup Center capability/.test(forged.stderr),
+      arbitrary_payload_rejected: arbitrary.code !== 0 && /exact synthetic validation payload/.test(arbitrary.stderr),
+      no_probe_artifacts: files.length === 1 && files[0] === ".reviewrules",
+    };
+    return { passed: Object.values(checks).every(Boolean), checks };
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1118,7 +1123,7 @@ async function selfTest() {
       return !detail.includes("user") && !detail.includes("embedded-token") && !detail.includes("access_token") && !detail.includes("secret");
     })(),
     antigravity_two_column_models_parse: extractModelNames("gemini-3-pro    Flagship model\ngemini-3-flash\tFast model").join(",") === "gemini-3-pro,gemini-3-flash",
-    isolated_probe_ignores_rules_and_writes_nothing: probeIsolation,
+    isolated_probe_ignores_rules_and_writes_nothing: probeIsolation.passed,
     version_comparison: compareVersions("1.10.0", "1.9.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
     controller_startup_parses: parseArgs(["--governor", "gemini", "--no-browser"]).governor === "gemini",
     api_schema_versioned: setupApiSchema === "momm-setup/2" && setupUiVersion === "1.10.0",
@@ -1126,7 +1131,8 @@ async function selfTest() {
     assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
   };
   const passed = Object.values(tests).every(Boolean);
-  process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
+  const diagnostics = probeIsolation.passed ? undefined : { probe_isolation: probeIsolation.checks };
+  process.stdout.write(`${JSON.stringify({ passed, tests, ...(diagnostics ? { diagnostics } : {}) }, null, 2)}\n`);
   process.exitCode = passed ? 0 : 1;
 }
 
