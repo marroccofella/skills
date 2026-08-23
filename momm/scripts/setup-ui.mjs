@@ -524,7 +524,10 @@ function spawnVisible(command, args, { provider = null, acknowledgementMs = 650 
       timer = setTimeout(() => accept("running"), acknowledgementMs);
     });
     child.once("error", fail);
-    child.once("close", (code, signal) => {
+    // `exit` is the earliest authoritative process result. Waiting for
+    // `close` also waits for stdio teardown and can race the acknowledgement
+    // timer on a loaded machine even though this child uses ignored stdio.
+    child.once("exit", (code, signal) => {
       if (code === 0) accept("exited_zero");
       else fail(new Error(`${command} rejected the terminal request (${signal || `exit ${code ?? "unknown"}`}).`));
     });
@@ -532,11 +535,16 @@ function spawnVisible(command, args, { provider = null, acknowledgementMs = 650 
 }
 
 async function visibleLaunchSelfTest() {
-  const rejected = await spawnVisible(process.execPath, ["-e", "process.exit(23)"], { acknowledgementMs: 200 })
+  // `spawn` fires before the child JavaScript begins. A constrained CI runner
+  // can therefore take longer than a production acknowledgement window to
+  // execute even this immediate exit; keep the behavioral assertion while
+  // giving the fixture itself deterministic startup headroom.
+  const fixtureExitWindowMs = 2_000;
+  const rejected = await spawnVisible(process.execPath, ["-e", "process.exit(23)"], { acknowledgementMs: fixtureExitWindowMs })
     .then(() => false, () => true);
-  const zeroExit = await spawnVisible(process.execPath, ["-e", "process.exit(0)"], { acknowledgementMs: 200 })
+  const zeroExit = await spawnVisible(process.execPath, ["-e", "process.exit(0)"], { acknowledgementMs: fixtureExitWindowMs })
     .then((result) => result.accepted === true, () => false);
-  const running = await spawnVisible(process.execPath, ["-e", "setTimeout(() => {}, 300)"], { acknowledgementMs: 50 })
+  const running = await spawnVisible(process.execPath, ["-e", "setTimeout(() => {}, 2000)"], { acknowledgementMs: 250 })
     .then((result) => result.accepted === true && result.state === "running", () => false);
   return rejected && zeroExit && running;
 }

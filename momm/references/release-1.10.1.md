@@ -8,6 +8,7 @@ MOMM 1.10.1 is the complete patch artifact for the corrective 1.10 line. It cont
 
 - Removed the rigid 320-pixel body minimum that could create a narrow horizontal scrollbar when the browser's vertical scrollbar reduced the usable content width.
 - Added a release-contract assertion that prevents the rigid minimum width from returning; a rendered in-app-browser check confirms `scrollWidth === clientWidth` at the narrow panel size.
+- Made the immediate terminal-exit regression deterministic on constrained CI runners by separating fixture startup headroom from the production acknowledgement window.
 - Corrected the public verification text to report the final 40 dispatcher self-tests and 29 Setup Center self-tests.
 - Clarified the setup-probe boundary: its capability is issued and consumed once within a Setup Center instance. It is not an OS-backed identity claim against another same-user process. The dispatcher still accepts only the fixed disclosed synthetic sentence, so this internal route cannot carry project source.
 
