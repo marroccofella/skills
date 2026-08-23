@@ -10,7 +10,7 @@ import { cleanOauthEnv as cleanSharedOauthEnv, isForbiddenOauthEnvironmentName, 
 import { DEFAULT_REVIEWERS, GOVERNOR_IDS, INSTALL_HINTS, LOGIN_HINTS, PROVIDER_IDS } from "./provider-manifest.mjs";
 import { SETUP_PROBE_AUTH_REQUEST, SETUP_PROBE_AUTH_RESPONSE, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeDescriptor } from "./setup-probe-contract.mjs";
 
-const MOMM_VERSION = "1.10.1";
+const MOMM_VERSION = "1.10.2";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -1157,7 +1157,7 @@ async function selfTest(pretty) {
       && !buildContract("codex", {}).includes("Persona —")
       && personaFor("grok", { personas: { grok: "futureproof" } }) === "futureproof",
     version_identity_declared: /^\d+\.\d+\.\d+$/.test(MOMM_VERSION) && /^momm-report\/\d+$/.test(REPORT_SCHEMA),
-    semver_compare_correct: isNewerVersion("1.5.0", "1.4.0") && isNewerVersion("1.10.1", "1.9.0") && !isNewerVersion("1.4.0", "1.4.0") && !isNewerVersion("1.4.0", "1.5.0") && isNewerVersion("2.0.0", "1.9.9"),
+    semver_compare_correct: isNewerVersion("1.5.0", "1.4.0") && isNewerVersion("1.10.2", "1.9.0") && !isNewerVersion("1.4.0", "1.4.0") && !isNewerVersion("1.4.0", "1.5.0") && isNewerVersion("2.0.0", "1.9.9"),
     version_compare_rejects_junk: !isNewerVersion("1.5.0-beta", "1.4.0") && !isNewerVersion("9.9.9; rm -rf", "1.0.0") && !isNewerVersion("1.4.0", "not-a-version") && VERSION_RE.test("1.5.0") && !VERSION_RE.test("1.5.0\n"),
     update_check_disable_respects_falsey: (() => { const s = process.env.NO_UPDATE_CHECK; process.env.NO_UPDATE_CHECK = "0"; const off0 = updateCheckDisabled(); process.env.NO_UPDATE_CHECK = "1"; const off1 = updateCheckDisabled(); if (s === undefined) delete process.env.NO_UPDATE_CHECK; else process.env.NO_UPDATE_CHECK = s; return off0 === false && off1 === true; })(),
     file_urls_are_clickable: formatFileUrl("C:\\some dir\\ledger.html") === "file:///C:/some%20dir/ledger.html"

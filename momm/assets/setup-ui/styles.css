@@ -260,6 +260,9 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
   .panel-actions label { grid-column: 1 / -1; }
   select, #refresh { width: 100%; }
   .provider-card { padding: 17px; }
+  .card-top { flex-direction: column; }
+  .provider-name, .provider-name > div { min-width: 0; }
+  .status { align-self: flex-start; }
   .provider-facts { grid-template-columns: 1fr; }
   .status-banner { grid-template-columns: 1fr; padding: 20px; }
   .status-meter { width: 68px; height: 68px; }

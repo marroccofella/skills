@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.10.1-00cc88)
+![momm](https://img.shields.io/badge/momm-1.10.2-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -130,7 +130,7 @@ node momm/scripts/setup-ui.mjs --governor codex
 node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.10.1 release notes](momm/references/release-1.10.1.md) for the final corrective change and safety record.
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.10.2 release notes](momm/references/release-1.10.2.md) for the final corrective change and safety record.
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 

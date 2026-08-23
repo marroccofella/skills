@@ -1,6 +1,6 @@
 # MOMM acceptance test plan
 
-A self-contained conformance plan for **momm 1.10.1**. Hand this whole file to a fresh agent session (any harness), have it run the exercises in order, and paste its filled-in results back to the requester for verification.
+A self-contained conformance plan for **momm 1.10.2**. Hand this whole file to a fresh agent session (any harness), have it run the exercises in order, and paste its filled-in results back to the requester for verification.
 
 ## How to use this plan
 
@@ -228,7 +228,7 @@ tail -5 .ensemble_reviews/dispositions.jsonl 2>/dev/null || echo "no disposition
 
 ## G. Tripwires (correct behaviour here is refusal or failure)
 
-> These exist to detect a session reporting results it did not earn. **All expected values below were verified against momm 1.10.1** — they are facts, not guesses.
+> These exist to detect a session reporting results it did not earn. **All expected values below were verified against momm 1.10.2** — they are facts, not guesses.
 
 ### G1 — Quorum gate
 ```bash

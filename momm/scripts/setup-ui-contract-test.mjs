@@ -257,11 +257,13 @@ contract("interactive controls retain 44px targets and visible focus", () => {
   assert(externalLinks.every((tag) => /\brel=["'][^"']*\bnoopener\b[^"']*\bnoreferrer\b[^"']*["']/.test(tag)), "an external help link lacks explicit noopener noreferrer protection");
 });
 
-contract("320px maintenance actions wrap without horizontal overflow", () => {
+contract("320px hydrated cards and maintenance actions avoid horizontal overflow", () => {
   const bodyRule = cssRules.find((rule) => rule.selectors.includes("body"));
   assert(bodyRule && /min-width\s*:\s*0(?:px)?(?:\s*;|$)/i.test(bodyRule.declarations), "body retains a rigid minimum width that can overflow beside a vertical scrollbar");
   assert(/\.skill-actions\s*\{[^}]*flex-wrap\s*:\s*wrap/i.test(css), "skill actions do not wrap");
   const mobile = css.slice(css.indexOf("@media (max-width: 520px)"));
+  assert(/\.card-top\s*\{[^}]*flex-direction\s*:\s*column/i.test(mobile), "hydrated provider status still shares a narrow row with the provider name");
+  assert(/\.status\s*\{[^}]*align-self\s*:\s*flex-start/i.test(mobile), "mobile provider status can stretch beyond its card");
   assert(/\.health-card-head\s*\{[^}]*flex-direction\s*:\s*column/i.test(mobile), "mobile health header does not stack");
   assert(/\.skill-actions\s*\{[^}]*width\s*:\s*100%[^}]*justify-content\s*:\s*flex-start/i.test(mobile), "mobile skill actions do not use the available width");
   assert(/\.local-pill\s*\{[^}]*display\s*:\s*none/i.test(mobile), "mobile header still crowds the controller with the local-only pill");
