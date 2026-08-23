@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.9.0";
+const MOMM_VERSION = "1.9.1";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 

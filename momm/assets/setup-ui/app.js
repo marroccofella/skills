@@ -50,7 +50,11 @@ function reviewerRoutes() {
 function routeState(route) {
   const live = liveResults.get(route.agent);
   if (live?.status === "running") return "testing";
-  if (live?.status === "success") return "ready";
+  // A cached success must not survive an expired session: only honor it while
+  // the latest readiness poll still reports the route ready. No mutation during
+  // render — the guard alone stops it showing "Verified" and counting toward
+  // completion once readiness falls.
+  if (live?.status === "success" && route.ready === true) return "ready";
   if (live?.status === "failed") return "failed";
   if (route.ready) return "detected";
   if (route.installed === false) return "install";

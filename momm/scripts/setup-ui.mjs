@@ -291,7 +291,10 @@ async function maintenanceReport(governor) {
     runCommand("grok", ["update", "--check", "--json"], { timeoutMs: 20_000 }),
     runCommand("git", ["--version"]),
     runCommand("git", ["-C", skillsRoot, "status", "--porcelain"], { timeoutMs: 10_000 }),
-    process.platform === "win32" ? runCommand("pwsh", ["--version"]) : Promise.resolve({ code: 0, stdout: "not required" }),
+    // Check the SAME shell the actions launch (Windows PowerShell 5, always
+    // present) — not pwsh (PowerShell 7), which is absent on stock Windows and
+    // produced false failures.
+    process.platform === "win32" ? runCommand("powershell.exe", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"]) : Promise.resolve({ code: 0, stdout: "not required" }),
     modelStatus(routesReport.routes || []),
   ]);
   const routeMap = new Map((routesReport.routes || []).map((route) => [route.agent, route]));
@@ -342,31 +345,25 @@ async function maintenanceReport(governor) {
   return value;
 }
 
+// Returns true only if a terminal process was actually spawned. Commands are
+// fixed single-line strings; a newline would let the macOS AppleScript "do
+// script" run extra statements, so reject it defensively on every platform.
 function launchTerminal(command) {
-  let child;
-  if (process.platform === "win32") {
-    child = spawn("powershell.exe", ["-NoExit", "-NoProfile", "-Command", command], {
-      detached: true,
-      shell: false,
-      stdio: "ignore",
-      windowsHide: false,
-    });
-  } else if (process.platform === "darwin") {
-    const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-    child = spawn("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`], {
-      detached: true,
-      shell: false,
-      stdio: "ignore",
-    });
-  } else {
-    child = spawn("x-terminal-emulator", ["-e", "bash", "-lc", `${command}; exec bash`], {
-      detached: true,
-      shell: false,
-      stdio: "ignore",
-    });
-  }
-  child.on("error", () => {});
-  child.unref();
+  if (/[\r\n]/.test(command)) return false;
+  try {
+    let child;
+    if (process.platform === "win32") {
+      child = spawn("powershell.exe", ["-NoExit", "-NoProfile", "-Command", command], { detached: true, shell: false, stdio: "ignore", windowsHide: false });
+    } else if (process.platform === "darwin") {
+      const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+      child = spawn("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`], { detached: true, shell: false, stdio: "ignore" });
+    } else {
+      child = spawn("x-terminal-emulator", ["-e", "bash", "-lc", `${command}; exec bash`], { detached: true, shell: false, stdio: "ignore" });
+    }
+    child.on("error", () => {});
+    child.unref();
+    return child.pid !== undefined; // undefined pid = spawn failed (e.g. terminal not installed)
+  } catch { return false; }
 }
 
 function openBrowser(url) {
@@ -395,7 +392,9 @@ function startConnectivityJob(provider, governor) {
     "--reviewers", provider,
     "--min-success", "1",
     "--label", "setup-center connectivity validation",
-  ], { input, timeoutMs: 190_000 }).then((result) => {
+    // Headroom for the worst case: grok ~180s + dispatcher settlement (~5s) +
+    // ledger build (~15s). 190s could kill the dispatcher mid-cleanup.
+  ], { input, timeoutMs: 240_000 }).then((result) => {
     let report = null;
     try { report = JSON.parse(result.stdout); } catch {}
     const reviewer = report?.reviewers?.find((item) => item.agent === provider);
@@ -418,6 +417,31 @@ function startConnectivityJob(provider, governor) {
 
 function isLoopback(address) {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+// Defeat DNS rebinding: a loopback SOCKET is not enough — a rebound attacker
+// hostname resolves to 127.0.0.1, so the socket check passes while the Host
+// header carries the attacker's domain. Only loopback host names may reach any
+// route (including /api/session, which returns the token).
+function isAllowedHost(request) {
+  const host = request.headers.host;
+  if (!host || typeof host !== "string") return false;
+  let name;
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end === -1) return false;                       // malformed: no closing bracket
+    const rest = host.slice(end + 1);
+    if (rest !== "" && !/^:\d+$/.test(rest)) return false; // only [host] or [host]:port — blocks [::1].evil
+    name = host.slice(1, end);
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon === -1) name = host;
+    else {
+      if (!/^\d+$/.test(host.slice(colon + 1))) return false; // port must be digits — blocks "127.0.0.1:80@evil.com"
+      name = host.slice(0, colon);
+    }
+  }
+  return name === "localhost" || name === "127.0.0.1" || name === "::1";
 }
 
 function securityHeaders(contentType = "application/json; charset=utf-8") {
@@ -469,6 +493,7 @@ function serveAsset(response, file, contentType) {
 function createServer() {
   return http.createServer(async (request, response) => {
     if (!isLoopback(request.socket.remoteAddress)) return sendJson(response, 403, { error: "Loopback access only" });
+    if (!isAllowedHost(request)) return sendJson(response, 403, { error: "Invalid Host header" });
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     try {
       if (request.method === "GET" && requestUrl.pathname === "/") return serveAsset(response, "index.html", "text/html; charset=utf-8");
@@ -500,7 +525,7 @@ function createServer() {
             if (status.code !== 0) return sendJson(response, 409, { error: "Git could not verify that the skills checkout is safe to update." });
             if (status.stdout.trim()) return sendJson(response, 409, { error: "Local skill changes are present. Handle them before updating." });
           }
-          launchTerminal(command);
+          if (!launchTerminal(command)) return sendJson(response, 500, { error: "Could not open a terminal for this action.", command });
           return sendJson(response, 202, { launched: true, command, note: actionNote(provider, action) });
         }
         if (requestUrl.pathname === "/api/maintenance") {
@@ -541,6 +566,16 @@ function selfTest() {
       && actionCommand("skills", "diff")?.includes("git diff") === true
       && actionCommand("skills", "commit")?.includes("git status") === true,
     loopback_only: isLoopback("127.0.0.1") && isLoopback("::1") && !isLoopback("192.168.1.5"),
+    host_allowlist_blocks_rebinding: isAllowedHost({ headers: { host: "127.0.0.1:8080" } })
+      && isAllowedHost({ headers: { host: "localhost:8080" } })
+      && isAllowedHost({ headers: { host: "[::1]:8080" } })
+      && !isAllowedHost({ headers: { host: "evil.example.com" } })
+      && !isAllowedHost({ headers: { host: "127.0.0.1.evil.com" } })
+      && !isAllowedHost({ headers: { host: "[::1].evil.example" } }) // bracket-prefix bypass
+      && !isAllowedHost({ headers: { host: "[::1" } })               // malformed, no closing bracket
+      && !isAllowedHost({ headers: { host: "127.0.0.1:80@evil.com" } })
+      && !isAllowedHost({ headers: {} }),
+    terminal_rejects_newline_commands: launchTerminal("git status\nrm -rf /") === false,
     clickjacking_blocked: securityHeaders()["X-Frame-Options"] === "DENY",
     api_keys_not_mentioned: !JSON.stringify(providers).match(/api[_ -]?key/i),
     environment_values_never_classified: sampleEnvironment.api_key_names_present[0] === "XAI_API_KEY" && !("values" in sampleEnvironment),

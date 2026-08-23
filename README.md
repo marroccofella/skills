@@ -106,11 +106,15 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 ### Quick start
 
 ```bash
-# 1. Open the local Setup Center. Its unified provider cards show CLI, account,
+# 1. Link the skill into your harness so you can invoke $momm afterwards
+#    (once per machine; use --target all for every detected harness).
+node install.mjs --target all
+
+# 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.
 node momm/scripts/setup-ui.mjs
 
-# 2. Once one reviewer is verified, review current changes.
+# 3. Once one reviewer is verified, review current changes.
 #    In a terminal you get a live progress display — spinners per reviewer,
 #    verdict badges, login hints on auth failures, and a consensus summary.
 node momm/scripts/multi-review.mjs --governor codex --min-success 1

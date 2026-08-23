@@ -40,6 +40,33 @@ jobs:
           console.log("guided onboarding is zero-call, self-excluding, and input-safe");
       - name: Local Setup Center safety contract
         run: node momm/scripts/setup-ui.mjs --self-test
+      # Exercise the LIVE server routes, not just helpers: a spoofed Host header
+      # (DNS-rebinding) must be refused before any route runs, and /api/session
+      # must never hand its token to a non-loopback host.
+      - name: Setup Center rejects DNS-rebinding on live routes
+        shell: node {0}
+        run: |
+          const { spawn } = require("node:child_process");
+          const http = require("node:http");
+          const srv = spawn(process.execPath, ["momm/scripts/setup-ui.mjs", "--port", "39222", "--no-browser"], { stdio: "ignore" });
+          const get = (host) => new Promise((resolve, reject) => {
+            const req = http.request({ host: "127.0.0.1", port: 39222, path: "/api/session", headers: { Host: host } }, (res) => {
+              let body = ""; res.on("data", (c) => body += c); res.on("end", () => resolve({ status: res.statusCode, body }));
+            });
+            req.on("error", reject); req.end();
+          });
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+          (async () => {
+            try {
+              await wait(1500);
+              const ok = await get("127.0.0.1:39222");
+              if (ok.status !== 200 || !/token/.test(ok.body)) throw new Error("loopback host should serve the session: " + ok.status);
+              const evil = await get("evil.example.com");
+              if (evil.status !== 403) throw new Error("spoofed Host was not refused: " + evil.status);
+              if (/token/.test(evil.body)) throw new Error("session token LEAKED to a spoofed Host");
+              console.log("live server refuses spoofed Host (DNS-rebinding) and never leaks the token");
+            } finally { srv.kill(); }
+          })().catch((e) => { srv.kill(); console.error(e.message); process.exit(1); });
       - name: Yorkshire pudding self-test
         run: node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
       - name: Public evidence is sanitized and sealed
