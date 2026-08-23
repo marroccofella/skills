@@ -17,7 +17,7 @@ Turn a local project into its own public GitHub repository with a browser-runnab
 
 ## Verify it offline
 
-Before diagnosing GitHub setup, prove that myrepo 1.3.0's local safety gates work:
+Before diagnosing GitHub setup, prove that myrepo 1.3.1's local safety gates work:
 
 ```text
 node scripts/publish.mjs --self-test

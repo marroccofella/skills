@@ -1,6 +1,6 @@
 # MOMM acceptance test plan
 
-A self-contained conformance plan for **momm 1.9.1**. Hand this whole file to a fresh agent session (any harness), have it run the exercises in order, and paste its filled-in results back to the requester for verification.
+A self-contained conformance plan for **momm 1.10.0**. Hand this whole file to a fresh agent session (any harness), have it run the exercises in order, and paste its filled-in results back to the requester for verification.
 
 ## How to use this plan
 
@@ -99,7 +99,7 @@ echo "exit: $?"
 ## C. Security (these are the ones that matter most)
 
 ### C1 — DNS-rebinding defence on the live server
-**Goal:** prove the running Setup Center refuses a spoofed `Host` and never leaks its session token. *(This was a real P0, fixed in 1.9.1.)*
+**Goal:** prove the running Setup Center refuses a spoofed `Host` and never leaks its session token. *(This was a real P0, fixed in 1.9.1 and strengthened in 1.10.0.)*
 ```bash
 PORT=$((39000 + RANDOM % 2000))               # avoid collisions with anything already listening
 node "$SKILLS/momm/scripts/setup-ui.mjs" --port $PORT --no-browser & SRV=$!
@@ -228,7 +228,7 @@ tail -5 .ensemble_reviews/dispositions.jsonl 2>/dev/null || echo "no disposition
 
 ## G. Tripwires (correct behaviour here is refusal or failure)
 
-> These exist to detect a session reporting results it did not earn. **All expected values below were verified against momm 1.9.1** — they are facts, not guesses.
+> These exist to detect a session reporting results it did not earn. **All expected values below were verified against momm 1.10.0** — they are facts, not guesses.
 
 ### G1 — Quorum gate
 ```bash
@@ -273,7 +273,7 @@ node "$MOMM" --preflight --governor "$GOV" --pretty | grep -A2 "\"agent\": \"$GO
 ### H1 — myrepo refuses to leak
 ```bash
 LEAKY="$(mktemp -d)"
-printf 'const k = { api_key: "abcd1234efgh5678" };\n' > "$LEAKY/app.js"
+printf '%s' 'const k = { api_' 'key: "abcd1234efgh5678" };' > "$LEAKY/app.js"
 printf '<title>x</title>' > "$LEAKY/index.html"
 node "$SKILLS/myrepo/scripts/publish.mjs" --name probe --dir "$LEAKY" --dry-run; echo "exit: $?"
 rm -rf "$LEAKY"

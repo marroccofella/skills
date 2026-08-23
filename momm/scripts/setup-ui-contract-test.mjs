@@ -148,8 +148,9 @@ contract("provider diagnostics cannot expose authentication material", () => {
 
 contract("OAuth-only subprocesses fail closed on ambient credentials", () => {
   const cleaner = extractFunction(oauthEnvironment, "cleanOauthEnv");
-  assert(/isAllowedOauthEnvironmentName\(key\)/.test(cleaner), "subprocess environment is not governed by an explicit allowlist");
-  assert(/!isForbiddenOauthEnvironmentName\(key\)/.test(cleaner), "reviewed allowlist entries are not rechecked against forbidden auth modes");
+  assert(/isAllowedOauthEnvironmentName\(key/.test(cleaner), "subprocess environment is not governed by an explicit allowlist");
+  assert(/isForbiddenOauthEnvironmentName\(key/.test(cleaner), "reviewed allowlist entries are not rechecked against forbidden auth modes");
+  assert(/provider === \"claude\"/.test(oauthEnvironment), "provider-scoped OAuth policy is missing");
   for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "AWS_PROFILE", "CLAUDE_CODE_USE_BEDROCK", "GOOGLE_GENAI_USE_VERTEXAI"]) {
     assert(oauthEnvironment.includes(`"${name}"`), `${name} has no regression guard`);
   }
@@ -159,13 +160,14 @@ contract("OAuth-only subprocesses fail closed on ambient credentials", () => {
 
 contract("setup probe is capability-bound to one exact payload", () => {
   const validator = extractFunction(dispatcher, "validSetupProbe");
-  assert(/hasIpcChannel/.test(validator), "setup probe does not require the server IPC channel");
-  assert(/artifact\s*===\s*SETUP_PROBE_INPUT/.test(validator), "setup probe does not require the exact fixed payload");
-  assert(/setupProbeBinding/.test(validator) && /timingSafeEqual/.test(validator), "setup probe capability is not bound and constant-time checked");
-  assert(/randomBytes\(32\)/.test(server) && /setupProbeAuthorization/.test(server), "Setup Center does not mint a one-time probe capability");
+  assert(/channel\.channel/.test(validator) && /channel\.send/.test(validator), "setup probe does not require the server IPC channel");
+  assert(/artifact\s*===\s*SETUP_PROBE_INPUT/.test(dispatcher), "setup probe does not require the exact fixed payload");
+  assert(/setupProbeDescriptor/.test(dispatcher) && /input_sha256/.test(probeContract), "setup probe descriptor is not bound to its payload");
+  assert(/consumeSetupProbeAuthorization/.test(server) && /consumed/.test(server), "setup probe authorization is not one-use");
+  assert(/issueSetupProbeAuthorization/.test(server) && /setupProbeAuthorization/.test(server), "Setup Center does not mint a one-time probe capability");
   assert(/stdio:\s*setupProbeAuthorization\s*\?\s*\[[^\]]*"ipc"/.test(server), "authorized setup probe is not carried over a private IPC channel");
   assert(/forged\.code\s*!==\s*0/.test(server) && /arbitrary\.code\s*!==\s*0/.test(server), "Setup Center self-test does not reject direct or arbitrary-payload probe attempts");
-  assert(probeContract.includes("SETUP_PROBE_INPUT") && probeContract.includes("setupProbeBinding"), "shared fixed probe contract is missing");
+  assert(probeContract.includes("SETUP_PROBE_INPUT") && probeContract.includes("setupProbeDescriptor") && probeContract.includes("SETUP_PROBE_AUTH_REQUEST"), "shared fixed probe contract is missing");
   assert(/provider-native saved (?:instructions|configuration) may still apply/i.test(html), "UI overpromises isolation from provider-native saved configuration");
 });
 
@@ -183,7 +185,7 @@ contract("verification shutdown cancels and awaits the complete process tree", (
   assert(/taskkill/.test(killer) && /"\/T"/.test(killer) && /process\.kill\(-child\.pid/.test(killer), "cross-platform process-tree termination is incomplete");
   const cancel = extractFunction(server, "cancelConnectivityJobs");
   assert(/abort_controller\?\.abort/.test(cancel) && /Promise\.allSettled/.test(cancel), "active verification cancellation is not awaited");
-  assert(/await\s+cancelConnectivityJobs\(\)/.test(server) && /cleanup_complete:\s*true/.test(server), "shutdown responds before verification cleanup completes");
+  assert(/await\s+cancelConnectivityJobs\(/.test(server) && /await\s+cancelBackgroundWork\(/.test(server) && /cleanup_complete/.test(server), "shutdown responds before verification cleanup completes");
   const closeStart = app.indexOf('closeButton.addEventListener("click"');
   const closeHandler = app.slice(closeStart, app.indexOf("\n\n(async () =>", closeStart));
   assert(!/\bfinally\b/.test(closeHandler) && /result\.cleanup_complete/.test(closeHandler), "frontend claims closure without confirmed cleanup");

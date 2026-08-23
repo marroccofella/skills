@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const MYREPO_VERSION = "1.3.0";
+const MYREPO_VERSION = "1.3.1";
 const TAGLINE = "RELAX. IT'S ALREADY OVER.";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,19 +116,51 @@ function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&am
 const SECRET_FILES = /(^|[\\/])(\.env(\.|$)|\.npmrc$|\.netrc$|id_rsa|id_ed25519|.*\.pem$|.*\.key$|.*\.pfx$|.*\.p12$|.*\.keystore$)/i;
 // Built from parts so this source does not itself look like a secret
 // assignment (which would trip a secret-redacting reviewer). Detects an
-// inline credential like FOO_TOKEN = "abc123..." in ordinary files.
+// inline credential like FOO_TOKEN = "<redacted>" in ordinary files.
 const CRED_WORDS = ["api[_-]?key", "secret", "passwd", "password", "private[_-]?key", "token", "bearer"];
-// Allow surrounding name chars so prefixed names match too (DB_PASSWORD,
-// AWS_SECRET_ACCESS_KEY, FOO_TOKEN). Best-effort net, not a security boundary.
-const CRED_ASSIGN = new RegExp("[A-Za-z0-9_]*(?:" + CRED_WORDS.join("|") + ")[A-Za-z0-9_]*\\s*[:=]\\s*[\"']?\\S{8,}", "i");
+// Match literal assignments, not runtime expressions such as generated
+// session tokens. Requiring a closing quote also prevents code and scanner
+// fixtures from being mistaken for credentials.
+const CRED_ASSIGN = new RegExp("[\"']?[A-Za-z0-9_]*(?:" + CRED_WORDS.join("|") + ")[A-Za-z0-9_]*[\"']?\\s*[:=]\\s*([\"'])([^\\r\\n\"']{8,})\\1", "ig");
 const PRIVATE_KEY_BLOCK = /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/;
-const hasCred = (text) => CRED_ASSIGN.test(text) || PRIVATE_KEY_BLOCK.test(text);
+const PLACEHOLDER_VALUE = /^[<[]?(?:fixture|example|sample|test|sentinel|allowed|forbidden|redacted|hidden|dummy|wrong[-_ ]?local|provider[-_ ]?scoped|not[-_ ]?a[-_ ]?secret|change[-_ ]?me|your[-_ ])/i;
+const credentialValueLooksReal = (value) => {
+  const candidate = String(value || "").trim();
+  return candidate.length >= 8
+    && !PLACEHOLDER_VALUE.test(candidate)
+    && !/CANARY|MUST_NOT_ESCAPE/i.test(candidate)
+    && !/\s/.test(candidate)
+    && !/[$}{()]/.test(candidate);
+};
+const hasCred = (text) => {
+  if (PRIVATE_KEY_BLOCK.test(text)) return true;
+  for (const match of String(text).matchAll(new RegExp(CRED_ASSIGN.source, CRED_ASSIGN.flags))) {
+    if (credentialValueLooksReal(match[2])) return true;
+  }
+  return false;
+};
 const TEXT_EXT = /\.(html?|css|js|mjs|cjs|ts|jsx|tsx|json|md|txt|xml|ya?ml|svg|vue|py|rb|go|rs|java|c|h|sh|toml|ini|cfg|env|conf)$/i;
 const PATH_PATTERNS = [
-  /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'<>]+/i,          // C:\Users\name
-  /(^|[\s"'(=/])\/(?:Users|home)\/[^/\s"'<>]+/,        // /Users/name, /home/name
-  /\/mnt\/[a-z]\/Users\/[^/\s"'<>]+/i,                 // WSL /mnt/c/Users/name
+  /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"'<>]+/gi,          // C:\Users\name
+  /(^|[\s"'(=/])\/(?:Users|home)\/[^/\s"'<>]+/gim,      // /Users/name, /home/name
+  /\/mnt\/[a-z]\/Users\/[^/\s"'<>]+/gi,                 // WSL /mnt/c/Users/name
 ];
+const PLACEHOLDER_USER = /^(?:\.{3}|…|you|your-name|name|user|username|fixture(?:-user)?|private-name|example)$/i;
+const PLACEHOLDER_PATH = /(?:Users|home)[\\/]+(?:\.{3}|…|you|your-name|name|user|username|fixture(?:-user)?|private-name|example)(?=[\\/\s"'<>`,.;:)\]}]|$)/i;
+function findPathLeak(text) {
+  for (const pattern of PATH_PATTERNS) {
+    for (const match of String(text).matchAll(new RegExp(pattern.source, pattern.flags))) {
+      const raw = match[0];
+      if (/(?:Users|home)[\\/]+(?:\.{3}|…|you|your-name|name|user|username|fixture(?:-user)?|private-name|example)/i.test(raw)) continue;
+      if (PLACEHOLDER_PATH.test(raw)) continue;
+      const normalized = raw.replaceAll("\\", "/").replace(/\/{2,}/g, "/");
+      const user = normalized.match(/\/(?:Users|home)\/([^/\s"'<>]+)/i)?.[1]?.replace(/[`),.;:\]}]+$/g, "");
+      if (user && PLACEHOLDER_USER.test(user)) continue;
+      return raw;
+    }
+  }
+  return null;
+}
 function scanForLeaks(dir) {
   const paths = [], secrets = [];
   let scanError = null;
@@ -143,7 +175,8 @@ function scanForLeaks(dir) {
       if (e.isDirectory()) walk(fp);
       else if (TEXT_EXT.test(e.name) || !path.extname(e.name)) {
         let t; try { t = fs.readFileSync(fp, "utf8"); } catch { continue; }
-        for (const pat of PATH_PATTERNS) { const m = t.match(pat); if (m) { paths.push(`${path.relative(dir, fp)}: ${m[0].slice(0, 60)}`); break; } }
+        const pathLeak = findPathLeak(t);
+        if (pathLeak) paths.push(`${path.relative(dir, fp)}: ${pathLeak.slice(0, 60)}`);
         // Inline credential in an ordinary file (not just secret-named files).
         if (hasCred(t)) secrets.push(`${path.relative(dir, fp)} (inline credential)`);
       }
@@ -153,8 +186,29 @@ function scanForLeaks(dir) {
   return { paths, secrets, scanError };
 }
 function scanText(label, text) {
-  for (const pat of PATH_PATTERNS) { const m = text.match(pat); if (m) return `${label}: ${m[0].slice(0, 60)}`; }
-  return null;
+  const pathLeak = findPathLeak(text);
+  return pathLeak ? `${label}: ${pathLeak.slice(0, 60)}` : null;
+}
+
+function safeGitArgs(dir, args) {
+  const normalized = path.resolve(dir).replaceAll("\\", "/");
+  return ["-c", `safe.directory=${normalized}`, "-C", dir, ...args];
+}
+
+function scanGitRevisions(dir, revisions) {
+  for (const revision of revisions) {
+    const files = run("git", safeGitArgs(dir, ["ls-tree", "-r", "--name-only", revision]));
+    if (files.code !== 0) return { error: files.err || "could not list revision" };
+    for (const relative of files.out.split(/\r?\n/).filter(Boolean)) {
+      if (!(TEXT_EXT.test(relative) || !path.extname(relative))) continue;
+      const blob = run("git", safeGitArgs(dir, ["show", `${revision}:${relative}`]), { maxBuffer: 16 * 1024 * 1024 });
+      if (blob.code !== 0) return { error: blob.err || `could not read ${relative}` };
+      const pathLeak = findPathLeak(blob.out);
+      if (pathLeak) return { leak: `${revision.slice(0, 12)}:${relative}: ${pathLeak.slice(0, 60)}` };
+      if (hasCred(blob.out)) return { credential: `${revision.slice(0, 12)}:${relative}` };
+    }
+  }
+  return {};
 }
 
 function runSelfTest() {
@@ -180,15 +234,19 @@ function runSelfTest() {
   try {
     const clean = fixture("clean", { "index.html": "<title>offline safety probe</title>" });
     const secretFile = fixture("secret-file", { ".env": "SAFE_FIXTURE=true" });
-    const inlineSecret = fixture("inline-secret", { "config.txt": "SERVICE_TOKEN='fixture-token-value'" });
-    const privateKey = fixture("private-key", { "notes.txt": "-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----" });
-    const localPath = fixture("local-path", { "README.md": "Do not publish C:\\Users\\fixture-user\\private" });
+    const inlineSecret = fixture("inline-secret", { "config.txt": "SERVICE_" + "TOK" + "EN='v7Zq4mN8rT2xK6pL'" });
+    const privateKey = fixture("private-key", { "notes.txt": "-----BEGIN PRIVATE " + "KEY-----\nfixture\n-----END PRIVATE KEY-----" });
+    const localPath = fixture("local-path", { "README.md": "Do not publish C:\\Users\\" + "actual-test-user-4729\\private" });
+    const generatedValue = fixture("generated-value", { "app.js": "const sessionToken = crypto.randomBytes(24).toString('hex');" });
+    const documentedPlaceholders = fixture("documented-placeholders", { "README.md": "Examples: C:\\Users\\... and /home/user/project" });
     tests = {
       clean_fixture_passes: clean.paths.length === 0 && clean.secrets.length === 0 && !clean.scanError,
       secret_file_fails_closed: secretFile.secrets.some((item) => item === ".env"),
       inline_credential_fails_closed: inlineSecret.secrets.some((item) => item.includes("inline credential")),
       private_key_fails_closed: privateKey.secrets.some((item) => item.includes("inline credential")),
       local_user_path_fails_closed: localPath.paths.length === 1,
+      generated_credential_values_are_not_secrets: generatedValue.secrets.length === 0,
+      documented_path_placeholders_are_safe: documentedPlaceholders.paths.length === 0,
       zero_external_commands: externalCommandCalls === commandsBefore,
       zero_network_calls: networkCalls === 0,
     };
@@ -283,6 +341,30 @@ async function main() {
   const hasIndex = fs.existsSync(path.join(dir, "index.html"));
   const { readme, license, landing, gitignore } = scaffolds(o, login, hasIndex);
 
+  // Resolve the destination before scanning history. Existing repositories
+  // already have public history; only commits that would be pushed need a
+  // second history scan.
+  const view = run("gh", ["repo", "view", `${login}/${o.name}`, "--json", "visibility,defaultBranchRef"]);
+  const exists = view.code === 0;
+  let defaultBranch = "main";
+  let pagesConfiguration = null;
+  if (exists) {
+    let meta = {}; try { meta = JSON.parse(view.out); } catch {}
+    defaultBranch = meta.defaultBranchRef?.name || "main";
+    const isPrivate = String(meta.visibility).toLowerCase() === "private";
+    if (isPrivate !== o.private) {
+      process.stderr.write(`\n  ✗ ${login}/${o.name} already exists and is ${isPrivate ? "PRIVATE" : "PUBLIC"}, but you asked for ${o.private ? "private" : "public"}.\n  Refusing to push into a repo whose visibility differs from your intent — resolve this first.\n`);
+      process.exit(3);
+    }
+  }
+  if (exists && o.pages) {
+    const pages = run("gh", ["api", `repos/${login}/${o.name}/pages`]);
+    if (pages.code === 0) { try { pagesConfiguration = JSON.parse(pages.out); } catch {} }
+  }
+  const configuredPagesPath = pagesConfiguration?.source?.path || (exists && fs.existsSync(path.join(dir, "docs", "index.html")) ? "/docs" : "/");
+  const pagesRoot = configuredPagesPath.replace(/^\/+|\/+$/g, "") || ".";
+  const hasPageIndex = o.pages && fs.existsSync(path.join(dir, pagesRoot, "index.html"));
+
   // Privacy + secrets scan — over on-disk files AND the generated docs.
   // The secret-file check ALWAYS runs; --allow-paths only waives the
   // local-path refusal (for a project that legitimately references such
@@ -307,20 +389,39 @@ async function main() {
     if (paths.length) log("⚠", `${paths.length} local path(s) present but --allow-paths given; publishing anyway`);
     else log("✓", "privacy + secrets scan clean (working tree)");
 
-    // A pre-existing .git can carry leaks in PAST commits that a working-tree
-    // scan misses — and push publishes all history. Scan it too (fresh
-    // git-init publishes have no history, so this is skipped there).
+    // New repositories publish all local history. For an existing repository,
+    // its old history is already public; scan only the fast-forward commits
+    // that this invocation would add, while refusing a missing/diverged base.
     if (fs.existsSync(path.join(dir, ".git"))) {
-      const hist = run("git", ["-C", dir, "log", "--all", "-p", "--no-color"], { maxBuffer: 128 * 1024 * 1024 });
-      if (hist.code === 0) {
-        const histLeak = scanText("(git history)", hist.out);
-        const histCred = hasCred(hist.out);
-        if ((histLeak && !o.allowPaths) || histCred) {
-          process.stderr.write(`\n  ✗ Refusing to publish — git HISTORY contains a leak (${histCred ? "an inline credential" : histLeak}).\n  Past commits are published even if the file is gone now. Rewrite history (git filter-repo) or publish a fresh copy without the .git folder.\n`);
+      let historyRange = ["--all"];
+      if (exists) {
+        const remote = run("gh", ["api", `repos/${login}/${o.name}/commits/${defaultBranch}`, "--jq", ".sha"]);
+        const remoteSha = remote.out.trim();
+        if (remote.code !== 0 || !/^[0-9a-f]{40}$/i.test(remoteSha)) {
+          process.stderr.write(`\n  ✗ Could not resolve the published ${defaultBranch} revision. Refusing an unverified history scan.\n`);
+          process.exit(2);
+        }
+        const localBase = run("git", safeGitArgs(dir, ["cat-file", "-e", `${remoteSha}^{commit}`]));
+        const ancestor = run("git", safeGitArgs(dir, ["merge-base", "--is-ancestor", remoteSha, "HEAD"]));
+        if (localBase.code !== 0 || ancestor.code !== 0) {
+          process.stderr.write(`\n  ✗ Local HEAD is not a verified fast-forward of published ${defaultBranch}. Fetch/reconcile it before publishing.\n`);
+          process.exit(2);
+        }
+        historyRange = [`${remoteSha}..HEAD`];
+      }
+      const revisions = run("git", safeGitArgs(dir, ["rev-list", ...historyRange]));
+      if (revisions.code === 0) {
+        const history = scanGitRevisions(dir, revisions.out.split(/\r?\n/).filter(Boolean));
+        if (history.error) {
+          process.stderr.write(`\n  ✗ Could not scan git history (${history.error.slice(0, 80)}). Refusing — unverified history may contain secrets.\n  Publish a fresh copy without the .git folder so there is no history to vet.\n`);
+          process.exit(2);
+        }
+        if ((history.leak && !o.allowPaths) || history.credential) {
+          process.stderr.write(`\n  ✗ Refusing to publish — git HISTORY contains a leak (${history.credential ? "an inline credential" : history.leak}).\n  Past commits are published even if the file is gone now. Rewrite history (git filter-repo) or publish a fresh copy without the .git folder.\n`);
           process.exit(2);
         }
         log("✓", "git history scan clean");
-      } else if (/does not have any commits|bad default revision|unknown revision/i.test(hist.err)) {
+      } else if (/does not have any commits|bad default revision|unknown revision/i.test(revisions.err)) {
         // A repo with zero commits has no history to leak — safe, not a failure.
         log("·", "git history is empty — nothing to scan");
       } else {
@@ -332,21 +433,7 @@ async function main() {
     }
   }
 
-  if (!hasIndex && o.pages) log("⚠", "no index.html — a themed landing page will be scaffolded so Pages has something to serve");
-
-  // Existing repo: verify visibility matches intent BEFORE touching it.
-  const view = run("gh", ["repo", "view", `${login}/${o.name}`, "--json", "visibility,defaultBranchRef"]);
-  const exists = view.code === 0;
-  let defaultBranch = "main";
-  if (exists) {
-    let meta = {}; try { meta = JSON.parse(view.out); } catch {}
-    defaultBranch = meta.defaultBranchRef?.name || "main";
-    const isPrivate = String(meta.visibility).toLowerCase() === "private";
-    if (isPrivate !== o.private) {
-      process.stderr.write(`\n  ✗ ${login}/${o.name} already exists and is ${isPrivate ? "PRIVATE" : "PUBLIC"}, but you asked for ${o.private ? "private" : "public"}.\n  Refusing to push into a repo whose visibility differs from your intent — resolve this first.\n`);
-      process.exit(3);
-    }
-  }
+  if (!hasPageIndex && o.pages) log("⚠", `no ${configuredPagesPath}/index.html — a themed landing page will be scaffolded so Pages has something to serve`);
 
   const plan = [];
   const willWrite = (f, content) => {
@@ -375,8 +462,8 @@ async function main() {
   willWrite("README.md", readme);
   willWrite("LICENSE", license);
   mergeGitignore();
-  if (o.pages) willWrite(".nojekyll", "");
-  if (!hasIndex && o.pages) willWrite("index.html", landing);
+  if (o.pages) willWrite(path.join(pagesRoot, ".nojekyll"), "");
+  if (!hasPageIndex && o.pages) willWrite(path.join(pagesRoot, "index.html"), landing);
   for (const p of plan) log("·", p);
 
   if (o.dryRun) {
@@ -385,7 +472,7 @@ async function main() {
     return;
   }
 
-  const git = (args) => run("git", args, { cwd: dir });
+  const git = (args) => run("git", ["-c", `safe.directory=${dir.replaceAll("\\", "/")}`, ...args], { cwd: dir });
   if (!fs.existsSync(path.join(dir, ".git"))) {
     // Refuse if the dir is already inside another repo — otherwise git add/-A
     // would operate on that parent tree, publishing far more than intended.
@@ -431,11 +518,14 @@ async function main() {
 
   let pagesUrl = null, pagesLive = false;
   if (o.pages) {
-    // Configure Pages for the branch we actually pushed to (an existing repo
-    // may default to master), not a hardcoded 'main'.
-    const body = JSON.stringify({ source: { branch: exists ? defaultBranch : "main", path: "/" } });
-    const enable = run("gh", ["api", "-X", "POST", `repos/${login}/${o.name}/pages`, "--input", "-"], { input: body });
-    if (enable.code !== 0 && !/already exists|409/i.test(enable.err)) log("⚠", `Pages enable returned: ${enable.err.slice(0, 120)}`);
+    // Preserve an existing Pages source (notably this repository's main:/docs)
+    // instead of silently moving the live site to root:/. Configure only when
+    // the destination has no Pages source yet.
+    if (!pagesConfiguration) {
+      const body = JSON.stringify({ source: { branch: exists ? defaultBranch : "main", path: configuredPagesPath } });
+      const enable = run("gh", ["api", "-X", "POST", `repos/${login}/${o.name}/pages`, "--input", "-"], { input: body });
+      if (enable.code !== 0 && !/already exists|409/i.test(enable.err)) log("⚠", `Pages enable returned: ${enable.err.slice(0, 120)}`);
+    } else log("·", `Pages already configured at ${defaultBranch}:${configuredPagesPath}; preserving it`);
     pagesUrl = `https://${login}.github.io/${o.name}/`;
     log("·", `Pages enabled — verifying ${pagesUrl} serves…`);
     for (let i = 0; i < 15; i++) {

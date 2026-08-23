@@ -52,28 +52,31 @@ export const ALLOWED_OAUTH_ENV_NAMES = Object.freeze(new Set([
   "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)", "PROCESSOR_ARCHITECTURE",
   "NUMBER_OF_PROCESSORS", "OS", "USER", "USERNAME", "LOGNAME", "SHELL",
   "LANG", "LANGUAGE", "TERM", "COLORTERM", "TZ", "SSL_CERT_FILE",
-  "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "CLAUDE_CODE_OAUTH_TOKEN",
+  "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "DISPLAY", "WAYLAND_DISPLAY",
+  "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY",
   "MULTI_LLM_REVIEW_DEPTH",
 ]));
 
-export function isForbiddenOauthEnvironmentName(name) {
+export function isForbiddenOauthEnvironmentName(name, { provider = null } = {}) {
   const upper = String(name).toUpperCase();
-  if (REVIEWED_OAUTH_SECRET_NAMES.has(upper)) return false;
+  if (REVIEWED_OAUTH_SECRET_NAMES.has(upper)) return provider !== "claude";
   return FORBIDDEN_OAUTH_ENV_NAMES.has(upper)
     || SECRET_NAME.test(upper)
     || ALTERNATE_AUTH_MODE.test(upper)
     || (ENDPOINT_OVERRIDE.test(upper) && PROVIDER_NAME.test(upper));
 }
 
-export function isAllowedOauthEnvironmentName(name) {
+export function isAllowedOauthEnvironmentName(name, { provider = null } = {}) {
   const upper = String(name).toUpperCase();
-  return ALLOWED_OAUTH_ENV_NAMES.has(upper) || upper.startsWith("LC_");
+  return ALLOWED_OAUTH_ENV_NAMES.has(upper)
+    || upper.startsWith("LC_")
+    || (provider === "claude" && REVIEWED_OAUTH_SECRET_NAMES.has(upper));
 }
 
-export function cleanOauthEnv(source = process.env, { nestedReview = false } = {}) {
+export function cleanOauthEnv(source = process.env, { nestedReview = false, provider = null } = {}) {
   const env = {};
   for (const [key, value] of Object.entries(source)) {
-    if (isAllowedOauthEnvironmentName(key) && !isForbiddenOauthEnvironmentName(key)) env[key] = value;
+    if (isAllowedOauthEnvironmentName(key, { provider }) && !isForbiddenOauthEnvironmentName(key, { provider })) env[key] = value;
   }
   if (nestedReview) {
     const depth = Number.parseInt(env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;

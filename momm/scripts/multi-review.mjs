@@ -3,12 +3,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { cleanOauthEnv as cleanSharedOauthEnv, isForbiddenOauthEnvironmentName, sanitizeProviderDiagnostic } from "./oauth-env.mjs";
 import { DEFAULT_REVIEWERS, GOVERNOR_IDS, INSTALL_HINTS, LOGIN_HINTS, PROVIDER_IDS } from "./provider-manifest.mjs";
-import { SETUP_PROBE_BINDING_ENV, SETUP_PROBE_CAPABILITY_ENV, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeBinding } from "./setup-probe-contract.mjs";
+import { SETUP_PROBE_AUTH_REQUEST, SETUP_PROBE_AUTH_RESPONSE, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeDescriptor } from "./setup-probe-contract.mjs";
 
 const MOMM_VERSION = "1.10.0";
 const REPORT_SCHEMA = "momm-report/1";
@@ -307,28 +307,46 @@ function parseArgs(argv) {
   return options;
 }
 
-function cleanOauthEnv(source = process.env) {
-  return cleanSharedOauthEnv(source, { nestedReview: true });
+function cleanOauthEnv(source = process.env, { provider = null } = {}) {
+  return cleanSharedOauthEnv(source, { nestedReview: true, provider });
 }
 
-function validSetupProbe(options, artifact, environment = process.env, hasIpcChannel = Boolean(process.channel)) {
+function validSetupProbeShape(options, artifact) {
   if (options.setupProbe !== true) return true;
-  const capability = String(environment[SETUP_PROBE_CAPABILITY_ENV] || "");
-  const suppliedBinding = String(environment[SETUP_PROBE_BINDING_ENV] || "");
   const reviewer = options.reviewers.length === 1 ? options.reviewers[0] : "";
-  const expectedBinding = setupProbeBinding(capability, { governor: options.governor, reviewer, label: options.label, input: artifact });
-  const bindingMatches = suppliedBinding.length === expectedBinding.length
-    && timingSafeEqual(Buffer.from(suppliedBinding), Buffer.from(expectedBinding));
-  return hasIpcChannel
-    && /^[a-f0-9]{64}$/.test(capability)
-    && options.label === SETUP_PROBE_LABEL
+  return options.label === SETUP_PROBE_LABEL
     && artifact === SETUP_PROBE_INPUT
     && options.storeInput !== true
     && options.input === null
     && options.reviewers.length === 1
     && PROVIDER_IDS.includes(reviewer)
-    && reviewer !== options.governor
-    && bindingMatches;
+    && reviewer !== options.governor;
+}
+
+async function validSetupProbe(options, artifact, channel = process) {
+  if (options.setupProbe !== true) return true;
+  if (!validSetupProbeShape(options, artifact) || !channel.channel || typeof channel.send !== "function") return false;
+  const reviewer = options.reviewers[0];
+  const descriptor = setupProbeDescriptor({ governor: options.governor, reviewer, label: options.label, input: artifact });
+  const requestId = randomUUID();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (authorized) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      channel.off?.("message", onMessage);
+      resolve(authorized === true);
+    };
+    const onMessage = (message) => {
+      if (message?.type !== SETUP_PROBE_AUTH_RESPONSE || message.request_id !== requestId) return;
+      finish(message.authorized === true);
+    };
+    const timer = setTimeout(() => finish(false), 2_000);
+    channel.on?.("message", onMessage);
+    try { channel.send({ type: SETUP_PROBE_AUTH_REQUEST, request_id: requestId, ...descriptor }); }
+    catch { finish(false); }
+  });
 }
 
 function sanitizeText(text) {
@@ -381,6 +399,7 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
       env,
       shell: false,
       windowsHide: true,
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -415,7 +434,8 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
         }, 2000);
         if (typeof backstop.unref === "function") backstop.unref();
       } else {
-        child.kill("SIGKILL");
+        try { process.kill(-child.pid, "SIGKILL"); }
+        catch { try { child.kill("SIGKILL"); } catch {} }
       }
     };
 
@@ -696,7 +716,7 @@ async function invokeReviewer(agent, artifact, options) {
   let result;
   let cleanupError = null;
   try {
-    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs), env: cleanOauthEnv(), cwd });
+    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs), env: cleanOauthEnv(process.env, { provider: agent }), cwd });
   } finally {
     if (temporaryDirectory) {
       try {
@@ -1053,6 +1073,33 @@ async function doctor(pretty) {
   process.stdout.write(`${JSON.stringify(report, null, pretty ? 2 : 0)}\n`);
 }
 
+async function processTreeTimeoutSelfTest() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "momm-process-tree-"));
+  const pidFile = path.join(root, "grandchild.pid");
+  const parentFile = path.join(root, "parent.cjs");
+  fs.writeFileSync(parentFile, `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setInterval(() => {}, 1000);
+`);
+  try {
+    const result = await runProcess(process.execPath, [parentFile], { timeoutMs: 600 });
+    let pid = null;
+    try { pid = Number.parseInt(fs.readFileSync(pidFile, "utf8"), 10); } catch {}
+    if (!result.timedOut || !Number.isInteger(pid)) return false;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      try { process.kill(pid, 0); }
+      catch (error) { if (error?.code === "ESRCH") return true; }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return false;
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function selfTest(pretty) {
   const cleaned = cleanOauthEnv({
     PATH: process.env.PATH || "",
@@ -1065,12 +1112,17 @@ async function selfTest(pretty) {
     UNREVIEWED_AMBIENT_VALUE: "must-not-cross",
     CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth",
   });
+  const providerEnvironments = Object.fromEntries(PROVIDER_IDS.map((provider) => [provider, cleanOauthEnv({
+    PATH: process.env.PATH || "",
+    CLAUDE_CODE_OAUTH_TOKEN: "provider-scoped-oauth",
+  }, { provider })]));
   const nested = JSON.stringify({ response: JSON.stringify({ verdict: "ACCEPT", confidence: 0.8, findings: [], summary: "ok" }) });
   const structured = JSON.stringify({ structured_output: { verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" } });
   const parsed = unwrapReviewPayload(nested);
   const parsedStructured = unwrapReviewPayload(structured);
   const timeoutStartedAt = Date.now();
   const forcedTimeout = await runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 150 });
+  const processTreeContained = await processTreeTimeoutSelfTest();
   const timeoutElapsedMs = Date.now() - timeoutStartedAt;
   // Regression guard for cursor-drift: the redraw's cursor-up distance must
   // equal the physical line count of the previous frame (multiline header
@@ -1088,7 +1140,9 @@ async function selfTest(pretty) {
     removes_api_keys: !("OPENAI_API_KEY" in cleaned),
     removes_alternate_auth_routes: ["GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "GOOGLE_GENAI_USE_VERTEXAI", "AWS_PROFILE"].every((name) => !(name in cleaned)),
     strict_environment_drops_unreviewed_values: !("UNREVIEWED_AMBIENT_VALUE" in cleaned),
-    preserves_oauth_tokens: cleaned.CLAUDE_CODE_OAUTH_TOKEN === "allowed-oauth",
+    oauth_tokens_are_provider_scoped: !("CLAUDE_CODE_OAUTH_TOKEN" in cleaned)
+      && providerEnvironments.claude.CLAUDE_CODE_OAUTH_TOKEN === "provider-scoped-oauth"
+      && PROVIDER_IDS.filter((provider) => provider !== "claude").every((provider) => !("CLAUDE_CODE_OAUTH_TOKEN" in providerEnvironments[provider])),
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
     parses_nested_json: parsed?.verdict === "ACCEPT",
     parses_antigravity_structured_output: parsedStructured?.verdict === "ACCEPT",
@@ -1181,6 +1235,7 @@ async function selfTest(pretty) {
     classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
     warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
+    timeout_kills_provider_process_tree: processTreeContained,
   };
   const passed = Object.values(tests).every(Boolean);
   process.stdout.write(`${JSON.stringify({ passed, tests, diagnostics: { timeout_elapsed_ms: timeoutElapsedMs } }, null, pretty ? 2 : 0)}\n`);
@@ -1233,7 +1288,7 @@ async function main() {
   if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
   const sanitized = sanitizeText(rawArtifact);
   options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
-  if (!validSetupProbe(options, rawArtifact)) throw new Error("--setup-probe requires an active Setup Center capability bound to the exact synthetic validation payload");
+  if (!await validSetupProbe(options, rawArtifact)) throw new Error("--setup-probe requires a one-use Setup Center IPC authorization for the exact synthetic validation payload");
   try {
     if (!options.setupProbe && fs.existsSync(".reviewrules")) {
       options.projectRules = clipped(fs.readFileSync(".reviewrules", "utf8"), 4000) || null;

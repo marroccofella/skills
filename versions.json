@@ -1,7 +1,7 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
   "momm": "1.10.0",
-  "myrepo": "1.3.0",
+  "myrepo": "1.3.1",
   "myvoice": "1.0.0",
   "promptus-clone-voice": "1.0.0",
   "yorkshire-pudding": "1.0.0",

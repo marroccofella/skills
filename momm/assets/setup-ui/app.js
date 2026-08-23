@@ -1,4 +1,4 @@
-const EXPECTED_API_SCHEMA = "momm-setup/2";
+const EXPECTED_API_SCHEMA = "momm-setup/3";
 
 const grid = document.querySelector("#provider-grid");
 const summary = document.querySelector("#summary");
@@ -57,9 +57,9 @@ function clearAlert() {
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
+  if (session?.token) headers["X-MOMM-Token"] = session.token;
   if (options.method === "POST") {
     headers["Content-Type"] = "application/json";
-    headers["X-MOMM-Token"] = session.token;
   }
   const response = await fetch(path, { ...options, headers, cache: "no-store" });
   let value = {};
@@ -523,8 +523,8 @@ async function launchAction(provider, action) {
     const result = await api("/api/action", { method: "POST", body: JSON.stringify({ provider, action, controller_revision: generation }) });
     if (generation !== controllerGeneration || result.controller_revision !== generation) return;
     if (liveResults.has(provider) && ["login", "install"].includes(action)) liveResults.delete(provider);
-    setAlert(`${result.note || "Follow the visible terminal instructions."} Command: ${result.command}`, "info");
-    showToast("A visible terminal was opened. This page will not type credentials or authorization codes for you.");
+    setAlert(`${result.note || "Follow the visible terminal instructions."} The operating system accepted the terminal request. Command: ${result.command}`, "info");
+    showToast("The operating system accepted the terminal request. This page will not type credentials or authorization codes for you.");
     if (["login", "install"].includes(action)) {
       let attempts = 0;
       const generation = controllerGeneration;

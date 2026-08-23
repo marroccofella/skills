@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cleanOauthEnv, sanitizeProviderDiagnostic } from "./oauth-env.mjs";
 import { GOVERNOR_IDS, PROVIDER_IDS, PROVIDER_MANIFEST } from "./provider-manifest.mjs";
-import { SETUP_PROBE_BINDING_ENV, SETUP_PROBE_CAPABILITY_ENV, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeBinding } from "./setup-probe-contract.mjs";
+import { SETUP_PROBE_AUTH_REQUEST, SETUP_PROBE_AUTH_RESPONSE, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeDescriptor } from "./setup-probe-contract.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const assetDir = path.join(scriptDir, "..", "assets", "setup-ui");
@@ -20,7 +20,7 @@ const myskillsScript = path.join(skillsRoot, "myskills", "scripts", "run-all.mjs
 const localVersionsFile = path.join(skillsRoot, "versions.json");
 const publishedVersionsUrl = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const governors = new Set(GOVERNOR_IDS);
-const setupApiSchema = "momm-setup/2";
+const setupApiSchema = "momm-setup/3";
 const setupUiVersion = "1.10.0";
 const sessionToken = crypto.randomBytes(24).toString("hex");
 const jobs = new Map();
@@ -34,6 +34,8 @@ let controllerRevision = 0;
 let controllerOperations = 0;
 let serverClosing = false;
 const maintenanceCache = new Map();
+const backgroundChildren = new Set();
+const backgroundFetchControllers = new Set();
 
 const providers = PROVIDER_MANIFEST;
 const setupReviewers = PROVIDER_IDS.join(",");
@@ -141,6 +143,18 @@ function terminateProcessTree(child) {
   });
 }
 
+function issueSetupProbeAuthorization({ governor, reviewer }) {
+  return { ...setupProbeDescriptor({ governor, reviewer }), consumed: false };
+}
+
+function consumeSetupProbeAuthorization(authorization, message) {
+  if (!authorization || authorization.consumed || message?.type !== SETUP_PROBE_AUTH_REQUEST) return false;
+  const matches = ["governor", "reviewer", "label", "input_sha256"]
+    .every((key) => message[key] === authorization[key]);
+  if (matches) authorization.consumed = true;
+  return matches;
+}
+
 function runNode(script, args, {
   input = "",
   timeoutMs = 45_000,
@@ -148,6 +162,7 @@ function runNode(script, args, {
   envSource = process.env,
   signal = null,
   setupProbeAuthorization = null,
+  provider = null,
   onChild = null,
 } = {}) {
   return new Promise((resolve) => {
@@ -165,6 +180,7 @@ function runNode(script, args, {
       clearTimeout(timer);
       clearTimeout(hardDeadline);
       signal?.removeEventListener("abort", abort);
+      if (child) backgroundChildren.delete(child);
       resolve({ ...result, stdout, stderr, timedOut: terminationReason === "timeout", cancelled: terminationReason === "cancelled" });
     };
     const terminate = async (reason) => {
@@ -174,11 +190,7 @@ function runNode(script, args, {
       if (!settled) hardDeadline = setTimeout(() => finish({ code: null, signal: "SIGKILL" }), 250);
     };
     try {
-      const env = cleanOauthEnv(envSource);
-      if (setupProbeAuthorization) {
-        env[SETUP_PROBE_CAPABILITY_ENV] = setupProbeAuthorization.capability;
-        env[SETUP_PROBE_BINDING_ENV] = setupProbeAuthorization.binding;
-      }
+      const env = cleanOauthEnv(envSource, { provider });
       child = spawn(process.execPath, [script, ...args], {
         cwd,
         env,
@@ -187,6 +199,15 @@ function runNode(script, args, {
         detached: process.platform !== "win32",
         stdio: setupProbeAuthorization ? ["pipe", "pipe", "pipe", "ipc"] : ["pipe", "pipe", "pipe"],
       });
+      backgroundChildren.add(child);
+      if (setupProbeAuthorization) {
+        child.on("message", (message) => {
+          if (message?.type !== SETUP_PROBE_AUTH_REQUEST) return;
+          const authorized = consumeSetupProbeAuthorization(setupProbeAuthorization, message);
+          try { child.send({ type: SETUP_PROBE_AUTH_RESPONSE, request_id: message.request_id, authorized }); }
+          catch {}
+        });
+      }
       onChild?.(child);
     } catch (error) {
       finish({ code: null, error });
@@ -204,39 +225,58 @@ function runNode(script, args, {
   });
 }
 
-function runCommand(command, args = [], { timeoutMs = 15_000, envSource = process.env } = {}) {
+function runCommand(command, args = [], {
+  timeoutMs = 15_000,
+  envSource = process.env,
+  provider = null,
+  signal = null,
+  cwd = process.cwd(),
+} = {}) {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let terminationReason = null;
     let child;
     let timer = null;
+    let hardDeadline = null;
+    const abort = () => terminate("cancelled");
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ ...result, stdout, stderr });
+      clearTimeout(hardDeadline);
+      signal?.removeEventListener("abort", abort);
+      if (child) backgroundChildren.delete(child);
+      resolve({ ...result, stdout, stderr, timedOut: terminationReason === "timeout", cancelled: terminationReason === "cancelled" });
+    };
+    const terminate = async (reason) => {
+      if (settled || terminationReason) return;
+      terminationReason = reason;
+      await terminateProcessTree(child);
+      if (!settled) hardDeadline = setTimeout(() => finish({ code: null, signal: "SIGKILL" }), 250);
     };
     try {
       child = spawn(command, args, {
-        cwd: process.cwd(),
-        env: cleanOauthEnv(envSource),
+        cwd,
+        env: cleanOauthEnv(envSource, { provider }),
         shell: false,
         windowsHide: true,
+        detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"],
       });
+      backgroundChildren.add(child);
     } catch (error) {
       finish({ code: null, error });
       return;
     }
-    timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish({ code: null, timedOut: true });
-    }, timeoutMs);
+    if (signal?.aborted) terminate("cancelled");
+    else signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(() => terminate("timeout"), timeoutMs);
     child.stdout.on("data", (chunk) => { if (stdout.length < 250_000) stdout += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk) => { if (stderr.length < 50_000) stderr += chunk.toString("utf8"); });
     child.on("error", (error) => finish({ code: null, error }));
-    child.on("close", (code) => finish({ code, timedOut: false }));
+    child.on("close", (code, childSignal) => finish({ code, signal: childSignal }));
   });
 }
 
@@ -263,6 +303,7 @@ function compareVersions(left, right) {
 
 async function fetchJson(url, timeoutMs = 10_000) {
   const controller = new AbortController();
+  backgroundFetchControllers.add(controller);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
@@ -272,7 +313,10 @@ async function fetchJson(url, timeoutMs = 10_000) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    backgroundFetchControllers.delete(controller);
+  }
 }
 
 function classifyEnvironmentNames(names) {
@@ -452,34 +496,62 @@ async function skillsCheckoutState() {
   return { verified: true, reason: null, root: actual };
 }
 
-function spawnVisible(command, args) {
+function spawnVisible(command, args, { provider = null, acknowledgementMs = 650 } = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
     const child = spawn(command, args, {
       detached: true,
       shell: false,
       stdio: "ignore",
       windowsHide: false,
-      env: cleanOauthEnv(),
+      env: cleanOauthEnv(process.env, { provider }),
     });
-    child.once("spawn", () => {
+    const accept = (state) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       child.unref();
-      resolve();
+      resolve({ accepted: true, state });
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    child.once("spawn", () => {
+      timer = setTimeout(() => accept("running"), acknowledgementMs);
     });
-    child.once("error", reject);
+    child.once("error", fail);
+    child.once("close", (code, signal) => {
+      if (code === 0) accept("exited_zero");
+      else fail(new Error(`${command} rejected the terminal request (${signal || `exit ${code ?? "unknown"}`}).`));
+    });
   });
+}
+
+async function visibleLaunchSelfTest() {
+  const rejected = await spawnVisible(process.execPath, ["-e", "process.exit(23)"], { acknowledgementMs: 200 })
+    .then(() => false, () => true);
+  const zeroExit = await spawnVisible(process.execPath, ["-e", "process.exit(0)"], { acknowledgementMs: 200 })
+    .then((result) => result.accepted === true, () => false);
+  const running = await spawnVisible(process.execPath, ["-e", "setTimeout(() => {}, 300)"], { acknowledgementMs: 50 })
+    .then((result) => result.accepted === true && result.state === "running", () => false);
+  return rejected && zeroExit && running;
 }
 
 function terminalCommandIsSafe(command) {
   return typeof command === "string" && command.length > 0 && !/[\r\n]/.test(command);
 }
 
-async function launchTerminal(command) {
+async function launchTerminal(command, { provider = null } = {}) {
   if (!terminalCommandIsSafe(command)) throw new Error("Terminal actions must be one fixed command line.");
   if (process.platform === "win32") {
-    await spawnVisible("powershell.exe", ["-NoExit", "-NoProfile", "-Command", command]);
+    return spawnVisible("powershell.exe", ["-NoExit", "-NoProfile", "-Command", command], { provider });
   } else if (process.platform === "darwin") {
     const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-    await spawnVisible("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`]);
+    return spawnVisible("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`], { provider });
   } else {
     const candidates = [
       ["x-terminal-emulator", ["-e", "bash", "-lc", `${command}; exec bash`]],
@@ -489,7 +561,7 @@ async function launchTerminal(command) {
     ];
     let lastError = null;
     for (const [terminal, args] of candidates) {
-      try { await spawnVisible(terminal, args); return; }
+      try { return await spawnVisible(terminal, args, { provider }); }
       catch (error) { lastError = error; }
     }
     throw lastError || new Error("No supported terminal application was found");
@@ -502,7 +574,7 @@ function openBrowser(url) {
     : process.platform === "darwin"
       ? ["open", [url]]
       : ["xdg-open", [url]];
-  const child = spawn(invocation[0], invocation[1], { detached: true, stdio: "ignore", shell: false, windowsHide: true });
+  const child = spawn(invocation[0], invocation[1], { detached: true, stdio: "ignore", shell: false, windowsHide: true, env: cleanOauthEnv() });
   child.on("error", () => {});
   child.unref();
 }
@@ -570,6 +642,22 @@ async function cancelConnectivityJobs() {
   return running.length;
 }
 
+async function cancelBackgroundWork() {
+  const fetchControllers = [...backgroundFetchControllers];
+  for (const controller of fetchControllers) controller.abort();
+  const children = [...backgroundChildren];
+  await Promise.allSettled(children.map((child) => terminateProcessTree(child)));
+  const deadline = Date.now() + 2_000;
+  while ((backgroundChildren.size > 0 || backgroundFetchControllers.size > 0 || controllerOperations > 0) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return {
+    cancelled_processes: children.length,
+    cancelled_fetches: fetchControllers.length,
+    cleanup_complete: backgroundChildren.size === 0 && backgroundFetchControllers.size === 0 && controllerOperations === 0,
+  };
+}
+
 function publicJob(job) {
   if (!job) return null;
   const {
@@ -617,8 +705,7 @@ function startConnectivityJob(provider, governor, route, revision = controllerRe
   if (active) return null;
   const id = crypto.randomUUID();
   const probeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-setup-probe-"));
-  const capability = crypto.randomBytes(32).toString("hex");
-  const binding = setupProbeBinding(capability, { governor, reviewer: provider });
+  const setupProbeAuthorization = issueSetupProbeAuthorization({ governor, reviewer: provider });
   const abortController = new AbortController();
   const job = {
     id,
@@ -647,7 +734,8 @@ function startConnectivityJob(provider, governor, route, revision = controllerRe
     timeoutMs: 210_000,
     cwd: probeDirectory,
     signal: abortController.signal,
-    setupProbeAuthorization: { capability, binding },
+    provider,
+    setupProbeAuthorization,
     onChild: (child) => { job.child_process = child; },
   }).then((result) => {
     if (result.cancelled) {
@@ -779,6 +867,9 @@ function createServer() {
         });
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/status") {
+        if (!trustedMutationRequest(request, boundPort) || !authorized(request)) {
+          return sendJson(response, 403, { error: "Invalid or cross-site local session" });
+        }
         const context = beginControllerOperation(requestUrl.searchParams.get("controller_revision"));
         try {
           const value = await statusReport(context.governor);
@@ -787,6 +878,9 @@ function createServer() {
         } finally { context.release(); }
       }
       if (request.method === "GET" && requestUrl.pathname.startsWith("/api/job/")) {
+        if (!trustedMutationRequest(request, boundPort) || !authorized(request)) {
+          return sendJson(response, 403, { error: "Invalid or cross-site local session" });
+        }
         const job = jobs.get(requestUrl.pathname.slice("/api/job/".length));
         const expectedRevision = Number(requestUrl.searchParams.get("controller_revision"));
         if (!Number.isInteger(expectedRevision) || expectedRevision !== controllerRevision || job?.controller_revision !== expectedRevision) {
@@ -828,14 +922,16 @@ function createServer() {
             if (status.code !== 0) return sendJson(response, 409, { error: "Git could not verify that the skills checkout is safe to update." });
             if (status.stdout.trim()) return sendJson(response, 409, { error: "Local skill changes are present. Handle them before updating." });
           }
-          try { await launchTerminal(command); }
+          const terminalProvider = provider === "claude" && ["login", "models"].includes(action) ? "claude" : null;
+          let terminalResult;
+          try { terminalResult = await launchTerminal(command, { provider: terminalProvider }); }
           catch (error) {
             return sendJson(response, 500, { error: `A terminal could not be opened: ${safeDetail(error.message)}`, command });
           }
           assertControllerOperation(context);
           if (providers[provider] && ["login", "install"].includes(action)) latestJobs.delete(jobKey(provider, context.governor));
           maintenanceCache.clear();
-          return sendJson(response, 202, { launched: true, command, note: actionNote(provider, action), governor: context.governor, controller_revision: context.revision });
+          return sendJson(response, 202, { launched: true, accepted: terminalResult?.accepted === true, command, note: actionNote(provider, action), governor: context.governor, controller_revision: context.revision });
           } finally { context.release(); }
         }
         if (requestUrl.pathname === "/api/maintenance") {
@@ -869,7 +965,11 @@ function createServer() {
         if (requestUrl.pathname === "/api/shutdown") {
           serverClosing = true;
           const cancelledJobs = await cancelConnectivityJobs();
-          sendJson(response, 200, { closing: true, cancelled_jobs: cancelledJobs, cleanup_complete: true });
+          const cleanup = await cancelBackgroundWork();
+          if (!cleanup.cleanup_complete) {
+            return sendJson(response, 503, { closing: false, cancelled_jobs: cancelledJobs, ...cleanup, error: "Background checks have not finished shutting down. Try Close again." });
+          }
+          sendJson(response, 200, { closing: true, cancelled_jobs: cancelledJobs, ...cleanup });
           setTimeout(() => activeServer?.close(() => { process.exitCode = 0; }), 75);
           return;
         }
@@ -945,8 +1045,7 @@ const fs = require("node:fs");
   envSource.GOOGLE_GENAI_USE_VERTEXAI = "VERTEX_CANARY_MUST_NOT_ESCAPE";
   envSource.AWS_PROFILE = "PROFILE_CANARY_MUST_NOT_ESCAPE";
   try {
-    const capability = crypto.randomBytes(32).toString("hex");
-    const binding = setupProbeBinding(capability, { governor: "other", reviewer: "codex" });
+    const authorization = issueSetupProbeAuthorization({ governor: "other", reviewer: "codex" });
     const result = await runNode(dispatcherScript, [
       "--governor", "other",
       "--reviewers", "codex",
@@ -954,7 +1053,7 @@ const fs = require("node:fs");
       "--min-success", "1",
       "--label", SETUP_PROBE_LABEL,
       "--setup-probe",
-    ], { input: SETUP_PROBE_INPUT, cwd: probe, timeoutMs: 30_000, envSource, setupProbeAuthorization: { capability, binding } });
+    ], { input: SETUP_PROBE_INPUT, cwd: probe, timeoutMs: 30_000, envSource, provider: "codex", setupProbeAuthorization: authorization });
     let report = null;
     try { report = JSON.parse(result.stdout); } catch {}
     let capture = null;
@@ -963,13 +1062,16 @@ const fs = require("node:fs");
       "--governor", "other", "--reviewers", "codex", "--timeout", "5", "--min-success", "1",
       "--label", SETUP_PROBE_LABEL, "--setup-probe",
     ], { input: SETUP_PROBE_INPUT, cwd: probe, timeoutMs: 30_000, envSource });
+    const replay = await runNode(dispatcherScript, [
+      "--governor", "other", "--reviewers", "codex", "--timeout", "5", "--min-success", "1",
+      "--label", SETUP_PROBE_LABEL, "--setup-probe",
+    ], { input: SETUP_PROBE_INPUT, cwd: probe, timeoutMs: 30_000, envSource, provider: "codex", setupProbeAuthorization: authorization });
     const arbitraryInput = "Arbitrary caller-controlled setup probe input.";
-    const arbitraryCapability = crypto.randomBytes(32).toString("hex");
-    const arbitraryBinding = setupProbeBinding(arbitraryCapability, { governor: "other", reviewer: "codex", input: arbitraryInput });
+    const arbitraryAuthorization = issueSetupProbeAuthorization({ governor: "other", reviewer: "codex" });
     const arbitrary = await runNode(dispatcherScript, [
       "--governor", "other", "--reviewers", "codex", "--timeout", "5", "--min-success", "1",
       "--label", SETUP_PROBE_LABEL, "--setup-probe",
-    ], { input: arbitraryInput, cwd: probe, timeoutMs: 30_000, envSource, setupProbeAuthorization: { capability: arbitraryCapability, binding: arbitraryBinding } });
+    ], { input: arbitraryInput, cwd: probe, timeoutMs: 30_000, envSource, provider: "codex", setupProbeAuthorization: arbitraryAuthorization });
     const files = fs.readdirSync(probe).sort();
     let canonicalCwdMatches = false;
     try { canonicalCwdMatches = fs.realpathSync(capture?.cwd || "") === fs.realpathSync(probe); } catch {}
@@ -988,7 +1090,8 @@ const fs = require("node:fs");
       forbidden_environment_absent: Array.isArray(capture?.forbidden)
         && capture.forbidden.length === 0
         && !JSON.stringify(capture).includes("CANARY_MUST_NOT_ESCAPE"),
-      direct_probe_rejected: forged.code !== 0 && /active Setup Center capability/.test(forged.stderr),
+      direct_probe_rejected: forged.code !== 0 && /one-use Setup Center IPC authorization|active Setup Center capability/.test(forged.stderr),
+      replay_probe_rejected: replay.code !== 0 && /one-use Setup Center IPC authorization|active Setup Center capability/.test(replay.stderr),
       arbitrary_payload_rejected: arbitrary.code !== 0 && /exact synthetic validation payload/.test(arbitrary.stderr),
       no_probe_artifacts: files.length === 1 && files[0] === ".reviewrules",
     };
@@ -1027,6 +1130,9 @@ async function authorityIntegrationSelfTest() {
     ].map((host) => localHttpRequest(port, { host, pathName: "/api/session" })));
     const forgedOrigin = await localHttpRequest(port, { method: "POST", pathName: "/api/controller", host: goodHost, origin: "https://attacker.example", fetchSite: "cross-site", token: sessionToken, body: '{"governor":"codex"}' });
     const sameOrigin = await localHttpRequest(port, { method: "POST", pathName: "/api/controller", host: goodHost, origin: goodOrigin, fetchSite: "same-origin", token: sessionToken, body: '{"governor":"codex","controller_revision":0}' });
+    const forgedStatus = await localHttpRequest(port, { pathName: "/api/status?controller_revision=1", host: goodHost, origin: "https://attacker.example", fetchSite: "cross-site" });
+    const tokenlessStatus = await localHttpRequest(port, { pathName: "/api/status?controller_revision=1", host: goodHost, origin: goodOrigin, fetchSite: "same-origin" });
+    const wrongTokenStatus = await localHttpRequest(port, { pathName: "/api/status?controller_revision=1", host: goodHost, origin: goodOrigin, fetchSite: "same-origin", token: "wrong-local-token" });
     const staleController = await localHttpRequest(port, { method: "POST", pathName: "/api/controller", host: goodHost, origin: goodOrigin, fetchSite: "same-origin", token: sessionToken, body: '{"governor":"grok","controller_revision":0}' });
     let samePayload = null;
     try { samePayload = JSON.parse(sameOrigin.body); } catch {}
@@ -1036,6 +1142,9 @@ async function authorityIntegrationSelfTest() {
         && !/"token"\s*:/.test(response.body))
       && forgedOrigin.status === 403
       && sameOrigin.status === 200
+      && forgedStatus.status === 403
+      && tokenlessStatus.status === 403
+      && wrongTokenStatus.status === 403
       && samePayload?.controller_revision === 1
       && staleController.status === 409
       && confirmedGovernor === "codex";
@@ -1046,6 +1155,40 @@ async function authorityIntegrationSelfTest() {
     controllerRevision = previousRevision;
     controllerOperations = previousOperations;
     serverClosing = previousClosing;
+  }
+}
+
+async function backgroundCleanupSelfTest() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "momm-setup-tree-"));
+  const pidFile = path.join(root, "grandchild.pid");
+  const parentFile = path.join(root, "parent.cjs");
+  fs.writeFileSync(parentFile, `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setInterval(() => {}, 1000);
+`);
+  controllerOperations += 1;
+  const work = runCommand(process.execPath, [parentFile], { timeoutMs: 30_000 })
+    .finally(() => { controllerOperations = Math.max(0, controllerOperations - 1); });
+  try {
+    for (let attempt = 0; attempt < 50 && !fs.existsSync(pidFile); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const pid = Number.parseInt(fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8") : "", 10);
+    const cleanup = await cancelBackgroundWork();
+    await work;
+    let grandchildGone = false;
+    for (let attempt = 0; attempt < 50 && Number.isInteger(pid); attempt += 1) {
+      try { process.kill(pid, 0); }
+      catch (error) { if (error?.code === "ESRCH") { grandchildGone = true; break; } }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return cleanup.cleanup_complete && cleanup.cancelled_processes >= 1 && grandchildGone && controllerOperations === 0;
+  } finally {
+    await work.catch(() => {});
+    fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -1064,7 +1207,16 @@ async function selfTest() {
     OPENAI_BASE_URL: "https://forbidden.example",
     CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth-session",
   });
-  const [probeIsolation, authorityIntegration] = await Promise.all([probeIsolationSelfTest(), authorityIntegrationSelfTest()]);
+  const scopedProviderEnvironments = Object.fromEntries(PROVIDER_IDS.map((provider) => [provider, cleanOauthEnv({
+    PATH: "fixture",
+    CLAUDE_CODE_OAUTH_TOKEN: "provider-scoped-oauth",
+  }, { provider })]));
+  const [probeIsolation, authorityIntegration, terminalLaunchSemantics] = await Promise.all([
+    probeIsolationSelfTest(),
+    authorityIntegrationSelfTest(),
+    visibleLaunchSelfTest(),
+  ]);
+  const backgroundCleanup = await backgroundCleanupSelfTest();
   const terminalCommandMatrix = ["win32", "darwin", "linux"].flatMap((platform) => [
     ...Object.entries(providers).flatMap(([name, record]) => ["login", "install", "models", ...(record.update ? ["update"] : [])]
       .map((action) => actionCommand(name, action, platform))),
@@ -1080,6 +1232,8 @@ async function selfTest() {
     commands_are_fixed: Object.entries(providers).every(([name, record]) => ["login", "install", "models"].every((action) => actionCommand(name, action)) && (!record.update || actionCommand(name, "update"))),
     terminal_commands_single_line: terminalCommandMatrix.every(terminalCommandIsSafe)
       && !terminalCommandIsSafe("git status\nsecond command"),
+    terminal_launch_acknowledges_nonzero_exit: terminalLaunchSemantics,
+    shutdown_awaits_background_process_tree: backgroundCleanup,
     official_route_fixes: actionCommand("antigravity", "login") === "agy"
       && actionCommand("claude", "login") === "claude auth login"
       && providers.copilot.modelsNote.includes("/model") && !providers.copilot.modelsNote.includes("/models"),
@@ -1105,7 +1259,9 @@ async function selfTest() {
       && cleanedEnvironment.AWS_PROFILE === undefined
       && cleanedEnvironment.UNREVIEWED_AMBIENT_VALUE === undefined
       && cleanedEnvironment.OPENAI_BASE_URL === undefined
-      && cleanedEnvironment.CLAUDE_CODE_OAUTH_TOKEN === "allowed-oauth-session",
+      && cleanedEnvironment.CLAUDE_CODE_OAUTH_TOKEN === undefined
+      && scopedProviderEnvironments.claude.CLAUDE_CODE_OAUTH_TOKEN === "provider-scoped-oauth"
+      && PROVIDER_IDS.filter((provider) => provider !== "claude").every((provider) => scopedProviderEnvironments[provider].CLAUDE_CODE_OAUTH_TOKEN === undefined),
     provider_diagnostics_redacted: (() => {
       const detail = sanitizeProviderDiagnostic("Sign in at https://accounts.example.test/oauth?code=secret with device code ABCD-EFGH for person@example.test from C:\\Users\\private-name\\.config");
       return detail.includes("[provider URL hidden")
@@ -1126,7 +1282,7 @@ async function selfTest() {
     isolated_probe_ignores_rules_and_writes_nothing: probeIsolation.passed,
     version_comparison: compareVersions("1.10.0", "1.9.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
     controller_startup_parses: parseArgs(["--governor", "gemini", "--no-browser"]).governor === "gemini",
-    api_schema_versioned: setupApiSchema === "momm-setup/2" && setupUiVersion === "1.10.0",
+    api_schema_versioned: setupApiSchema === "momm-setup/3" && setupUiVersion === "1.10.0",
     myskills_health_runner_present: fs.existsSync(myskillsScript),
     assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
   };
