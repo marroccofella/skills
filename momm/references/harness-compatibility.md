@@ -5,7 +5,7 @@ Use one canonical skill directory. Link or install that directory with the harne
 | Harness | Discovery/invocation | Status |
 | --- | --- | --- |
 | Codex desktop, CLI, IDE | User skills under `~/.agents/skills`; invoke as `$momm` | Standards-compliant core supported |
-| Gemini CLI | Run `gemini skills link <skill-directory> --scope user --consent` | Native link verified with local Gemini CLI 0.55.1; reviewer requires an eligible enterprise account |
+| Gemini CLI | Run `gemini skills link <skill-directory> --scope user --consent` | Native link verified; current reviewer eligibility must be established by a live account check |
 | Claude Code | User skills under `~/.claude/skills` (junction active); CLI 2.1.240 installed | Verified as governor and as reviewer adapter |
 | Antigravity CLI | Workspace skills use `.agents/skills`; global discovery is linked under the documented `~/.gemini/config/skills` and migration-compatible `~/.gemini/antigravity-cli/skills` locations | CLI 1.1.19 verified as governor-compatible and as a read-only reviewer adapter |
 | Other Agent Skills hosts | Point the documented skill parent at the canonical directory, or use `scripts/install.mjs --custom-dir <parent>` | Supported without harness-specific assumptions |
@@ -23,7 +23,7 @@ Use one canonical skill directory. Link or install that directory with the harne
 ## Adapter status
 
 - Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.
-- Gemini reviewer: enabled when Gemini is not the governor; run headlessly in plan mode. CLI 0.55.1 is installed, but individual/Pro/Ultra access was retired (reported as `ineligible_tier`); Standard or Enterprise Gemini Code Assist organization licenses remain supported, and for consumer accounts Antigravity is the successor route.
+- Gemini reviewer: enabled when Gemini is not the governor and run headlessly in plan mode. Account and organization eligibility can change and must be established by a live check. Preserve the provider's `ineligible_tier` result without assuming that re-login, a particular plan, or another route will resolve it.
 - Claude reviewer: enabled when Claude is not the governor; verified against CLI 2.1.240 (`-p` + `--output-format json` + `--permission-mode plan`). Requires a one-time `claude` browser login; fails closed as `authentication_required` until then.
 - Antigravity reviewer: enabled when Antigravity is not the governor; verified against CLI 1.1.19 using `--new-project`, `--mode=plan`, `--sandbox`, structured JSON output, and a temporary sanitized artifact. Never add `--dangerously-skip-permissions` or `--disable-slash-commands` to this adapter.
 - Copilot reviewer: enabled when Copilot is not the governor; verified against GitHub Copilot CLI 1.0.80 using `-p` + `-s` with a temporary sanitized artifact (stdin is ignored in prompt mode). Containment: `--available-tools=view` (read-only file viewer is the model's only tool), `--no-custom-instructions`, `--disable-builtin-mcps`, `--no-remote-export`, `--add-dir` scoped to the temp directory. Auth is the GitHub keyring login (`copilot login` or an authenticated `gh`); fails closed as `authentication_required` otherwise. GitHub-side 5xx outages are classified as `provider_unavailable` (retry later), not as an auth problem.

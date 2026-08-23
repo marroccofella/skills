@@ -15,10 +15,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const MYREPO_VERSION = "1.2.0";
+const MYREPO_VERSION = "1.3.0";
 const TAGLINE = "RELAX. IT'S ALREADY OVER.";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let externalCommandCalls = 0;
 
 const VERSION_RE = /^\d+(\.\d+){0,3}$/;
 function isNewerVersion(a, b) {
@@ -60,7 +61,7 @@ function recordPublish(entry) {
 }
 
 function parseArgs(argv) {
-  const o = { dir: ".", private: false, dryRun: false, pages: true, forceDocs: false, allowPaths: false, title: null, name: null, desc: "" };
+  const o = { dir: ".", private: false, dryRun: false, selfTest: false, pages: true, forceDocs: false, allowPaths: false, title: null, name: null, desc: "" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`Missing value for ${a}`); return argv[++i]; };
@@ -73,10 +74,12 @@ function parseArgs(argv) {
     else if (a === "--no-pages") o.pages = false;
     else if (a === "--force-docs") o.forceDocs = true;
     else if (a === "--allow-paths") o.allowPaths = true;
+    else if (a === "--self-test") o.selfTest = true;
     else if (a === "--version") { process.stdout.write(`myrepo ${MYREPO_VERSION}\n`); process.exit(0); }
     else if (a === "--help" || a === "-h") { process.stdout.write(usage()); process.exit(0); }
     else throw new Error(`Unknown argument: ${a}`);
   }
+  if (o.selfTest) return o;
   if (!o.name) throw new Error("--name <repo> is required (e.g. --name my-app)");
   if (!/^[A-Za-z0-9._-]+$/.test(o.name)) throw new Error(`--name must be a valid repo name, got "${o.name}"`);
   if (o.private) o.pages = false; // Pages on a private repo needs a paid plan; keep it simple and safe.
@@ -95,11 +98,13 @@ function usage() {
   --dry-run           Preview every step, create/push nothing
   --force-docs        Overwrite existing README/LICENSE with the themed template
   --allow-paths       Skip the local-path privacy scan (NOT recommended)
+  --self-test         Test privacy and secret gates offline; never call GitHub
   --version | --help
 `;
 }
 
 function run(cmd, args, opts = {}) {
+  externalCommandCalls += 1;
   const r = spawnSync(cmd, args, { encoding: "utf8", ...opts });
   return { code: r.status, out: (r.stdout || "").trim(), err: (r.stderr || "").trim(), error: r.error };
 }
@@ -150,6 +155,50 @@ function scanForLeaks(dir) {
 function scanText(label, text) {
   for (const pat of PATH_PATTERNS) { const m = text.match(pat); if (m) return `${label}: ${m[0].slice(0, 60)}`; }
   return null;
+}
+
+function runSelfTest() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "myrepo-self-test-"));
+  const commandsBefore = externalCommandCalls;
+  let networkCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (..._args) => {
+    networkCalls += 1;
+    throw new Error("Network access is forbidden during myrepo self-test");
+  };
+  const fixture = (name, files) => {
+    const dir = path.join(root, name);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const [relative, contents] of Object.entries(files)) {
+      const target = path.join(dir, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, contents);
+    }
+    return scanForLeaks(dir);
+  };
+  let tests;
+  try {
+    const clean = fixture("clean", { "index.html": "<title>offline safety probe</title>" });
+    const secretFile = fixture("secret-file", { ".env": "SAFE_FIXTURE=true" });
+    const inlineSecret = fixture("inline-secret", { "config.txt": "SERVICE_TOKEN='fixture-token-value'" });
+    const privateKey = fixture("private-key", { "notes.txt": "-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----" });
+    const localPath = fixture("local-path", { "README.md": "Do not publish C:\\Users\\fixture-user\\private" });
+    tests = {
+      clean_fixture_passes: clean.paths.length === 0 && clean.secrets.length === 0 && !clean.scanError,
+      secret_file_fails_closed: secretFile.secrets.some((item) => item === ".env"),
+      inline_credential_fails_closed: inlineSecret.secrets.some((item) => item.includes("inline credential")),
+      private_key_fails_closed: privateKey.secrets.some((item) => item.includes("inline credential")),
+      local_user_path_fails_closed: localPath.paths.length === 1,
+      zero_external_commands: externalCommandCalls === commandsBefore,
+      zero_network_calls: networkCalls === 0,
+    };
+  } finally {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  const passed = Object.values(tests).every(Boolean);
+  process.stdout.write(`${JSON.stringify({ passed, myrepo_version: MYREPO_VERSION, mode: "offline", tests }, null, 2)}\n`);
+  if (!passed) process.exitCode = 1;
 }
 
 function humanTitle(name) { return name.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
@@ -217,6 +266,11 @@ async function main() {
   let o;
   try { o = parseArgs(process.argv.slice(2)); }
   catch (e) { process.stderr.write(`${e.message}\n\n${usage()}`); process.exit(1); }
+
+  if (o.selfTest) {
+    runSelfTest();
+    return;
+  }
 
   const dir = path.resolve(o.dir);
   if (!fs.existsSync(dir)) { process.stderr.write(`Project dir not found: ${dir}\n`); process.exit(1); }

@@ -6,15 +6,14 @@
 //   node run-all.mjs              # doctor: verify every skill end to end
 //   node run-all.mjs --pretty     # same, human-readable JSON
 //   node run-all.mjs --flow       # print the review -> voice -> publish flow
-//   node run-all.mjs --quick      # skip slow live-dependency probes
+//   node run-all.mjs --quick      # skip live-dependency probes; report not_checked
 //
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const MYSKILLS_VERSION = "1.0.0";
+const MYSKILLS_VERSION = "1.1.0";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 // This skill lives beside its siblings, whether that is the canonical repo or
 // an installed skills directory — so the parent of myskills/ is the skill root.
@@ -61,16 +60,33 @@ const CHECKS = [
       if (!has("myrepo", "scripts", "publish.mjs")) return { status: "missing", detail: "myrepo/scripts/publish.mjs not found" };
       const v = run(process.execPath, [skillPath("myrepo", "scripts", "publish.mjs"), "--version"]);
       const version = v.code === 0 ? ((v.out.match(/myrepo ([\d.]+)/) || [])[1] ?? null) : null;
-      if (quick) return { status: version ? "ok" : "failing", version, detail: "version probe only (--quick)" };
-      // Prove the publisher's gates actually run, without creating anything.
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "myskills-"));
-      try {
-        fs.writeFileSync(path.join(tmp, "index.html"), "<title>probe</title>");
-        const dry = run(process.execPath, [skillPath("myrepo", "scripts", "publish.mjs"), "--name", "probe", "--dir", tmp, "--dry-run"]);
-        const gated = dry.code === 0 && /scan clean/.test(dry.err) && /dry run/.test(dry.err);
-        const gh = run("gh", ["auth", "status"]);
-        return { status: gated ? "ok" : "failing", version, detail: gated ? `dry-run gates pass; gh auth ${gh.code === 0 ? "ready" : "NOT logged in"}` : "dry-run gates did not pass" };
-      } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {} }
+      // Prove the publisher's privacy and secret gates offline. GitHub CLI
+      // availability is a separate dependency state, never a scanner verdict.
+      const selfTest = run(process.execPath, [skillPath("myrepo", "scripts", "publish.mjs"), "--self-test"]);
+      let selfTestReport = null;
+      try { selfTestReport = JSON.parse(selfTest.out); } catch {}
+      const gated = selfTest.code === 0 && selfTestReport?.passed === true;
+      if (quick) {
+        return {
+          status: gated ? "ok" : "failing",
+          version,
+          detail: gated ? "offline safety gates pass; GitHub dependency not checked (--quick)" : `offline safety self-test failed (exit ${selfTest.code})`,
+          dependencies: { gh_cli: "not_checked", gh_auth: "not_checked" },
+        };
+      }
+      const ghVersion = run("gh", ["--version"]);
+      const ghCli = ghVersion.code === 0 ? "ready" : "missing";
+      const ghAuthProbe = ghCli === "ready" ? run("gh", ["auth", "status"]) : null;
+      const ghAuth = ghCli === "missing" ? "not_checked" : ghAuthProbe.code === 0 ? "ready" : "login_required";
+      const dependencyText = ghCli === "missing" ? "GitHub CLI missing"
+        : ghAuth === "login_required" ? "GitHub CLI sign-in required"
+          : "GitHub CLI signed in";
+      return {
+        status: gated ? "ok" : "failing",
+        version,
+        detail: gated ? `offline safety gates pass; ${dependencyText}` : `offline safety self-test failed (exit ${selfTest.code})`,
+        dependencies: { gh_cli: ghCli, gh_auth: ghAuth },
+      };
     },
   },
   {
@@ -91,7 +107,7 @@ const CHECKS = [
     name: "promptus-clone-voice", role: "consented local voice cloning", aliases: ["myvoice"],
     check({ quick }) {
       if (!has("promptus-clone-voice", "scripts", "manage_promptus_services.py")) return { status: "missing", detail: "promptus scripts not found" };
-      if (quick) return { status: "ok", detail: "present (--quick: live services not probed)" };
+      if (quick) return { status: "not_checked", detail: "Promptus services not checked (--quick)" };
       const py = process.platform === "win32" && process.env.LOCALAPPDATA
         ? path.join(process.env.LOCALAPPDATA, "PromptusAI", "cosy", "venv", "Scripts", "python.exe") : "python";
       if (!fs.existsSync(py) && process.platform === "win32") return { status: "unavailable", detail: "Promptus not installed on this machine (skill present, engine absent)" };
@@ -114,7 +130,7 @@ function main() {
   catch (e) { process.stderr.write(`${e.message}\n`); process.exit(1); }
 
   if (o.help) {
-    process.stdout.write(`myskills ${MYSKILLS_VERSION} — run all skills together\n\n  --pretty   human-readable JSON\n  --flow     print the review -> voice -> publish flow\n  --quick    skip slow live-dependency probes\n  --version\n`);
+    process.stdout.write(`myskills ${MYSKILLS_VERSION} — run all skills together\n\n  --pretty   human-readable JSON\n  --flow     print the review -> voice -> publish flow\n  --quick    skip live-dependency probes and report them as not_checked\n  --version\n`);
     return;
   }
   if (o.flow) {
@@ -144,23 +160,32 @@ function main() {
   const ok = skills.filter((s) => s.status === "ok").length;
   const broken = skills.filter((s) => s.status === "failing" || s.status === "error" || s.status === "missing");
   const unavailable = skills.filter((s) => s.status === "unavailable");
-  // Never claim "all working" while a skill's engine is unavailable — say so.
+  const notChecked = skills.filter((s) => s.status === "not_checked");
+  const dependencyAttention = unavailable.length > 0 || skills.some((skill) => Object.values(skill.dependencies || {}).some((state) => ["missing", "login_required"].includes(state)));
+  // Never claim "all working" while a proof was skipped or a required local
+  // dependency needs attention. Quick mode is explicitly partial, not green.
   const verdict = broken.length ? `${broken.length} skill(s) need attention`
     : unavailable.length ? `${ok}/${skills.length} working · ${unavailable.length} unavailable (${unavailable.map((s) => s.skill).join(", ")})`
+    : notChecked.length ? `${ok}/${skills.length} checked and working · ${notChecked.length} not checked (--quick)`
+    : dependencyAttention ? `${ok}/${skills.length} functional checks pass · dependencies need attention`
     : "all skills working";
   const report = {
     myskills_version: MYSKILLS_VERSION,
     skill_root: SKILL_ROOT.replaceAll("\\", "/"),
-    checked: skills.length,
+    total: skills.length,
+    checked: skills.length - notChecked.length,
     working: ok,
     unavailable: unavailable.length,
+    not_checked: notChecked.length,
+    code_health: broken.length ? "failing" : notChecked.length ? "partial" : "passing",
+    dependency_readiness: o.quick ? "not_checked" : dependencyAttention ? "attention" : "ready",
     verdict,
     skills,
     duration_ms: Date.now() - started,
   };
   process.stdout.write(`${JSON.stringify(report, null, o.pretty ? 2 : 0)}\n`);
 
-  const mark = { ok: "✓", unavailable: "◍", missing: "✗", failing: "✗", error: "✗" };
+  const mark = { ok: "✓", unavailable: "◍", not_checked: "?", missing: "✗", failing: "✗", error: "✗" };
   process.stderr.write(`\n  ◆ myskills ${MYSKILLS_VERSION} — ${report.verdict}\n`);
   for (const s of skills) {
     const names = [s.skill, ...s.aliases].join(" / ");

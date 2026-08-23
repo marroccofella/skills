@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.9.0-00cc88)
+![momm](https://img.shields.io/badge/momm-1.10.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -32,6 +32,8 @@ Links every skill in this repo into each AI harness it detects (Claude Code, Cod
 
 Have every frontier model on your machine review your code, using only the subscriptions you already pay for — zero API keys, ever.
 
+One reviewed manifest defines all six provider surfaces — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — including their official install, sign-in, model, and help routes. The harness named as governor is removed from that pool everywhere, so it can never review its own work.
+
 ```
               ┌────────────────────────────┐
  your change  │  governor (the agent you   │   applies only fixes it
@@ -58,10 +60,14 @@ flowchart LR
     D --> F["Claude Code"]
     D --> G["Antigravity"]
     D --> H["Copilot CLI"]
+    D --> X["Grok CLI"]
+    D --> Y["Gemini CLI (optional)"]
     E --> I["dedup · consensus · insights"]
     F --> I
     G --> I
     H --> I
+    X --> I
+    Y --> I
     I --> J["content-addressed report<br/>sha256 over stored bytes"]
     J --> K["governor gate:<br/>reproduce → fix → disposition ledger"]
 ```
@@ -75,7 +81,7 @@ flowchart TD
     S{"route status"} -->|success| OK["review received"]
     S -->|authentication_required| L["run the shown login command<br/>(browser OAuth, never API keys)"]
     S -->|provider_unavailable| W["provider outage — momm already<br/>retried once; wait, never re-login"]
-    S -->|ineligible_tier| T["provider retired the account tier —<br/>use the successor route or an org license"]
+    S -->|ineligible_tier| T["provider reported this account ineligible —<br/>check current guidance or another reviewer"]
     S -->|missing| M["run the shown install command,<br/>then the login command"]
     S -->|self_excluded| X["governor never reviews its own work"]
 ```
@@ -84,12 +90,16 @@ flowchart TD
 |---|---|---|
 | `authentication_required` | CLI installed, session absent or expired | Run the `login_hint` command shown (each is the provider's official browser login) |
 | `provider_unavailable` | Provider-side outage (5xx); one retry already happened | Wait and re-run; never re-login |
-| `ineligible_tier` | Provider retired this account tier for this CLI | Use the successor route (e.g. Antigravity for consumer Gemini) or an org license |
+| `ineligible_tier` | Provider reported that this account is not eligible for the route | Check the provider's current account guidance or choose another configured reviewer; do not assume re-login will help |
 | `missing` | CLI not installed | Run the `install_hint` command from `--preflight` |
 | `timeout` | Reviewer exceeded the time limit | Raise `--timeout`, or check the provider's status page |
+| `invalid_output` | CLI replied, but the response could not be safely parsed | Retry, then run `--doctor`; do not call it an auth failure |
+| `disabled_no_oauth` | Route cannot run under MOMM's OAuth-only policy | Choose another OAuth-capable route; never add an API key |
+| `unsupported` | Adapter or account cannot perform the requested review | Choose another supported reviewer and keep the status as reported |
+| `error` | Route failed without a safer classification | Inspect its detail; do not guess that login is the cause |
 | `self_excluded` | This harness governs the run | Nothing — that's the integrity model working |
 
-`node momm/scripts/multi-review.mjs --preflight --pretty` checks every route with **zero model calls** and prints the exact fix for anything that's down. Reports carry `report_schema` and `dispatcher_version`; `--version` prints the release identity.
+`node momm/scripts/multi-review.mjs --preflight --governor codex --pretty` checks every route with **zero model calls** and prints the exact fix for anything that's down. Replace `codex` with the current harness. Reports carry `report_schema` and `dispatcher_version`; `--version` prints the release identity.
 
 ### Design principles
 
@@ -112,7 +122,7 @@ node install.mjs --target all
 
 # 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.
-node momm/scripts/setup-ui.mjs
+node momm/scripts/setup-ui.mjs --governor codex
 
 # 3. Once one reviewer is verified, review current changes.
 #    In a terminal you get a live progress display — spinners per reviewer,
@@ -120,7 +130,7 @@ node momm/scripts/setup-ui.mjs
 node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`, never handles API keys or passwords, launches only fixed allowlisted actions after a click, and sends no project source during its optional connectivity test. The active controller is separate from the peer-review pool. Skill updates and local modifications are grouped by action, while healthy runtime diagnostics stay collapsed; updates are always explicit visible actions. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.9.0 release notes](momm/references/release-1.9.0.md) for the complete change and safety record.
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.10.0 release notes](momm/references/release-1.10.0.md) for the complete corrective change and safety record.
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 
@@ -182,14 +192,16 @@ The governor then reproduces each finding with a failing test, fixes what proves
 - Node.js 18+ (the dispatcher is a single zero-dependency script)
 - At least one reviewer CLI installed and logged in via its official OAuth flow:
 
-  | Route | Install | Login |
-  |---|---|---|
-  | [Codex CLI](https://developers.openai.com/codex/cli) | `npm install -g @openai/codex` | `codex login` (ChatGPT account) |
-  | [Claude Code](https://claude.com/claude-code) | `npm install -g @anthropic-ai/claude-code` | `claude` then `/login` (Anthropic account) |
-  | [Antigravity CLI](https://antigravity.google/docs/cli/install) | official installer (provides `agy`) | `agy login` (Google account) |
-  | [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) | `npm install -g @github/copilot` | `copilot login` (GitHub account) |
+  | Route | Install | Sign in | Models |
+  |---|---|---|---|
+  | [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) | `npm install -g @openai/codex` | `codex login` | launch `codex`, then `/model` |
+  | [Claude Code](https://code.claude.com/docs/en/setup) | `npm install -g @anthropic-ai/claude-code` | `claude auth login` | launch `claude`, then `/model` |
+  | [Antigravity CLI](https://antigravity.google/docs/cli/install/) | official installer (provides `agy`) | launch `agy`; it opens Google sign-in when needed | `agy models` or interactive `/model` |
+  | [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli) | `npm install -g @github/copilot` | `copilot login` | launch `copilot`, then `/model` |
+  | [Grok](https://docs.x.ai/build/overview) | official xAI installer (provides `grok`) | `grok login` | `grok models` or interactive `/model` |
+  | [Gemini CLI](https://geminicli.com/docs/get-started/) *(optional)* | `npm install -g @google/gemini-cli` | launch `gemini` and choose Google sign-in | launch `gemini`, then `/model manage` |
 
-  Also adapted: [Grok CLI](https://x.ai/cli) (`irm https://x.ai/cli/install.ps1 | iex`, then `grok login`) — fails closed until first login; defaults to the `innovator` persona. Gemini CLI remains supported for Standard/Enterprise Code Assist organization licenses only.
+  Antigravity has no supported `agy login` command, and current Copilot uses `/model`, not `/models`. Gemini eligibility is determined by live verification rather than inferred from a plan name or shared local folder. Grok defaults to the `innovator` persona.
 
   **Reviewer personas** (`--personas grok=innovator,antigravity=socratic,copilot=futureproof`): optional angles for the ensemble — the *Innovator* always brings at least one genuinely novel idea, the *Socratic challenger* interrogates every assumption, the *Future-proofer* judges survival against AI and ecosystem change. Personas shape tone and suggestions, never the schema and never the truthfulness of findings; each report records who wore which.
 

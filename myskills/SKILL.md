@@ -1,11 +1,11 @@
 ---
 name: myskills
-description: Run every installed skill together from any harness and confirm each one actually works — momm (multi-model peer review), myvoice/promptus-clone-voice (consented local voice cloning), myrepo (publish to GitHub with a live page), and yorky/yorkshire-pudding (Yorkshire dialect). Use when the user says "myskills", asks to check, verify, test, or list their skills, asks what skills are available or whether they are working, or wants the review → voice → publish flow. Reports a single verdict with versions and live dependency status.
+description: Run the four canonical skill families from any harness and report functional health separately from dependency readiness — momm (multi-model peer review), myrepo (GitHub publishing), promptus-clone-voice/myvoice (consented local voice cloning), and yorkshire-pudding/yorky (Yorkshire dialect). Use when the user says "myskills", asks to check, verify, test, or list these skills, asks whether they are working, or wants the review → voice → publish flow. Reports aliases and versions without treating either as proof of health.
 ---
 
-# myskills — run them all, confirm they work
+# myskills — test the four skill families
 
-One entry point that exercises every skill for real and returns a single verdict. A skill is reported working only when **its own check passes** — never because its folder exists.
+One entry point that exercises each canonical family and reports both code health and the local dependencies needed to use it. A skill is reported working only when **its own check passes** — never because its folder exists or its version is current.
 
 ## Run it
 
@@ -14,20 +14,40 @@ node scripts/run-all.mjs --pretty
 ```
 
 - **`--pretty`** — human-readable JSON on stdout; a per-skill summary always prints to stderr.
-- **`--quick`** — skip slow live-dependency probes (Promptus services, `gh auth`, publisher dry-run).
+- **`--quick`** — keep deterministic safety checks, skip live-dependency probes, and report skipped families or dependencies as `not_checked`; it never turns unknown readiness green.
 - **`--flow`** — print how the skills compose, without running anything.
-- Exit code is **0 when every skill is working**, **1 if any is missing, failing, or errored**, so a harness can gate on it.
+- Exit code is **1** when a functional check is missing, failing, or errored. Dependency-only attention, such as a missing engine or GitHub sign-in, is reported separately and does not falsely turn a passing safety test into a code failure.
 
-Relay the per-skill lines to the user, including versions and any `unavailable` engine (e.g. Promptus not running) — those are statuses, not failures of the skill itself.
+Relay the per-skill lines to the user, including aliases, versions, dependency states, and any `unavailable` engine (for example, Promptus not installed). Never summarize `code_health: passing` as “everything is ready” when `dependency_readiness` still needs attention.
+
+## Canonical families and aliases
+
+myskills 1.1.0 returns four functional records:
+
+- `momm`
+- `myrepo`
+- `yorkshire-pudding`, also invoked as `yorky`
+- `promptus-clone-voice`, also invoked as `myvoice`
+
+An alias belongs on its canonical record; it is not another installed skill or another health check. `myskills_version` identifies the orchestrator itself and does not create a fifth functional family.
 
 ## What it checks
 
 | Skill | Called as | Proof required |
 |---|---|---|
-| momm | `momm` | `--self-test` passes (35 deterministic checks) |
-| myrepo | `myrepo` | `--dry-run` privacy + secret gates pass; `gh auth` state reported |
+| momm | `momm` | every bundled deterministic `--self-test` check passes |
+| myrepo | `myrepo` | zero-network `--self-test` privacy + secret gates pass; `gh_cli` and `gh_auth` readiness reported separately |
 | yorkshire-pudding | `yorky` | self-tests pass **and** a live translation is verified |
 | promptus-clone-voice | `myvoice` | Promptus services (ComfyUI, Cosy, CWorker) report ready |
+
+## Read the report
+
+- `code_health` summarizes functional checks. It is `failing` only when a canonical family's own proof is missing, failing, or errored.
+- `dependency_readiness` is `attention` when a required local engine, CLI, or account session is unavailable, and `not_checked` when `--quick` deliberately skips those probes.
+- Each `skills[]` record carries one canonical `skill`, its `aliases`, functional `status`, explanatory `detail`, and any detected `version`.
+- myrepo additionally reports `dependencies.gh_cli` as `ready` or `missing`, and `dependencies.gh_auth` as `ready`, `login_required`, or `not_checked` when the CLI is absent.
+
+Version state and functional health answer different questions. A current version can still fail its self-test or lack a required engine; a local version can be newer than the published manifest and still pass. Do not group “current,” “update available,” or “local newer” as health verdicts, and do not relabel an unavailable version check as “up to date.”
 
 ## How they compose
 

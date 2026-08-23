@@ -3,11 +3,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { cleanOauthEnv as cleanSharedOauthEnv, isForbiddenOauthEnvironmentName, sanitizeProviderDiagnostic } from "./oauth-env.mjs";
+import { DEFAULT_REVIEWERS, GOVERNOR_IDS, INSTALL_HINTS, LOGIN_HINTS, PROVIDER_IDS } from "./provider-manifest.mjs";
+import { SETUP_PROBE_BINDING_ENV, SETUP_PROBE_CAPABILITY_ENV, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeBinding } from "./setup-probe-contract.mjs";
 
-const MOMM_VERSION = "1.9.1";
+const MOMM_VERSION = "1.10.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -83,51 +86,9 @@ if (Number.isFinite(nodeMajor) && nodeMajor < 18) {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_BYTES = 120_000;
 const MAX_OUTPUT_BYTES = 2_000_000;
-const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"]);
+const VALID_GOVERNORS = new Set(GOVERNOR_IDS);
 const VALID_SEVERITIES = new Set(["CRITICAL", "WARNING", "NITPICK"]);
 const VALID_VERDICTS = new Set(["ACCEPT", "MODIFY", "REJECT"]);
-
-const FORBIDDEN_ENV_NAMES = new Set([
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
-  "GEMINI_API_KEY",
-  "GOOGLE_API_KEY",
-  "GOOGLE_APPLICATION_CREDENTIALS",
-  "XAI_API_KEY",
-  "GROQ_API_KEY",
-  "MISTRAL_API_KEY",
-  "COHERE_API_KEY",
-  "AZURE_OPENAI_API_KEY",
-  "AWS_ACCESS_KEY_ID",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_SESSION_TOKEN",
-]);
-
-// Exact interactive login commands, surfaced whenever a route is down so the
-// user never has to guess how to bring a reviewer online. OAuth browser flows
-// only — never API keys.
-const LOGIN_HINTS = {
-  codex: "codex login   (ChatGPT account, browser flow)",
-  claude: "claude   then run /login inside it   (Anthropic account, browser flow)",
-  antigravity: "agy login   (Google account, browser flow)",
-  copilot: "copilot login   (GitHub account, browser flow)",
-  gemini: "gemini   then /auth   (Standard or Enterprise Code Assist organization licenses; individual tiers were retired 2026-06-18)",
-};
-
-// Exact install commands, verified against real installations — surfaced
-// whenever a route's CLI is missing so a new user can bring it online
-// without leaving the terminal.
-const INSTALL_HINTS = {
-  codex: "npm install -g @openai/codex",
-  claude: "npm install -g @anthropic-ai/claude-code",
-  copilot: "npm install -g @github/copilot",
-  gemini: "npm install -g @google/gemini-cli",
-  antigravity: "installer at antigravity.google/docs/cli/install (provides the agy command)",
-  grok: "Windows: irm https://x.ai/cli/install.ps1 | iex — other platforms: x.ai/cli",
-};
-
-LOGIN_HINTS.grok = "grok login   (xAI account, browser flow; or grok login --device-code without a browser)";
 
 // Optional reviewer personas: they shape the ANGLE of a review — tone,
 // what suggestions lean toward — never the schema, and never the rule that
@@ -254,7 +215,7 @@ function normalizeAgentName(value) {
 
 function usage() {
   return `Usage:
-  node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
+  node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|grok|other> [options]
   node scripts/multi-review.mjs --doctor
   node scripts/multi-review.mjs --self-test
 
@@ -284,7 +245,7 @@ function parseArgs(argv) {
   const options = {
     governor: normalizeAgentName(process.env.GOVERNING_AGENT),
     input: null,
-    reviewers: ["codex", "claude", "antigravity", "copilot", "grok"],
+    reviewers: [...DEFAULT_REVIEWERS],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
     strict: false,
@@ -292,6 +253,7 @@ function parseArgs(argv) {
     pretty: false,
     doctor: false,
     preflight: false,
+    setupProbe: false,
     ui: null,
     selfTest: false,
     help: false,
@@ -315,6 +277,7 @@ function parseArgs(argv) {
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--preflight") options.preflight = true;
+    else if (arg === "--setup-probe") options.setupProbe = true;
     else if (arg === "--store-input") options.storeInput = true;
     else if (arg === "--label") options.label = clipped(next(), 120);
     else if (arg === "--min-success") {
@@ -345,15 +308,27 @@ function parseArgs(argv) {
 }
 
 function cleanOauthEnv(source = process.env) {
-  const env = { ...source };
-  for (const key of Object.keys(env)) {
-    const upper = key.toUpperCase();
-    if (FORBIDDEN_ENV_NAMES.has(upper) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(upper)) delete env[key];
-  }
-  const depth = Number.parseInt(env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;
-  env.MULTI_LLM_REVIEW_DEPTH = String(depth + 1);
-  env.NO_COLOR = "1";
-  return env;
+  return cleanSharedOauthEnv(source, { nestedReview: true });
+}
+
+function validSetupProbe(options, artifact, environment = process.env, hasIpcChannel = Boolean(process.channel)) {
+  if (options.setupProbe !== true) return true;
+  const capability = String(environment[SETUP_PROBE_CAPABILITY_ENV] || "");
+  const suppliedBinding = String(environment[SETUP_PROBE_BINDING_ENV] || "");
+  const reviewer = options.reviewers.length === 1 ? options.reviewers[0] : "";
+  const expectedBinding = setupProbeBinding(capability, { governor: options.governor, reviewer, label: options.label, input: artifact });
+  const bindingMatches = suppliedBinding.length === expectedBinding.length
+    && timingSafeEqual(Buffer.from(suppliedBinding), Buffer.from(expectedBinding));
+  return hasIpcChannel
+    && /^[a-f0-9]{64}$/.test(capability)
+    && options.label === SETUP_PROBE_LABEL
+    && artifact === SETUP_PROBE_INPUT
+    && options.storeInput !== true
+    && options.input === null
+    && options.reviewers.length === 1
+    && PROVIDER_IDS.includes(reviewer)
+    && reviewer !== options.governor
+    && bindingMatches;
 }
 
 function sanitizeText(text) {
@@ -574,13 +549,14 @@ function classifyFailure(result) {
     .split(/\r?\n/).filter((line) => line.trim() && !/^Warning:/i.test(line.trim())).join("\n");
   const meaningful = dropWarnings(result.stderr) || dropWarnings(result.stdout);
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
-  // A retired account tier is a permanent condition, not an auth problem —
-  // classify it first (its message contains "authenticating") so the user is
-  // pointed at the successor route instead of a futile re-login.
+  // An account-eligibility rejection is not an auth problem — classify it
+  // first (its message can contain "authenticating") so the user is not sent
+  // through a futile re-login. Eligibility policy changes over time, so the
+  // user-facing detail deliberately makes no absolute plan or tier claim.
   // Deliberately narrow: bare "unsupported_client" is a generic OAuth error
   // code any provider can emit and must not trigger tier-specific advice.
   if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
-    return { status: "ineligible_tier", detail: "provider retired individual/Pro/Ultra access for this CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor" };
+    return { status: "ineligible_tier", detail: "the provider reported that this account is not eligible for the Gemini CLI route; check the provider's current account guidance or use another configured reviewer" };
   }
   // Server-side outages often mention authentication ("token could not be
   // validated ... 503") — classify them before the auth regex so a user is
@@ -588,14 +564,14 @@ function classifyFailure(result) {
   // phrase-qualified ("returned: no server", not bare "no server") so local
   // configuration errors never masquerade as outages.
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
-    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${sanitizeProviderDiagnostic(meaningful, { maxLength: 400 }) || "(no output)"}` };
   }
   if (/(?:log[ -]?in|sign[ -]?in|authenticate|authentication|oauth|browser)/.test(combined)) {
     // Keep the provider's own words: transient service errors can contain
     // auth-like phrasing, and the raw text is what distinguishes them.
-    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${sanitizeProviderDiagnostic(meaningful, { maxLength: 400 }) || "(no output)"}` };
   }
-  return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
+  return { status: "error", detail: sanitizeProviderDiagnostic(meaningful || `exit ${result.code}`, { maxLength: 1200 }) };
 }
 
 async function invokeReviewer(agent, artifact, options) {
@@ -839,8 +815,12 @@ async function collectArtifact(options) {
 
 async function commandVersion(command) {
   const result = await runProcess(command, ["--version"], { timeoutMs: 5_000 });
-  if (result.error?.code === "ENOENT") return { installed: false };
-  return { installed: result.code === 0, version: clipped(result.stdout || result.stderr, 200) || null };
+  const detail = sanitizeProviderDiagnostic(result.stdout || result.stderr, { maxLength: 200 }) || null;
+  const definitelyMissing = result.error?.code === "ENOENT"
+    || /(?:is not recognized as an internal or external command|command not found|no such file or directory)/i.test(String(result.stderr || result.stdout));
+  if (definitelyMissing) return { installed: false };
+  if (result.code !== 0) return { installed: true, usable: false, version: null, detail: detail || `version check exited ${result.code}` };
+  return { installed: true, usable: true, version: detail };
 }
 
 // Presence-only credential evidence; never reads file contents. "present"
@@ -862,8 +842,23 @@ function authEvidence(agent) {
 // Zero model calls: version probes plus auth evidence for every requested
 // route, so a user sees exactly which reviewers will join and what to run to
 // bring the missing ones online — before any tokens are spent.
+function commandErrorPreflightEntry(agent, version) {
+  return {
+    agent,
+    installed: true,
+    ready: false,
+    auth: "unknown",
+    auth_evidence: "none",
+    route_status: "command_error",
+    detail: `The CLI command was found but could not run its version check: ${version.detail || "unknown command error"}`,
+    install_hint: INSTALL_HINTS[agent] ?? null,
+    repair_hint: INSTALL_HINTS[agent] ?? null,
+    note: "CLI detected but unavailable",
+  };
+}
+
 async function preflightCheck(reviewers, governor) {
-  const knownAdapters = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
+  const knownAdapters = new Set(PROVIDER_IDS);
   return Promise.all([...new Set(reviewers)].map(async (agent) => {
     if (agent === governor) return { agent, role: "governor", ready: false, note: "self-excluded (governor never reviews its own work)" };
     // Only probe adapters we ship: an arbitrary --reviewers name must never
@@ -873,15 +868,25 @@ async function preflightCheck(reviewers, governor) {
     if (!version.installed) {
       return { agent, installed: false, ready: false, auth: "n/a", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI not installed" };
     }
+    if (version.usable === false) {
+      return commandErrorPreflightEntry(agent, version);
+    }
     let auth = authEvidence(agent);
     if (agent === "codex") {
       const status = await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 });
       auth = status.code === 0 ? "ok" : "absent";
     }
     const ready = auth === "ok" || auth === "present";
-    const entry = { agent, installed: true, version: version.version, ready, auth };
+    const entry = {
+      agent,
+      installed: true,
+      version: version.version,
+      ready,
+      auth,
+      auth_evidence: auth === "ok" ? "live_status" : auth === "present" ? (agent === "antigravity" ? "weak_shared_presence" : "presence_only") : "none",
+    };
     if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
-    if (agent === "gemini") entry.note = "fails closed on individual accounts (enterprise Code Assist only)";
+    if (agent === "gemini") entry.note = "optional route; live verification determines account eligibility";
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
     return entry;
   }));
@@ -894,7 +899,7 @@ const ANSI = {
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // Exactly one retry, and only for transient provider outages: auth failures,
-// retired tiers, timeouts, and hard errors never retry.
+// account-eligibility rejections, timeouts, and hard errors never retry.
 const PROVIDER_RETRY_DELAY_MS = 3_000;
 // Declares exactly which bytes report_sha256 covers: the stored report file,
 // not the stdout copy (which additionally carries this evidence block).
@@ -1029,7 +1034,7 @@ async function doctor(pretty) {
   for (const name of ["codex", "gemini", "claude", "antigravity", "copilot", "grok"]) {
     commands[name] = await commandVersion(name === "antigravity" ? antigravityCommand() : name === "grok" ? grokCommand() : name);
   }
-  const forbiddenPresent = Object.keys(process.env).filter((key) => FORBIDDEN_ENV_NAMES.has(key.toUpperCase()) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(key.toUpperCase()));
+  const forbiddenPresent = Object.keys(process.env).filter(isForbiddenOauthEnvironmentName);
   const codexStatus = commands.codex.installed ? await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 }) : null;
   const report = {
     dispatcher_version: MOMM_VERSION,
@@ -1041,7 +1046,7 @@ async function doctor(pretty) {
     oauth_evidence: {
       gemini_credential_file_present: fs.existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json")),
       copilot_config_present: fs.existsSync(path.join(os.homedir(), ".copilot", "config.json")),
-      codex_login_status: codexStatus ? { exit_code: codexStatus.code, message: clipped(codexStatus.stdout || codexStatus.stderr, 500) } : null,
+      codex_login_status: codexStatus ? { exit_code: codexStatus.code, message: sanitizeProviderDiagnostic(codexStatus.stdout || codexStatus.stderr, { maxLength: 500 }) } : null,
     },
     caveat: "Credential evidence is not proof of a valid session. The dispatcher never reads credential contents.",
   };
@@ -1049,7 +1054,17 @@ async function doctor(pretty) {
 }
 
 async function selfTest(pretty) {
-  const cleaned = cleanOauthEnv({ PATH: process.env.PATH || "", OPENAI_API_KEY: "sentinel", CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth" });
+  const cleaned = cleanOauthEnv({
+    PATH: process.env.PATH || "",
+    OPENAI_API_KEY: "sentinel",
+    GH_TOKEN: "sentinel",
+    GITHUB_TOKEN: "sentinel",
+    CLAUDE_CODE_USE_BEDROCK: "1",
+    GOOGLE_GENAI_USE_VERTEXAI: "1",
+    AWS_PROFILE: "production",
+    UNREVIEWED_AMBIENT_VALUE: "must-not-cross",
+    CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth",
+  });
   const nested = JSON.stringify({ response: JSON.stringify({ verdict: "ACCEPT", confidence: 0.8, findings: [], summary: "ok" }) });
   const structured = JSON.stringify({ structured_output: { verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" } });
   const parsed = unwrapReviewPayload(nested);
@@ -1071,6 +1086,8 @@ async function selfTest(pretty) {
   const cursorUp = uiBuffer.text.match(/\x1b\[(\d+)F/);
   const tests = {
     removes_api_keys: !("OPENAI_API_KEY" in cleaned),
+    removes_alternate_auth_routes: ["GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "GOOGLE_GENAI_USE_VERTEXAI", "AWS_PROFILE"].every((name) => !(name in cleaned)),
+    strict_environment_drops_unreviewed_values: !("UNREVIEWED_AMBIENT_VALUE" in cleaned),
     preserves_oauth_tokens: cleaned.CLAUDE_CODE_OAUTH_TOKEN === "allowed-oauth",
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
     parses_nested_json: parsed?.verdict === "ACCEPT",
@@ -1078,8 +1095,8 @@ async function selfTest(pretty) {
     parses_grok_text_wrapper: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" }), stopReason: "end_turn" }))?.verdict === "ACCEPT",
     normalizes_agy_alias: normalizeAgentName("agy") === "antigravity",
     normalizes_copilot_aliases: normalizeAgentName("github-copilot") === "copilot" && normalizeAgentName("gh-copilot") === "copilot",
-    login_hints_cover_all_adapters: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof LOGIN_HINTS[agent] === "string"),
-    install_hints_cover_all_routes: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof INSTALL_HINTS[agent] === "string"),
+    login_hints_cover_all_adapters: PROVIDER_IDS.every((agent) => typeof LOGIN_HINTS[agent] === "string"),
+    install_hints_cover_all_routes: PROVIDER_IDS.every((agent) => typeof INSTALL_HINTS[agent] === "string"),
     personas_defined_and_injected: ["innovator", "socratic", "futureproof"].every((name) => typeof PERSONAS[name] === "string")
       && buildContract("grok", {}).includes("Innovator")
       && buildContract("codex", { personas: { codex: "socratic" } }).includes("Socratic")
@@ -1107,15 +1124,32 @@ async function selfTest(pretty) {
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
     classifies_5xx_with_auth_wording_as_outage: classifyFailure({ code: 1, stdout: "", stderr: "Error: Authentication token found but could not be validated.\n  Failed to fetch GitHub CLI user login (503): GitHub returned: No server" }).status === "provider_unavailable",
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
-    classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
+    classifies_account_ineligibility_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
+    provider_diagnostics_hide_auth_material: (() => {
+      const detail = classifyFailure({ code: 1, stdout: "", stderr: "Authentication required. Visit https://accounts.example.test/oauth?code=secret and enter device code ABCD-EFGH for person@example.test from C:\\Users\\private-name\\.config" }).detail;
+      return detail.includes("[provider URL hidden")
+        && detail.includes("[hidden]")
+        && detail.includes("[account identifier hidden]")
+        && detail.includes("<user-home>")
+        && !detail.includes("secret")
+        && !detail.includes("ABCD-EFGH")
+        && !detail.includes("person@example.test")
+        && !detail.includes("private-name");
+    })(),
+    unusable_cli_preflight_has_repair_without_login: (() => {
+      const entry = commandErrorPreflightEntry("codex", { detail: "Access is denied." });
+      return entry.route_status === "command_error"
+        && typeof entry.repair_hint === "string"
+        && !("login_hint" in entry);
+    })(),
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
       && effectiveTimeoutMs(14_000, 120_000, false) > 140_000
       && effectiveTimeoutMs(36_227, 120_000, false) > 220_000
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
-    every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
+    every_adapter_can_govern: PROVIDER_IDS.every((agent) => VALID_GOVERNORS.has(agent)),
     private_evidence_is_owner_only: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
     sanitizer_no_offset_leak: sanitizeText("token sk-ant-abcdefghijklmnop end").value === "token [REDACTED] end"
       && sanitizeText("api_key=supersecretvalue").value === "api_key=[REDACTED]",
@@ -1179,8 +1213,10 @@ async function main() {
         if (e.role === "governor") process.stderr.write(`  ${color(ANSI.dim, "⊘")} ${e.agent.padEnd(12)} ${color(ANSI.dim, e.note)}\n`);
         else if (e.ready) process.stderr.write(`  ${color(ANSI.green, "✓")} ${e.agent.padEnd(12)} ${color(ANSI.dim, `${e.version ?? ""} · auth ${e.auth}`)}\n`);
         else {
-          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
-          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
+          const commandError = e.route_status === "command_error";
+          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : commandError ? e.install_hint : e.login_hint;
+          const state = e.installed === false ? "not installed" : commandError ? "CLI detected but unavailable" : `auth ${e.auth}`;
+          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${state}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
         }
       }
     }
@@ -1197,8 +1233,9 @@ async function main() {
   if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
   const sanitized = sanitizeText(rawArtifact);
   options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
+  if (!validSetupProbe(options, rawArtifact)) throw new Error("--setup-probe requires an active Setup Center capability bound to the exact synthetic validation payload");
   try {
-    if (fs.existsSync(".reviewrules")) {
+    if (!options.setupProbe && fs.existsSync(".reviewrules")) {
       options.projectRules = clipped(fs.readFileSync(".reviewrules", "utf8"), 4000) || null;
     }
   } catch { options.projectRules = null; }
@@ -1249,6 +1286,12 @@ async function main() {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
     policy: "oauth-only",
+    setup_probe: options.setupProbe === true,
+    ...(options.setupProbe ? {
+      setup_probe_authorized: true,
+      setup_probe_contract: "active Setup Center IPC capability + exact fixed payload",
+      provider_native_configuration_may_apply: true,
+    } : {}),
     run_id: runId,
     ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
@@ -1301,8 +1344,10 @@ async function main() {
   // Tracked separately so a successfully written report is never misreported
   // when only the log append fails.
   const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS };
+  if (options.setupProbe) evidence.skipped = "isolated_setup_probe";
   const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
   try {
+    if (options.setupProbe) throw Object.assign(new Error("setup probe evidence intentionally skipped"), { setupProbeSkip: true });
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     const reportJson = `${JSON.stringify(report, null, 2)}\n`;
     try {
@@ -1342,8 +1387,13 @@ async function main() {
     // One sweep tightens the current report, the log, and any legacy files.
     hardenPrivateTree(".ensemble_reviews");
   } catch (error) {
+    if (error?.setupProbeSkip) {
+      // Setup verification is deliberately ephemeral. It must not touch the
+      // user's repository or private review ledger.
+    } else {
     evidence.error = clipped(error?.message ?? String(error), 300);
     evidence.failed_stage = evidence.persisted ? "review-log indexing" : "report persistence";
+    }
   }
   // Failure surfaces without corrupting either stderr contract: a structured
   // event under --stream (which owns stderr as pure NDJSON), or a human

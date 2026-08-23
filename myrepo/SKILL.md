@@ -1,6 +1,6 @@
 ---
 name: myrepo
-description: Publish a project to GitHub as its own repository with a live, in-browser GitHub Pages site — scaffolding 42.uk-themed docs (README, LICENSE, .nojekyll), running a local-path privacy scan, creating or updating the repo under the authenticated account, enabling Pages, and verifying the live URL actually serves. Use when the user wants to publish, ship, release, or "make a repo" for a project so others can view or run it in a browser. Needs an authenticated gh CLI. Do not trigger for private scratch work the user has not asked to publish.
+description: Publish a project to GitHub as its own repository with a live, in-browser GitHub Pages site — scaffolding 42.uk-themed docs (README, LICENSE, .nojekyll), running privacy and secret scans, creating or updating the repo under the authenticated account, enabling Pages, and verifying the live URL actually serves. Use when the user wants to publish, ship, release, or "make a repo" for a project so others can view or run it in a browser. Publishing needs an authenticated GitHub CLI; the safety self-test does not. Do not trigger for private scratch work the user has not asked to publish.
 ---
 
 # myrepo — publish a project to GitHub with a live page
@@ -14,6 +14,24 @@ Turn a local project into its own public GitHub repository with a browser-runnab
 - **Never publish secrets.** Do not publish a directory containing credentials, tokens, `.env` files, or private keys. Check before running.
 - **Verify, don't assume.** The publisher polls the live Pages URL until it returns 200. Report the *verified* URL; if it did not go green, say so (Pages builds can lag a few minutes) rather than claiming it is live.
 - **OAuth only.** Authentication is the user's existing `gh` login. Never request, embed, or suggest a Personal Access Token in code or committed files.
+
+## Verify it offline
+
+Before diagnosing GitHub setup, prove that myrepo 1.3.0's local safety gates work:
+
+```text
+node scripts/publish.mjs --self-test
+```
+
+This deterministic self-test uses temporary fixtures to exercise the clean-project, secret-file, inline-credential, private-key, and local-user-path cases. It makes zero network calls, runs no external commands, and does not require `gh` or a signed-in account.
+
+Treat publisher health and GitHub readiness as separate signals:
+
+- The `--self-test` result proves whether myrepo's privacy and secret gates work.
+- `gh --version` proves whether the GitHub CLI is installed (`gh_cli`).
+- `gh auth status` proves whether that CLI has a usable account session (`gh_auth`). Run it only when `gh_cli` is ready.
+
+A missing CLI or signed-out account does not mean the safety gates failed. Report it as dependency setup still needed. Actual previewing or publishing requires both `gh_cli` and `gh_auth` to be ready.
 
 ## Run it
 
@@ -40,7 +58,7 @@ Scaffolded docs carry the 42.uk identity: the `◆` mark, the project title and 
 
 ## Options
 
-`--dir <path>` project dir · `--private` (no Pages) · `--no-pages` · `--force-docs` overwrite README/LICENSE · `--allow-paths` skip the privacy scan (confirm first) · `--dry-run` · `--version`.
+`--dir <path>` project dir · `--private` (no Pages) · `--no-pages` · `--force-docs` overwrite README/LICENSE · `--allow-paths` skip the local-path privacy refusal (confirm first; secret checks remain mandatory) · `--dry-run` · `--self-test` (offline safety gates) · `--version`.
 
 Every publish is recorded to an owner-only local log at `~/.myrepo/publishes.jsonl` (which myrepo version pushed what, where, and what the scan found) — your debuggable audit trail. Each run confesses its version and checks for updates (fail-silent, cached daily; disable with `NO_UPDATE_CHECK=1`).
 
