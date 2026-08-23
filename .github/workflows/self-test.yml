@@ -25,6 +25,21 @@ jobs:
         run: node momm/scripts/multi-review.mjs --self-test --pretty
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
+      - name: Guided onboarding is zero-call and rejects unknown routes
+        shell: node {0}
+        run: |
+          const { spawnSync } = require("node:child_process");
+          const script = "momm/scripts/onboard.mjs";
+          const safe = spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "codex", "--json"], { encoding: "utf8", timeout: 30000 });
+          if (safe.status !== 0) throw new Error("onboarding smoke failed: " + safe.stderr);
+          const report = JSON.parse(safe.stdout);
+          if (report.model_calls_made !== false || report.credential_contents_read !== false) throw new Error("onboarding privacy contract missing");
+          if (report.routes.length !== 1 || report.routes[0].role !== "governor") throw new Error("governor was not self-excluded");
+          const unsafe = spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "grok,\u001b[31mBAD"], { encoding: "utf8", timeout: 30000 });
+          if (unsafe.status === 0 || unsafe.stderr.includes("\u001b")) throw new Error("unknown reviewer input was not safely rejected");
+          console.log("guided onboarding is zero-call, self-excluding, and input-safe");
+      - name: Local Setup Center safety contract
+        run: node momm/scripts/setup-ui.mjs --self-test
       - name: Yorkshire pudding self-test
         run: node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
       - name: Public evidence is sanitized and sealed

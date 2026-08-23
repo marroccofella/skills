@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Connect and verify MOMM reviewers without handling API keys or repository source.">
+    <title>MOMM Setup Center</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="MOMM Setup Center home">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span><strong>MOMM</strong><small>Setup Center</small></span>
+        </a>
+        <div class="top-actions">
+          <div class="controller-control">
+            <span>Controller</span>
+            <select id="governor" aria-label="Active controller">
+              <option value="codex">Codex · Active driver</option>
+              <option value="claude">Claude Code · Active driver</option>
+              <option value="antigravity">Antigravity · Active driver</option>
+              <option value="copilot">Copilot · Active driver</option>
+              <option value="grok">Grok · Active driver</option>
+              <option value="other">Another agent · Active driver</option>
+            </select>
+          </div>
+          <div class="local-pill"><span></span> Runs only on this computer</div>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">A calm, guided setup</p>
+            <h1>Connect your reviewers.<br><em>Skip the terminal maze.</em></h1>
+            <p class="lede">We check what is installed, open the right sign-in flow, and verify each connection with a harmless sentence. Project content stays here during setup; a real review sends only the review input you choose.</p>
+          </div>
+          <aside class="trust-card" aria-label="Privacy promises">
+            <p class="trust-title">Setup safety</p>
+            <ul>
+              <li><span>✓</span>No API keys</li>
+              <li><span>✓</span>No passwords collected</li>
+              <li><span>✓</span>No project code sent during setup</li>
+              <li><span>✓</span>Every login opens visibly</li>
+            </ul>
+          </aside>
+        </section>
+
+        <section class="status-banner" aria-labelledby="status-title">
+          <div class="status-meter" aria-hidden="true"><strong id="setup-percent">0%</strong><span>complete</span></div>
+          <div class="status-copy">
+            <p class="step-label">System status</p>
+            <h2 id="status-title">Checking your setup…</h2>
+            <p id="summary" class="summary" aria-live="polite">Reviewing local connections and updates.</p>
+            <div class="progress-track" aria-hidden="true"><span id="progress"></span></div>
+          </div>
+          <div class="status-actions">
+            <button id="quick-setup" class="button primary light" type="button">Run Quick Setup</button>
+            <button id="refresh" class="button ghost light" type="button">Check again</button>
+            <small id="quick-setup-note">Verifies detected sessions. Interactive sign-in still needs you.</small>
+          </div>
+        </section>
+
+        <section class="control-panel" aria-labelledby="setup-title">
+          <div class="panel-head">
+            <div>
+              <p class="step-label">Peer review pool</p>
+              <h2 id="setup-title">One view per provider</h2>
+              <p class="summary">Installation, updates, account state, and model access are consolidated below.</p>
+            </div>
+          </div>
+          <div id="provider-grid" class="provider-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="maintenance-panel" aria-labelledby="maintenance-title">
+          <div class="maintenance-head">
+            <div>
+              <p class="step-label">Stay healthy</p>
+              <h2 id="maintenance-title">Skills & diagnostics</h2>
+              <p id="maintenance-summary" class="summary" aria-live="polite">Preparing a read-only maintenance check…</p>
+            </div>
+            <button id="maintenance-refresh" class="button secondary" type="button">Check everything</button>
+          </div>
+          <p class="maintenance-privacy">Skill changes stay actionable. Ambient runtime and environment details remain collapsed unless something needs attention. Variable values, tokens, passwords, and credential files are never read.</p>
+          <div id="maintenance-grid" class="maintenance-grid" aria-live="polite">
+            <article class="health-card loading-card"><span></span><span></span><span></span></article>
+            <article class="health-card loading-card"><span></span><span></span><span></span></article>
+          </div>
+        </section>
+
+      </main>
+
+      <footer>
+        <p>MOMM keeps the agent you are using in control. Other models are read-only reviewers.</p>
+        <button id="close-server" class="text-button" type="button">Close Setup Center</button>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

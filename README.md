@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.5.0-00cc88)
+![momm](https://img.shields.io/badge/momm-1.9.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -39,11 +39,11 @@ Have every frontier model on your machine review your code, using only the subsc
               │  tests, commits)           │    reproducing findings
               └─────────────┬──────────────┘
                             │ dispatches diff (read-only)
-         ┌───────────┬────┴──────┬─────────────┐
-         ▼           ▼           ▼             ▼
-     Codex CLI  Claude Code  Antigravity  Copilot CLI
-    (ChatGPT    (Anthropic   (Google      (GitHub
-     OAuth)      OAuth)       OAuth)       OAuth)
+       ┌──────────┬────┴─────┬───────────┬─────────┐
+       ▼          ▼          ▼           ▼         ▼
+   Codex CLI  Claude Code  Antigravity  Copilot   Grok CLI
+  (ChatGPT    (Anthropic   (Google      (GitHub   (xAI
+   OAuth)      OAuth)       OAuth)       OAuth)     OAuth)
 ```
 
 ### How a review flows
@@ -106,19 +106,17 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 ### Quick start
 
 ```bash
-# 1. Link the skill into your user-level skills directory
-#    (junctions on Windows, symlinks on Linux/macOS — install.mjs handles both)
-node momm/scripts/install.mjs --target all
+# 1. Open the local Setup Center. Its unified provider cards show CLI, account,
+#    and model status; Quick Setup verifies detected sessions in sequence.
+node momm/scripts/setup-ui.mjs
 
-# 2. Check every route — install state, auth evidence, and the exact login
-#    command for anything that's down (no model calls)
-node momm/scripts/multi-review.mjs --preflight --pretty
-
-# 3. Review your current changes (replace "claude" with your driving agent).
+# 2. Once one reviewer is verified, review current changes.
 #    In a terminal you get a live progress display — spinners per reviewer,
 #    verdict badges, login hints on auth failures, and a consensus summary.
-git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --pretty
+node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
+
+The Setup Center runs only on `127.0.0.1`, never handles API keys or passwords, launches only fixed allowlisted actions after a click, and sends no project source during its optional connectivity test. The active controller is separate from the peer-review pool. Skill updates and local modifications are grouped by action, while healthy runtime diagnostics stay collapsed; updates are always explicit visible actions. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.9.0 release notes](momm/references/release-1.9.0.md) for the complete change and safety record.
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 
@@ -134,7 +132,7 @@ Or, inside any harness that supports Agent Skills, simply ask:
 
 Harness discovery in one line: Codex reads `~/.agents/skills`, Claude Code reads `~/.claude/skills`, and Gemini/Antigravity use their native `skills link` command — `install.mjs --target all` covers the lot.
 
-See [momm/SKILL.md](momm/SKILL.md) for the full protocol, [references/invocation-prompts.md](momm/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](momm/references/harness-compatibility.md) for per-harness discovery details.
+See the [first-run walkthrough](momm/references/getting-started.md), [momm/SKILL.md](momm/SKILL.md) for the full protocol, [references/invocation-prompts.md](momm/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](momm/references/harness-compatibility.md) for per-harness discovery details.
 
 <details>
 <summary><b>Example report</b> (real run: Codex governing, Claude + Antigravity reviewing a small Python diff)</summary>

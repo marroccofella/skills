@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.5.0";
+const MOMM_VERSION = "1.9.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -1093,7 +1093,10 @@ async function selfTest(pretty) {
       && formatFileUrl("/home/user/my project/ledger.html") === "file:///home/user/my%20project/ledger.html"
       && formatFileUrl("\\\\server\\share\\ledger.html") === "file://server/share/ledger.html",
     version_flag_process_level: await (async () => {
-      const out = await runProcess(process.execPath, [fileURLToPath(import.meta.url), "--version"], { timeoutMs: 15_000 });
+      const out = await runProcess(process.execPath, [fileURLToPath(import.meta.url), "--version"], {
+        timeoutMs: 15_000,
+        env: { ...cleanOauthEnv(), NO_UPDATE_CHECK: "1" },
+      });
       return out.code === 0 && new RegExp(`^momm ${MOMM_VERSION.replaceAll(".", "\\.")} `).test(out.stdout);
     })(),
     ui_noop_when_disabled: (() => {
