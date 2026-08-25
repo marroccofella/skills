@@ -4,6 +4,7 @@
 export const PROVIDER_MANIFEST = Object.freeze({
   codex: {
     label: "OpenAI Codex",
+    modalities: { text: "stdin", image: "native image flag" },
     docs: {
       install: "https://learn.chatgpt.com/docs/codex/cli",
       login: "https://learn.chatgpt.com/docs/auth",
@@ -20,6 +21,7 @@ export const PROVIDER_MANIFEST = Object.freeze({
   },
   claude: {
     label: "Claude Code",
+    modalities: { text: "stdin", image: "Read tool", pdf: "Read tool" },
     docs: {
       install: "https://code.claude.com/docs/en/setup",
       login: "https://code.claude.com/docs/en/authentication",
@@ -36,6 +38,7 @@ export const PROVIDER_MANIFEST = Object.freeze({
   },
   antigravity: {
     label: "Antigravity",
+    modalities: { text: "isolated file" },
     docs: {
       install: "https://antigravity.google/docs/cli/install/",
       login: "https://antigravity.google/docs/cli/reference",
@@ -56,6 +59,7 @@ export const PROVIDER_MANIFEST = Object.freeze({
   },
   copilot: {
     label: "GitHub Copilot",
+    modalities: { text: "isolated file" },
     docs: {
       install: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
       login: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
@@ -72,6 +76,7 @@ export const PROVIDER_MANIFEST = Object.freeze({
   },
   grok: {
     label: "Grok",
+    modalities: { text: "isolated file" },
     docs: {
       install: "https://docs.x.ai/build/overview",
       login: "https://docs.x.ai/build/cli/reference",
@@ -92,6 +97,7 @@ export const PROVIDER_MANIFEST = Object.freeze({
   },
   gemini: {
     label: "Gemini CLI",
+    modalities: { text: "stdin", image: "@file", pdf: "@file", audio: "@file", video: "@file" },
     docs: {
       install: "https://geminicli.com/docs/get-started/",
       login: "https://geminicli.com/docs/get-started/authentication/",

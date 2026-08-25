@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.10.2-00cc88)
+![momm](https://img.shields.io/badge/momm-1.10.2%20released-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -16,10 +16,12 @@ git clone https://github.com/marroccofella/skills && cd skills && node install.m
 
 Links every skill in this repo into each AI harness it detects (Claude Code, Codex, Gemini, Antigravity) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. `--dry-run` previews; `--target codex,claude` picks specific harnesses. Update anytime with `git pull` (no reinstall). Per-skill installs still work via each skill's own path.
 
+Installation happens in this checkout; reviews do not. After linking, change into the project you actually want reviewed and invoke MOMM through the absolute path to this checkout (or ask the harness to use `$momm`). The reviewed project's working directory selects its Git diff, `.reviewrules`, and private evidence location.
+
 | Skill | What it does |
 |-------|--------------|
 | [myskills](myskills/) | Run every skill together from any harness and confirm each one works — one command, one verdict, exit-code gated. |
-| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
+| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only peer review over explicit text, image, PDF, audio, or video inputs through capable installed CLIs, plus a private local ledger with reliable local-only read-aloud; the driving agent stays the sole writer. |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 | [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
 | [yorky](yorky/) | Short callable name for **yorkshire-pudding** — say "yorky" to turn owt into Yorkshire dialect. |
@@ -28,11 +30,13 @@ Links every skill in this repo into each AI harness it detects (Claude Code, Cod
 
 ## momm — Mixture of Model Modality
 
+> **Unreleased candidate:** the current working branch identifies itself as 1.12.1 and is not a public release until its deterministic gates, annotated tag, GitHub release, and `versions.json` update all point to the same commit. The published update manifest intentionally remains at 1.10.2.
+
 > **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. A deprecated alias remains at [`multi-llm-review/`](multi-llm-review/) whose scripts forward to `momm/scripts/`, so existing commands and skill links keep working with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The alias will be removed in a future release.
 
-Have every frontier model on your machine review your code, using only the subscriptions you already pay for — zero API keys, ever.
+Have supported account-authenticated coding CLIs on your machine review your code together, using only the subscriptions you already pay for — zero API keys, ever.
 
-One reviewed manifest defines all six provider surfaces — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — including their official install, sign-in, model, and help routes. The harness named as governor is removed from that pool everywhere, so it can never review its own work.
+One reviewed manifest defines all six provider surfaces — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — including official install/sign-in/model routes and the exact review-input modalities enabled by each adapter. The harness named as governor is removed from that pool everywhere, so it can never review its own work.
 
 ```
               ┌────────────────────────────┐
@@ -52,7 +56,7 @@ One reviewed manifest defines all six provider surfaces — Codex, Claude Code, 
 
 ```mermaid
 flowchart LR
-    A["git diff HEAD<br/>or --input file"] --> B["sanitize<br/>secret redaction + input_sha256"]
+    A["git diff HEAD, --input,<br/>or explicit --attach files"] --> B["sanitize + stage privately<br/>text/artifact sha256 binding"]
     B --> P["preflight (concurrent)<br/>zero model calls"]
     B --> D["parallel dispatch<br/>read-only, OAuth env only"]
     P -."install & login hints".-> U["you"]
@@ -69,7 +73,8 @@ flowchart LR
     X --> I
     Y --> I
     I --> J["content-addressed report<br/>sha256 over stored bytes"]
-    J --> K["governor gate:<br/>reproduce → fix → disposition ledger"]
+    J --> K["governor gate:<br/>reproduce → decide → finalize"]
+    K --> L["fresh status:<br/>validated completion + ledger"]
 ```
 
 ### When a route is down
@@ -99,15 +104,16 @@ flowchart TD
 | `error` | Route failed without a safer classification | Inspect its detail; do not guess that login is the cause |
 | `self_excluded` | This harness governs the run | Nothing — that's the integrity model working |
 
-`node momm/scripts/multi-review.mjs --preflight --governor codex --pretty` checks every route with **zero model calls** and prints the exact fix for anything that's down. Replace `codex` with the current harness. Reports carry `report_schema` and `dispatcher_version`; `--version` prints the release identity.
+From the project being reviewed, `node "<absolute-skills-root>/momm/scripts/multi-review.mjs" --preflight --governor <current-harness> --pretty` checks every route with **zero model calls** and prints the exact fix for anything that's down. Reports carry `report_schema` and `dispatcher_version`; `--version` prints the release identity.
 
 ### Design principles
 
 - **OAuth-only, fail-closed.** Every known API-key environment variable is stripped from reviewer subprocesses. A reviewer that isn't logged in returns `authentication_required`; there is no fallback path.
 - **Governor is the sole writer.** Reviewers are untrusted, read-only diagnostic tools. Their output is evidence, never instructions.
 - **Reproduction gate.** No finding is acted on by consensus or authority — the governor must reproduce it with a failing test before authoring a fix.
-- **Every voice heard, none obeyed blindly.** Reviewer improvement suggestions get an explicit apply/reject disposition, logged to `.ensemble_reviews/dispositions.jsonl` with the run's `run_id`.
+- **Every claim heard, none obeyed blindly.** Peer collection is explicitly unfinished. Every raw reviewer finding claim and every improvement suggestion gets a stable, report-bound governor decision; a digest-anchored completion sidecar and fresh status gate—not legacy free-form JSONL—prove the loop was closed.
 - **Termination-proof dispatcher.** Layered Windows/Unix process-tree cleanup (tree kill → child-kill backstop → hard deadline → explicit exit) guarantees the dispatcher always returns a structured report, even in kill-restricted sandboxes.
+- **Media is explicit and fail-closed.** Attach-only never infers a diff. MOMM applies format-specific signature/header screening (plus complete PNG/JPEG chunk parsing and PDF xref/root checks, but not a substitute for a full decoder), removes PNG/JPEG privacy metadata, requires an explicit metadata-risk choice for PDF/audio/video, and withholds source names/paths. A media route must return a reviewer-claimed observation for every generated ID; that prevents silent omissions but remains untrusted model evidence, so live witness probes are the acceptance gate for claimed adapters.
 
 ### What this is not
 
@@ -116,27 +122,40 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 ### Quick start
 
 ```bash
-# 1. Link the skill into your harness so you can invoke $momm afterwards
-#    (once per machine; use --target all for every detected harness).
+# 1. Run once in the cloned skills checkout.
 node install.mjs --target all
 
-# 2. Open the local Setup Center. Its unified provider cards show CLI, account,
-#    and model status; Quick Setup verifies detected sessions in sequence.
-node momm/scripts/setup-ui.mjs --governor codex
+# 2. Leave the skills checkout and enter the project you actually want reviewed.
+cd /absolute/path/to/reviewed-project
 
-# 3. Once one reviewer is verified, review current changes.
+# 3. Open the local Setup Center by the absolute path to the cloned skill.
+#    Replace <current-harness> with the agent in control (for example codex).
+#    Its cards show CLI, account, and model status; Quick Setup verifies sessions.
+node "/absolute/path/to/skills/momm/scripts/setup-ui.mjs" --governor <current-harness>
+
+# 4. Once one reviewer is verified, review this project's current changes.
 #    In a terminal you get a live progress display — spinners per reviewer,
 #    verdict badges, login hints on auth failures, and a consensus summary.
-node momm/scripts/multi-review.mjs --governor codex --min-success 1
+#    Peer collection is deliberately unfinished: relay required_user_message,
+#    fill pending_file, invoke the structured finalize argv, then fresh status.
+node "/absolute/path/to/skills/momm/scripts/multi-review.mjs" --governor <current-harness> --min-success 1
+
+# 5. Optional media review: every file is explicit. This sends only the staged
+#    image and fixed disclosure text; it does not infer git diff or .reviewrules.
+node "/absolute/path/to/skills/momm/scripts/multi-review.mjs" --governor <current-harness> --reviewers claude --attach screenshot.png --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.10.2 release notes](momm/references/release-1.10.2.md) for the final corrective change and safety record.
+The agent must use `evidence.governor_work.pending_file`, then invoke the structured `finalize.executable`/`args` and a fresh `status.executable`/`args`. It relays both `required_user_message` values verbatim. Only an exit-zero `complete_no_action`, `complete_clean`, or `complete_with_open_findings` status closes the review; a run with open findings is never called clean. Peer-collection exit code `4` preserves stdout but reports an evidence-surface failure: `evidence.governor_handoff_ready` says whether the sealed handoff can be resumed after repair or peer collection must be re-run.
 
-Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Provider cards show the same reviewed input-capability matrix used by dispatch. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback from the reviewed project: `node "<absolute-skills-root>/momm/scripts/onboard.mjs" --governor <current-harness>`. See the [unreleased MOMM 1.12.1 candidate notes](momm/references/release-1.12.1.md) for the complete first-run, completion, media, narration, timeout, and safety boundaries.
+
+Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine. In Git repositories MOMM verifies a local `.git/info/exclude` rule before dispatch, so privacy protection does not dirty the project; it never publishes the ledger automatically:
 
 ```bash
-node momm/scripts/ledger.mjs --open
+node "/absolute/path/to/skills/momm/scripts/ledger.mjs" --open
 ```
+
+Each run has **Read aloud / Stop** controls for a short structural summary. MOMM speaks no reviewer prose, finding text, suggestions, media evidence, paths, or unknown report values, and it enables narration only when the browser identifies a voice as local. There is no cloud fallback: unsupported or remote-only configurations stay visibly disabled. Zero-success runs say **no verdict**, never “0 findings.” The candidate's cross-platform CI matrix also runs the completion contract and a deterministic fresh-user round trip; exact counts come from the live test output rather than this prose.
 
 This project's own (deliberately public, sanitized, CI-sealed) evidence is browsable at **[marroccofella.github.io/skills/evidence](https://marroccofella.github.io/skills/evidence/)** — user ledgers are architecturally separate from it: GitHub Pages has no authentication, so momm never routes private review data through it.
 
@@ -144,15 +163,16 @@ Or, inside any harness that supports Agent Skills, simply ask:
 
 > Use $momm to review my current changes.
 
-Harness discovery in one line: Codex reads `~/.agents/skills`, Claude Code reads `~/.claude/skills`, and Gemini/Antigravity use their native `skills link` command — `install.mjs --target all` covers the lot.
+Harness discovery in one line: Codex reads `~/.agents/skills`, Claude Code reads `~/.claude/skills`, Gemini uses its native `skills link` command, and Antigravity uses its documented linked skill directories — `install.mjs --target all` covers the lot.
 
 See the [first-run walkthrough](momm/references/getting-started.md), [momm/SKILL.md](momm/SKILL.md) for the full protocol, [references/invocation-prompts.md](momm/references/invocation-prompts.md) for paste-ready prompts, and [references/harness-compatibility.md](momm/references/harness-compatibility.md) for per-harness discovery details.
 
 <details>
-<summary><b>Example report</b> (real run: Codex governing, Claude + Antigravity reviewing a small Python diff)</summary>
+<summary><b>Abridged historical peer-evidence report</b> (not a completed review)</summary>
 
 ```json
 {
+  "review_complete": false,
   "policy": "oauth-only",
   "run_id": "rev_20260816_xxxx",
   "governor": "codex",
@@ -183,7 +203,7 @@ See the [first-run walkthrough](momm/references/getting-started.md), [momm/SKILL
 }
 ```
 
-The governor then reproduces each finding with a failing test, fixes what proves real, and records an explicit apply/reject disposition for every reviewer suggestion.
+This historical excerpt stops after peer collection, so it is not completion evidence. With the current candidate the report also carries a sealed `governor_actions` set and a `MOMM REVIEW NOT FINISHED` relay. The governor must then reproduce material claims, decide every raw claim and suggestion in `pending_file`, invoke the structured finalizer, and run fresh status; only an exit-zero status gate may say the review is complete.
 
 </details>
 

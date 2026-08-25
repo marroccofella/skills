@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MOMM — Mixture of Model Modality</title>
-<meta name="description" content="OAuth-only multi-model peer code review for AI coding agents. Codex, Claude, Antigravity, Copilot and Grok review your diff in parallel while your own agent stays the sole writer — with content-addressed evidence, reviewer personas, and quorum gates. Zero API keys, ever.">
+<meta name="description" content="OAuth-only multi-model peer review for AI coding agents over explicit text, image, PDF, audio, and video inputs. The driving agent stays the sole writer; evidence is content-addressed, media is fail-closed, and private ledgers have local-only read-aloud.">
 <link rel="canonical" href="https://marroccofella.github.io/skills/momm/">
-<meta name="version" content="1.10.2">
+<meta name="version" content="1.12.1">
 <meta property="og:type" content="website">
 <meta property="og:title" content="MOMM — Mixture of Model Modality">
-<meta property="og:description" content="Have every frontier model on your machine review your code, using only the subscriptions you already pay for. Five reviewer routes, sealed evidence, zero API keys.">
+<meta property="og:description" content="Six OAuth reviewer routes, explicit text and media inputs, sealed evidence, a private local ledger, and zero API keys.">
 <meta property="og:url" content="https://marroccofella.github.io/skills/momm/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="MOMM — Mixture of Model Modality">
@@ -22,14 +22,14 @@
   "alternateName": "momm",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux (Node.js 18+)",
-  "softwareVersion": "1.10.2",
+  "softwareVersion": "1.12.1",
   "license": "https://opensource.org/licenses/MIT",
   "url": "https://marroccofella.github.io/skills/momm/",
   "downloadUrl": "https://github.com/marroccofella/skills",
   "codeRepository": "https://github.com/marroccofella/skills",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "description": "OAuth-only multi-model peer code review for AI coding agents and Agent Skills harnesses. Dispatches a git diff to locally installed Codex, Claude Code, Antigravity, GitHub Copilot and Grok CLIs in parallel; the driving agent remains the sole writer and must reproduce findings before acting. Content-addressed evidence reports, reviewer personas, quorum gates, and a private per-user dashboard.",
-  "featureList": "Six OAuth reviewer routes; zero API keys (fail-closed); reviewer personas (innovator, socratic, futureproof); content-addressed evidence with input binding; quorum gates; live terminal UI; private local dashboards; public sealed evidence ledger",
+  "description": "OAuth-only multi-model peer review for AI coding agents and Agent Skills harnesses. Dispatches explicitly selected text, image, PDF, audio, or video evidence through capable installed reviewer CLIs while the driving agent remains the sole writer and must reproduce findings before acting. Includes content-addressed reports, exact quorum/timeout evidence, and a private dashboard with local-only structural read-aloud.",
+  "featureList": "Six OAuth reviewer routes; zero API keys (fail-closed); explicit guarded text/image/PDF/audio/video inputs; content-addressed aggregate artifact binding; quorum gates; exact explicit timeouts; live terminal UI; honest private local dashboards; local-only structural read-aloud; public sealed evidence ledger",
   "sameAs": ["https://github.com/marroccofella/skills", "https://42.uk", "https://www.promptus.ai"],
   "author": {
     "@type": "Person",
@@ -44,10 +44,10 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    { "@type": "Question", "name": "What is MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "MOMM (Mixture of Model Modality) is an Agent Skill that lets the AI coding agent you are talking to dispatch your code diff to every other frontier-model CLI installed on your machine — Codex, Claude Code, Antigravity, GitHub Copilot, and Grok — for parallel peer review. Your agent stays the sole writer and must reproduce any finding before acting on it." } },
+    { "@type": "Question", "name": "What is MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "MOMM (Mixture of Model Modality) is an Agent Skill that lets the AI coding agent you are talking to dispatch your code diff to supported account-authenticated coding CLIs installed on your machine — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — for parallel peer review. Your agent stays the sole writer and must reproduce any finding before acting on it." } },
     { "@type": "Question", "name": "Does MOMM need API keys?", "acceptedAnswer": { "@type": "Answer", "text": "No — and it refuses them. MOMM is OAuth-only: it uses the provider CLIs' official browser logins (the subscriptions you already pay for) and strips every known API-key environment variable from reviewer subprocesses. A route that is not logged in fails closed." } },
-    { "@type": "Question", "name": "How do I install MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "git clone https://github.com/marroccofella/skills then node skills/momm/scripts/install.mjs --target all — this links the skill into every detected AI harness (Claude Code, Codex, Gemini, Antigravity). Then run node skills/momm/scripts/multi-review.mjs --preflight to see the exact install and login command for any route that is not ready." } },
-    { "@type": "Question", "name": "How do I know reviewer feedback was really used?", "acceptedAnswer": { "@type": "Answer", "text": "Every run persists a content-addressed report (sha256 over the stored bytes, bound to the exact reviewed input by its own hash). Every reviewer suggestion receives an explicit applied-or-rejected disposition with named evidence. The project reviews its own code with MOMM and publishes the sealed ledger." } }
+    { "@type": "Question", "name": "How do I install MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "Clone the skills repository and run its install.mjs --target all once. Then leave that checkout, enter the project to review, and invoke the installed skill or its absolute multi-review.mjs path with --preflight --governor set to the harness actually in control." } },
+    { "@type": "Question", "name": "How do I know reviewer feedback was really used?", "acceptedAnswer": { "@type": "Answer", "text": "Peer collection is explicitly unfinished. Every raw reviewer finding claim and suggestion becomes a stable obligation bound to the sealed report hash. Finalization validates exact decisions and evidence, writes an immutable completion sidecar, and a fresh status gate reports the authoritative completion state." } }
   ]
 }
 </script>
@@ -135,12 +135,12 @@
 
 <header class="hero"><div class="wrap">
   <div class="wordmark"><b>◆ MOMM</b> · MIXTURE OF MODEL MODALITY · <span style="letter-spacing:normal;text-transform:none">pronounced “mom”</span></div>
-  <h1>Every frontier model on your machine, <em>reviewing your code together.</em></h1>
-  <p class="sub">MOMM is an Agent Skill for AI coding agents. Your agent dispatches a diff to the <i>other</i> installed LLM CLIs — OpenAI Codex, Claude Code, Google Antigravity, GitHub Copilot, xAI Grok — which review it in parallel and return structured, deduplicated findings. Your agent stays the sole writer, must reproduce every claim before acting, and seals the whole conversation as content-addressed evidence.</p>
+  <h1>Your supported coding CLIs, <em>reviewing your code together.</em></h1>
+  <p class="sub">MOMM is an Agent Skill for AI coding agents. Your agent dispatches an explicit diff, text file, image, PDF, audio, or video artifact to capable <i>other</i> installed LLM CLIs — never itself — which return structured, deduplicated findings. Your agent stays the sole writer, must reproduce every claim before acting, and seals only sanitized descriptors and hashes as evidence.</p>
   <div class="badges">
     <span class="badge hot">zero API keys — OAuth only, fail-closed</span>
-    <span class="badge">5 reviewer routes</span>
-    <span class="badge">v1.10.2 · MIT</span>
+    <span class="badge">6 reviewed OAuth routes</span>
+    <span class="badge">v1.12.1 candidate · not published</span>
     <span class="badge">any Agent Skills harness</span>
     <span class="badge">no accounts · no trackers · no cookies</span>
   </div>
@@ -180,10 +180,10 @@
   <div class="stats">
     <div class="stat"><b class="count" data-n="46">0</b><span>review runs</span></div>
     <div class="stat"><b class="count" data-n="32">0</b><span>sealed transcripts</span></div>
-    <div class="stat"><b class="count" data-n="81">0</b><span>completed peer reviews</span></div>
+    <div class="stat"><b class="count" data-n="81">0</b><span>successful reviewer responses</span></div>
     <div class="stat"><b class="count" data-n="122">0</b><span>findings raised</span></div>
     <div class="stat"><b class="count" data-n="10">0</b><span>criticals caught</span></div>
-    <div class="stat"><b class="count" data-n="169">0</b><span>dispositions · 79 applied, 90 rejected with reasons</span></div>
+    <div class="stat"><b class="count" data-n="169">0</b><span>legacy governor dispositions · historical, not completion proof</span></div>
     <div class="stat"><b>30s</b><span>median review time</span></div>
   </div>
   <p class="lead" style="margin-top:16px">The 90 rejections matter as much as the 79 applications: two of them were reviewer claims that failed reproduction against the actual code. The gate protects in both directions.</p>
@@ -202,7 +202,7 @@
     <rect class="bx hot" x="370" y="95" width="160" height="56" rx="10"/><text class="tx" x="388" y="119">parallel dispatch</text><text class="sm" x="388" y="135">read-only · OAuth env</text>
     <rect class="bx" x="370" y="185" width="160" height="44" rx="10"/><text class="tx" x="388" y="205">codex · agy</text><text class="tx" x="388" y="220">copilot · grok</text>
     <rect class="bx hot" x="580" y="95" width="160" height="56" rx="10"/><text class="tx" x="598" y="113">dedup · consensus</text><text class="tx" x="598" y="129">sealed report</text><text class="sm" x="598" y="143">sha256 over bytes</text>
-    <rect class="bx hot" x="790" y="95" width="140" height="56" rx="10"/><text class="tx" x="806" y="113">governor gate</text><text class="sm" x="806" y="129">reproduce → fix</text><text class="sm" x="806" y="143">→ dispositions</text>
+    <rect class="bx hot" x="790" y="95" width="140" height="56" rx="10"/><text class="tx" x="806" y="113">governor gate</text><text class="sm" x="806" y="129">reproduce → decide</text><text class="sm" x="806" y="143">→ finalize → status</text>
     <path class="ln" d="M140 123 H176"/><path class="ln" d="M330 123 H366"/><path class="ln" d="M405 95 V68"/><path class="ln" d="M450 151 V181"/><path class="ln" d="M530 123 H576"/><path class="ln" d="M740 123 H786"/>
   </svg>
   <figcaption class="install-note">Preflight never blocks dispatch; routes fail closed on their own. The report carries the schema version, dispatcher version, quorum outcome, and timings per reviewer.</figcaption>
@@ -215,7 +215,7 @@
     <rect class="bx2" x="220" y="62" width="220" height="40" rx="10"/><text class="t2" x="234" y="79">provider_unavailable</text><text class="s2" x="234" y="94" fill="#ffd166">→ auto-retried once · wait, never re-login</text>
     <rect class="bx2" x="220" y="116" width="220" height="40" rx="10"/><text class="t2" x="234" y="133">ineligible_tier</text><text class="s2" x="234" y="148" fill="#c195ff">→ use the successor route</text>
     <rect class="bx2" x="500" y="8" width="200" height="40" rx="10"/><text class="t2" x="514" y="25">missing</text><text class="s2" x="514" y="40" fill="#66b8ff">→ run the shown install command</text>
-    <rect class="bx2" x="500" y="62" width="200" height="40" rx="10"/><text class="t2" x="514" y="79">timeout</text><text class="s2" x="514" y="94" fill="#ffd166">→ cap scales with input size</text>
+    <rect class="bx2" x="500" y="62" width="200" height="40" rx="10"/><text class="t2" x="514" y="79">timeout</text><text class="s2" x="514" y="94" fill="#ffd166">→ auto headroom or exact explicit cap</text>
     <rect class="bx2" x="500" y="116" width="200" height="40" rx="10"/><text class="t2" x="514" y="133">self_excluded</text><text class="s2" x="514" y="148" fill="#5c6f60">→ integrity working as intended</text>
     <rect class="bx2" x="760" y="62" width="170" height="40" rx="10" stroke="#00cc88"/><text class="t2" x="774" y="79" fill="#00ff99">success</text><text class="s2" x="774" y="94" fill="#5c6f60">verdict + confidence + timing</text>
   </svg>
@@ -231,7 +231,7 @@
     <div class="card"><h4><span>◈</span>Termination-proof containment</h4><p>Every reviewer subprocess runs inside a layered kill chain — process-tree kill → child-kill backstop → referenced hard deadline → explicit flush-then-exit — so even a kill-restricted sandbox always gets its structured report back. Every adapter must route through it; the protocol forbids simplifying it.</p></div>
     <div class="card"><h4><span>◈</span>Fail-closed identity</h4><p>Reviewer subprocesses receive an environment scrubbed of every known API-key variable (<code style="font-size:11px">OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, XAI_API_KEY…</code>). A route without an official OAuth session cannot silently fall back — it returns a status with its exact login command.</p></div>
   </div>
-  <p class="lead" style="margin-top:16px">Verified by 40 dispatcher self-tests plus 29 Setup Center self-tests and a CI matrix across 3 operating systems × 3 Node versions on every push — including forced-failure drills for evidence persistence, stream purity, process-tree cleanup, and isolated-probe authorization. Requirements: Node.js 18+; on Windows, run from a context permitted to terminate its own process tree (the containment chain uses <code style="font-size:11px">taskkill /T</code>) — restricted sandboxes are the documented exception. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
+  <p class="lead" style="margin-top:16px">Verified by live dispatcher, Setup Center, offline UI, private-ledger, completion-contract, and fresh-user suites in a CI matrix across 3 operating systems × 3 Node versions — including wrong-signature/header media, deeper PNG/JPEG/PDF parsing, reviewer-claimed ID gates, metadata opt-in, size/count/aggregate gates, partial and interrupted cleanup, link rejection and opened-source/path-swap binding, exact timeout bounds, evidence persistence, process-tree cleanup, hostile legacy ledger fields, local-only voice selection, and cancellation races. Exact counts come from each suite's current output rather than frozen marketing copy. Media ID claims remain untrusted reviewer output; harmless visible-content witnesses are the end-to-end adapter gate. Requirements: Node.js 18+; on Windows, run from a context permitted to terminate its own process tree (the containment chain uses <code style="font-size:11px">taskkill /T</code>) — restricted sandboxes are the documented exception. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
 </div></section>
 
 <section class="reveal"><div class="wrap">
@@ -246,7 +246,7 @@
   <h3 class="big">This is what your agent sees.</h3>
   <p class="lead">Recorded events from an actual five-route review in this project’s public ledger — run <a href="../evidence/">rev_20260818014036_4t6d</a>, unanimous ACCEPT.</p>
   <div class="term" id="term" role="log" aria-live="polite" aria-label="Animated replay of a recorded momm review: reviewer verdicts appear line by line">
-    <div class="tbar">$ git diff HEAD | node momm/scripts/multi-review.mjs --governor claude</div>
+    <div class="tbar">$ git diff HEAD | node /absolute/path/to/skills/momm/scripts/multi-review.mjs --governor &lt;current-harness&gt;</div>
   </div>
 </div></section>
 
@@ -261,7 +261,7 @@
     <div class="route" style="--rc:#c195ff"><b class="cp">Copilot</b><small>GitHub OAuth</small><div class="p">Pragmatic, detail-dense suggestions.</div></div>
     <div class="route" style="--rc:#ff7a7a"><b class="gk">Grok</b><small>xAI OAuth</small><div class="p">Ships as the Innovator persona by default.</div></div>
   </div>
-  <p class="install-note">Every route uses its provider's official CLI and browser login — including Grok via <a href="https://x.ai/cli">xAI's official CLI</a>, adapter live-verified in the <a href="../evidence/">sealed ledger</a>. Why “modality”? Each model family is treated as a distinct modality of judgment over the same artifact — and the roadmap extends to literal modalities: visual review of rendered UIs and structural review over ASTs are the planned sibling skills.</p>
+  <p class="install-note">Every route uses its provider's official CLI and browser login — including Grok via <a href="https://x.ai/cli">xAI's official CLI</a>. “Modality” now means both distinct model judgment and literal reviewed input: text everywhere, native images on enabled routes, image/PDF through constrained readers, and opt-in Gemini audio/video. The Setup Center shows this same capability matrix; unsupported formats and routes fail before model dispatch.</p>
 </div></section>
 
 <section><div class="wrap">
@@ -279,30 +279,35 @@
 <section><div class="wrap">
   <h2>Evidence, not vibes</h2>
   <h3 class="big">Every claim resolves to a hash.</h3>
-  <p class="lead">Reports are content-addressed (sha256 over stored bytes) and bound to the exact reviewed input by its own hash. Every reviewer suggestion gets an explicit applied-or-rejected disposition with named evidence. Release gates can demand a quorum — timeouts cannot silently thin the coalition. And MOMM eats its own cooking: every version of MOMM was reviewed by MOMM, and the sealed ledger is public.</p>
-  <p class="lead" style="margin-top:18px">The numbers live in one place — the <b>Measured, not marketed</b> section above, computed from the ledger itself. Browse the raw material: <a href="../evidence/">the public evidence ledger</a> — who said what, what was applied, what was rejected and why.</p>
+  <p class="lead">Reports are content-addressed (sha256 over stored bytes) and bound to the exact reviewed input by its own hash. Peer collection remains unfinished until every raw finding claim and suggestion has a report-bound ruling, required reproduction/verification is present, and fresh status validates the immutable completion sidecar. Release gates can demand a quorum — timeouts cannot silently thin the coalition.</p>
+  <p class="lead" style="margin-top:18px">The existing public evidence ledger is historical and sanitized; its free-form disposition rows are labeled legacy and do not prove the new completion contract. The unreleased candidate is accepted only by its deterministic tests and a final MOMM gate against the exact diff.</p>
 </div></section>
 
 <section><div class="wrap">
   <h2>Get started</h2>
-  <h3 class="big">Three commands to a five-model review.</h3>
+  <h3 class="big">Set up, collect peers, then close the loop.</h3>
   <ol class="steps">
     <li><p>Clone and link into every detected harness (Claude Code, Codex, Gemini, Antigravity — junctions on Windows, symlinks elsewhere):</p>
-      <code>git clone https://github.com/marroccofella/skills && node skills/momm/scripts/install.mjs --target all</code></li>
-    <li><p>Check every route — zero model calls; prints the exact install/login command for anything that’s down:</p>
-      <code>node skills/momm/scripts/multi-review.mjs --preflight --pretty</code></li>
-    <li><p>Review your changes (or just tell your agent “use momm”). Your private dashboard is one more command: <code style="display:inline;padding:1px 6px">node skills/momm/scripts/ledger.mjs --open</code></p>
-      <code>git diff HEAD | node skills/momm/scripts/multi-review.mjs --governor claude --pretty</code></li>
+      <code>git clone https://github.com/marroccofella/skills &amp;&amp; cd skills &amp;&amp; node install.mjs --target all</code></li>
+    <li><p>Leave the skills checkout, enter the project to review, and check every route by the skill's absolute path — zero model calls. Replace the governor with the harness actually in control:</p>
+      <code>cd /absolute/path/to/reviewed-project<br>node /absolute/path/to/skills/momm/scripts/multi-review.mjs --preflight --governor &lt;current-harness&gt; --pretty</code></li>
+    <li><p>Collect peer evidence (or just tell your agent “use momm”). The report deliberately says the review is not finished and gives the governor an exact private draft plus structured finalize/status commands.</p>
+      <code>git diff HEAD | node /absolute/path/to/skills/momm/scripts/multi-review.mjs --governor &lt;current-harness&gt; --pretty</code></li>
+    <li><p>The governor reproduces material claims, rules on every raw finding claim and suggestion in <code style="display:inline;padding:1px 6px">pending_file</code>, invokes the structured finalize argv, then runs fresh status and relays its exact message. Only that gate can say complete. The private dashboard remains local and can be opened through the same absolute skill root.</p></li>
   </ol>
-  <p class="install-note">Repository conventions: drop a <code style="display:inline;padding:1px 6px">.reviewrules</code> file at your repo root (style constraints, review priorities, forbidden patterns) — it is injected into every reviewer's prompt, and the report confirms it was applied. Release gates: add <code style="display:inline;padding:1px 6px">--min-success N</code> to fail loudly if timeouts thin the coalition below quorum.</p>
+  <p class="install-note">Repository conventions: text-only and explicit text-plus-media reviews can load <code style="display:inline;padding:1px 6px">.reviewrules</code>; only attach-only reviews omit ambient rules. PNG/JPEG privacy metadata is removed. PDF/audio/video require <code style="display:inline;padding:1px 6px">--allow-unstripped-metadata</code> and audio requires voice-owner consent. Release gates: add <code style="display:inline;padding:1px 6px">--min-success N</code> to fail loudly if timeouts thin the coalition below quorum.</p>
 
   <h3 class="big" style="margin-top:34px">What a sealed report looks like.</h3>
   <p class="install-note">Illustrative specimen — fields are exact, values composited across real runs, comments and ellipses added for reading. Actual reports are strict JSON; browse real ones in <a href="../evidence/">the ledger</a>.</p>
   <pre style="background:#060808;border:1px solid var(--border);border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:12px;line-height:1.6;color:var(--muted)">{
   "report_schema": "momm-report/1",
-  "dispatcher_version": "1.10.2",
+  "dispatcher_version": "1.12.1",
+  "review_complete": false,
   "run_id": "rev_20260818HHMMSS_xxxx",
-  "input_sha256": "3b999b52…",            <span style="color:#5c6f60">// binds the report to the exact reviewed bytes</span>
+  "input_sha256": "3b999b52…",            <span style="color:#5c6f60">// exact sanitized text</span>
+  "artifact_sha256": "7a12c4f0…",         <span style="color:#5c6f60">// ordered text + sent-media binding</span>
+  "attachments": [{ "id": "attachment-1", "format": "png",
+                    "metadata_status": "privacy_metadata_removed", "sent_sha256": "…" }],
   "quorum": { "required": 2, "achieved": 4, "met": true },
   "reviewers": [
     { "agent": "grok", "verdict": "ACCEPT", "confidence": 0.96,
@@ -312,6 +317,8 @@
     { "id": "…", "severity": "CRITICAL", "target_file": "…",
       "line_range": [20, 21], "issue": "…", "test_suggestion": "…" }
   ],
+  "governor_actions": { "schema": "momm-governor-actions/1",
+                        "state_at_dispatch": "pending", "item_count": 3 },
   "evidence": { "persisted": true, "report_sha256": "…",
                 "report_sha256_covers": "stored_report_bytes" }
 }</pre>
@@ -320,13 +327,13 @@
 <footer class="site"><div class="wrap">
   <nav>
     <a href="https://github.com/marroccofella/skills">GitHub</a>
-    <a href="https://github.com/marroccofella/skills/releases/tag/momm-1.10.2">Release 1.10.2</a>
+    <a href="https://github.com/marroccofella/skills/releases/tag/momm-1.10.2">Latest published release 1.10.2</a>
     <a href="../evidence/">Public evidence</a>
     <a href="../">All skills</a>
     <a href="https://42.uk" rel="me">42.uk</a>
     <a href="https://www.promptus.ai" rel="external">Promptus</a>
   </nav>
-  <p class="fine">MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services — it sends nothing anywhere. The skill is the opposite by design: when <i>you</i> run a review, your diff goes to the model providers you have deliberately logged into — that is its entire purpose, under your OAuth sessions, never keys. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe · voice by <a href="https://www.promptus.ai">Promptus</a> (consent disclosure at the video above). RELAX. IT'S ALREADY OVER.</p>
+  <p class="fine">MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services — it sends nothing anywhere. The skill is the opposite by design: when <i>you</i> run a review, the exact text or media you explicitly select goes to the capable model providers you deliberately logged into — under your OAuth sessions, never keys. Original attachment names and paths are withheld; raw-metadata formats require an explicit privacy choice. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe · voice by <a href="https://www.promptus.ai">Promptus</a> (consent disclosure at the video above). RELAX. IT'S ALREADY OVER.</p>
 </div></footer>
 
 <script>
@@ -339,7 +346,7 @@ const LINES = [
   ["ag",  'antigravity  ✓ ACCEPT   confidence 1.00   11.8s'],
   ["cp",  'copilot      ✓ ACCEPT   confidence 0.95   13.5s'],
   ["gk",  'grok         ✓ ACCEPT   confidence 0.96   20.6s   [innovator]'],
-  ["ok",  '✔ unanimous ACCEPT · 4/4 routes · 0 findings · evidence sealed sha256✓'],
+  ["ok",  '◇ peer evidence: unanimous ACCEPT · 4/4 routes · 0 findings · governor phase still pending'],
   ["dim", 'report → .ensemble_reviews/reports/rev_20260818014036_4t6d.json'],
 ];
 const term = document.getElementById("term");

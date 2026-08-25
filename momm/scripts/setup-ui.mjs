@@ -21,7 +21,7 @@ const localVersionsFile = path.join(skillsRoot, "versions.json");
 const publishedVersionsUrl = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const governors = new Set(GOVERNOR_IDS);
 const setupApiSchema = "momm-setup/3";
-const setupUiVersion = "1.10.2";
+const setupUiVersion = "1.12.1";
 const sessionToken = crypto.randomBytes(24).toString("hex");
 const jobs = new Map();
 const latestJobs = new Map();
@@ -1089,6 +1089,8 @@ const fs = require("node:fs");
       report_declares_isolation: report?.project_rules_applied === false
         && report?.evidence?.persisted === false
         && report?.evidence?.skipped === "isolated_setup_probe",
+      setup_probe_never_claims_ephemeral_opt_in: !result.stderr.includes("--allow-ephemeral-evidence")
+        && report?.evidence?.ephemeral_opt_in === false,
       reviewer_succeeded: report?.reviewers?.[0]?.status === "success",
       project_rule_not_returned: !result.stdout.includes(sentinel),
       fixed_input_only: capture?.input?.includes(SETUP_PROBE_INPUT)
@@ -1288,9 +1290,14 @@ async function selfTest() {
     })(),
     antigravity_two_column_models_parse: extractModelNames("gemini-3-pro    Flagship model\ngemini-3-flash\tFast model").join(",") === "gemini-3-pro,gemini-3-flash",
     isolated_probe_ignores_rules_and_writes_nothing: probeIsolation.passed,
-    version_comparison: compareVersions("1.10.2", "1.9.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
+    version_comparison: compareVersions("1.12.0", "1.11.0") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
     controller_startup_parses: parseArgs(["--governor", "gemini", "--no-browser"]).governor === "gemini",
-    api_schema_versioned: setupApiSchema === "momm-setup/3" && setupUiVersion === "1.10.2",
+    api_schema_versioned: setupApiSchema === "momm-setup/3" && setupUiVersion === "1.12.1",
+    every_provider_declares_review_modalities: Boolean(PROVIDER_IDS.every((provider) => PROVIDER_MANIFEST[provider]?.modalities?.text)
+      && PROVIDER_MANIFEST.codex.modalities.image
+      && PROVIDER_MANIFEST.claude.modalities.image && PROVIDER_MANIFEST.claude.modalities.pdf
+      && PROVIDER_MANIFEST.gemini.modalities.image && PROVIDER_MANIFEST.gemini.modalities.pdf
+      && PROVIDER_MANIFEST.gemini.modalities.audio && PROVIDER_MANIFEST.gemini.modalities.video),
     myskills_health_runner_present: fs.existsSync(myskillsScript),
     assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
   };

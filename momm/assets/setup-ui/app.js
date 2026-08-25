@@ -188,6 +188,12 @@ function actionButton(route, state, live) {
   return "";
 }
 
+function modalityFact(provider) {
+  const labels = { text: "Text", image: "Image", pdf: "PDF", audio: "Audio", video: "Video" };
+  const values = Object.keys(provider?.modalities || {}).filter((name) => Object.hasOwn(labels, name)).map((name) => labels[name]);
+  return values.length ? values.join(" · ") : "Text";
+}
+
 function providerCard(route) {
   const state = routeState(route);
   const live = liveResults.get(route.agent);
@@ -227,6 +233,7 @@ function providerCard(route) {
         <div class="provider-fact"><span>CLI</span><div class="provider-fact-line"><strong title="${escapeHtml(cliText)}">${escapeHtml(cliText)}</strong>${updateAction}</div></div>
         <div class="provider-fact"><span>Account evidence</span><strong title="${escapeHtml(route.note || authText)}">${escapeHtml(authText)}</strong></div>
         <div class="provider-fact"><span>Models</span><strong title="${escapeHtml(models?.detail || modelFact(route, state, models))}">${escapeHtml(modelFact(route, state, models))}</strong></div>
+        <div class="provider-fact"><span>Review input</span><strong title="${escapeHtml(modalityFact(provider))}">${escapeHtml(modalityFact(provider))}</strong></div>
       </div>
       <div class="card-actions">${mainAction}${modelAction}<a class="docs-link" href="${escapeHtml(help.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(help.label)}</a></div>
     </article>`;

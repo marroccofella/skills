@@ -504,7 +504,7 @@
     [allRuns.length, "review runs"],
     [fullReports, "full transcripts"],
     [totalFindings, "findings raised"],
-    [totalDisp, "dispositions"],
+    [totalDisp, "legacy dispositions"],
     [evidenceEvents.length, "evidence annotations"],
     [DATA.projects.length, "projects"],
   ];
@@ -523,7 +523,7 @@
       html += `<div class="proj-label">${esc(p.name)} — ${esc(p.root)}</div><ul class="run-list">`;
       for (const e of entries) {
         const glyphs = Object.entries(e.run.reviewer_status ?? {}).map(([a, s]) => { const [g, c] = GLYPH[s] ?? ["?", "g-warn"]; return `<span class="${c}" title="${esc(a)}: ${esc(s)}">${g}</span>`; }).join("");
-        const tag = e.orphan ? `<span class="tag">dispositions only</span>` : e.report ? `<span class="tag full">full transcript</span>` : `<span class="tag">summary only</span>`;
+        const tag = e.orphan ? `<span class="tag">legacy dispositions only</span>` : e.report ? `<span class="tag full">full transcript</span>` : `<span class="tag">summary only</span>`;
         html += `<li><button data-id="${esc(e.run.run_id)}" data-project="${esc(e.project)}">
           <div class="run-id">${esc(e.run.run_id)}</div>
           <div class="run-meta"><span>${fmtTime(e.run.timestamp)}</span><span>gov ${esc(e.run.governor)}</span><span class="glyphs">${glyphs}</span>${e.run.findings_count != null ? `<span>${e.run.findings_count} finding${e.run.findings_count === 1 ? "" : "s"}</span>` : ""}${tag}</div>
@@ -586,14 +586,14 @@
         </div>`;
       }
     } else if (e.orphan) {
-      html += `<div class="notice">This run's dispositions were recorded, but the session that ran it did not persist a review log or report — only the governor's triage survives.</div>`;
+      html += `<div class="notice">Historical free-form dispositions survive, but no sealed run or machine-validated completion evidence does. These rows are context only, not proof that every obligation was adjudicated.</div>`;
     } else {
       html += `<div class="notice">Summary-only run: it predates the per-run evidence store (commit b43d146), so reviewer statuses and finding ids survive but the full stored transcript was not persisted.</div>`;
       if (e.run.finding_ids?.length) html += `<h3 class="sect">Finding ids</h3><p class="none">${e.run.finding_ids.map(esc).join(" · ")}</p>`;
     }
 
     if (e.dispositions.length) {
-      html += `<h3 class="sect">Governor dispositions (${e.dispositions.length})</h3><div class="table-scroll"><table class="disp">
+      html += `<h3 class="sect">Legacy governor dispositions — historical only (${e.dispositions.length})</h3><div class="table-scroll"><table class="disp">
         <tr><th>reviewer</th><th>suggestion</th><th>disposition</th><th>reason / verification</th></tr>
         ${e.dispositions.map((d) => `<tr><td>${esc(d.reviewer)}</td><td>${esc(d.suggestion)}</td><td class="d-${esc(d.disposition)}">${esc(d.disposition)}</td><td>${esc(d.reason)}</td></tr>`).join("")}
       </table></div>`;
@@ -890,7 +890,7 @@
       headline = "No external reviews completed";
       body = "Every route ended in a terminal status; see the outcome table for exactly why and how to fix each one.";
     }
-    const dispLine = entry.dispositions.length ? `<p class="value-disp">${applied} suggestion${applied === 1 ? "" : "s"} applied by the governor · ${rejected} rejected with stated reasons — nothing silently dropped.</p>` : "";
+    const dispLine = entry.dispositions.length ? `<p class="value-disp">${applied} legacy suggestion row${applied === 1 ? "" : "s"} marked applied · ${rejected} marked rejected. These historical rows predate exact obligation coverage and cannot prove nothing was dropped.</p>` : "";
     return `<section class="value-card"><h3 class="sect">What this review provided</h3><p class="value-headline">${headline}</p><p class="value-body">${body}</p>${dispLine}</section>`;
   }
 
@@ -923,7 +923,7 @@
       html += `<div class="proj-label">${esc(project.name)} · ${esc(project.root)}</div><ul class="run-list">`;
       for (const entry of projectEntries) {
         const kind = evidenceKind(entry);
-        const label = kind === "full" ? "full transcript" : kind === "orphan" ? "dispositions only" : "summary only";
+        const label = kind === "full" ? "full transcript" : kind === "orphan" ? "legacy dispositions only" : "summary only";
         const selected = state.selected?.run.run_id === entry.run.run_id && state.selected?.project === entry.project;
         html += `<li><button data-id="${esc(entry.run.run_id)}" data-project="${esc(entry.project)}"${selected ? ' class="active" aria-current="true"' : ""}>
           <div class="run-id">${esc(runTitle(entry))}</div>
@@ -997,11 +997,11 @@
       html += "</div>";
       state.speech = [promptSpeech, governorIntro, ...reviewers.filter((reviewer) => reviewer.agent !== governor || reviewer.status !== "self_excluded").map((reviewer) => state.speechItems.get(`response:${reviewer.agent}`)).filter(Boolean)];
 
-      html += `<h3 class="sect">Findings — claims awaiting reproduction (${report.findings.length})</h3>`;
+      html += `<h3 class="sect">Historical reviewer findings — completion unverifiable (${report.findings.length})</h3>`;
       html += report.findings.length ? report.findings.map((finding) => `<div class="finding ${esc(finding.severity)}"><div class="f-head"><span class="sev ${esc(finding.severity)}">${esc(finding.severity)}</span><b>${esc(finding.id)}</b>${finding.target_file ? `<span class="f-src">${esc(finding.target_file)}${finding.line_range ? `:${finding.line_range.join("–")}` : ""}</span>` : ""}<span class="f-src">by ${(finding.sources ?? []).map(esc).join(", ")}</span></div><p>${esc(finding.issue)}</p>${finding.rationale ? `<p>${esc(finding.rationale)}</p>` : ""}</div>`).join("") : '<p class="none">None — no reviewer raised a defect.</p>';
       if (report.insights) html += `<h3 class="sect">Agreement &amp; insights</h3><div class="kv"><span><b>agreement</b> ${report.insights.agreement_score ?? "n/a"}</span><span><b>verdicts</b> ${esc(Object.entries(report.insights.verdict_split ?? {}).map(([key, value]) => `${key}×${value}`).join(" · ")) || "none"}</span></div>`;
     } else if (entry.orphan) {
-      html += '<div class="notice">Only governor dispositions survive for this run; no review log or transcript was persisted.</div>';
+      html += '<div class="notice">Only legacy governor rows survive for this run; no review log, transcript, sealed obligation set, or validated completion was persisted.</div>';
       state.speech = [promptSpeech, governorIntro];
     } else {
       html += '<div class="notice">Summary-only run: route statuses and finding IDs survive, but the full conversation predates the evidence store.</div>';
@@ -1009,7 +1009,7 @@
       state.speech = [promptSpeech, governorIntro];
     }
     if (entry.dispositions.length) {
-      html += `<h3 class="sect">Governor dispositions — every suggestion answered (${entry.dispositions.length})</h3><div class="table-scroll"><table class="disp"><thead><tr><th>Reviewer</th><th>Suggestion</th><th>Disposition</th><th>Reason / verification</th></tr></thead><tbody>${entry.dispositions.map((row) => `<tr><td>${esc(row.reviewer)}</td><td>${esc(row.suggestion)}</td><td class="d-${esc(row.disposition)}">${esc(row.disposition)}</td><td>${esc(row.reason)}</td></tr>`).join("")}</tbody></table></div>`;
+      html += `<h3 class="sect">Legacy governor dispositions — historical only (${entry.dispositions.length})</h3><div class="table-scroll"><table class="disp"><thead><tr><th>Reviewer</th><th>Suggestion</th><th>Disposition</th><th>Reason / verification</th></tr></thead><tbody>${entry.dispositions.map((row) => `<tr><td>${esc(row.reviewer)}</td><td>${esc(row.suggestion)}</td><td class="d-${esc(row.disposition)}">${esc(row.disposition)}</td><td>${esc(row.reason)}</td></tr>`).join("")}</tbody></table></div>`;
     }
     detailHost.innerHTML = html;
     readAllButton.disabled = !state.speech.length || !synth;
@@ -1103,12 +1103,12 @@
     "review runs": "Actual MOMM review dispatches in this snapshot. Failed routes remain visible because the ledger favors evidence over curation.",
     "full transcripts": "Runs with a stored normalized MOMM report and a recorded SHA-256. Reviewer summaries and details are bounded fields emitted by MOMM, not guaranteed raw CLI transcripts.",
     "findings raised": "Defects reviewers claimed across the recorded runs. A finding is evidence to investigate, not a fact until the governor reproduces it.",
-    "dispositions": "The governor's recorded treatment of reviewer suggestions: applied with verification, or rejected with a reason. Nothing should be silently dropped.",
+    "legacy dispositions": "Legacy free-form governor rows. They may record applied or rejected suggestions, but they predate exact report-bound obligation coverage and are not validated completion proof.",
     "evidence annotations": "Non-review ledger events, such as a report linked retroactively to an older run. They are not counted as fresh reviews.",
     "projects": "Distinct workspace groupings included in this export. A sanitized public snapshot may intentionally exclude private projects.",
     "full transcript": "A stored normalized report is available for this run and linked by digest. It may contain bounded reviewer summaries rather than raw, unlimited provider output.",
     "summary only": "This run predates the per-run evidence store, so statuses and finding IDs survive but a complete stored report does not.",
-    "dispositions only": "Only the governor's suggestion-by-suggestion triage survives; the original run log or report was not persisted.",
+    "legacy dispositions only": "Only historical governor rows survive; the original run log, sealed report, and validated completion do not.",
     "governor": "The harness coordinating the run. It reproduces findings and owns edits, but never reviews its own work.",
     "auth ok": "Strong snapshot evidence: a live status command succeeded before the snapshot. Dispatch-time status remains authoritative.",
     "auth present": "A login artifact existed at snapshot time. This is evidence, not proof that a later dispatch will succeed.",
@@ -1217,5 +1217,3 @@
 </script>
 
 </body></html>
-
-

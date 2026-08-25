@@ -8,12 +8,13 @@ import { GOVERNOR_IDS, PROVIDER_IDS } from "./provider-manifest.mjs";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const dispatcher = path.join(scriptDir, "multi-review.mjs");
 const installer = path.join(scriptDir, "install.mjs");
+const setupCenter = path.join(scriptDir, "setup-ui.mjs");
 const VALID_GOVERNORS = new Set([...GOVERNOR_IDS, "agy"]);
 const VALID_REVIEWERS = new Set(PROVIDER_IDS);
 
 function usage() {
   return `Usage:
-  node scripts/onboard.mjs --governor <current-harness> [options]
+  node "<momm-skill-root>/scripts/onboard.mjs" --governor <current-harness> [options]
 
 Options:
   --governor <name>     codex, gemini, claude, antigravity/agy, copilot, grok, or other
@@ -65,6 +66,14 @@ function runNode(script, args, timeout = 45_000) {
 
 function compact(value, limit = 1200) {
   return String(value || "").trim().slice(0, limit);
+}
+
+function commandSpec(script, args) {
+  const parts = [process.execPath, script, ...args];
+  const displayCommand = process.platform === "win32"
+    ? `& ${parts.map((part) => `'${String(part).replaceAll("'", "''")}'`).join(" ")}`
+    : parts.map((part) => `'${String(part).replaceAll("'", `'"'"'`)}'`).join(" ");
+  return { executable: process.execPath, args: [script, ...args], display_command: displayCommand, shell: process.platform === "win32" ? "powershell" : "posix" };
 }
 
 function linkTarget(governor) {
@@ -147,7 +156,7 @@ function renderHuman(report) {
   if (report.next_actions.length) {
     lines.push("", "Next actions (run only the providers you want to use):");
     report.next_actions.forEach((item, index) => lines.push(`  ${index + 1}. ${item.agent} ${item.action}: ${item.command}`));
-    lines.push("", `Then re-run: ${report.rerun_command}`);
+    lines.push("", `Then re-run (${report.commands.rerun.shell}): ${report.commands.rerun.display_command}`);
   }
   if (report.ready_reviewers.length) {
     lines.push(
@@ -161,9 +170,9 @@ function renderHuman(report) {
   if (report.ready_reviewers.length || report.possible_reviewers.length) {
     lines.push(
       "Live verification with isolated synthetic text:",
-      `  node scripts/setup-ui.mjs --governor ${report.governor}`,
+      `  (${report.commands.setup_center.shell}) ${report.commands.setup_center.display_command}`,
       "A first review will also fail closed if the provider session is unusable:",
-      `  ${report.first_review_command}`,
+      `  (${report.commands.first_review.shell}) ${report.commands.first_review.display_command}`,
       "Or ask your harness: Use $momm to review my current changes.",
     );
   } else {
@@ -197,7 +206,19 @@ function main() {
     const routes = preflightReport.routes || [];
     const readyReviewers = routes.filter((route) => route.ready && route.role !== "governor" && route.auth_evidence === "live_status").map((route) => route.agent);
     const possibleReviewers = routes.filter((route) => route.ready && route.role !== "governor" && route.auth_evidence !== "live_status").map((route) => route.agent);
-    const reviewersArg = options.reviewers ? ` --reviewers ${options.reviewers}` : "";
+    const reviewerArgs = options.reviewers ? ["--reviewers", options.reviewers] : [];
+    const requestedReviewers = options.reviewers ? options.reviewers.split(",") : [...new Set([...readyReviewers, ...possibleReviewers])];
+    const selectedReviewers = requestedReviewers.filter((reviewer) => reviewer !== options.governor);
+    const firstReviewArgs = selectedReviewers.length ? ["--reviewers", selectedReviewers.join(",")] : [];
+    const firstReview = selectedReviewers.length
+      ? commandSpec(dispatcher, ["--governor", options.governor, ...firstReviewArgs, "--min-success", "1"])
+      : null;
+    const firstReviewBlockedReason = firstReview ? null : "no external reviewer remains after self-excluding the current governor";
+    const commands = {
+      rerun: commandSpec(fileURLToPath(import.meta.url), ["--governor", options.governor, ...reviewerArgs]),
+      setup_center: commandSpec(setupCenter, ["--governor", options.governor]),
+      first_review: firstReview,
+    };
     const report = {
       policy: "oauth-only",
       model_calls_made: false,
@@ -207,10 +228,15 @@ function main() {
       routes,
       ready_reviewers: readyReviewers,
       possible_reviewers: possibleReviewers,
+      selected_reviewers: selectedReviewers,
+      first_review_blocked_reason: firstReviewBlockedReason,
       readiness_semantics: "ready_reviewers require a provider live-status command; possible_reviewers are presence evidence only; neither is a model-call proof",
       next_actions: nextActions(routes),
-      rerun_command: `node scripts/onboard.mjs --governor ${options.governor}${reviewersArg}`,
-      first_review_command: `node scripts/multi-review.mjs --governor ${options.governor}${reviewersArg} --min-success 1`,
+      commands,
+      // Compatibility strings remain human-display only. Agents and
+      // automation must use commands.*.executable plus the exact args array.
+      rerun_command: commands.rerun.display_command,
+      first_review_command: commands.first_review?.display_command ?? null,
     };
     process.stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderHuman(report));
     if (link?.status === "error") process.exitCode = 1;

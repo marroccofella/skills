@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Offline/local contract for the canonical myskills health report. It proves
 // that aliases are grouped, skipped work stays not_checked, dependency state
-// cannot be summarized as ready, and published versions align with code.
+// cannot be summarized as ready, and code versions either align with the
+// published manifest or are explicitly declared as an unreleased candidate.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -33,6 +34,39 @@ function versionOf(script, expectedName) {
   return (result.stdout.match(new RegExp(`${expectedName} ([\\d.]+)`)) || [])[1] || null;
 }
 
+function newerVersion(candidate, published) {
+  const parse = (value) => /^\d+(?:\.\d+){1,3}$/.test(value || "")
+    ? value.split(".").map(Number)
+    : null;
+  const left = parse(candidate);
+  const right = parse(published);
+  if (!left || !right) return false;
+  const width = Math.max(left.length, right.length);
+  for (let index = 0; index < width; index += 1) {
+    const delta = (left[index] || 0) - (right[index] || 0);
+    if (delta) return delta > 0;
+  }
+  return false;
+}
+
+function declaredMommCandidate(codeVersion) {
+  if (!newerVersion(codeVersion, versions.momm)) return false;
+  const roadmapPath = path.join(skillRoot, "momm", "ROADMAP.md");
+  const notePath = path.join(skillRoot, "momm", "references", `release-${codeVersion}.md`);
+  if (!fs.existsSync(roadmapPath) || !fs.existsSync(notePath)) return false;
+  const roadmap = fs.readFileSync(roadmapPath, "utf8");
+  const marker = roadmap.search(/^## Unreleased candidate\s*$/m);
+  if (marker < 0) return false;
+  const afterMarker = roadmap.slice(marker).replace(/^## Unreleased candidate\s*$/m, "");
+  const nextSection = afterMarker.search(/^##\s+/m);
+  const candidateSection = nextSection < 0 ? afterMarker : afterMarker.slice(0, nextSection);
+  const note = fs.readFileSync(notePath, "utf8");
+  const escaped = codeVersion.replaceAll(".", "\\.");
+  return new RegExp(`^###\\s+${escaped}\\b`, "m").test(candidateSection)
+    && new RegExp(`^#\\s+MOMM\\s+${escaped}\\b`, "m").test(note)
+    && /\b(?:unreleased|not published)\b/i.test(note);
+}
+
 function aliasesMatch(report) {
   return canonical.every((name) => {
     const row = report.skills.find((item) => item.skill === name);
@@ -54,6 +88,8 @@ const ghConsistent = myrepo?.dependencies?.gh_cli === "missing"
   ? myrepo.dependencies.gh_auth === "not_checked"
   : myrepo?.dependencies?.gh_cli === "ready" && ["ready", "login_required"].includes(myrepo.dependencies.gh_auth);
 const broken = full.skills.some((item) => ["missing", "failing", "error"].includes(item.status));
+const mommCodeVersion = versionOf(["momm", "scripts", "multi-review.mjs"], "momm");
+const allowUnreleasedCandidate = process.env.MOMM_ALLOW_UNRELEASED_CANDIDATE === "1";
 
 const tests = {
   "full report contains exactly four canonical families": full.skills.length === canonical.length
@@ -70,8 +106,8 @@ const tests = {
   "quick mode never invents GitHub readiness": quickMyrepo?.dependencies?.gh_cli === "not_checked"
     && quickMyrepo?.dependencies?.gh_auth === "not_checked",
   "quick mode never invents Promptus readiness": quickPromptus?.status === "not_checked",
-  "code versions align with the published manifest": full.myskills_version === versions.myskills
-    && versionOf(["momm", "scripts", "multi-review.mjs"], "momm") === versions.momm
+  "code versions align with the published manifest or a declared unreleased candidate": full.myskills_version === versions.myskills
+    && (mommCodeVersion === versions.momm || (allowUnreleasedCandidate && declaredMommCandidate(mommCodeVersion)))
     && versionOf(["myrepo", "scripts", "publish.mjs"], "myrepo") === versions.myrepo,
   "canonical and callable-alias versions align": versions["yorkshire-pudding"] === versions.yorky
     && versions["promptus-clone-voice"] === versions.myvoice,

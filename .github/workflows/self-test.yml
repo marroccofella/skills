@@ -35,6 +35,18 @@ jobs:
           const report = JSON.parse(safe.stdout);
           if (report.model_calls_made !== false || report.credential_contents_read !== false) throw new Error("onboarding privacy contract missing");
           if (report.routes.length !== 1 || report.routes[0].role !== "governor") throw new Error("governor was not self-excluded");
+          for (const name of ["rerun", "setup_center"]) {
+            const command = report.commands?.[name];
+            if (!command || command.executable !== process.execPath || !Array.isArray(command.args) || !require("node:path").isAbsolute(command.args[0])) throw new Error(`onboarding ${name} command is not cross-harness structured argv`);
+          }
+          if (report.selected_reviewers?.length || report.commands.first_review !== null || !report.first_review_blocked_reason) throw new Error("governor-only onboarding published an impossible first-review command");
+          const geminiOnly = spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "gemini", "--json"], { encoding: "utf8", timeout: 30000 });
+          if (geminiOnly.status !== 0) throw new Error("Gemini-only onboarding failed: " + geminiOnly.stderr);
+          const gemini = JSON.parse(geminiOnly.stdout);
+          const first = gemini.commands?.first_review;
+          if (!first || first.executable !== process.execPath || !Array.isArray(first.args) || !require("node:path").isAbsolute(first.args[0])) throw new Error("Gemini-only first review is not cross-harness structured argv");
+          const reviewerIndex = first.args.indexOf("--reviewers");
+          if (JSON.stringify(gemini.selected_reviewers) !== JSON.stringify(["gemini"]) || reviewerIndex < 0 || first.args[reviewerIndex + 1] !== "gemini") throw new Error("Gemini-only first review omitted the selected external route");
           const unsafe = spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "grok,\u001b[31mBAD"], { encoding: "utf8", timeout: 30000 });
           if (unsafe.status === 0 || unsafe.stderr.includes("\u001b")) throw new Error("unknown reviewer input was not safely rejected");
           console.log("guided onboarding is zero-call, self-excluding, and input-safe");
@@ -44,6 +56,10 @@ jobs:
         run: node momm/scripts/setup-ui.mjs --self-test
       - name: Setup Center JavaScript syntax
         run: |
+          node --check momm/scripts/multi-review.mjs
+          node --check momm/scripts/ledger.mjs
+          node --check momm/scripts/review-completion.mjs
+          node --check momm/scripts/first-run-roundtrip.mjs
           node --check momm/scripts/oauth-env.mjs
           node --check momm/scripts/provider-manifest.mjs
           node --check momm/scripts/setup-probe-contract.mjs
@@ -53,11 +69,42 @@ jobs:
           node --check myskills/scripts/health-contract-test.mjs
       - name: Setup Center release UI contract
         run: node momm/scripts/setup-ui-contract-test.mjs
+      - name: Private ledger read-aloud and honesty self-test
+        run: node momm/scripts/ledger.mjs --self-test
+      - name: Governor completion contract self-test
+        run: node momm/scripts/review-completion.mjs --self-test
+      - name: First-run review-to-completion round trip
+        run: node momm/scripts/first-run-roundtrip.mjs
+      - name: Attachment gate is private and provider-free
+        shell: node {0}
+        run: |
+          const { spawnSync } = require("node:child_process");
+          const fs = require("node:fs");
+          const os = require("node:os");
+          const path = require("node:path");
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-media-gate-"));
+          const before = new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("momm-attach-")));
+          try {
+            const script = path.resolve("momm/scripts/multi-review.mjs");
+            const image = path.resolve("docs/momm/momm-poster.jpg");
+            const result = spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "copilot", "--attach", image, "--no-ui", "--allow-ephemeral-evidence"], { cwd: dir, encoding: "utf8", timeout: 30000, env: { ...process.env, NO_UPDATE_CHECK: "1", MULTI_LLM_REVIEW_DEPTH: "0" } });
+            if (result.status !== 1 || !/No requested external reviewer can consume/.test(result.stderr)) throw new Error("incompatible media did not fail before provider dispatch: " + result.stderr);
+            if (fs.existsSync(path.join(dir, ".ensemble_reviews"))) throw new Error("failed media preflight wrote review evidence");
+            const leaked = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("momm-attach-") && !before.has(name));
+            if (leaked.length) throw new Error("private attachment staging leaked: " + leaked.join(","));
+            console.log("attachment capability gate fails closed, leaves no evidence, and cleans staging");
+          } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+          }
       - name: myrepo offline safety self-test
         run: node myrepo/scripts/publish.mjs --self-test
       - name: myskills integrated health contract
         run: node myskills/scripts/run-all.mjs --pretty
       - name: myskills canonical and quick-mode contract
+        env:
+          # Pull requests may carry an explicitly documented release candidate.
+          # A push to main must match the published manifest exactly.
+          MOMM_ALLOW_UNRELEASED_CANDIDATE: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         run: node myskills/scripts/health-contract-test.mjs
       - name: Yorkshire pudding self-test
         run: node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
@@ -73,6 +120,15 @@ jobs:
           const match = html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/);
           if (!match) throw new Error("public evidence page has no embedded data block");
           const embedded = JSON.parse(match[1]);
+          const project = embedded.projects?.[0];
+          if (!project || ["schema", "generated", "source", "sanitization"].some((key) => embedded[key] !== source[key])) throw new Error("public evidence page metadata is not bound to the sealed source");
+          if (JSON.stringify(project.runs) !== JSON.stringify(source.runs.filter((run) => !run.event))) throw new Error("public evidence page run view drifted from the sealed source");
+          if (JSON.stringify(project.dispositions) !== JSON.stringify(source.dispositions)) throw new Error("public evidence page legacy rows drifted from the sealed source");
+          if (JSON.stringify(Object.keys(project.reports || {}).sort()) !== JSON.stringify(Object.keys(source.reports || {}).sort())) throw new Error("public evidence page report set drifted from the sealed source");
+          for (const [runId, stored] of Object.entries(source.reports || {})) {
+            const rendered = project.reports?.[runId];
+            if (!rendered || rendered.sha256 !== stored.stored_report_sha256 || JSON.stringify(rendered.report) !== JSON.stringify(stored.report)) throw new Error(`public evidence page report ${runId} drifted from the sealed source`);
+          }
           const forbidden = [
             /[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"']+/i,
             /[A-Za-z]:[\\/]+1code projects[\\/]+Claude/i,
@@ -95,7 +151,7 @@ jobs:
       # Legacy multi-llm-review alias must keep working until removal, and
       # with --stream its stderr must stay pure NDJSON (deprecation line included).
       # The private ledger generator must build from real telemetry and must
-      # write only inside .ensemble_reviews/ (the gitignored private zone).
+      # write only inside .ensemble_reviews/ (the locally excluded private zone).
       - name: Private ledger builds and stays private
         shell: node {0}
         run: |
@@ -104,17 +160,19 @@ jobs:
           const path = require("node:path");
           const os = require("node:os");
           const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-"));
-          const review = spawnSync(process.execPath, [path.resolve("momm/scripts/multi-review.mjs"), "--governor", "codex", "--reviewers", "codex", "--label", "ledger smoke"], { input: "artifact\n", encoding: "utf8", cwd: dir, timeout: 120000 });
+          const review = spawnSync(process.execPath, [path.resolve("momm/scripts/multi-review.mjs"), "--governor", "codex", "--reviewers", "codex", "--label", "ledger smoke", "--allow-ephemeral-evidence"], { input: "artifact\n", encoding: "utf8", cwd: dir, timeout: 120000, env: { ...process.env, NO_UPDATE_CHECK: "1", MULTI_LLM_REVIEW_DEPTH: "0" } });
           if (review.status !== 0) throw new Error("seed review failed: " + (review.error?.code ?? review.signal ?? "exit " + review.status));
           const ledger = spawnSync(process.execPath, [path.resolve("momm/scripts/ledger.mjs")], { encoding: "utf8", cwd: dir, timeout: 60000 });
           if (ledger.status !== 0) throw new Error("ledger build failed: " + (ledger.error?.code ?? ledger.signal ?? ledger.stderr));
           const html = fs.readFileSync(path.join(dir, ".ensemble_reviews", "ledger.html"), "utf8");
           if (!html.includes("ledger smoke")) throw new Error("ledger missing run label");
+          if (!html.includes("no verdict — 0/0 completed") || html.includes("0 findings")) throw new Error("self-excluded run is presented as a clean review");
+          if (!html.includes("Read aloud") || !html.includes("localService === true")) throw new Error("local-only read-aloud contract missing");
           const outside = fs.readdirSync(dir).filter((f) => f !== ".ensemble_reviews");
           if (outside.length) throw new Error("ledger wrote outside the private zone: " + outside.join(","));
-          // On POSIX runners, prove private evidence is owner-only (0600 files,
-          // 0700 dirs) so another user on a shared machine cannot read another's
-          // reviewer transcripts. Windows uses NTFS ACLs, not mode bits.
+          // On POSIX runners, prove MOMM-created files request private modes.
+          // Windows inherits the chosen directory's NTFS ACL, so no universal
+          // owner-only claim is made there.
           if (process.platform !== "win32") {
             const er = path.join(dir, ".ensemble_reviews");
             const mode = (p) => fs.statSync(p).mode & 0o777;
@@ -141,12 +199,30 @@ jobs:
           for (const line of lines) JSON.parse(line);
           console.log(`ok: ${lines.length} stderr line(s), all valid JSON`);
       - name: Legacy install alias forwards (dry run)
-        run: node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
+        shell: node {0}
+        run: |
+          const { spawnSync } = require("node:child_process");
+          const fs = require("node:fs");
+          const os = require("node:os");
+          const path = require("node:path");
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-alias-install-"));
+          try {
+            const result = spawnSync(process.execPath, ["multi-llm-review/scripts/install.mjs", "--target", "auto", "--custom-dir", dir, "--dry-run"], { encoding: "utf8", timeout: 30000 });
+            const report = JSON.parse(result.stdout);
+            if (!result.stderr.includes("[deprecated]") || !report.results?.some((row) => row.target === "custom" && row.status === "would_link")) throw new Error("legacy installer did not forward its deterministic custom dry run");
+            const conflicts = report.results.filter((row) => row.status === "conflict");
+            const unexpected = report.results.filter((row) => !["would_link", "would_run_native_link", "already_linked", "canonical", "skipped", "conflict"].includes(row.status));
+            if (unexpected.length || result.status !== (conflicts.length ? 1 : 0)) throw new Error("legacy installer returned an inconsistent dry-run result");
+            console.log("legacy installer alias forwards without depending on the runner's existing skill links");
+          } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+          }
       # Evidence round trip: a run (reviewer CLI absent in CI → fast terminal
       # status, zero model calls) must persist a report whose logged sha256
       # matches a fresh read of the file and whose input_sha256 matches the
       # exact piped artifact; forced persistence failure must warn on stderr
-      # and report evidence.persisted=false while still exiting 0.
+      # and report evidence.persisted=false while exiting with the dedicated
+      # evidence-handoff failure code 4.
       - name: Evidence persistence round trip
         timeout-minutes: 5
         shell: node {0}
@@ -162,7 +238,7 @@ jobs:
           const tmp = (label) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), `momm-ci-${label}-`)); dirs.push(d); return d; };
           // governor codex + reviewers codex => deterministic self-exclusion:
           // zero subprocess spawns, zero network, independent of runner CLIs.
-          const run = (cwd, extra = []) => spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "codex", ...extra], { input: artifact, encoding: "utf8", cwd, timeout: 120000 });
+          const run = (cwd, extra = []) => spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "codex", "--allow-ephemeral-evidence", ...extra], { input: artifact, encoding: "utf8", cwd, timeout: 120000, env: { ...process.env, NO_UPDATE_CHECK: "1", MULTI_LLM_REVIEW_DEPTH: "0" } });
           try {
             const workDir = tmp("ok");
             let r = run(workDir);
@@ -182,24 +258,29 @@ jobs:
             if (r.status !== 0) throw new Error("store-input run failed");
             if (JSON.parse(r.stdout).input_text !== artifact) throw new Error("--store-input did not persist the artifact");
             const blocked = tmp("blocked");
-            fs.writeFileSync(path.join(blocked, ".ensemble_reviews"), "block");
+            fs.mkdirSync(path.join(blocked, ".ensemble_reviews"), { recursive: true });
+            fs.writeFileSync(path.join(blocked, ".ensemble_reviews", ".momm-evidence-zone.json"), JSON.stringify({ schema: "momm-evidence-zone/1" }));
+            fs.writeFileSync(path.join(blocked, ".ensemble_reviews", "reports"), "block");
             r = run(blocked);
-            if (r.status !== 0) throw new Error("blocked run should still exit 0");
+            if (r.status !== 4) throw new Error("blocked persistence did not exit 4");
             const blockedReport = JSON.parse(r.stdout);
             if (blockedReport.evidence.persisted !== false || blockedReport.evidence.log_indexed !== false) throw new Error("blocked persistence not reported");
             if (!/evidence persistence failed \(report persistence\)/.test(r.stderr)) throw new Error("no stderr warning on persistence failure");
             const partial = tmp("partial");
             fs.mkdirSync(path.join(partial, ".ensemble_reviews", "review-log.jsonl"), { recursive: true });
+            fs.writeFileSync(path.join(partial, ".ensemble_reviews", ".momm-evidence-zone.json"), JSON.stringify({ schema: "momm-evidence-zone/1" }));
             r = run(partial);
-            if (r.status !== 0) throw new Error("partial run should still exit 0");
+            if (r.status !== 4) throw new Error("partial persistence did not exit 4");
             const partialReport = JSON.parse(r.stdout);
             if (partialReport.evidence.persisted !== true || partialReport.evidence.log_indexed !== false) throw new Error("partial persistence misreported");
             if (!/evidence persistence failed \(review-log indexing\)/.test(r.stderr)) throw new Error("no stderr warning on indexing failure");
             if (!fs.existsSync(path.join(partial, partialReport.evidence.report_path))) throw new Error("partial run report file missing");
             const streamBlocked = tmp("stream");
-            fs.writeFileSync(path.join(streamBlocked, ".ensemble_reviews"), "block");
+            fs.mkdirSync(path.join(streamBlocked, ".ensemble_reviews"), { recursive: true });
+            fs.writeFileSync(path.join(streamBlocked, ".ensemble_reviews", ".momm-evidence-zone.json"), JSON.stringify({ schema: "momm-evidence-zone/1" }));
+            fs.writeFileSync(path.join(streamBlocked, ".ensemble_reviews", "reports"), "block");
             r = run(streamBlocked, ["--stream"]);
-            if (r.status !== 0) throw new Error("stream run should still exit 0");
+            if (r.status !== 4) throw new Error("stream persistence failure did not exit 4");
             const events = r.stderr.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
             if (!events.some((e) => e.event === "evidence_error" && e.stage === "report persistence")) throw new Error("no structured evidence_error event");
             if (JSON.parse(r.stdout).evidence.persisted !== false) throw new Error("stream run persistence misreported");

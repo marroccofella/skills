@@ -301,6 +301,27 @@ contract("provider manifest is a six-provider official-route allowlist", () => {
   }
 });
 
+contract("provider modality matrix is shared, escaped, and mobile-safe", () => {
+  const expected = {
+    codex: ["text", "image"],
+    claude: ["text", "image", "pdf"],
+    antigravity: ["text"],
+    copilot: ["text"],
+    grok: ["text"],
+    gemini: ["text", "image", "pdf", "audio", "video"],
+  };
+  for (const [provider, modalities] of Object.entries(expected)) {
+    assert(JSON.stringify(Object.keys(PROVIDER_MANIFEST[provider].modalities)) === JSON.stringify(modalities), `${provider} modality declaration differs from the reviewed adapter matrix`);
+  }
+  const formatter = extractFunction(app, "modalityFact");
+  assert(/Object\.keys\(provider\?\.modalities/.test(formatter) && /Object\.hasOwn\(labels/.test(formatter), "modality labels are not closed-vocabulary");
+  const card = extractFunction(app, "providerCard");
+  assert(/Review input/.test(card) && /escapeHtml\(modalityFact\(provider\)\)/.test(card), "provider cards do not render escaped modality facts");
+  assert(exactRuleDeclarations(".provider-facts").some((rule) => /repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(rule)), "desktop provider facts do not accommodate the fourth fact");
+  const mobile = css.slice(css.indexOf("@media (max-width: 520px)"));
+  assert(/\.provider-facts\s*\{[^}]*grid-template-columns\s*:\s*1fr/i.test(mobile), "modality facts do not stack at narrow widths");
+});
+
 contract("controller and reviewer parity is explicit", () => {
   const expectedGovernors = [...PROVIDER_IDS, "other"];
   assert(JSON.stringify(GOVERNOR_IDS) === JSON.stringify(expectedGovernors), "every provider plus other must be able to govern");
