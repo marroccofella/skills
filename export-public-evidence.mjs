@@ -181,9 +181,12 @@ if (fs.existsSync(pagePath)) {
     fs.writeFileSync(path.join(dataDir, "dispositions.csv"), csv([["timestamp", "run_id", "reviewer", "disposition", "suggestion", "reason"], ...dispositions.map((d) => [d.timestamp, d.run_id, d.reviewer, d.disposition, d.suggestion, d.reason])]));
     const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const routeTable = `<table class="matrix" id="route-table"><thead><tr><th>route</th><th>completed</th><th>timeouts</th><th>median s</th><th>p90 s</th><th>accept / modify / reject</th><th>applied</th><th>rejected</th><th>acceptance rate</th></tr></thead><tbody>${stats.routes.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.completed}</td><td>${r.timeouts}</td><td>${r.median_s}</td><td>${r.p90_s}</td><td>${r.verdicts.ACCEPT} / ${r.verdicts.MODIFY} / ${r.verdicts.REJECT}</td><td>${r.applied}</td><td>${r.rejected}</td><td>${r.precision === null ? "n/a" : Math.round(r.precision * 100) + "%"}</td></tr>`).join("")}</tbody></table>`;
+    const md = ["| route | completed | timeouts | median s | p90 s | accept / modify / reject | applied | rejected | acceptance rate |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |", ...stats.routes.map((r) => `| ${r.route} | ${r.completed} | ${r.timeouts} | ${r.median_s} | ${r.p90_s} | ${r.verdicts.ACCEPT} / ${r.verdicts.MODIFY} / ${r.verdicts.REJECT} | ${r.applied} | ${r.rejected} | ${r.precision === null ? "n/a" : Math.round(r.precision * 100) + "%"} |`)].join("\n") + "\n";
+    fs.writeFileSync(path.join(dataDir, "routes.md"), md);
+    const routeTableWithMd = routeTable + `<details class="table"><summary>the same table as Markdown (copies cleanly)</summary><pre style="white-space:pre;overflow-x:auto;font-size:11.5px;color:var(--muted)">${esc(md)}</pre></details>`;
     const withStats = page.replace(statsBlock, () => `<script id="page-stats" type="application/json">${JSON.stringify(stats).replace(/<\//g, "<\\/")}</script>`);
     const tableBlock = /<!-- route-table:start -->[\s\S]*?<!-- route-table:end -->/;
-    fs.writeFileSync(pagePath, tableBlock.test(withStats) ? withStats.replace(tableBlock, () => `<!-- route-table:start -->${routeTable}<!-- route-table:end -->`) : withStats);
+    fs.writeFileSync(pagePath, tableBlock.test(withStats) ? withStats.replace(tableBlock, () => `<!-- route-table:start -->${routeTableWithMd}<!-- route-table:end -->`) : withStats);
     pageRefreshed = true;
   }
 }

@@ -62,6 +62,8 @@ disposition line; ledger table gains a persona column when present.
 
 ## Shipped (do not re-propose)
 
+- **1.14.1** — second page critique: FAQ answers rendered visibly (CI answer corrected: no token path, so headless runners need a CLI session or run pre-push with --tier quick); ANSI/OSC sequences stripped before the reviewer JSON parse (self-test); routes.md Markdown table beside the HTML table; footer ends on the licence. Declined again: auto-executing reviewer repro snippets; the word automated for the gate.
+
 - **1.14.0** — response to external critique (2026-09-04): prose
   corroboration by shared quotation (a finding with no line_range merges
   with another reviewer's finding that shares six normalized words; the

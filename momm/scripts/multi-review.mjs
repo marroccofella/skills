@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.14.0";
+const MOMM_VERSION = "1.14.1";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -823,8 +823,16 @@ function extractJsonObjects(text) {
   return objects;
 }
 
+// CLIs that think they are on a TTY can wrap or interleave JSON with CSI /
+// OSC escape sequences; strip them before looking for objects so a styled
+// reply is not misfiled as invalid_output.
+const ANSI_SEQUENCES = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g;
+function stripAnsi(text) {
+  return String(text ?? "").replace(ANSI_SEQUENCES, "");
+}
+
 function unwrapReviewPayload(stdout) {
-  const candidates = extractJsonObjects(stdout);
+  const candidates = extractJsonObjects(stripAnsi(stdout));
   for (const candidate of candidates) {
     if (candidate && Array.isArray(candidate.findings)) return candidate;
     if (candidate?.structured_output && Array.isArray(candidate.structured_output.findings)) {
@@ -1709,6 +1717,11 @@ async function selfTest(pretty) {
       ui.finish({ run_id: "rev_t", reviewers: [{ agent: "codex", status: "success", verdict: "MODIFY" }], findings: [{ id: "bad\u001b]52;c;AAAA\u0007id", severity: "CRITICAL", target_file: "a.js\u001b[31m", line_range: [1, 2], sources: ["codex"], test_suggestion: "run\u0007it" }] }, null);
       const text = chunks.join("");
       return text.includes("badid") === false && !text.includes("\u001b]52") && !text.includes("\u0007") && text.includes("bad ") && text.includes("a.js ");
+    })(),
+    ansi_wrapped_json_still_parses: (() => {
+      const styled = "\u001b[32m\u001b]0;title\u0007" + JSON.stringify({ verdict: "ACCEPT", confidence: 1, findings: [], summary: "ok", suggested_improvements: [] }) + "\u001b[0m";
+      const payload = unwrapReviewPayload(styled);
+      return payload?.verdict === "ACCEPT" && Array.isArray(payload.findings) && stripAnsi("a\u001b[31mb\u001b[0m") === "ab";
     })(),
     prose_findings_with_different_quotes_stay_separate: (() => {
       const mk = (agent, id, issue) => ({ status: "success", agent, review: { findings: [{ id, severity: "WARNING", target_file: "4. Discussion", line_range: null, issue, rationale: "r" }] } });
