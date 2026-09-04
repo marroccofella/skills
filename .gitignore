@@ -6,3 +6,19 @@ __pycache__/
 
 # Per-machine voice-portal data: model caches and consent logs never belong in the repo.
 promptus-clone-voice/portal/data/
+
+# added by myrepo
+node_modules/
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+.npmrc
+.netrc
+id_rsa
+id_ed25519
+.DS_Store
+Thumbs.db
+*.log

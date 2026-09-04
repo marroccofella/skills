@@ -1,0 +1,215 @@
+/* ==UserStyle==
+@name         GitHub — 42.uk Terminal Theme
+@namespace    42.uk
+@version      1.0.0
+@description  Restyles GitHub to match the 42.uk "Freeloader's Guide" terminal aesthetic: near-black green-tinted background, neon-green accents, monospace everywhere.
+@author       Dominic Marrocco
+@license      MIT
+==/UserStyle== */
+
+@-moz-document domain("github.com"), domain("gist.github.com") {
+
+  /* ================================================================
+     42.uk palette
+     bg #080a0a · text #e6ffe6 · muted #9be29b · accent #00ff99
+     accent-dim #00cc88 · border #1f2a22 · link #8ef0c6 · warn #ffd166
+     panel rgba(17,19,22,.85) · mono type stack
+     ================================================================ */
+
+  html,
+  html[data-color-mode="light"],
+  html[data-color-mode="dark"],
+  html[data-color-mode="auto"] {
+    /* ---- Modern Primer tokens ---- */
+    --bgColor-default: #080a0a !important;
+    --bgColor-muted: #0d1210 !important;
+    --bgColor-inset: #050706 !important;
+    --bgColor-emphasis: #1f2a22 !important;
+    --bgColor-disabled: #0d1210 !important;
+    --overlay-bgColor: #111316 !important;
+    --bgColor-transparent: rgba(0, 0, 0, 0) !important;
+
+    --fgColor-default: #e6ffe6 !important;
+    --fgColor-muted: #9be29b !important;
+    --fgColor-onEmphasis: #041008 !important;
+    --fgColor-disabled: #4d6b55 !important;
+    --fgColor-link: #8ef0c6 !important;
+    --fgColor-accent: #00ff99 !important;
+
+    --borderColor-default: #1f2a22 !important;
+    --borderColor-muted: #16201a !important;
+    --borderColor-emphasis: #31443c !important;
+    --borderColor-accent-emphasis: #00cc88 !important;
+
+    --bgColor-accent-emphasis: #00cc88 !important;
+    --bgColor-accent-muted: rgba(0, 255, 153, 0.10) !important;
+    --fgColor-success: #00ff99 !important;
+    --bgColor-success-emphasis: #00cc88 !important;
+    --bgColor-success-muted: rgba(0, 255, 153, 0.10) !important;
+    --borderColor-success-emphasis: #00cc88 !important;
+    --fgColor-attention: #ffd166 !important;
+    --bgColor-attention-emphasis: #b8860b !important;
+    --bgColor-attention-muted: rgba(255, 209, 102, 0.12) !important;
+    --borderColor-attention-emphasis: #ffd166 !important;
+    --fgColor-danger: #ff7b72 !important;
+    --bgColor-danger-muted: rgba(255, 123, 114, 0.10) !important;
+    --fgColor-done: #8ef0c6 !important;
+    --bgColor-done-muted: rgba(142, 240, 198, 0.10) !important;
+    --fgColor-open: #00ff99 !important;
+    --bgColor-open-emphasis: #00cc88 !important;
+    --fgColor-closed: #ff7b72 !important;
+
+    /* ---- Legacy Primer aliases (older pages, gists) ---- */
+    --color-canvas-default: #080a0a !important;
+    --color-canvas-subtle: #0d1210 !important;
+    --color-canvas-inset: #050706 !important;
+    --color-canvas-overlay: #111316 !important;
+    --color-fg-default: #e6ffe6 !important;
+    --color-fg-muted: #9be29b !important;
+    --color-fg-subtle: #6f9b78 !important;
+    --color-fg-on-emphasis: #041008 !important;
+    --color-accent-fg: #8ef0c6 !important;
+    --color-accent-emphasis: #00cc88 !important;
+    --color-accent-muted: rgba(0, 255, 153, 0.25) !important;
+    --color-accent-subtle: rgba(0, 255, 153, 0.10) !important;
+    --color-border-default: #1f2a22 !important;
+    --color-border-muted: #16201a !important;
+    --color-success-fg: #00ff99 !important;
+    --color-success-emphasis: #00cc88 !important;
+    --color-attention-fg: #ffd166 !important;
+    --color-attention-subtle: rgba(255, 209, 102, 0.12) !important;
+    --color-danger-fg: #ff7b72 !important;
+    --color-open-fg: #00ff99 !important;
+    --color-closed-fg: #ff7b72 !important;
+    --color-header-bg: #050706 !important;
+    --color-header-text: #e6ffe6 !important;
+    --color-header-logo: #00ff99 !important;
+
+    /* ---- Buttons ---- */
+    --button-default-bgColor-rest: #0d1210 !important;
+    --button-default-bgColor-hover: #16201a !important;
+    --button-default-borderColor-rest: #31443c !important;
+    --button-default-fgColor-rest: #e2f4e9 !important;
+    --button-primary-bgColor-rest: #00cc88 !important;
+    --button-primary-bgColor-hover: #00ff99 !important;
+    --button-primary-fgColor-rest: #041008 !important;
+    --button-primary-borderColor-rest: #00cc88 !important;
+    --button-invisible-fgColor-rest: #9be29b !important;
+
+    /* ---- Diff colors ---- */
+    --diffBlob-additionLine-bgColor: rgba(0, 255, 153, 0.10) !important;
+    --diffBlob-additionNum-bgColor: rgba(0, 255, 153, 0.22) !important;
+    --diffBlob-additionWord-bgColor: rgba(0, 255, 153, 0.30) !important;
+    --diffBlob-deletionLine-bgColor: rgba(255, 123, 114, 0.10) !important;
+    --diffBlob-deletionNum-bgColor: rgba(255, 123, 114, 0.22) !important;
+    --diffBlob-deletionWord-bgColor: rgba(255, 123, 114, 0.30) !important;
+
+    /* ---- Syntax highlighting, green-terminal flavored ---- */
+    --color-prettylights-syntax-comment: #6f9b78 !important;
+    --color-prettylights-syntax-constant: #8ef0c6 !important;
+    --color-prettylights-syntax-entity: #00ff99 !important;
+    --color-prettylights-syntax-keyword: #ffd166 !important;
+    --color-prettylights-syntax-string: #b8f5d0 !important;
+    --color-prettylights-syntax-variable: #e6ffe6 !important;
+    --color-prettylights-syntax-entity-tag: #00ff99 !important;
+    --color-prettylights-syntax-storage-modifier-import: #e6ffe6 !important;
+    --color-prettylights-syntax-markup-heading: #00ff99 !important;
+
+    /* ---- Type: monospace everywhere, like 42.uk ---- */
+    --fontStack-system: ui-monospace, Consolas, Monaco, Menlo, "Liberation Mono", "Courier New", monospace !important;
+    --fontStack-sansSerif: ui-monospace, Consolas, Monaco, Menlo, "Liberation Mono", "Courier New", monospace !important;
+
+    /* ---- Panel rounding to match 42.uk cards ---- */
+    --borderRadius-medium: 10px !important;
+    --borderRadius-large: 10px !important;
+
+    color-scheme: dark !important;
+  }
+
+  body {
+    font-family: ui-monospace, Consolas, Monaco, Menlo, "Liberation Mono", "Courier New", monospace !important;
+    background-color: #080a0a !important;
+    color: #e6ffe6 !important;
+  }
+
+  /* Top navigation bar — darkest layer, like the 42.uk page chrome */
+  .AppHeader,
+  header.Header,
+  .gh-header-sticky {
+    background-color: #050706 !important;
+    border-bottom: 1px solid #1f2a22 !important;
+  }
+
+  /* GitHub logo goes neon */
+  .AppHeader .octicon-mark-github,
+  header .octicon-mark-github {
+    color: #00ff99 !important;
+  }
+
+  /* Panels / cards: translucent dark like 42.uk sections */
+  .Box,
+  .Box-header,
+  [class*="Box-sc"],
+  .markdown-body pre {
+    background-color: rgba(17, 19, 22, 0.85) !important;
+    border-color: #1f2a22 !important;
+  }
+
+  .Box-header {
+    background-color: #0d1210 !important;
+  }
+
+  /* Links: soft green, neon on hover */
+  a { color: #8ef0c6; }
+  a:hover { color: #00ff99; }
+
+  /* Counters and labels */
+  .Counter {
+    background-color: #1f2a22 !important;
+    color: #9be29b !important;
+  }
+
+  /* Code blocks: inset terminal look */
+  .markdown-body pre,
+  .markdown-body code,
+  .highlight {
+    background-color: #050706 !important;
+    color: #e6ffe6 !important;
+  }
+
+  /* Selection: neon green wash */
+  ::selection {
+    background: rgba(0, 255, 153, 0.30) !important;
+    color: #e6ffe6 !important;
+  }
+
+  /* Contribution graph in 42.uk greens */
+  :root {
+    --contribution-default-bgColor-0: #0d1210 !important;
+    --contribution-default-bgColor-1: #0e3b26 !important;
+    --contribution-default-bgColor-2: #00753f !important;
+    --contribution-default-bgColor-3: #00cc88 !important;
+    --contribution-default-bgColor-4: #00ff99 !important;
+  }
+  .ContributionCalendar-day[data-level="0"] { fill: #0d1210; background-color: #0d1210 !important; }
+  .ContributionCalendar-day[data-level="1"] { fill: #0e3b26; background-color: #0e3b26 !important; }
+  .ContributionCalendar-day[data-level="2"] { fill: #00753f; background-color: #00753f !important; }
+  .ContributionCalendar-day[data-level="3"] { fill: #00cc88; background-color: #00cc88 !important; }
+  .ContributionCalendar-day[data-level="4"] { fill: #00ff99; background-color: #00ff99 !important; }
+
+  /* Subtle scanline texture over the page, like the 42.uk ambient field */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2147483646;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(0, 255, 153, 0.012) 3px,
+      rgba(0, 255, 153, 0.012) 4px
+    );
+  }
+}

@@ -1,5 +1,5 @@
-10 REM COUNT FROM ONE TO TEN
-20 FOR I = 1 TO 10
-30 PRINT I
-40 NEXT I
-50 END
+' count.bas — print the numbers 1 through 10, one per line
+FOR i = 1 TO 10
+    PRINT i
+NEXT i
+END
