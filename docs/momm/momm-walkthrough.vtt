@@ -1,0 +1,91 @@
+WEBVTT
+
+00:00:00.150 --> 00:00:06.254
+What you are hearing is a synthetic clone of my voice, generated locally with my consent.
+
+00:00:06.304 --> 00:00:07.792
+I am Dominic Marrocco.
+
+00:00:07.842 --> 00:00:20.100
+This is MOMM, the Mixture of Model Modality: every frontier model on your machine, reviewing your work together, while the agent you are talking to stays the only one allowed to write.
+
+00:00:20.950 --> 00:00:23.190
+Here is the problem it solves.
+
+00:00:23.240 --> 00:00:25.861
+Today's coding agents grade their own homework.
+
+00:00:25.911 --> 00:00:32.349
+The model that writes a change also reviews it, with the same blind spots on both sides.
+
+00:00:32.399 --> 00:00:35.020
+When the session ends, the reasoning evaporates.
+
+00:00:35.070 --> 00:00:39.600
+And a second opinion usually means another API key to pay for.
+
+00:00:40.450 --> 00:00:45.655
+It turns the models you already subscribe to into a standing review coalition.
+
+00:00:45.705 --> 00:00:49.697
+Your agent, the governor, pipes a diff to the dispatcher.
+
+00:00:49.747 --> 00:00:53.739
+A readiness check probes every route with zero model calls.
+
+00:00:53.789 --> 00:01:01.420
+Then the other installed reviewers, from four different companies, review it in parallel, each through its own official login.
+
+00:01:01.470 --> 00:01:09.100
+Every API key variable is stripped, and a route without a login is refused before any tokens are spent.
+
+00:01:09.950 --> 00:01:11.660
+Reviewers are read-only instruments.
+
+00:01:11.710 --> 00:01:14.300
+Their findings are claims, not verdicts.
+
+00:01:14.350 --> 00:01:22.220
+Before a single line changes, the governor must reproduce each critical or warning finding with a failing test.
+
+00:01:22.270 --> 00:01:28.820
+Every suggestion gets an explicit disposition, applied or rejected with a reason, on the record.
+
+00:01:28.870 --> 00:01:31.900
+The governor never reviews its own work.
+
+00:01:32.750 --> 00:01:34.284
+Every run is sealed.
+
+00:01:34.334 --> 00:01:39.432
+The report is content-addressed and bound to the exact input by its hash.
+
+00:01:39.482 --> 00:01:44.184
+Your private ledger lives beside your project and never leaves your machine.
+
+00:01:44.234 --> 00:01:52.500
+This project reviews itself with MOMM and publishes its sanitised evidence, so every number on the page resolves to a hash.
+
+00:01:53.350 --> 00:01:55.732
+And it is not only code.
+
+00:01:55.782 --> 00:02:10.730
+Hand MOMM a manuscript, a PDF, or an image, and the same protocol becomes editorial peer review: parallel referees with different training, an editor who must reproduce before deciding, and a decision ledger that survives the session.
+
+00:02:10.780 --> 00:02:16.000
+Put your reviewer guidelines in a rules file, and every referee follows them.
+
+00:02:16.850 --> 00:02:20.262
+One command installs it into every harness you have.
+
+00:02:20.312 --> 00:02:24.877
+Then just tell your agent: use momm to review my current changes.
+
+00:02:24.927 --> 00:02:25.262
+Relax.
+
+00:02:25.312 --> 00:02:26.800
+It is already over.
+
+00:02:27.500 --> 00:02:32.500
+[Synthetic voice: a consented local clone of Dominic Marrocco's voice, F5-TTS via Promptus]

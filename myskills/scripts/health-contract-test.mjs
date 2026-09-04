@@ -12,11 +12,12 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..", "..");
 const runner = path.join(scriptDir, "run-all.mjs");
 const versions = JSON.parse(fs.readFileSync(path.join(skillRoot, "versions.json"), "utf8"));
-const canonical = ["momm", "myrepo", "yorkshire-pudding", "promptus-clone-voice"];
+const canonical = ["momm", "myrepo", "yorkshire-pudding", "myautoness", "promptus-clone-voice"];
 const expectedAliases = {
   momm: [],
   myrepo: [],
   "yorkshire-pudding": ["yorky"],
+  myautoness: ["autopilot"],
   "promptus-clone-voice": ["myvoice"],
 };
 
@@ -56,7 +57,7 @@ const ghConsistent = myrepo?.dependencies?.gh_cli === "missing"
 const broken = full.skills.some((item) => ["missing", "failing", "error"].includes(item.status));
 
 const tests = {
-  "full report contains exactly four canonical families": full.skills.length === canonical.length
+  "full report contains exactly five canonical families": full.skills.length === canonical.length
     && JSON.stringify(full.skills.map((item) => item.skill)) === JSON.stringify(canonical),
   "aliases are grouped on canonical rows": aliasesMatch(full) && aliasesMatch(quick),
   "GitHub CLI and auth states are internally consistent": ghConsistent,

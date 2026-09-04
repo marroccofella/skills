@@ -58,7 +58,7 @@ Scaffolded docs carry the 42.uk identity: the `◆` mark, the project title and 
 
 ## Options
 
-`--dir <path>` project dir · `--private` (no Pages) · `--no-pages` · `--force-docs` overwrite README/LICENSE · `--allow-paths` skip the local-path privacy refusal (confirm first; secret checks remain mandatory) · `--dry-run` · `--self-test` (offline safety gates) · `--version`.
+`--dir <path>` project dir · `--private` (no Pages) · `--no-pages` · `--force-docs` overwrite README/LICENSE · `--allow-paths` skip the local-path privacy refusal (confirm first; secret checks remain mandatory). Entries git ignores (`.ensemble_reviews/`, model caches, `.env`) are skipped by the scan because they can never be pushed; everything git would publish is scanned · `--dry-run` · `--self-test` (offline safety gates) · `--version`.
 
 Every publish is recorded to an owner-only local log at `~/.myrepo/publishes.jsonl` (which myrepo version pushed what, where, and what the scan found) — your debuggable audit trail. Each run confesses its version and checks for updates (fail-silent, cached daily; disable with `NO_UPDATE_CHECK=1`).
 

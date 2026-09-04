@@ -3,13 +3,12 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { GOVERNOR_IDS, PROVIDER_IDS } from "./provider-manifest.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const dispatcher = path.join(scriptDir, "multi-review.mjs");
 const installer = path.join(scriptDir, "install.mjs");
-const VALID_GOVERNORS = new Set([...GOVERNOR_IDS, "agy"]);
-const VALID_REVIEWERS = new Set(PROVIDER_IDS);
+const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "agy", "copilot", "grok", "other"]);
+const VALID_REVIEWERS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
 
 function usage() {
   return `Usage:
@@ -107,11 +106,9 @@ function preflight(options) {
 
 function routeState(route) {
   if (route.role === "governor") return "governor";
+  if (route.ready) return "ready";
   if (route.installed === false) return "install";
-  if (route.route_status === "command_error") return "repair";
-  if (route.ready && route.auth_evidence === "live_status") return "session";
-  if (route.ready) return "possible";
-  if (route.auth === "absent") return "login";
+  if (route.auth === "absent" || route.login_hint) return "login";
   return "attention";
 }
 
@@ -120,8 +117,7 @@ function nextActions(routes) {
   for (const route of routes) {
     const state = routeState(route);
     if (state === "install" && route.install_hint) actions.push({ agent: route.agent, action: "install", command: route.install_hint });
-    if (state === "repair" && route.install_hint) actions.push({ agent: route.agent, action: "repair", command: route.install_hint });
-    if (state === "login" && route.login_hint) actions.push({ agent: route.agent, action: "login", command: route.login_hint });
+    if ((state === "install" || state === "login") && route.login_hint) actions.push({ agent: route.agent, action: "login", command: route.login_hint });
   }
   return actions;
 }
@@ -152,22 +148,13 @@ function renderHuman(report) {
   if (report.ready_reviewers.length) {
     lines.push(
       "",
-      `Provider-reported signed-in sessions (not a live model proof): ${report.ready_reviewers.join(", ")}`,
-    );
-  }
-  if (report.possible_reviewers.length) {
-    lines.push("", `Possible local sessions (presence evidence only): ${report.possible_reviewers.join(", ")}`);
-  }
-  if (report.ready_reviewers.length || report.possible_reviewers.length) {
-    lines.push(
-      "Live verification with isolated synthetic text:",
-      `  node scripts/setup-ui.mjs --governor ${report.governor}`,
-      "A first review will also fail closed if the provider session is unusable:",
+      `Ready reviewers: ${report.ready_reviewers.join(", ")}`,
+      "First review:",
       `  ${report.first_review_command}`,
       "Or ask your harness: Use $momm to review my current changes.",
     );
   } else {
-    lines.push("", "No external reviewer session was detected. Complete one install or sign-in action above, then re-run this check.");
+    lines.push("", "No external reviewer is ready yet. Complete one login above, then re-run this check.");
   }
   return `${lines.join("\n")}\n`;
 }
@@ -195,8 +182,7 @@ function main() {
     const link = options.link ? linkSkill(options.governor) : null;
     const preflightReport = preflight(options);
     const routes = preflightReport.routes || [];
-    const readyReviewers = routes.filter((route) => route.ready && route.role !== "governor" && route.auth_evidence === "live_status").map((route) => route.agent);
-    const possibleReviewers = routes.filter((route) => route.ready && route.role !== "governor" && route.auth_evidence !== "live_status").map((route) => route.agent);
+    const readyReviewers = routes.filter((route) => route.ready && route.role !== "governor").map((route) => route.agent);
     const reviewersArg = options.reviewers ? ` --reviewers ${options.reviewers}` : "";
     const report = {
       policy: "oauth-only",
@@ -206,8 +192,6 @@ function main() {
       link,
       routes,
       ready_reviewers: readyReviewers,
-      possible_reviewers: possibleReviewers,
-      readiness_semantics: "ready_reviewers require a provider live-status command; possible_reviewers are presence evidence only; neither is a model-call proof",
       next_actions: nextActions(routes),
       rerun_command: `node scripts/onboard.mjs --governor ${options.governor}${reviewersArg}`,
       first_review_command: `node scripts/multi-review.mjs --governor ${options.governor}${reviewersArg} --min-success 1`,

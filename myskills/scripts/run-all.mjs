@@ -13,7 +13,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const MYSKILLS_VERSION = "1.1.0";
+const MYSKILLS_VERSION = "1.2.0";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 // This skill lives beside its siblings, whether that is the canonical repo or
 // an installed skills directory — so the parent of myskills/ is the skill root.
@@ -101,6 +101,18 @@ const CHECKS = [
       const translated = live.code === 0 && /summat/i.test(live.out);
       const passed = selfTestOk && translated;
       return { status: passed ? "ok" : "failing", detail: passed ? `self-tests pass; live: "${live.out.split("\n")[0].slice(0, 40)}"` : `self-test ${selfTestOk ? "ok" : "failed"}, live translation ${translated ? "ok" : "failed"}` };
+    },
+  },
+  {
+    name: "myautoness", role: "self-playing by search and verified replay", aliases: ["autopilot"],
+    check() {
+      if (!has("myautoness", "scripts", "selftest.mjs")) return { status: "missing", detail: "myautoness/scripts/selftest.mjs not found" };
+      const v = run(process.execPath, [skillPath("myautoness", "scripts", "selftest.mjs"), "--version"]);
+      const st = run(process.execPath, [skillPath("myautoness", "scripts", "selftest.mjs"), "--self-test"]);
+      let tests = null, passed = false, reference = null;
+      // Exit status AND payload must both agree — never trust output text alone.
+      try { const j = JSON.parse(st.out); passed = st.code === 0 && j.passed === true; tests = Object.keys(j.tests || {}).length; reference = j.reference; } catch {}
+      return { status: passed ? "ok" : "failing", version: v.code === 0 ? ((v.out.match(/myautoness ([\d.]+)/) || [])[1] ?? null) : null, detail: passed ? `${tests} self-tests pass; reference ${typeof reference === "string" && /[\\/]/.test(reference) ? "live-solved (path withheld)" : reference ?? "absent"}` : `self-test did not pass (exit ${st.code})` };
     },
   },
   {

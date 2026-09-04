@@ -3,3 +3,6 @@
 # Python bytecode caches embed absolute source paths and must never be committed.
 __pycache__/
 *.py[cod]
+
+# Per-machine voice-portal data: model caches and consent logs never belong in the repo.
+promptus-clone-voice/portal/data/

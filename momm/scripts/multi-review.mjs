@@ -3,14 +3,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { cleanOauthEnv as cleanSharedOauthEnv, isForbiddenOauthEnvironmentName, sanitizeProviderDiagnostic } from "./oauth-env.mjs";
-import { DEFAULT_REVIEWERS, GOVERNOR_IDS, INSTALL_HINTS, LOGIN_HINTS, PROVIDER_IDS } from "./provider-manifest.mjs";
-import { SETUP_PROBE_AUTH_REQUEST, SETUP_PROBE_AUTH_RESPONSE, SETUP_PROBE_INPUT, SETUP_PROBE_LABEL, setupProbeDescriptor } from "./setup-probe-contract.mjs";
 
-const MOMM_VERSION = "1.10.2";
+const MOMM_VERSION = "1.13.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -60,6 +57,37 @@ const PRIVATE_FILE_MODE = 0o600;  // -rw-------
 // Recursively force owner-only on the whole evidence tree — dirs 0700, files
 // 0600 — so pre-1.4 world-readable reports/logs are tightened too, not just
 // new ones. Best-effort and idempotent; a chmod failure never fails a review.
+// A new user's first run should not be able to commit their reviewer
+// transcripts. If this is a git repo and .ensemble_reviews/ is not already
+// ignored, append the rule (never rewriting or reordering existing content).
+// Returns what happened, for the report. Never throws.
+function protectPrivateZone(cwd) {
+  try {
+    if (!fs.existsSync(path.join(cwd, ".git"))) return "not_a_git_repo";
+    const gitignorePath = path.join(cwd, ".gitignore");
+    let current = "";
+    try { current = fs.readFileSync(gitignorePath, "utf8"); } catch {}
+    const ignored = current.split(/\r?\n/).some((line) => {
+      const trimmed = line.trim();
+      return trimmed === ".ensemble_reviews/" || trimmed === ".ensemble_reviews";
+    });
+    if (ignored) return "already_ignored";
+    const prefix = current === "" ? "" : current.endsWith("\n") ? "" : "\n";
+    fs.appendFileSync(gitignorePath, `${prefix}\n# momm: private per-machine review telemetry — never commit\n.ensemble_reviews/\n`);
+    return "rule_added";
+  } catch { return "unavailable"; }
+}
+
+// Evidence written under the system temp directory is wiped by the OS, taking
+// the ledger and every sealed report with it. Detect it so the run can say so.
+function isEphemeralLocation(cwd) {
+  try {
+    const temp = fs.realpathSync(os.tmpdir()).toLowerCase();
+    const here = fs.realpathSync(cwd).toLowerCase();
+    return here === temp || here.startsWith(temp + path.sep);
+  } catch { return false; }
+}
+
 function hardenPrivateTree(root) {
   try {
     const stat = fs.statSync(root);
@@ -86,23 +114,201 @@ if (Number.isFinite(nodeMajor) && nodeMajor < 18) {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_BYTES = 120_000;
 const MAX_OUTPUT_BYTES = 2_000_000;
-const VALID_GOVERNORS = new Set(GOVERNOR_IDS);
+const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"]);
 const VALID_SEVERITIES = new Set(["CRITICAL", "WARNING", "NITPICK"]);
 const VALID_VERDICTS = new Set(["ACCEPT", "MODIFY", "REJECT"]);
+
+const FORBIDDEN_ENV_NAMES = new Set([
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "XAI_API_KEY",
+  "GROQ_API_KEY",
+  "MISTRAL_API_KEY",
+  "COHERE_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+]);
+
+// Exact interactive login commands, surfaced whenever a route is down so the
+// user never has to guess how to bring a reviewer online. OAuth browser flows
+// only — never API keys.
+const LOGIN_HINTS = {
+  codex: "codex login   (ChatGPT account, browser flow)",
+  claude: "claude   then run /login inside it   (Anthropic account, browser flow)",
+  antigravity: "agy login   (Google account, browser flow)",
+  copilot: "copilot login   (GitHub account, browser flow)",
+  gemini: "gemini   then /auth   (Standard or Enterprise Code Assist organization licenses; individual tiers were retired 2026-06-18)",
+};
+
+// Exact install commands, verified against real installations — surfaced
+// whenever a route's CLI is missing so a new user can bring it online
+// without leaving the terminal.
+const INSTALL_HINTS = {
+  codex: "npm install -g @openai/codex",
+  claude: "npm install -g @anthropic-ai/claude-code",
+  copilot: "npm install -g @github/copilot",
+  gemini: "npm install -g @google/gemini-cli",
+  antigravity: "installer at antigravity.google/docs/cli/install (provides the agy command)",
+  grok: "Windows: irm https://x.ai/cli/install.ps1 | iex — other platforms: x.ai/cli",
+};
+
+LOGIN_HINTS.grok = "grok login   (xAI account, browser flow; or grok login --device-code without a browser)";
+
+// --- Modalities -----------------------------------------------------------
+// What each route can consume beyond text, and HOW — verified against the
+// installed CLIs (2026-08-24): codex exec has a native -i/--image flag;
+// gemini's model is natively multimodal and reads @file references from the
+// -p prompt argument; claude reads images and PDFs through its file tools in
+// agentic -p mode. antigravity/copilot/grok are text-only until their image
+// paths are verified live — capability claims here are evidence, not hope.
+// A route missing a required modality fails closed as `unsupported` before
+// any tokens are spent; it never reviews a caption of media it cannot see.
+const MODALITY_SUPPORT = {
+  codex: { text: "stdin", image: "flag" },
+  claude: { text: "stdin", image: "tool_read", pdf: "tool_read" },
+  gemini: { text: "stdin", image: "file_ref", pdf: "file_ref", audio: "file_ref", video: "file_ref" },
+  antigravity: { text: "file" },
+  copilot: { text: "file" },
+  grok: { text: "file" },
+};
+
+const MODALITY_BY_EXTENSION = {
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", bmp: "image",
+  pdf: "pdf",
+  mp3: "audio", wav: "audio", flac: "audio", ogg: "audio", m4a: "audio",
+  mp4: "video", webm: "video", mov: "video", mkv: "video",
+};
+
+// Reject-don't-truncate caps, mirroring --max-bytes posture.
+const MODALITY_MAX_BYTES = { image: 8_000_000, pdf: 20_000_000, audio: 30_000_000, video: 120_000_000 };
+
+function modalityOfFile(filePath) {
+  return MODALITY_BY_EXTENSION[path.extname(filePath).slice(1).toLowerCase()] ?? null;
+}
+
+function missingModalities(agent, modalities) {
+  const support = MODALITY_SUPPORT[agent] ?? { text: "file" };
+  return [...new Set(modalities)].filter((modality) => !(modality in support));
+}
+
+// Metadata stripping: attachments are copied (never modified in place) with
+// location-bearing metadata removed before anything leaves this machine.
+// JPEG: drop APP1/APP2 (EXIF/XMP/ICC-adjacent) segments. PNG: drop textual
+// and eXIf ancillary chunks. Other formats pass through with stripped:false
+// recorded honestly in the report.
+function stripJpegMetadata(buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return { buffer, stripped: false };
+  const parts = [buffer.subarray(0, 2)];
+  let offset = 2;
+  let stripped = false;
+  while (offset + 4 <= buffer.length && buffer[offset] === 0xff) {
+    const marker = buffer[offset + 1];
+    if (marker === 0xda) { parts.push(buffer.subarray(offset)); offset = buffer.length; break; } // start of scan: rest is image data
+    const size = buffer.readUInt16BE(offset + 2) + 2;
+    if (marker === 0xe1 || marker === 0xe2) stripped = true; // APP1 (EXIF/XMP) / APP2
+    else parts.push(buffer.subarray(offset, offset + size));
+    offset += size;
+  }
+  if (offset < buffer.length) parts.push(buffer.subarray(offset));
+  return { buffer: Buffer.concat(parts), stripped };
+}
+
+function stripPngMetadata(buffer) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(signature)) return { buffer, stripped: false };
+  const drop = new Set(["tEXt", "zTXt", "iTXt", "eXIf", "tIME"]);
+  const parts = [buffer.subarray(0, 8)];
+  let offset = 8;
+  let stripped = false;
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("latin1");
+    const total = 12 + length;
+    if (drop.has(type)) stripped = true;
+    else parts.push(buffer.subarray(offset, offset + total));
+    if (type === "IEND") break;
+    offset += total;
+  }
+  return { buffer: Buffer.concat(parts), stripped };
+}
+
+// Validates and stages attachments into a private temp dir with sanitized
+// names and stripped metadata. Returns descriptors for the report (basename,
+// modality, bytes, sha256 of what was actually sent) — never full paths.
+function stageAttachments(files) {
+  if (!files.length) return { directory: null, attachments: [] };
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-attach-"));
+  const attachments = files.map((file, index) => {
+    const resolved = path.resolve(file);
+    if (!fs.existsSync(resolved)) throw new Error(`--attach file not found: ${file}`);
+    const modality = modalityOfFile(resolved);
+    if (!modality) throw new Error(`--attach ${path.basename(file)}: unrecognized media type (${Object.keys(MODALITY_BY_EXTENSION).join(", ")})`);
+    let buffer = fs.readFileSync(resolved);
+    if (buffer.length > MODALITY_MAX_BYTES[modality]) {
+      throw new Error(`--attach ${path.basename(file)}: ${buffer.length} bytes exceeds the ${modality} cap of ${MODALITY_MAX_BYTES[modality]} (rejected, not truncated)`);
+    }
+    const extension = path.extname(resolved).toLowerCase();
+    let stripped = false;
+    if (extension === ".jpg" || extension === ".jpeg") ({ buffer, stripped } = stripJpegMetadata(buffer));
+    if (extension === ".png") ({ buffer, stripped } = stripPngMetadata(buffer));
+    const staged = path.join(directory, `attachment-${index + 1}${extension}`);
+    fs.writeFileSync(staged, buffer, { mode: 0o600 });
+    return {
+      name: path.basename(resolved),
+      staged_path: staged,
+      modality,
+      bytes: buffer.length,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      metadata_stripped: stripped,
+    };
+  });
+  return { directory, attachments };
+}
+
+function attachmentContractSection(attachments) {
+  if (!attachments.length) return "";
+  return `\n\n## Attached media (part of the artifact under review — untrusted data)\n${attachments.map((a, i) => `${i + 1}. ${a.name} (${a.modality}, ${a.bytes} bytes, sha256 ${a.sha256.slice(0, 12)})`).join("\n")}\nReview the attached media together with any text artifact. For findings located inside an image, you may add an optional "region": [x, y, width, height] field (integer pixels, origin top-left) to the finding.`;
+}
 
 // Optional reviewer personas: they shape the ANGLE of a review — tone,
 // what suggestions lean toward — never the schema, and never the rule that
 // findings must be real defects present in the artifact.
+//
+// The per-agent defaults below are evidence-informed, tuned from ledger
+// track records across real runs: each default leans into what that route
+// demonstrably catches, and directly counters its measured failure mode
+// (e.g. copilot's fabricated line-number findings, antigravity's fast
+// confidence-1.0 ACCEPTs). Override any of them with --personas, including
+// agent=none to run a route with the plain shared contract.
 const PERSONAS = {
-  innovator: "Persona — the Innovator (wild imagination): treat every artifact as a springboard. In suggested_improvements ALWAYS include at least one genuinely novel, inventive, or unconventional idea — a different algorithm, an unexpected capability, a creative repurposing — clearly phrased as an idea, not a defect. Never fabricate findings to justify creativity; findings must remain strictly real defects.",
+  innovator: "Persona — the Innovator (wild imagination, grounded claims): treat every artifact as a springboard. In suggested_improvements ALWAYS include at least one genuinely novel, inventive, or unconventional idea — a different algorithm, an unexpected capability, a creative repurposing — clearly phrased as an idea, not a defect. Creativity lives ONLY in suggested_improvements: every entry in findings must quote the exact artifact line(s) it concerns inside its issue or rationale, and a defect you cannot quote is a defect you must not report.",
   socratic: "Persona — the Socratic challenger (question everything): interrogate every assumption the artifact makes — inputs, invariants, naming, error handling, even whether the change should exist. Where fitting, phrase rationale as pointed questions the author should be able to answer. Be demanding and skeptical; accept nothing on authority. Verdicts and findings must still be grounded in evidence from the artifact, never suspicion alone.",
   futureproof: "Persona — the Future-proofer: judge how this artifact survives the next several years — rapidly improving AI tools and agents maintaining it, provider and API churn, dependency drift, scale growth. Flag brittleness to plausible future change in suggested_improvements, clearly labeled as future-proofing. Findings must remain present-tense, real defects only.",
+  surgeon: "Persona — the Surgeon (trace-it-or-drop-it precision): your specialty is the defect classes single-file review misses — cross-layer contracts, artifact and packaging breaks (generated files, missing assets, clean-checkout failures), lifecycle and teardown paths, state that must survive a transition. For every finding, trace the failing path step by step through the artifact and state the concrete trigger scenario; a finding you cannot walk end-to-end is not ready to report. Prefer three traced findings over ten suspicions.",
+  architect: "Persona — the Architect (seams, invariants, coverage): review the shape of the change, not just its lines — module boundaries, ownership of state, invariants the code relies on but never states, API contracts with the rest of the system, and the tests that should pin all of the above. When a seam is weak, name the invariant at risk and the minimal test that would hold it. Structural suggestions go in suggested_improvements; findings remain only real, present defects.",
+  adversary: "Persona — the Adversary (earn every ACCEPT): your job is to actively try to break this change before agreeing with it. Attack at least: boundary values, concurrent or re-entrant use, failure paths (errors, timeouts, partial writes), and hostile or malformed input. An ACCEPT verdict must list in its summary which attack angles you tried and why each failed to break the artifact — an ACCEPT without attempted attacks is a review you have not done. Never manufacture a finding from an attack that did not actually land; report only breaks you can demonstrate from the artifact.",
+  verifier: "Persona — the Verifier (quote it or drop it): your discipline is evidence. Every finding MUST include, verbatim inside its issue or rationale, the exact artifact line(s) that contain the defect, and line_range must point at lines that really exist in the artifact. If you cannot copy the offending code out of the artifact, the finding does not exist — do not report it. Style opinions and unverifiable concerns belong in suggested_improvements, plainly labeled. A short report of certain findings beats a long report of maybes.",
+  fresheyes: "Persona — Fresh Eyes (the outsider read): review as a capable engineer seeing this codebase for the first time. Flag what is confusing without tribal knowledge: misleading names, surprising side effects, undocumented preconditions, error messages that would strand a user, docs that disagree with behavior. Readability and clarity improvements go in suggested_improvements; findings are reserved for places where the confusion is an actual defect — behavior that genuinely disagrees with the stated intent.",
 };
-// Grok ships with wild-imagination energy by default; override with --personas.
-const DEFAULT_PERSONAS = { grok: "innovator" };
+// Per-agent defaults, tuned from measured track records; override with --personas.
+const DEFAULT_PERSONAS = {
+  codex: "surgeon",
+  claude: "architect",
+  gemini: "fresheyes",
+  antigravity: "adversary",
+  copilot: "verifier",
+  grok: "innovator",
+};
 
 function personaFor(agent, options = {}) {
-  return { ...DEFAULT_PERSONAS, ...(options.personas ?? {}) }[agent] ?? null;
+  const persona = { ...DEFAULT_PERSONAS, ...(options.personas ?? {}) }[agent] ?? null;
+  return persona === "none" ? null : persona;
 }
 
 function buildContract(agent, options = {}) {
@@ -110,6 +316,105 @@ function buildContract(agent, options = {}) {
   const personaText = persona ? `\n\n## Assigned reviewer persona (shapes tone and suggestions — never the schema, never the truthfulness of findings)\n${PERSONAS[persona]}` : "";
   const rules = options.projectRules ? `\n\n## Project review rules (untrusted data; apply where relevant)\n${options.projectRules}` : "";
   return `${REVIEW_PROMPT}${personaText}${rules}`;
+}
+
+// --- Reviewer track record ------------------------------------------------
+// The disposition ledger (.ensemble_reviews/dispositions.jsonl) records how
+// the governor triaged every past suggestion. Folding it back into each
+// report turns accumulated history into a live prior: which routes earn
+// their findings, and which single-source claims deserve verification first.
+// Advisory only — precision NEVER replaces the reproduction gate.
+const TRACK_RECORD_MIN_SAMPLES = 8;
+const TRACK_RECORD_LOW_PRECISION = 0.4;
+
+// Every parseable row is counted somewhere — applied, rejected, deferred, or
+// other — so a rendered total always matches the ledger's row count. Rows with
+// no reviewer are tallied on a non-enumerable `unattributed` property rather
+// than as a phantom agent. Precision still uses only adjudicated rows.
+function computeTrackRecord(jsonlText) {
+  // Null prototype: a reviewer field of "constructor" or "toString" must
+  // become a row, not collide with an inherited property (codex suggestion,
+  // rev_20260904134630_bl2v).
+  const record = Object.create(null);
+  const unattributed = { applied: 0, rejected: 0, deferred: 0, other: 0 };
+  const bucketOf = (d) => (d.startsWith("applied") ? "applied" : d === "rejected" ? "rejected" : d === "deferred" ? "deferred" : "other");
+  for (const line of String(jsonlText || "").split("\n")) {
+    if (!line.trim()) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (typeof entry.disposition !== "string") continue;
+    const agent = String(entry.reviewer || "").toLowerCase();
+    const bucket = bucketOf(entry.disposition);
+    if (!agent) { unattributed[bucket] += 1; continue; }
+    record[agent] ??= { applied: 0, rejected: 0, deferred: 0, other: 0 };
+    record[agent][bucket] += 1;
+  }
+  for (const stats of Object.values(record)) {
+    const samples = stats.applied + stats.rejected;
+    stats.samples = samples;
+    // `precision` is the rounded display value; policy (verify_first, the
+    // stats note) must use the exact ratio, or 39/98 = 0.398 rounds to 0.40 and
+    // escapes the < 0.4 tier here while the ledger, which keeps the exact
+    // value, labels the same history verify-first (finding
+    // precision-threshold-rounding-divergence, rev_20260904134630_bl2v).
+    stats.precision_exact = samples ? stats.applied / samples : null;
+    stats.precision = samples ? Number(stats.precision_exact.toFixed(2)) : null;
+  }
+  Object.defineProperty(record, "unattributed", { value: unattributed, enumerable: false });
+  return record;
+}
+
+function loadTrackRecord(cwd = process.cwd()) {
+  try {
+    return computeTrackRecord(fs.readFileSync(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"), "utf8"));
+  } catch { return {}; }
+}
+
+// A finding whose only sources all have a low measured precision gets a
+// verify_first flag: investigate it, but reproduce before believing it.
+function flagVerifyFirst(findings, trackRecord) {
+  for (const finding of findings) {
+    const sources = Array.isArray(finding.sources) ? finding.sources : [];
+    if (!sources.length) continue;
+    const allLowPrecision = sources.every((agent) => {
+      const stats = trackRecord[agent];
+      const exact = stats?.precision_exact ?? stats?.precision ?? null;
+      return stats && stats.samples >= TRACK_RECORD_MIN_SAMPLES && exact !== null && exact < TRACK_RECORD_LOW_PRECISION;
+    });
+    if (allLowPrecision) finding.verify_first = true;
+  }
+  return findings;
+}
+
+function renderStats(trackRecord) {
+  const agents = Object.entries(trackRecord).sort((a, b) => (b[1].precision ?? -1) - (a[1].precision ?? -1));
+  const un0 = trackRecord.unattributed ?? { applied: 0, rejected: 0, deferred: 0, other: 0 };
+  const unRows = un0.applied + un0.rejected + un0.deferred + un0.other;
+  // A history made only of rows with no reviewer field is still history
+  // (finding unattributed-only-history-hidden, rev_20260904134630_bl2v).
+  if (!agents.length && !unRows) return "No disposition history found in .ensemble_reviews/dispositions.jsonl — run reviews and triage suggestions first.\n";
+  const lines = [
+    "Reviewer track record (from this project's disposition ledger)",
+    "reviewer      applied  rejected  deferred  other  precision  note",
+    "-".repeat(72),
+  ];
+  const totals = { applied: 0, rejected: 0, deferred: 0, other: 0 };
+  const row = (name, s, note) => `${name.padEnd(12)} ${String(s.applied).padStart(8)} ${String(s.rejected).padStart(9)} ${String(s.deferred ?? 0).padStart(9)} ${String(s.other ?? 0).padStart(6)} ${note.precision.padStart(10)}  ${note.text}`;
+  for (const [agent, stats] of agents) {
+    for (const k of Object.keys(totals)) totals[k] += stats[k] ?? 0;
+    const precision = stats.precision === null ? "  n/a" : `${String(Math.round(stats.precision * 100)).padStart(4)}%`;
+    const text = stats.samples < TRACK_RECORD_MIN_SAMPLES ? "small sample" : (stats.precision_exact ?? stats.precision) < TRACK_RECORD_LOW_PRECISION ? "verify-first tier" : "";
+    lines.push(row(agent, stats, { precision, text }));
+  }
+  const un = trackRecord.unattributed;
+  if (un && (un.applied + un.rejected + un.deferred + un.other)) {
+    for (const k of Object.keys(totals)) totals[k] += un[k];
+    lines.push(row("unattributed", un, { precision: "", text: "rows with no reviewer field" }));
+  }
+  const all = totals.applied + totals.rejected + totals.deferred + totals.other;
+  lines.push("-".repeat(72), row("total", totals, { precision: "", text: `${all} rows` }));
+  lines.push("", "Precision = suggestions applied / (applied + rejected), as triaged by the governor; deferred and other rows are counted, not adjudicated.", "Advisory prior only: every material finding still requires reproduction.");
+  return `${lines.join("\n")}\n`;
 }
 
 // Large artifacts take reviewers proportionally longer — observed live:
@@ -126,10 +431,14 @@ function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
 
 // Some routes read dense code slower than others — measured, not assumed:
 // grok exceeded every 120s window it was given while peers finished in
-// 30-100s. Its cap gets 1.5x headroom (still bounded by 6 minutes).
+// 30-100s. Its cap gets 1.5x headroom, bounded at 6 minutes for AUTO-scaled
+// budgets only. An explicit --timeout is the user's judgment call and is
+// honored above the cap (observed 2026-08-23: the clamp silently defeated
+// --timeout 420 on a dense 63KB patch, so codex could never finish).
 const AGENT_TIMEOUT_MULTIPLIER = { grok: 1.5 };
-function agentTimeoutMs(agent, baseMs) {
-  return Math.min(360_000, Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1)));
+function agentTimeoutMs(agent, baseMs, explicit = false) {
+  const scaled = Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1));
+  return explicit ? scaled : Math.min(360_000, scaled);
 }
 
 // A local path as a clickable link — chat UIs and terminals linkify
@@ -215,7 +524,7 @@ function normalizeAgentName(value) {
 
 function usage() {
   return `Usage:
-  node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|grok|other> [options]
+  node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
   node scripts/multi-review.mjs --doctor
   node scripts/multi-review.mjs --self-test
 
@@ -233,8 +542,18 @@ Options:
                             for shareable demos; by default only its sha256 is stored)
   --label <text>            Human subject for this run (e.g. "auth refactor"), carried in the
                             report and run log so ledgers can name runs by what was reviewed
-  --personas <csv>          Assign reviewer personas, e.g. grok=innovator,antigravity=socratic,copilot=futureproof
-                            (available: innovator, socratic, futureproof; grok defaults to innovator; personas shape tone, never findings)
+  --attach <file>           Attach a media file to the review (repeatable): images (png/jpg/gif/
+                            webp/bmp), pdf, audio (mp3/wav/flac/ogg/m4a), video (mp4/webm/mov/mkv).
+                            Each --attach is an explicit sharing act. Media is staged as a copy
+                            with EXIF/text metadata stripped (jpeg/png); routes without that
+                            modality report "unsupported" instead of reviewing blind. Reports
+                            record name, modality, bytes and sha256 - never the media itself.
+  --personas <csv>          Override reviewer personas, e.g. copilot=socratic,grok=none
+                            (available: surgeon, architect, adversary, verifier, fresheyes, innovator, socratic, futureproof, none)
+                            Defaults are per-agent, tuned from ledger track records: codex=surgeon, claude=architect,
+                            gemini=fresheyes, antigravity=adversary, copilot=verifier, grok=innovator.
+                            Personas shape tone and angle, never the schema and never the truthfulness of findings.
+  --stats                   Print this project's per-reviewer track record (applied vs rejected suggestions) and exit
   --ui / --no-ui            Force the live progress display on/off (default: on when stderr is a TTY and --stream is absent)
   --pretty                  Pretty-print JSON
   --version                 Print dispatcher version and report schema
@@ -245,7 +564,7 @@ function parseArgs(argv) {
   const options = {
     governor: normalizeAgentName(process.env.GOVERNING_AGENT),
     input: null,
-    reviewers: [...DEFAULT_REVIEWERS],
+    reviewers: ["codex", "claude", "antigravity", "copilot", "grok"],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBytes: DEFAULT_MAX_BYTES,
     strict: false,
@@ -253,7 +572,6 @@ function parseArgs(argv) {
     pretty: false,
     doctor: false,
     preflight: false,
-    setupProbe: false,
     ui: null,
     selfTest: false,
     help: false,
@@ -277,9 +595,10 @@ function parseArgs(argv) {
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--preflight") options.preflight = true;
-    else if (arg === "--setup-probe") options.setupProbe = true;
+    else if (arg === "--stats") options.stats = true;
     else if (arg === "--store-input") options.storeInput = true;
     else if (arg === "--label") options.label = clipped(next(), 120);
+    else if (arg === "--attach") (options.attach ??= []).push(next());
     else if (arg === "--min-success") {
       const raw = next();
       const parsed = Number.parseInt(raw, 10);
@@ -293,7 +612,7 @@ function parseArgs(argv) {
         const parts = pair.split("=").map((part) => part.trim());
         if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error(`Malformed --personas pair: "${pair}" (expected agent=persona)`);
         const [agentName, personaName] = parts;
-        if (!PERSONAS[personaName]) throw new Error(`Unknown persona: ${personaName} (available: ${Object.keys(PERSONAS).join(", ")})`);
+        if (personaName !== "none" && !PERSONAS[personaName]) throw new Error(`Unknown persona: ${personaName} (available: ${Object.keys(PERSONAS).join(", ")}, none)`);
         options.personas[normalizeAgentName(agentName)] = personaName;
       }
     }
@@ -307,46 +626,16 @@ function parseArgs(argv) {
   return options;
 }
 
-function cleanOauthEnv(source = process.env, { provider = null } = {}) {
-  return cleanSharedOauthEnv(source, { nestedReview: true, provider });
-}
-
-function validSetupProbeShape(options, artifact) {
-  if (options.setupProbe !== true) return true;
-  const reviewer = options.reviewers.length === 1 ? options.reviewers[0] : "";
-  return options.label === SETUP_PROBE_LABEL
-    && artifact === SETUP_PROBE_INPUT
-    && options.storeInput !== true
-    && options.input === null
-    && options.reviewers.length === 1
-    && PROVIDER_IDS.includes(reviewer)
-    && reviewer !== options.governor;
-}
-
-async function validSetupProbe(options, artifact, channel = process) {
-  if (options.setupProbe !== true) return true;
-  if (!validSetupProbeShape(options, artifact) || !channel.channel || typeof channel.send !== "function") return false;
-  const reviewer = options.reviewers[0];
-  const descriptor = setupProbeDescriptor({ governor: options.governor, reviewer, label: options.label, input: artifact });
-  const requestId = randomUUID();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (authorized) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      channel.off?.("message", onMessage);
-      resolve(authorized === true);
-    };
-    const onMessage = (message) => {
-      if (message?.type !== SETUP_PROBE_AUTH_RESPONSE || message.request_id !== requestId) return;
-      finish(message.authorized === true);
-    };
-    const timer = setTimeout(() => finish(false), 2_000);
-    channel.on?.("message", onMessage);
-    try { channel.send({ type: SETUP_PROBE_AUTH_REQUEST, request_id: requestId, ...descriptor }); }
-    catch { finish(false); }
-  });
+function cleanOauthEnv(source = process.env) {
+  const env = { ...source };
+  for (const key of Object.keys(env)) {
+    const upper = key.toUpperCase();
+    if (FORBIDDEN_ENV_NAMES.has(upper) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(upper)) delete env[key];
+  }
+  const depth = Number.parseInt(env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;
+  env.MULTI_LLM_REVIEW_DEPTH = String(depth + 1);
+  env.NO_COLOR = "1";
+  return env;
 }
 
 function sanitizeText(text) {
@@ -399,7 +688,6 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
       env,
       shell: false,
       windowsHide: true,
-      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -434,8 +722,7 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
         }, 2000);
         if (typeof backstop.unref === "function") backstop.unref();
       } else {
-        try { process.kill(-child.pid, "SIGKILL"); }
-        catch { try { child.kill("SIGKILL"); } catch {} }
+        child.kill("SIGKILL");
       }
     };
 
@@ -552,6 +839,11 @@ function normalizeReview(agent, payload) {
         severity: VALID_SEVERITIES.has(severity) ? severity : "WARNING",
         target_file: clipped(finding?.target_file || finding?.file, 500) || null,
         line_range: range,
+        // Optional image region [x, y, width, height] for media findings —
+        // additive to momm-report/1, absent unless a reviewer supplied it.
+        ...(Array.isArray(finding?.region) && finding.region.length === 4 && finding.region.every((v) => Number.isInteger(v) && v >= 0)
+          ? { region: finding.region }
+          : {}),
         issue: clipped(finding?.issue || finding?.description, 2000),
         rationale: clipped(finding?.rationale, 2000),
         test_suggestion: clipped(finding?.test_suggestion, 1500) || null,
@@ -569,14 +861,13 @@ function classifyFailure(result) {
     .split(/\r?\n/).filter((line) => line.trim() && !/^Warning:/i.test(line.trim())).join("\n");
   const meaningful = dropWarnings(result.stderr) || dropWarnings(result.stdout);
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
-  // An account-eligibility rejection is not an auth problem — classify it
-  // first (its message can contain "authenticating") so the user is not sent
-  // through a futile re-login. Eligibility policy changes over time, so the
-  // user-facing detail deliberately makes no absolute plan or tier claim.
+  // A retired account tier is a permanent condition, not an auth problem —
+  // classify it first (its message contains "authenticating") so the user is
+  // pointed at the successor route instead of a futile re-login.
   // Deliberately narrow: bare "unsupported_client" is a generic OAuth error
   // code any provider can emit and must not trigger tier-specific advice.
   if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
-    return { status: "ineligible_tier", detail: "the provider reported that this account is not eligible for the Gemini CLI route; check the provider's current account guidance or use another configured reviewer" };
+    return { status: "ineligible_tier", detail: "provider retired individual/Pro/Ultra access for this CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor" };
   }
   // Server-side outages often mention authentication ("token could not be
   // validated ... 503") — classify them before the auth regex so a user is
@@ -584,18 +875,26 @@ function classifyFailure(result) {
   // phrase-qualified ("returned: no server", not bare "no server") so local
   // configuration errors never masquerade as outages.
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
-    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${sanitizeProviderDiagnostic(meaningful, { maxLength: 400 }) || "(no output)"}` };
+    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
   }
   if (/(?:log[ -]?in|sign[ -]?in|authenticate|authentication|oauth|browser)/.test(combined)) {
     // Keep the provider's own words: transient service errors can contain
     // auth-like phrasing, and the raw text is what distinguishes them.
-    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${sanitizeProviderDiagnostic(meaningful, { maxLength: 400 }) || "(no output)"}` };
+    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
   }
-  return { status: "error", detail: sanitizeProviderDiagnostic(meaningful || `exit ${result.code}`, { maxLength: 1200 }) };
+  return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
 }
 
 async function invokeReviewer(agent, artifact, options) {
   if (agent === options.governor) return { agent, status: "self_excluded" };
+  // Modality gate: a route missing any attached modality fails closed here,
+  // before any process is spawned — it must never review a text caption of
+  // media it cannot see and return a verdict that looks informed.
+  const attachments = options.staging?.attachments ?? [];
+  const missing = missingModalities(agent, ["text", ...attachments.map((a) => a.modality)]);
+  if (missing.length) {
+    return { agent, status: "unsupported", detail: `route has no ${missing.join("/")} support — attachment review not dispatched (see MODALITY_SUPPORT)` };
+  }
   let command;
   let args;
   let input;
@@ -603,30 +902,42 @@ async function invokeReviewer(agent, artifact, options) {
   let temporaryDirectory = null;
   // Repository rules (.reviewrules) and any assigned persona ride along with
   // the generic contract; both are data for the reviewer, never instructions
-  // to us.
-  const contract = buildContract(agent, options);
+  // to us. Attached media is declared in the contract (names + hashes only).
+  const contract = buildContract(agent, options) + attachmentContractSection(attachments);
 
   if (agent === "gemini") {
     // The multiline prompt must travel via stdin: on Windows the invocation is
     // wrapped through cmd.exe, which cannot carry newlines inside an argument.
-    // Gemini appends stdin to the --prompt text in headless mode.
+    // Gemini appends stdin to the --prompt text in headless mode. Media rides
+    // as @file references in the prompt argument (forward slashes: the staged
+    // temp paths are space-free and @-parsing splits on whitespace).
+    const mediaRefs = attachments.map((a) => `@${a.staged_path.replaceAll("\\", "/")}`).join(" ");
     command = "gemini";
     args = ["--approval-mode", "plan", "--skip-trust", "--output-format", "json", "--prompt",
-      "Review the artifact provided on stdin according to its embedded instructions. Reply with ONLY the JSON object."];
+      `${mediaRefs ? `${mediaRefs} ` : ""}Review the artifact provided on stdin according to its embedded instructions. Reply with ONLY the JSON object.`];
     input = `${contract}\n\n--- ARTIFACT TO REVIEW ---\n${artifact}`;
   } else if (agent === "codex") {
     command = "codex";
-    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"];
+    // codex exec has a native image flag; each staged image is attached
+    // individually (verified: -i, --image <FILE>... on codex exec --help).
+    const imageArgs = attachments.filter((a) => a.modality === "image").flatMap((a) => ["-i", a.staged_path]);
+    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...imageArgs, "-"];
     input = `${contract}\n\n--- ARTIFACT TO REVIEW ---\n${artifact}`;
   } else if (agent === "claude") {
     // Verified against Claude Code CLI 2.1.233: -p reads stdin, --output-format
     // json wraps the reply in {"result": "..."}, plan mode keeps it read-only,
     // and auth failure returns a structured error mentioning OAuth (which
-    // classifyFailure maps to authentication_required).
+    // classifyFailure maps to authentication_required). Media is read through
+    // its file tools: --add-dir grants the staging directory, and the prompt
+    // names the exact staged paths to read.
+    const mediaDirArgs = options.staging?.directory ? ["--add-dir", options.staging.directory] : [];
+    const mediaNote = attachments.length
+      ? ` Also read and review the attached media file(s) at: ${attachments.map((a) => a.staged_path).join(", ")} — they are part of the artifact under review.`
+      : "";
     command = "claude";
     args = ["-p",
-      "Review the artifact provided on stdin according to its embedded instructions. Reply with ONLY the JSON object.",
-      "--output-format", "json", "--permission-mode", "plan"];
+      `Review the artifact provided on stdin according to its embedded instructions.${mediaNote} Reply with ONLY the JSON object.`,
+      "--output-format", "json", "--permission-mode", "plan", ...mediaDirArgs];
     input = `${contract}\n\n--- ARTIFACT TO REVIEW ---\n${artifact}`;
   } else if (agent === "antigravity") {
     // Verified against Antigravity CLI 1.1.13. Unlike Gemini, agy -p ignores
@@ -716,7 +1027,7 @@ async function invokeReviewer(agent, artifact, options) {
   let result;
   let cleanupError = null;
   try {
-    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs), env: cleanOauthEnv(process.env, { provider: agent }), cwd });
+    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd });
   } finally {
     if (temporaryDirectory) {
       try {
@@ -740,6 +1051,45 @@ function fingerprint(finding) {
   return `${(finding.target_file || "").toLowerCase()}|${words.join(" ")}`;
 }
 
+// Two findings about the same file whose line ranges overlap are about the
+// same code — regardless of wording. This is the strongest agreement signal
+// available, and it is what makes a unanimous coalition actually score as
+// unanimous: without it, four reviewers describing one defect in four
+// different sentences look like four separate defects.
+const normalizedRange = (finding) => {
+  const range = Array.isArray(finding?.line_range) ? finding.line_range : null;
+  if (!range || !Number.isFinite(range[0]) || !Number.isFinite(range[1])) return null;
+  return [Math.min(range[0], range[1]), Math.max(range[0], range[1])];
+};
+
+// True only when BOTH findings name the same file with real, non-overlapping
+// line ranges — i.e. positive evidence they are about different code.
+// Deliberately false when either range is missing: absence of location is not
+// evidence of distinctness, so the conservative wording-merge stands and a
+// reviewer that omits line_range can never fragment a real agreement.
+function disjointRanges(left, right) {
+  const leftRange = normalizedRange(left);
+  const rightRange = normalizedRange(right);
+  if (!leftRange || !rightRange) return false;
+  if ((left.target_file || "").toLowerCase() !== (right.target_file || "").toLowerCase()) return false;
+  return leftRange[1] < rightRange[0] || rightRange[1] < leftRange[0];
+}
+
+function overlappingKey(grouped, finding) {
+  const file = (finding.target_file || "").toLowerCase();
+  const range = Array.isArray(finding.line_range) ? finding.line_range : null;
+  if (!file || !range || !Number.isFinite(range[0]) || !Number.isFinite(range[1])) return null;
+  const [start, end] = [Math.min(range[0], range[1]), Math.max(range[0], range[1])];
+  for (const [key, candidate] of grouped) {
+    if ((candidate.target_file || "").toLowerCase() !== file) continue;
+    const other = Array.isArray(candidate.line_range) ? candidate.line_range : null;
+    if (!other || !Number.isFinite(other[0]) || !Number.isFinite(other[1])) continue;
+    const [otherStart, otherEnd] = [Math.min(other[0], other[1]), Math.max(other[0], other[1])];
+    if (start <= otherEnd && otherStart <= end) return key;
+  }
+  return null;
+}
+
 function rationalize(results) {
   const grouped = new Map();
   const byId = new Map();
@@ -748,10 +1098,19 @@ function rationalize(results) {
     for (const finding of result.review.findings) {
       // Reviewers that independently coin the identical slug for the same file
       // are agreeing even when their wording differs — merge on (file, id)
-      // first, then fall back to the wording fingerprint. Fallback ids embed
-      // the agent name, so they can never collide across reviewers.
+      // first, then on overlapping line ranges (same code, any wording), then
+      // fall back to the wording fingerprint. Fallback ids embed the agent
+      // name, so they can never collide across reviewers.
       const idKey = `${(finding.target_file || "").toLowerCase()}|${finding.id.toLowerCase()}`;
-      const key = byId.get(idKey) ?? fingerprint(finding);
+      let key = byId.get(idKey) ?? overlappingKey(grouped, finding) ?? fingerprint(finding);
+      // Precise locations beat fuzzy wording in BOTH directions: if the
+      // candidate group sits at line ranges that demonstrably do not overlap
+      // this finding's, they are different defects however similarly they are
+      // worded — merging them would inflate the agreement score.
+      const collision = grouped.get(key);
+      if (collision && disjointRanges(collision, finding)) {
+        key = `${key}|@${Math.min(finding.line_range[0], finding.line_range[1])}`;
+      }
       byId.set(idKey, key);
       const existing = grouped.get(key);
       if (!existing) grouped.set(key, { ...finding, sources: [result.agent] });
@@ -778,6 +1137,44 @@ function emitEvent(enabled, payload) {
 
 const SEVERITY_RANK = { CRITICAL: 3, WARNING: 2, NITPICK: 1 };
 
+// The protocol is two halves: reviewers produce claims, the governor
+// adjudicates them. Nothing in the report used to STATE the second half, so a
+// governor could finish a run believing it was done while every suggestion sat
+// untriaged and dispositions.jsonl stayed empty. This block makes the
+// outstanding work explicit, counted, and impossible to miss.
+function buildOutstanding(findings, results, runId, cwd) {
+  const byReviewer = {};
+  let total = 0;
+  for (const result of results) {
+    const improvements = result.review?.improvements;
+    if (Array.isArray(improvements) && improvements.length) {
+      byReviewer[result.agent] = improvements.length;
+      total += improvements.length;
+    }
+  }
+  let logged = 0;
+  try {
+    const text = fs.readFileSync(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"), "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      try { if (JSON.parse(line).run_id === runId) logged += 1; } catch {}
+    }
+  } catch {}
+  const material = findings.filter((f) => f.severity === "CRITICAL" || f.severity === "WARNING").length;
+  const actions = [];
+  if (material) actions.push(`Reproduce each of the ${material} CRITICAL/WARNING finding(s) with a failing test before authoring any fix.`);
+  if (total) actions.push(`Triage all ${total} suggested_improvements — apply-and-verify or reject with a reason. None may be silently dropped.`);
+  if (total || material) actions.push(`Append one JSONL line per ruling to .ensemble_reviews/dispositions.jsonl with run_id ${runId}, then present the disposition table.`);
+  return {
+    untriaged_suggestions: total,
+    suggestions_by_reviewer: byReviewer,
+    material_findings_awaiting_reproduction: material,
+    dispositions_logged_for_this_run: logged,
+    complete: total === 0 && material === 0,
+    required_next_actions: actions,
+  };
+}
+
 function buildInsights(findings, results) {
   const corroborated = findings.filter((f) => f.sources.length >= 2);
   const uniqueByReviewer = {};
@@ -796,12 +1193,23 @@ function buildInsights(findings, results) {
     if ((SEVERITY_RANK[f.severity] || 0) > (SEVERITY_RANK[entry.max_severity] || 0)) entry.max_severity = f.severity;
     byFile.set(file, entry);
   }
+  // Historical precision per reviewer, folded in as an advisory prior:
+  // investigation_order ranks routes by how often their past suggestions
+  // survived governor triage. Never a substitute for the reproduction gate.
+  const trackRecord = loadTrackRecord();
+  flagVerifyFirst(findings, trackRecord);
+  const investigationOrder = Object.entries(trackRecord)
+    .filter(([, stats]) => stats.samples >= TRACK_RECORD_MIN_SAMPLES)
+    .sort((a, b) => (b[1].precision ?? -1) - (a[1].precision ?? -1))
+    .map(([agent]) => agent);
   return {
     agreement_score: findings.length ? Number((corroborated.length / findings.length).toFixed(2)) : null,
     verdict_split: verdictSplit,
     unique_findings_by_reviewer: uniqueByReviewer,
     risk_heatmap: [...byFile.values()].sort((a, b) =>
       (SEVERITY_RANK[b.max_severity] - SEVERITY_RANK[a.max_severity]) || (b.findings - a.findings)),
+    reviewer_track_record: trackRecord,
+    investigation_order: investigationOrder,
   };
 }
 
@@ -835,12 +1243,8 @@ async function collectArtifact(options) {
 
 async function commandVersion(command) {
   const result = await runProcess(command, ["--version"], { timeoutMs: 5_000 });
-  const detail = sanitizeProviderDiagnostic(result.stdout || result.stderr, { maxLength: 200 }) || null;
-  const definitelyMissing = result.error?.code === "ENOENT"
-    || /(?:is not recognized as an internal or external command|command not found|no such file or directory)/i.test(String(result.stderr || result.stdout));
-  if (definitelyMissing) return { installed: false };
-  if (result.code !== 0) return { installed: true, usable: false, version: null, detail: detail || `version check exited ${result.code}` };
-  return { installed: true, usable: true, version: detail };
+  if (result.error?.code === "ENOENT") return { installed: false };
+  return { installed: result.code === 0, version: clipped(result.stdout || result.stderr, 200) || null };
 }
 
 // Presence-only credential evidence; never reads file contents. "present"
@@ -862,23 +1266,8 @@ function authEvidence(agent) {
 // Zero model calls: version probes plus auth evidence for every requested
 // route, so a user sees exactly which reviewers will join and what to run to
 // bring the missing ones online — before any tokens are spent.
-function commandErrorPreflightEntry(agent, version) {
-  return {
-    agent,
-    installed: true,
-    ready: false,
-    auth: "unknown",
-    auth_evidence: "none",
-    route_status: "command_error",
-    detail: `The CLI command was found but could not run its version check: ${version.detail || "unknown command error"}`,
-    install_hint: INSTALL_HINTS[agent] ?? null,
-    repair_hint: INSTALL_HINTS[agent] ?? null,
-    note: "CLI detected but unavailable",
-  };
-}
-
 async function preflightCheck(reviewers, governor) {
-  const knownAdapters = new Set(PROVIDER_IDS);
+  const knownAdapters = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
   return Promise.all([...new Set(reviewers)].map(async (agent) => {
     if (agent === governor) return { agent, role: "governor", ready: false, note: "self-excluded (governor never reviews its own work)" };
     // Only probe adapters we ship: an arbitrary --reviewers name must never
@@ -888,25 +1277,15 @@ async function preflightCheck(reviewers, governor) {
     if (!version.installed) {
       return { agent, installed: false, ready: false, auth: "n/a", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI not installed" };
     }
-    if (version.usable === false) {
-      return commandErrorPreflightEntry(agent, version);
-    }
     let auth = authEvidence(agent);
     if (agent === "codex") {
       const status = await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 });
       auth = status.code === 0 ? "ok" : "absent";
     }
     const ready = auth === "ok" || auth === "present";
-    const entry = {
-      agent,
-      installed: true,
-      version: version.version,
-      ready,
-      auth,
-      auth_evidence: auth === "ok" ? "live_status" : auth === "present" ? (agent === "antigravity" ? "weak_shared_presence" : "presence_only") : "none",
-    };
+    const entry = { agent, installed: true, version: version.version, ready, auth, modalities: Object.keys(MODALITY_SUPPORT[agent] ?? { text: true }) };
     if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
-    if (agent === "gemini") entry.note = "optional route; live verification determines account eligibility";
+    if (agent === "gemini") entry.note = "fails closed on individual accounts (enterprise Code Assist only)";
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
     return entry;
   }));
@@ -919,7 +1298,7 @@ const ANSI = {
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // Exactly one retry, and only for transient provider outages: auth failures,
-// account-eligibility rejections, timeouts, and hard errors never retry.
+// retired tiers, timeouts, and hard errors never retry.
 const PROVIDER_RETRY_DELAY_MS = 3_000;
 // Declares exactly which bytes report_sha256 covers: the stored report file,
 // not the stdout copy (which additionally carries this evidence block).
@@ -1054,7 +1433,7 @@ async function doctor(pretty) {
   for (const name of ["codex", "gemini", "claude", "antigravity", "copilot", "grok"]) {
     commands[name] = await commandVersion(name === "antigravity" ? antigravityCommand() : name === "grok" ? grokCommand() : name);
   }
-  const forbiddenPresent = Object.keys(process.env).filter(isForbiddenOauthEnvironmentName);
+  const forbiddenPresent = Object.keys(process.env).filter((key) => FORBIDDEN_ENV_NAMES.has(key.toUpperCase()) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(key.toUpperCase()));
   const codexStatus = commands.codex.installed ? await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 }) : null;
   const report = {
     dispatcher_version: MOMM_VERSION,
@@ -1066,63 +1445,21 @@ async function doctor(pretty) {
     oauth_evidence: {
       gemini_credential_file_present: fs.existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json")),
       copilot_config_present: fs.existsSync(path.join(os.homedir(), ".copilot", "config.json")),
-      codex_login_status: codexStatus ? { exit_code: codexStatus.code, message: sanitizeProviderDiagnostic(codexStatus.stdout || codexStatus.stderr, { maxLength: 500 }) } : null,
+      codex_login_status: codexStatus ? { exit_code: codexStatus.code, message: clipped(codexStatus.stdout || codexStatus.stderr, 500) } : null,
     },
     caveat: "Credential evidence is not proof of a valid session. The dispatcher never reads credential contents.",
   };
   process.stdout.write(`${JSON.stringify(report, null, pretty ? 2 : 0)}\n`);
 }
 
-async function processTreeTimeoutSelfTest() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "momm-process-tree-"));
-  const pidFile = path.join(root, "grandchild.pid");
-  const parentFile = path.join(root, "parent.cjs");
-  fs.writeFileSync(parentFile, `
-const fs = require("node:fs");
-const { spawn } = require("node:child_process");
-const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
-setInterval(() => {}, 1000);
-`);
-  try {
-    const result = await runProcess(process.execPath, [parentFile], { timeoutMs: 600 });
-    let pid = null;
-    try { pid = Number.parseInt(fs.readFileSync(pidFile, "utf8"), 10); } catch {}
-    if (!result.timedOut || !Number.isInteger(pid)) return false;
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      try { process.kill(pid, 0); }
-      catch (error) { if (error?.code === "ESRCH") return true; }
-      await new Promise((resolve) => setTimeout(resolve, 40));
-    }
-    return false;
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-}
-
 async function selfTest(pretty) {
-  const cleaned = cleanOauthEnv({
-    PATH: process.env.PATH || "",
-    OPENAI_API_KEY: "sentinel",
-    GH_TOKEN: "sentinel",
-    GITHUB_TOKEN: "sentinel",
-    CLAUDE_CODE_USE_BEDROCK: "1",
-    GOOGLE_GENAI_USE_VERTEXAI: "1",
-    AWS_PROFILE: "production",
-    UNREVIEWED_AMBIENT_VALUE: "must-not-cross",
-    CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth",
-  });
-  const providerEnvironments = Object.fromEntries(PROVIDER_IDS.map((provider) => [provider, cleanOauthEnv({
-    PATH: process.env.PATH || "",
-    CLAUDE_CODE_OAUTH_TOKEN: "provider-scoped-oauth",
-  }, { provider })]));
+  const cleaned = cleanOauthEnv({ PATH: process.env.PATH || "", OPENAI_API_KEY: "sentinel", CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth" });
   const nested = JSON.stringify({ response: JSON.stringify({ verdict: "ACCEPT", confidence: 0.8, findings: [], summary: "ok" }) });
   const structured = JSON.stringify({ structured_output: { verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" } });
   const parsed = unwrapReviewPayload(nested);
   const parsedStructured = unwrapReviewPayload(structured);
   const timeoutStartedAt = Date.now();
   const forcedTimeout = await runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 150 });
-  const processTreeContained = await processTreeTimeoutSelfTest();
   const timeoutElapsedMs = Date.now() - timeoutStartedAt;
   // Regression guard for cursor-drift: the redraw's cursor-up distance must
   // equal the physical line count of the previous frame (multiline header
@@ -1138,26 +1475,128 @@ async function selfTest(pretty) {
   const cursorUp = uiBuffer.text.match(/\x1b\[(\d+)F/);
   const tests = {
     removes_api_keys: !("OPENAI_API_KEY" in cleaned),
-    removes_alternate_auth_routes: ["GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "GOOGLE_GENAI_USE_VERTEXAI", "AWS_PROFILE"].every((name) => !(name in cleaned)),
-    strict_environment_drops_unreviewed_values: !("UNREVIEWED_AMBIENT_VALUE" in cleaned),
-    oauth_tokens_are_provider_scoped: !("CLAUDE_CODE_OAUTH_TOKEN" in cleaned)
-      && providerEnvironments.claude.CLAUDE_CODE_OAUTH_TOKEN === "provider-scoped-oauth"
-      && PROVIDER_IDS.filter((provider) => provider !== "claude").every((provider) => !("CLAUDE_CODE_OAUTH_TOKEN" in providerEnvironments[provider])),
+    preserves_oauth_tokens: cleaned.CLAUDE_CODE_OAUTH_TOKEN === "allowed-oauth",
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
     parses_nested_json: parsed?.verdict === "ACCEPT",
     parses_antigravity_structured_output: parsedStructured?.verdict === "ACCEPT",
     parses_grok_text_wrapper: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" }), stopReason: "end_turn" }))?.verdict === "ACCEPT",
     normalizes_agy_alias: normalizeAgentName("agy") === "antigravity",
     normalizes_copilot_aliases: normalizeAgentName("github-copilot") === "copilot" && normalizeAgentName("gh-copilot") === "copilot",
-    login_hints_cover_all_adapters: PROVIDER_IDS.every((agent) => typeof LOGIN_HINTS[agent] === "string"),
-    install_hints_cover_all_routes: PROVIDER_IDS.every((agent) => typeof INSTALL_HINTS[agent] === "string"),
-    personas_defined_and_injected: ["innovator", "socratic", "futureproof"].every((name) => typeof PERSONAS[name] === "string")
+    login_hints_cover_all_adapters: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof LOGIN_HINTS[agent] === "string"),
+    install_hints_cover_all_routes: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof INSTALL_HINTS[agent] === "string"),
+    personas_defined_and_injected: ["surgeon", "architect", "adversary", "verifier", "fresheyes", "innovator", "socratic", "futureproof"].every((name) => typeof PERSONAS[name] === "string")
       && buildContract("grok", {}).includes("Innovator")
       && buildContract("codex", { personas: { codex: "socratic" } }).includes("Socratic")
-      && !buildContract("codex", {}).includes("Persona —")
+      && !buildContract("codex", { personas: { codex: "none" } }).includes("Persona —")
       && personaFor("grok", { personas: { grok: "futureproof" } }) === "futureproof",
+    modality_matrix_covers_every_adapter: ["codex", "claude", "gemini", "antigravity", "copilot", "grok"]
+      .every((agent) => MODALITY_SUPPORT[agent] && "text" in MODALITY_SUPPORT[agent]),
+    modality_extension_detection: modalityOfFile("a.png") === "image" && modalityOfFile("b.PDF") === "pdf"
+      && modalityOfFile("c.mp3") === "audio" && modalityOfFile("d.mp4") === "video" && modalityOfFile("e.txt") === null,
+    modality_gate_fails_closed: missingModalities("copilot", ["text", "image"]).join() === "image"
+      && missingModalities("codex", ["text", "image"]).length === 0
+      && missingModalities("gemini", ["text", "image", "pdf", "audio", "video"]).length === 0
+      && missingModalities("antigravity", ["text", "image"]).join() === "image"
+      && missingModalities("codex", ["text", "pdf"]).join() === "pdf",
+    jpeg_metadata_stripping: (() => {
+      const segment = (marker, payload) => Buffer.concat([Buffer.from([0xff, marker, (payload.length + 2) >> 8, (payload.length + 2) & 0xff]), payload]);
+      const jpeg = Buffer.concat([
+        Buffer.from([0xff, 0xd8]),
+        segment(0xe1, Buffer.from("Exif-location-data")),
+        segment(0xdb, Buffer.from([1, 2, 3])),
+        Buffer.from([0xff, 0xda, 0x00, 0x04, 0xaa, 0xbb]), Buffer.from([0x11, 0x22, 0xff, 0xd9]),
+      ]);
+      const { buffer, stripped } = stripJpegMetadata(jpeg);
+      return stripped === true && !buffer.includes(Buffer.from("Exif-location-data")) && buffer.includes(Buffer.from([0x11, 0x22]))
+        && stripJpegMetadata(Buffer.from("not a jpeg")).stripped === false;
+    })(),
+    png_metadata_stripping: (() => {
+      const chunk = (type, payload) => {
+        const head = Buffer.alloc(8);
+        head.writeUInt32BE(payload.length, 0);
+        head.write(type, 4, "latin1");
+        return Buffer.concat([head, payload, Buffer.alloc(4)]);
+      };
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", Buffer.alloc(13)),
+        chunk("tEXt", Buffer.from("Author=somebody")),
+        chunk("IDAT", Buffer.from([9, 9, 9])),
+        chunk("IEND", Buffer.alloc(0)),
+      ]);
+      const { buffer, stripped } = stripPngMetadata(png);
+      return stripped === true && !buffer.includes(Buffer.from("Author=somebody"))
+        && buffer.includes(Buffer.from("IDAT", "latin1")) && buffer.includes(Buffer.from("IEND", "latin1"));
+    })(),
+    explicit_timeout_honored_above_cap: agentTimeoutMs("codex", 480_000, true) === 480_000
+      && agentTimeoutMs("grok", 480_000, true) === 720_000
+      && agentTimeoutMs("grok", 480_000, false) === 360_000
+      && agentTimeoutMs("codex", 120_000, false) === 120_000,
+    every_default_reviewer_has_tuned_persona: ["codex", "claude", "gemini", "antigravity", "copilot", "grok"]
+      .every((agent) => typeof PERSONAS[DEFAULT_PERSONAS[agent]] === "string")
+      && buildContract("codex", {}).includes("Surgeon")
+      && buildContract("claude", {}).includes("Architect")
+      && buildContract("antigravity", {}).includes("Adversary")
+      && buildContract("copilot", {}).includes("Verifier")
+      && buildContract("gemini", {}).includes("Fresh Eyes"),
+    track_record_math: (() => {
+      const record = computeTrackRecord([
+        '{"reviewer":"codex","disposition":"applied"}',
+        '{"reviewer":"codex","disposition":"applied-partial"}',
+        '{"reviewer":"codex","disposition":"rejected"}',
+        '{"reviewer":"copilot","disposition":"rejected"}',
+        "not json",
+        '{"reviewer":"","disposition":"applied"}',
+      ].join("\n"));
+      return record.codex.applied === 2 && record.codex.rejected === 1 && record.codex.precision === 0.67
+        && record.copilot.precision === 0 && !("" in record) && Object.keys(record).length === 2;
+    })(),
+    track_record_counts_every_state: (() => {
+      const record = computeTrackRecord([
+        '{"reviewer":"grok","disposition":"deferred"}',
+        '{"reviewer":"grok","disposition":"applied"}',
+        '{"reviewer":"grok","disposition":"parked"}',
+        '{"reviewer":"","disposition":"deferred"}',
+        '{"reviewer":"","disposition":"rejected"}',
+      ].join("\n"));
+      const rendered = renderStats(record);
+      return record.grok.deferred === 1 && record.grok.other === 1 && record.grok.samples === 1 && record.grok.precision === 1
+        && Object.keys(record).length === 1 && record.unattributed.deferred === 1 && record.unattributed.rejected === 1
+        && rendered.includes("unattributed") && rendered.includes("5 rows");
+    })(),
+    track_record_threshold_uses_exact_ratio: (() => {
+      const rows = [];
+      for (let i = 0; i < 39; i += 1) rows.push(JSON.stringify({ reviewer: "copilot", disposition: "applied" }));
+      for (let i = 0; i < 59; i += 1) rows.push(JSON.stringify({ reviewer: "copilot", disposition: "rejected" }));
+      const record = computeTrackRecord(rows.join("\n"));
+      const flagged = flagVerifyFirst([{ id: "x", sources: ["copilot"] }], record)[0].verify_first === true;
+      return record.copilot.precision === 0.4 && record.copilot.precision_exact < 0.4 && flagged && renderStats(record).includes("verify-first tier");
+    })(),
+    track_record_unattributed_only_history_is_rendered: (() => {
+      const rendered = renderStats(computeTrackRecord(JSON.stringify({ reviewer: "", disposition: "deferred" })));
+      return rendered.includes("unattributed") && rendered.includes("1 rows") && !rendered.includes("No disposition history");
+    })(),
+    track_record_ignores_inherited_property_names: (() => {
+      const record = computeTrackRecord([JSON.stringify({ reviewer: "constructor", disposition: "applied" }), JSON.stringify({ reviewer: "toString", disposition: "rejected" })].join("\n"));
+      return record.constructor.applied === 1 && record.tostring.rejected === 1 && Object.keys(record).length === 2;
+    })(),
+    verify_first_flags_only_low_precision_single_sources: (() => {
+      const trackRecord = {
+        copilot: { applied: 1, rejected: 9, samples: 10, precision: 0.1 },
+        codex: { applied: 9, rejected: 1, samples: 10, precision: 0.9 },
+        grok: { applied: 1, rejected: 2, samples: 3, precision: 0.33 },
+      };
+      const findings = [
+        { id: "a", sources: ["copilot"] },
+        { id: "b", sources: ["copilot", "codex"] },
+        { id: "c", sources: ["grok"] },
+        { id: "d", sources: [] },
+      ];
+      flagVerifyFirst(findings, trackRecord);
+      return findings[0].verify_first === true && !findings[1].verify_first && !findings[2].verify_first && !findings[3].verify_first;
+    })(),
     version_identity_declared: /^\d+\.\d+\.\d+$/.test(MOMM_VERSION) && /^momm-report\/\d+$/.test(REPORT_SCHEMA),
-    semver_compare_correct: isNewerVersion("1.5.0", "1.4.0") && isNewerVersion("1.10.2", "1.9.0") && !isNewerVersion("1.4.0", "1.4.0") && !isNewerVersion("1.4.0", "1.5.0") && isNewerVersion("2.0.0", "1.9.9"),
+    semver_compare_correct: isNewerVersion("1.5.0", "1.4.0") && isNewerVersion("1.10.0", "1.9.0") && !isNewerVersion("1.4.0", "1.4.0") && !isNewerVersion("1.4.0", "1.5.0") && isNewerVersion("2.0.0", "1.9.9"),
     version_compare_rejects_junk: !isNewerVersion("1.5.0-beta", "1.4.0") && !isNewerVersion("9.9.9; rm -rf", "1.0.0") && !isNewerVersion("1.4.0", "not-a-version") && VERSION_RE.test("1.5.0") && !VERSION_RE.test("1.5.0\n"),
     update_check_disable_respects_falsey: (() => { const s = process.env.NO_UPDATE_CHECK; process.env.NO_UPDATE_CHECK = "0"; const off0 = updateCheckDisabled(); process.env.NO_UPDATE_CHECK = "1"; const off1 = updateCheckDisabled(); if (s === undefined) delete process.env.NO_UPDATE_CHECK; else process.env.NO_UPDATE_CHECK = s; return off0 === false && off1 === true; })(),
     file_urls_are_clickable: formatFileUrl("C:\\some dir\\ledger.html") === "file:///C:/some%20dir/ledger.html"
@@ -1178,33 +1617,48 @@ async function selfTest(pretty) {
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
     classifies_5xx_with_auth_wording_as_outage: classifyFailure({ code: 1, stdout: "", stderr: "Error: Authentication token found but could not be validated.\n  Failed to fetch GitHub CLI user login (503): GitHub returned: No server" }).status === "provider_unavailable",
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
-    classifies_account_ineligibility_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
+    classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
-    provider_diagnostics_hide_auth_material: (() => {
-      const detail = classifyFailure({ code: 1, stdout: "", stderr: "Authentication required. Visit https://accounts.example.test/oauth?code=secret and enter device code ABCD-EFGH for person@example.test from C:\\Users\\private-name\\.config" }).detail;
-      return detail.includes("[provider URL hidden")
-        && detail.includes("[hidden]")
-        && detail.includes("[account identifier hidden]")
-        && detail.includes("<user-home>")
-        && !detail.includes("secret")
-        && !detail.includes("ABCD-EFGH")
-        && !detail.includes("person@example.test")
-        && !detail.includes("private-name");
-    })(),
-    unusable_cli_preflight_has_repair_without_login: (() => {
-      const entry = commandErrorPreflightEntry("codex", { detail: "Access is denied." });
-      return entry.route_status === "command_error"
-        && typeof entry.repair_hint === "string"
-        && !("login_hint" in entry);
-    })(),
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
       && effectiveTimeoutMs(14_000, 120_000, false) > 140_000
       && effectiveTimeoutMs(36_227, 120_000, false) > 220_000
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
-    every_adapter_can_govern: PROVIDER_IDS.every((agent) => VALID_GOVERNORS.has(agent)),
+    every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
     private_evidence_is_owner_only: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
+    // A unanimous coalition must SCORE as unanimous: four reviewers describing
+    // one defect at the same lines in four different sentences is agreement,
+    // and merging only on wording used to report it as ~8%.
+    same_lines_different_wording_merges: (() => {
+      const mk = (agent, id, issue, range) => ({ agent, status: "success", review: { findings: [{ id, severity: "WARNING", target_file: "metrics.py", line_range: range, issue, rationale: "", test_suggestion: null }] } });
+      const merged = rationalize([
+        mk("codex", "pct-off-by-one", "percentile index is off by one", [40, 44]),
+        mk("grok", "percentile-bound", "the interpolation bound is wrong at the top of the range", [41, 43]),
+        mk("copilot", "quantile-index", "wrong index arithmetic when computing quantiles", [42, 42]),
+      ]);
+      return merged.length === 1 && merged[0].sources.length === 3;
+    })(),
+    distinct_line_regions_stay_separate: (() => {
+      const mk = (agent, id, range) => ({ agent, status: "success", review: { findings: [{ id, severity: "WARNING", target_file: "m.py", line_range: range, issue: `issue ${id}`, rationale: "", test_suggestion: null }] } });
+      return rationalize([mk("codex", "a", [10, 12]), mk("grok", "b", [90, 95])]).length === 2;
+    })(),
+    // The report must state the governor's remaining work, or runs end half-done.
+    outstanding_counts_untriaged_suggestions: (() => {
+      const results = [
+        { agent: "codex", status: "success", review: { improvements: ["x", "y", "z"] } },
+        { agent: "grok", status: "success", review: { improvements: ["q"] } },
+      ];
+      const out = buildOutstanding([{ severity: "CRITICAL", sources: ["codex"] }], results, "run-x", os.tmpdir());
+      return out.untriaged_suggestions === 4 && out.suggestions_by_reviewer.codex === 3
+        && out.material_findings_awaiting_reproduction === 1 && out.complete === false
+        && out.required_next_actions.length >= 3;
+    })(),
+    outstanding_complete_when_nothing_owed: (() => {
+      const out = buildOutstanding([{ severity: "NITPICK", sources: ["codex"] }], [{ agent: "codex", status: "success", review: { improvements: [] } }], "run-y", os.tmpdir());
+      return out.complete === true && out.untriaged_suggestions === 0 && out.required_next_actions.length === 0;
+    })(),
+    temp_location_detected_as_ephemeral: isEphemeralLocation(os.tmpdir()) === true,
     sanitizer_no_offset_leak: sanitizeText("token sk-ant-abcdefghijklmnop end").value === "token [REDACTED] end"
       && sanitizeText("api_key=supersecretvalue").value === "api_key=[REDACTED]",
     severity_merge_takes_max: (() => {
@@ -1235,7 +1689,6 @@ async function selfTest(pretty) {
     classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
     warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
-    timeout_kills_provider_process_tree: processTreeContained,
   };
   const passed = Object.values(tests).every(Boolean);
   process.stdout.write(`${JSON.stringify({ passed, tests, diagnostics: { timeout_elapsed_ms: timeoutElapsedMs } }, null, pretty ? 2 : 0)}\n`);
@@ -1258,6 +1711,7 @@ async function main() {
     return;
   }
   if (options.selfTest) { await selfTest(options.pretty); return; }
+  if (options.stats) { process.stdout.write(renderStats(loadTrackRecord())); return; }
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
     const entries = await preflightCheck(options.reviewers, options.governor);
@@ -1268,10 +1722,8 @@ async function main() {
         if (e.role === "governor") process.stderr.write(`  ${color(ANSI.dim, "⊘")} ${e.agent.padEnd(12)} ${color(ANSI.dim, e.note)}\n`);
         else if (e.ready) process.stderr.write(`  ${color(ANSI.green, "✓")} ${e.agent.padEnd(12)} ${color(ANSI.dim, `${e.version ?? ""} · auth ${e.auth}`)}\n`);
         else {
-          const commandError = e.route_status === "command_error";
-          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : commandError ? e.install_hint : e.login_hint;
-          const state = e.installed === false ? "not installed" : commandError ? "CLI detected but unavailable" : `auth ${e.auth}`;
-          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${state}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
+          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
+          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
         }
       }
     }
@@ -1288,16 +1740,22 @@ async function main() {
   if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
   const sanitized = sanitizeText(rawArtifact);
   options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
-  if (!await validSetupProbe(options, rawArtifact)) throw new Error("--setup-probe requires a one-use Setup Center IPC authorization for the exact synthetic validation payload");
+  // Each --attach was an explicit per-file act by the user; staging copies the
+  // media with metadata stripped and re-states exactly what is being shared
+  // in the dispatch event (names + hashes, never paths or bytes).
+  options.staging = stageAttachments(options.attach ?? []);
   try {
-    if (!options.setupProbe && fs.existsSync(".reviewrules")) {
+    if (fs.existsSync(".reviewrules")) {
       options.projectRules = clipped(fs.readFileSync(".reviewrules", "utf8"), 4000) || null;
     }
   } catch { options.projectRules = null; }
   const uniqueReviewers = [...new Set(options.reviewers)];
   // --stream owns stderr for machines; the live UI owns it for humans. Never both.
   const ui = createUi(!options.stream && (options.ui === true || (options.ui !== false && process.stderr.isTTY)));
-  emitEvent(options.stream, { event: "dispatch", governor: options.governor, reviewers: uniqueReviewers, input_bytes: byteLength });
+  emitEvent(options.stream, {
+    event: "dispatch", governor: options.governor, reviewers: uniqueReviewers, input_bytes: byteLength,
+    ...(options.staging.attachments.length ? { attachments: options.staging.attachments.map(({ name, modality, bytes, sha256, metadata_stripped }) => ({ name, modality, bytes, sha256, metadata_stripped })) } : {}),
+  });
   ui.start(options.governor, uniqueReviewers, byteLength);
   // Preflight runs concurrently with dispatch: it is informational (routes
   // still fail closed on their own), so it must not add latency to reviews.
@@ -1331,6 +1789,9 @@ async function main() {
   } catch (error) {
     ui.stop();
     throw error;
+  } finally {
+    // Staged media copies never outlive the dispatch.
+    if (options.staging.directory) { try { fs.rmSync(options.staging.directory, { recursive: true, force: true }); } catch {} }
   }
   const preflightEntries = await preflightPromise;
   const externalSuccesses = results.filter((result) => result.agent !== options.governor && result.status === "success").length;
@@ -1341,12 +1802,6 @@ async function main() {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
     policy: "oauth-only",
-    setup_probe: options.setupProbe === true,
-    ...(options.setupProbe ? {
-      setup_probe_authorized: true,
-      setup_probe_contract: "active Setup Center IPC capability + exact fixed payload",
-      provider_native_configuration_may_apply: true,
-    } : {}),
     run_id: runId,
     ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
@@ -1362,6 +1817,10 @@ async function main() {
     // and public evidence where the input is already public.
     ...(options.storeInput ? { input_text: sanitized.value } : {}),
     secret_redactions: sanitized.redactions,
+    // Media evidence is hash-addressed like the report itself: names,
+    // modalities, sizes and sha256 of the exact stripped bytes sent — never
+    // paths, never the media content.
+    ...(options.staging.attachments.length ? { attachments: options.staging.attachments.map(({ name, modality, bytes, sha256, metadata_stripped }) => ({ name, modality, bytes, sha256, metadata_stripped })) } : {}),
     timeout_ms: options.timeoutMs,
     project_rules_applied: Boolean(options.projectRules),
     preflight: preflightEntries,
@@ -1385,6 +1844,10 @@ async function main() {
       single_source: findings.filter((f) => f.sources.length === 1).map((f) => f.id),
     },
     insights: buildInsights(findings, results),
+    // What the GOVERNOR still owes: reproduction of material findings and an
+    // explicit ruling on every suggestion. A run is not finished until
+    // outstanding.complete is true.
+    outstanding: buildOutstanding(findings, results, runId, process.cwd()),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
   // Durable evidence, persisted BEFORE the stdout report so the emitted
@@ -1399,10 +1862,8 @@ async function main() {
   // Tracked separately so a successfully written report is never misreported
   // when only the log append fails.
   const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS };
-  if (options.setupProbe) evidence.skipped = "isolated_setup_probe";
   const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
   try {
-    if (options.setupProbe) throw Object.assign(new Error("setup probe evidence intentionally skipped"), { setupProbeSkip: true });
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     const reportJson = `${JSON.stringify(report, null, 2)}\n`;
     try {
@@ -1441,14 +1902,13 @@ async function main() {
     evidence.log_indexed = true;
     // One sweep tightens the current report, the log, and any legacy files.
     hardenPrivateTree(".ensemble_reviews");
+    // Privacy for people who have not read the protocol yet: reviewer
+    // transcripts are per-machine telemetry that may quote internal code, so
+    // in a git repo they must never be committable by accident. Fail-soft.
+    evidence.gitignore = protectPrivateZone(process.cwd());
   } catch (error) {
-    if (error?.setupProbeSkip) {
-      // Setup verification is deliberately ephemeral. It must not touch the
-      // user's repository or private review ledger.
-    } else {
     evidence.error = clipped(error?.message ?? String(error), 300);
     evidence.failed_stage = evidence.persisted ? "review-log indexing" : "report persistence";
-    }
   }
   // Failure surfaces without corrupting either stderr contract: a structured
   // event under --stream (which owns stderr as pure NDJSON), or a human
@@ -1485,6 +1945,20 @@ async function main() {
   ui.finish(report, evidence.ledger_url);
   if (evidence.error && !options.stream) {
     process.stderr.write(`WARNING: evidence persistence failed (${evidence.failed_stage}) — ${evidence.error}\n`);
+  }
+  // The governor's remaining half of the protocol, stated plainly. Printed
+  // even when the UI rendered, because silently-skipped triage is the single
+  // most common way a momm run ends half-done.
+  if (!options.stream && !report.outstanding.complete) {
+    const o = report.outstanding;
+    const perReviewer = Object.entries(o.suggestions_by_reviewer).map(([agent, n]) => `${agent} ${n}`).join(", ");
+    process.stderr.write(`\n  ▲ THIS RUN IS NOT FINISHED — the governor still owes:\n`);
+    for (const action of o.required_next_actions) process.stderr.write(`     • ${action}\n`);
+    if (perReviewer) process.stderr.write(`     untriaged suggestions by reviewer: ${perReviewer}\n`);
+  }
+  // Evidence in a temp directory is evidence you are about to lose.
+  if (!options.stream && isEphemeralLocation(process.cwd())) {
+    process.stderr.write(`\n  ▲ This run wrote its evidence under the system temp directory, which the OS will wipe.\n     Re-run momm from the project you are reviewing so the ledger and sealed reports survive.\n`);
   }
   if (evidence.ledger_url && !options.stream && !ui.rendered) {
     process.stderr.write(`\n  ◆ Your private momm ledger (this run included, owner-only): ${evidence.ledger_url}\n\n`);

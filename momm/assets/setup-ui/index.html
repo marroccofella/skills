@@ -18,13 +18,12 @@
           <div class="controller-control">
             <span>Controller</span>
             <select id="governor" aria-label="Active controller">
-              <option value="">Choose your active driver…</option>
               <option value="codex">Codex · Active driver</option>
               <option value="claude">Claude Code · Active driver</option>
+              <option value="gemini">Gemini · Active driver</option>
               <option value="antigravity">Antigravity · Active driver</option>
               <option value="copilot">Copilot · Active driver</option>
               <option value="grok">Grok · Active driver</option>
-              <option value="gemini">Gemini CLI · Active driver</option>
               <option value="other">Another agent · Active driver</option>
             </select>
           </div>
@@ -37,30 +36,26 @@
           <div>
             <p class="eyebrow">A calm, guided setup</p>
             <h1>Connect your reviewers.<br><em>Skip the terminal maze.</em></h1>
-            <p class="lede">We check what is installed, open the right sign-in flow, and verify each connection from an isolated folder with one fixed harmless sentence. MOMM supplies no project content during setup; a provider CLI may still apply its own saved account-level configuration. A real review sends only the review input you choose.</p>
+            <p class="lede">We check what is installed, open the right sign-in flow, and verify each connection with a harmless sentence. Project content stays here during setup; a real review sends only the review input you choose.</p>
           </div>
           <aside class="trust-card" aria-label="Privacy promises">
             <p class="trust-title">Setup safety</p>
             <ul>
-              <li><span>✓</span>API-key variables stripped</li>
+              <li><span>✓</span>No API keys</li>
               <li><span>✓</span>No passwords collected</li>
-              <li><span>✓</span>MOMM supplies no project code or rules</li>
+              <li><span>✓</span>No project code sent during setup</li>
               <li><span>✓</span>Every login opens visibly</li>
             </ul>
-            <p class="code-safety">Provider-native saved instructions may still apply; review that provider's settings when isolation matters. Keep authorization and device codes in the provider browser or terminal—never paste them into chat.</p>
           </aside>
         </section>
 
-        <div id="page-alert" class="page-alert" role="alert" hidden></div>
-
         <section class="status-banner" aria-labelledby="status-title">
-          <div id="setup-progress" class="status-meter" role="progressbar" aria-label="Progress toward one verified reviewer" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><strong id="setup-percent">0%</strong><span>ready</span></div>
+          <div class="status-meter" aria-hidden="true"><strong id="setup-percent">0%</strong><span>complete</span></div>
           <div class="status-copy">
             <p class="step-label">System status</p>
             <h2 id="status-title">Checking your setup…</h2>
             <p id="summary" class="summary" aria-live="polite">Reviewing local connections and updates.</p>
             <div class="progress-track" aria-hidden="true"><span id="progress"></span></div>
-            <div id="verification-results" class="verification-results" hidden></div>
           </div>
           <div class="status-actions">
             <button id="quick-setup" class="button primary light" type="button">Run Quick Setup</button>
@@ -77,7 +72,7 @@
               <p class="summary">Installation, updates, account state, and model access are consolidated below.</p>
             </div>
           </div>
-          <div id="provider-grid" class="provider-grid"></div>
+          <div id="provider-grid" class="provider-grid" aria-live="polite"></div>
         </section>
 
         <section class="maintenance-panel" aria-labelledby="maintenance-title">
@@ -90,7 +85,7 @@
             <button id="maintenance-refresh" class="button secondary" type="button">Check everything</button>
           </div>
           <p class="maintenance-privacy">Skill changes stay actionable. Ambient runtime and environment details remain collapsed unless something needs attention. Variable values, tokens, passwords, and credential files are never read.</p>
-          <div id="maintenance-grid" class="maintenance-grid">
+          <div id="maintenance-grid" class="maintenance-grid" aria-live="polite">
             <article class="health-card loading-card"><span></span><span></span><span></span></article>
             <article class="health-card loading-card"><span></span><span></span><span></span></article>
           </div>

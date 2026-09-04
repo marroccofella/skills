@@ -1,0 +1,4 @@
+interface:
+  display_name: "MyAutoness"
+  short_description: "Verified self-play and reusable autonomy"
+  default_prompt: "Use $myautoness to create and verify a self-playing agent for this controlled game or repeatable task."

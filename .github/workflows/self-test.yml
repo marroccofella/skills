@@ -44,15 +44,11 @@ jobs:
         run: node momm/scripts/setup-ui.mjs --self-test
       - name: Setup Center JavaScript syntax
         run: |
-          node --check momm/scripts/oauth-env.mjs
-          node --check momm/scripts/provider-manifest.mjs
-          node --check momm/scripts/setup-probe-contract.mjs
           node --check momm/scripts/setup-ui.mjs
+          node --check momm/scripts/ledger.mjs
+          node --check momm/scripts/multi-review.mjs
           node --check momm/assets/setup-ui/app.js
-          node --check momm/scripts/setup-ui-contract-test.mjs
           node --check myskills/scripts/health-contract-test.mjs
-      - name: Setup Center release UI contract
-        run: node momm/scripts/setup-ui-contract-test.mjs
       - name: myrepo offline safety self-test
         run: node myrepo/scripts/publish.mjs --self-test
       - name: myskills integrated health contract

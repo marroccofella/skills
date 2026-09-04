@@ -1,9 +1,9 @@
 ---
 name: myskills
-description: Run the four canonical skill families from any harness and report functional health separately from dependency readiness — momm (multi-model peer review), myrepo (GitHub publishing), promptus-clone-voice/myvoice (consented local voice cloning), and yorkshire-pudding/yorky (Yorkshire dialect). Use when the user says "myskills", asks to check, verify, test, or list these skills, asks whether they are working, or wants the review → voice → publish flow. Reports aliases and versions without treating either as proof of health.
+description: Run the five canonical skill families from any harness and report functional health separately from dependency readiness — momm (multi-model peer review), myrepo (GitHub publishing), yorkshire-pudding/yorky (Yorkshire dialect), myautoness/autopilot (self-playing by search and verified replay), and promptus-clone-voice/myvoice (consented local voice cloning). Use when the user says "myskills", asks to check, verify, test, or list these skills, asks whether they are working, or wants the review → voice → publish flow. Reports aliases and versions without treating either as proof of health.
 ---
 
-# myskills — test the four skill families
+# myskills — test the five skill families
 
 One entry point that exercises each canonical family and reports both code health and the local dependencies needed to use it. A skill is reported working only when **its own check passes** — never because its folder exists or its version is current.
 
@@ -22,14 +22,14 @@ Relay the per-skill lines to the user, including aliases, versions, dependency s
 
 ## Canonical families and aliases
 
-myskills 1.1.0 returns four functional records:
+myskills 1.2.0 returns five functional records:
 
 - `momm`
 - `myrepo`
 - `yorkshire-pudding`, also invoked as `yorky`
 - `promptus-clone-voice`, also invoked as `myvoice`
 
-An alias belongs on its canonical record; it is not another installed skill or another health check. `myskills_version` identifies the orchestrator itself and does not create a fifth functional family.
+An alias belongs on its canonical record; it is not another installed skill or another health check. `myskills_version` identifies the orchestrator itself and does not create a sixth functional family.
 
 ## What it checks
 

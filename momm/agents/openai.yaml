@@ -1,4 +1,4 @@
 interface:
   display_name: "MOMM (Mixture of Model Modality)"
-  short_description: "OAuth-only peer review across six local AI CLIs"
-  default_prompt: "Use $momm with the current harness as governor, exclude it from the six-provider pool, and review this change with every available OAuth-authenticated peer."
+  short_description: "OAuth-only peer review across Codex, Claude, Gemini, Antigravity, and Copilot"
+  default_prompt: "Use $momm to review this change with every available OAuth-authenticated peer."

@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.10.2-00cc88)
+![momm](https://img.shields.io/badge/momm-1.13.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -19,10 +19,11 @@ Links every skill in this repo into each AI harness it detects (Claude Code, Cod
 | Skill | What it does |
 |-------|--------------|
 | [myskills](myskills/) | Run every skill together from any harness and confirm each one works — one command, one verdict, exit-code gated. |
-| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer code review: dispatches a git diff to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. |
+| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer review: dispatches a git diff, a document, or attached media to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. Code review, manuscript refereeing, sealed evidence. **[Live page + narrated walkthrough →](https://marroccofella.github.io/skills/momm/)** |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 | [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
 | [yorky](yorky/) | Short callable name for **yorkshire-pudding** — say "yorky" to turn owt into Yorkshire dialect. |
+| [myautoness](myautoness/) | Self-playing task completion by deterministic search and verified replay — classical AI (simulation-model search, planning, seeded exploration), explicitly not a neural network. `autopilot` is its legacy alias. |
 | [myrepo](myrepo/) | Publish a project to GitHub as its own repository with a live in-browser Pages site — 42.uk-themed docs, a local-path + secret-file + inline-credential + git-history privacy scan, symlink guards, and live-URL verification. Confirms visibility and previews with `--dry-run` before any public push. |
 | [myvoice](myvoice/) | Short callable name for **promptus-clone-voice** — consented local F5-TTS voice cloning in Promptus, fail-closed signal/word gates and a recorded human listening verdict before acceptance. |
 
@@ -122,7 +123,7 @@ node install.mjs --target all
 
 # 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.
-node momm/scripts/setup-ui.mjs --governor codex
+node momm/scripts/setup-ui.mjs
 
 # 3. Once one reviewer is verified, review current changes.
 #    In a terminal you get a live progress display — spinners per reviewer,
@@ -130,7 +131,7 @@ node momm/scripts/setup-ui.mjs --governor codex
 node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It never handles API keys or passwords and launches only fixed allowlisted actions after a click. MOMM supplies no project source or rules during setup: each optional connectivity check runs from a disposable system temporary directory with one capability-bound synthetic input and persists no report or ledger evidence. A provider CLI may still apply its own saved account-level instructions or configuration, which the UI discloses rather than claiming total provider isolation. Real failure statuses remain distinct instead of every failure becoming “Needs login.” Raw provider diagnostics are scrubbed so OAuth URLs, authorization/device codes, account identifiers, and local paths never appear in the page or report. The active controller is self-excluded from the shared six-provider pool. Skill health comes from the canonical functional runner rather than version equality; updates and repository changes remain separate signals. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. See the [MOMM 1.10.2 release notes](momm/references/release-1.10.2.md) for the final corrective change and safety record.
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It reads no credential contents, launches only fixed allowlisted install/login/update/model actions after a click, and sends no repository source during setup — its optional connectivity check speaks one disclosed synthetic sentence. Every non-success outcome keeps its real status (`authentication_required`, `provider_unavailable`, `ineligible_tier`, `timeout`, …) instead of collapsing into “needs login”. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. Release history lives in [momm/references/](momm/references/) — latest: [MOMM 1.13.0](momm/references/release-1.13.0.md).
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 
@@ -138,7 +139,7 @@ Every user gets a **private local dashboard** over their own review history — 
 node momm/scripts/ledger.mjs --open
 ```
 
-This project's own (deliberately public, sanitized, CI-sealed) evidence is browsable at **[marroccofella.github.io/skills/evidence](https://marroccofella.github.io/skills/evidence/)** — user ledgers are architecturally separate from it: GitHub Pages has no authentication, so momm never routes private review data through it.
+This project's own (deliberately public, sanitized, CI-sealed) evidence is browsable at **[marroccofella.github.io/skills/evidence](https://marroccofella.github.io/skills/evidence/)** (regenerated by `node export-public-evidence.mjs`, which normalizes paths and re-seals the digest) — user ledgers are architecturally separate from it: GitHub Pages has no authentication, so momm never routes private review data through it.
 
 Or, inside any harness that supports Agent Skills, simply ask:
 

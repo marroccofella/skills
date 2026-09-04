@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const MYREPO_VERSION = "1.3.1";
+const MYREPO_VERSION = "1.3.2";
 const TAGLINE = "RELAX. IT'S ALREADY OVER.";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -161,9 +161,13 @@ function findPathLeak(text) {
   }
   return null;
 }
-function scanForLeaks(dir) {
+// `ignored` holds git-ignored entries (relative, forward slashes) — they can
+// never be pushed, so they are skipped instead of blocking a publish. Tracked
+// and untracked-but-unignored files are always scanned.
+function scanForLeaks(dir, ignored = new Set()) {
   const paths = [], secrets = [];
   let scanError = null;
+  let skipped = 0;
   const walk = (p) => {
     let entries;
     try { entries = fs.readdirSync(p, { withFileTypes: true }); }
@@ -171,6 +175,7 @@ function scanForLeaks(dir) {
     for (const e of entries) {
       if (e.name === ".git" || e.name === "node_modules") continue;
       const fp = path.join(p, e.name);
+      if (ignored.size && ignored.has(path.relative(dir, fp).split(path.sep).join("/"))) { skipped += 1; continue; }
       if (SECRET_FILES.test(fp)) secrets.push(path.relative(dir, fp));
       if (e.isDirectory()) walk(fp);
       else if (TEXT_EXT.test(e.name) || !path.extname(e.name)) {
@@ -183,7 +188,7 @@ function scanForLeaks(dir) {
     }
   };
   walk(dir);
-  return { paths, secrets, scanError };
+  return { paths, secrets, scanError, skipped };
 }
 function scanText(label, text) {
   const pathLeak = findPathLeak(text);
@@ -370,7 +375,15 @@ async function main() {
   // local-path refusal (for a project that legitimately references such
   // strings), never the secret protection.
   {
-    const { paths, secrets, scanError } = scanForLeaks(dir);
+    // Ask git which entries its ignore rules exclude; those never reach the
+    // remote, so they must not block a publish (private telemetry, model
+    // caches, local .env files). Anything git would push is still scanned.
+    const ignored = new Set();
+    if (fs.existsSync(path.join(dir, ".git"))) {
+      const ls = run("git", safeGitArgs(dir, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]));
+      if (ls.code === 0) for (const entry of ls.out.split("\0")) if (entry) ignored.add(entry.replace(/\/+$/, ""));
+    }
+    const { paths, secrets, scanError, skipped } = scanForLeaks(dir, ignored);
     const genLeak = scanText("(generated README)", readme) || scanText("(generated landing)", landing);
     if (genLeak) paths.push(genLeak);
     if (scanError) log("⚠", `privacy scan could not read part of the tree (${scanError}); review manually`);
@@ -387,7 +400,7 @@ async function main() {
       process.exit(2);
     }
     if (paths.length) log("⚠", `${paths.length} local path(s) present but --allow-paths given; publishing anyway`);
-    else log("✓", "privacy + secrets scan clean (working tree)");
+    else log("✓", `privacy + secrets scan clean (working tree${skipped ? `; ${skipped} git-ignored entr${skipped === 1 ? "y" : "ies"} skipped — never pushed` : ""})`);
 
     // New repositories publish all local history. For an existing repository,
     // its old history is already public; scan only the fast-forward commits
