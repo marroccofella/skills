@@ -1,0 +1,6 @@
+route,completed_reviews,timeouts,other_failures,median_seconds,p90_seconds,accept_verdicts,modify_verdicts,reject_verdicts,mean_confidence,suggestions_applied,suggestions_rejected,governor_acceptance_rate
+codex,70,17,0,114.4,341.2,13,42,15,0.96,94,41,0.7
+antigravity,83,1,20,33.6,128.4,69,10,4,0.98,46,36,0.56
+copilot,101,2,3,32.2,213.3,65,29,7,0.88,76,101,0.43
+grok,68,25,2,31.9,328,14,48,6,0.59,34,31,0.52
+claude,21,2,0,43.5,274.5,7,14,0,0.78,26,37,0.41

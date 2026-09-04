@@ -1,0 +1,154 @@
+run_id,timestamp,governor,input_bytes,findings,corroborated,reviewer_status,subject
+rev_20260817042827_pmxf,2026-08-17T04:28:27.692Z,codex,285,8,0,claude:success antigravity:success,
+rev_20260817152233_0ten,2026-08-17T15:22:33.202Z,claude,285,4,0,codex:success claude:self_excluded antigravity:success,
+rev_20260817154000_lesk,2026-08-17T15:40:00.636Z,claude,103953,1,0,codex:success claude:self_excluded antigravity:success,
+rev_20260817163031_pi25,2026-08-17T16:30:31.841Z,claude,371,0,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817163200_7a8a,2026-08-17T16:32:00.790Z,claude,9877,0,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817163316_dd6i,2026-08-17T16:33:16.242Z,claude,371,0,0,copilot:success,
+rev_20260817171648_97nx,2026-08-17T17:16:48.874Z,claude,16990,0,0,gemini:error,
+rev_20260817171838_8q9i,2026-08-17T17:18:38.279Z,claude,17762,7,0,codex:success claude:self_excluded antigravity:success copilot:authentication_required,
+rev_20260817172052_hcjo,2026-08-17T17:20:52.929Z,claude,17762,7,0,copilot:success,
+rev_20260817172600_2k4q,2026-08-17T17:26:00.774Z,claude,26211,3,0,codex:success claude:self_excluded antigravity:success copilot:authentication_required,
+rev_20260817172720_8hgs,2026-08-17T17:27:20.457Z,claude,371,0,0,copilot:authentication_required,
+rev_20260817172816_64l9,2026-08-17T17:28:16.307Z,claude,371,0,0,copilot:provider_unavailable,
+rev_20260817172902_t3st,2026-08-17T17:29:02.195Z,claude,7371,2,0,codex:success claude:self_excluded antigravity:success copilot:provider_unavailable,
+rev_20260817193100_ovng,2026-08-17T19:31:00.489Z,claude,285,8,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817193845_imso,2026-08-17T19:38:45.047Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817200511_4g47,2026-08-17T20:05:11.720Z,claude,11,0,0,gemini:error,
+rev_20260817200608_0d0l,2026-08-17T20:06:08.284Z,claude,3210,2,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817200703_ibf9,2026-08-17T20:07:03.584Z,claude,7,0,0,gemini:error,
+rev_20260817225857_fxre,2026-08-17T22:58:57.814Z,codex,2263,4,0,codex:self_excluded claude:success antigravity:success copilot:authentication_required,
+rev_20260817231004_2r2g,2026-08-17T23:10:04.823Z,claude,7564,4,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817231651_d2xg,2026-08-17T23:16:51.347Z,claude,6,0,0,gemini:ineligible_tier,
+rev_20260817231735_89dm,2026-08-17T23:17:35.420Z,claude,4530,1,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817232122_8jvh,2026-08-17T23:21:22.873Z,codex,9618,4,0,codex:self_excluded claude:success antigravity:success copilot:authentication_required,
+rev_20260817232450_6ve7,2026-08-17T23:24:50.875Z,codex,6284,4,0,codex:self_excluded claude:success antigravity:success copilot:authentication_required,
+rev_20260817233742_47qr,2026-08-17T23:37:42.222Z,claude,22080,1,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260817235809_61zx,2026-08-17T23:58:09.529Z,claude,14227,4,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260818000555_ky8p,2026-08-18T00:05:55.865Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260818000613_yfm2,2026-08-18T00:06:13.321Z,claude,81,3,0,codex:success claude:self_excluded antigravity:success copilot:success,
+rev_20260818012311_bs4c,2026-08-18T01:23:11.211Z,claude,81,3,0,codex:success antigravity:success copilot:success grok:authentication_required,
+rev_20260818012547_ntjc,2026-08-18T01:25:47.347Z,claude,16970,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success,
+rev_20260818013858_qv88,2026-08-18T01:38:58.353Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:invalid_output,
+rev_20260818013945_bvkn,2026-08-18T01:39:45.738Z,claude,76,0,0,grok:success,
+rev_20260818014036_4t6d,2026-08-18T01:40:36.290Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260818015345_2fb4,2026-08-18T01:53:45.058Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260818020734_e692,2026-08-18T02:07:34.477Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260818020804_zk7p,2026-08-18T02:08:04.477Z,claude,81,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260818030741_aqv6,2026-08-18T03:07:41.116Z,claude,14301,13,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,MOMM-MAN maze game
+rev_20260818031654_fn32,2026-08-18T03:16:54.263Z,claude,14301,5,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,MOMM-MAN ideation (all-innovator panel)
+rev_20260818032618_hga2,2026-08-18T03:26:18.683Z,claude,19493,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,MOMM-MAN v2 gate
+rev_20260818110559_16sj,2026-08-18T11:05:59.637Z,claude,19493,14,0,codex:success claude:self_excluded antigravity:error copilot:success grok:success,MOMM-MAN v2 full-coalition re-evaluation
+rev_20260818111219_0rt1,2026-08-18T11:12:19.687Z,claude,20352,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,MOMM-MAN v2.1 post-fix gate
+rev_20260818121032_4gjz,2026-08-18T12:10:32.883Z,codex,6,0,0,codex:self_excluded,
+rev_20260818121057_bsha,2026-08-18T12:10:57.141Z,claude,76,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260818121407_81jd,2026-08-18T12:14:07.838Z,claude,7189,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,momm 1.1.0 release gate
+rev_20260818122634_i3ri,2026-08-18T12:26:34.920Z,claude,7116,2,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,momm 1.2.0 release gate (Pages + private ledger)
+rev_20260818124012_0iym,2026-08-18T12:40:12.996Z,claude,21179,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,momm public showcase site
+rev_20260818130439_g5pn,2026-08-18T13:04:39.840Z,claude,16886,6,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,"showcase v2: video, credibility, diagrams, stats"
+rev_20260818131838_9tuq,2026-08-18T13:18:38.838Z,claude,5192,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,showcase audit corrections
+rev_20260818132724_b8km,2026-08-18T13:27:24.900Z,claude,9288,2,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,"showcase v3: pace, pronunciation, harness-gap depth"
+rev_20260818133314_mz15,2026-08-18T13:33:14.343Z,claude,6906,3,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,42.uk Arcade games library
+rev_20260818134612_ue7w,2026-08-18T13:46:12.251Z,claude,6894,9,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,auto ledger link after every review
+rev_20260818143853_d4sa,2026-08-18T14:38:53.712Z,claude,70628,4,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,the constitution reviews itself
+rev_20260818144003_7sto,2026-08-18T14:40:03.247Z,grok,2,0,0,codex:success,
+rev_20260818144802_q3xi,2026-08-18T14:48:02.687Z,claude,70782,15,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,"constitution review, recast: copilot as socratic"
+rev_20260818145908_8th0,2026-08-18T14:59:08.096Z,claude,72878,12,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,security fix verification: cmd injection closed
+rev_20260819004534_m0y6,2026-08-19T00:45:34.364Z,claude,10892,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,v1.4.0 owner-only evidence + prominent ledger link
+rev_20260819012102_ssuf,2026-08-19T01:21:02.071Z,claude,12083,28,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,new myrepo publisher skill
+rev_20260819012657_vxn7,2026-08-19T01:26:57.338Z,claude,14717,18,1,codex:success claude:self_excluded antigravity:success copilot:success grok:success,myrepo publisher v1.1 post-fix
+rev_20260819013627_vqhv,2026-08-19T01:36:27.809Z,claude,16845,7,0,codex:success claude:self_excluded antigravity:error copilot:success grok:timeout,myrepo v1.1 final gate
+rev_20260819014257_vwc5,2026-08-19T01:42:57.875Z,claude,17298,9,0,codex:success claude:self_excluded antigravity:error copilot:success grok:timeout,myrepo v1.1 clean gate
+rev_20260819014743_ls4v,2026-08-19T01:47:43.939Z,claude,18545,17,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,myrepo final clean gate
+rev_20260819015524_45vp,2026-08-19T01:55:24.594Z,claude,19472,21,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,myrepo clean gate (regex de-sanitized)
+rev_20260819021407_jzw2,2026-08-19T02:14:07.081Z,codex,2,0,0,codex:self_excluded,
+rev_20260819021441_9m3k,2026-08-19T02:14:41.541Z,claude,775,1,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,version in review-log line
+rev_20260819022233_mpd5,2026-08-19T02:22:33.265Z,claude,5140,14,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,version confession + update awareness
+rev_20260819022438_lsto,2026-08-19T02:24:38.773Z,codex,2,0,0,codex:self_excluded,
+rev_20260819022658_igeb,2026-08-19T02:26:58.629Z,claude,6387,8,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,update-check hardening
+rev_20260819025206_cm6q,2026-08-19T02:52:06.744Z,claude,7408,7,0,codex:success claude:self_excluded antigravity:timeout copilot:success grok:timeout,"root install.mjs (all skills, one command)"
+rev_20260819025658_1u37,2026-08-19T02:56:58.118Z,claude,8111,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,root installer post-fix
+rev_20260819115456_schd,2026-08-19T11:54:56.818Z,claude,3443,4,0,codex:success claude:self_excluded antigravity:error copilot:success grok:success,yorky alias + docs refresh
+rev_20260819120415_dtnk,2026-08-19T12:04:15.191Z,claude,13083,5,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,myskills orchestrator
+rev_20260823165122_8jkv,2026-08-23T16:51:22.437Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260823165133_n0mb,2026-08-23T16:51:33.876Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260823165144_sbmz,2026-08-23T16:51:44.978Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260823165201_cwat,2026-08-23T16:52:01.013Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260823170016_tq8y,2026-08-23T17:00:17.002Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260823170034_f501,2026-08-23T17:00:34.518Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260823170047_yc0q,2026-08-23T17:00:47.785Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260823170104_hofn,2026-08-23T17:01:04.113Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260823171316_z5p8,2026-08-23T17:13:16.594Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260823171329_ybim,2026-08-23T17:13:29.585Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260823171342_8gpy,2026-08-23T17:13:42.296Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260823171351_qgs3,2026-08-23T17:13:51.096Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260823172334_jmap,2026-08-23T17:23:34.074Z,codex,110657,19,0,codex:self_excluded claude:success antigravity:success copilot:success grok:success,MOMM 1.9.0 release 97af3dd
+rev_20260823173747_yowa,2026-08-23T17:37:47.824Z,claude,7963,5,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,MOMM 1.9.1 Setup Center security fixes
+rev_20260823174401_xyp4,2026-08-23T17:44:01.503Z,claude,8731,2,0,codex:success claude:self_excluded antigravity:success copilot:success grok:timeout,MOMM 1.9.1 security fixes (post-fix)
+rev_20260823174835_cmbz,2026-08-23T17:48:35.965Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260823174849_v8ch,2026-08-23T17:48:49.662Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260823174903_fwqw,2026-08-23T17:49:03.544Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260823174919_8brn,2026-08-23T17:49:19.229Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260823175402_vte1,2026-08-23T17:54:02.002Z,claude,100,0,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,qbasic count 1 to 10
+rev_20260823175450_hdaj,2026-08-23T17:54:50.044Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260823175502_w3zc,2026-08-23T17:55:02.088Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260823175514_zts1,2026-08-23T17:55:14.633Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260823175533_geiu,2026-08-23T17:55:33.467Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260823175726_0yp2,2026-08-23T17:57:26.107Z,claude,2,0,0,codex:success,ledger link check
+rev_20260823180057_s9vj,2026-08-23T18:00:57.310Z,claude,2,0,0,bogus_route:unsupported,
+rev_20260823180105_hk8b,2026-08-23T18:01:05.264Z,claude,2,0,0,codex:success,
+rev_20260823180121_vb7g,2026-08-23T18:01:21.820Z,claude,2,0,0,bogus_route:unsupported,
+rev_20260823180743_akoq,2026-08-23T18:07:43.142Z,claude,16420,8,0,codex:success claude:self_excluded antigravity:error copilot:success grok:timeout,momm acceptance test plan
+rev_20260823181205_xyrg,2026-08-23T18:12:05.431Z,claude,19331,18,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,test plan post-fix
+rev_20260823181723_mwa5,2026-08-23T18:17:23.663Z,claude,19482,0,0,codex:timeout claude:self_excluded antigravity:error copilot:success grok:timeout,test plan final
+rev_20260823182100_qb6d,2026-08-23T18:21:00.220Z,claude,19484,7,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,test plan final gate
+rev_20260824152752_urup,2026-08-24T15:27:52.587Z,claude,8019,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,"W*LLY level-flow: multi-exit, loops, minimap"
+rev_20260824153125_zbzq,2026-08-24T15:31:25.027Z,claude,9930,9,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (post-fix)
+rev_20260824153743_8pam,2026-08-24T15:37:43.452Z,claude,11176,5,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (taxonomy)
+rev_20260824154052_a3ba,2026-08-24T15:40:52.224Z,claude,12321,3,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (converged)
+rev_20260824154709_9uve,2026-08-24T15:47:09.438Z,claude,12645,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (final)
+rev_20260824155203_677c,2026-08-24T15:52:03.571Z,claude,13350,5,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (final gate)
+rev_20260824155507_sn4s,2026-08-24T15:55:07.339Z,claude,14176,6,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,W*LLY level-flow (ship gate)
+rev_20260824192446_4t45,2026-08-24T19:24:46.412Z,claude,52200,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:success,"momm UX fixes: triage surfacing, agreement merge, gitignore, temp warning"
+rev_20260826183918_wyl3,2026-08-26T18:39:18.977Z,codex,51711,13,0,claude:success antigravity:success copilot:success grok:success,
+rev_20260827072502_8k01,2026-08-27T07:25:02.012Z,codex,124423,10,1,codex:self_excluded claude:success antigravity:success copilot:success grok:success,Pet Singer cross-layer project review
+rev_20260827072819_v669,2026-08-27T07:28:19.184Z,codex,150,0,0,claude:success,setup-center connectivity validation
+rev_20260827072838_p4i6,2026-08-27T07:28:38.869Z,codex,150,0,0,gemini:ineligible_tier,setup-center connectivity validation
+rev_20260827072858_i3r3,2026-08-27T07:28:58.102Z,codex,150,0,0,antigravity:success,setup-center connectivity validation
+rev_20260827072903_29l3,2026-08-27T07:29:03.421Z,codex,150,0,0,copilot:success,setup-center connectivity validation
+rev_20260827072917_vnnz,2026-08-27T07:29:17.382Z,codex,150,0,0,grok:success,setup-center connectivity validation
+rev_20260827072936_431q,2026-08-27T07:29:36.096Z,codex,150,0,0,gemini:ineligible_tier,setup-center connectivity validation
+rev_20260827073352_tdiz,2026-08-27T07:33:52.087Z,codex,211,0,0,claude:success gemini:ineligible_tier antigravity:success copilot:success grok:success,
+rev_20260827073928_fxgv,2026-08-27T07:39:28.123Z,codex,53561,4,0,claude:success antigravity:success copilot:success grok:success,MyAutoness 1.2.0 focused skill release
+rev_20260827075423_tg1m,2026-08-27T07:54:23.337Z,codex,66204,4,0,claude:success antigravity:success copilot:success grok:success,MyAutoness 1.2.0 post-fix release gate
+rev_20260827085739_rpd8,2026-08-27T08:57:39.256Z,claude,78158,2,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260827103424_fcfm,2026-08-27T10:34:24.416Z,claude,6802,0,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,
+rev_20260827103853_8wtf,2026-08-27T10:38:53.856Z,claude,6802,16,0,codex:success grok:success,
+rev_20260827105641_orun,2026-08-27T10:56:41.792Z,claude,9440,15,0,codex:success grok:success antigravity:success copilot:success,
+rev_20260828060521_uyhh,2026-08-28T06:05:21.325Z,codex,125302,10,2,codex:self_excluded claude:success antigravity:success copilot:success grok:success,Pet Singer final release gate
+rev_20260828103536_91fi,2026-08-28T10:35:36.183Z,codex,152390,4,0,codex:self_excluded claude:timeout antigravity:success copilot:success grok:timeout,Pet Singer post-fix release gate
+rev_20260829064947_g9bc,2026-08-29T06:49:47.909Z,codex,90791,6,0,codex:self_excluded claude:success antigravity:success copilot:success grok:timeout,
+rev_20260902165517_z4ze,2026-09-02T16:55:17.654Z,codex,17231,8,0,codex:self_excluded claude:success antigravity:invalid_output copilot:success grok:success,
+rev_20260902170622_iri3,2026-09-02T17:06:22.805Z,codex,19715,7,0,claude:success copilot:success grok:success,
+rev_20260902171100_ofys,2026-09-02T17:11:00.070Z,codex,20884,3,0,claude:success copilot:success,
+rev_20260903053054_lllk,2026-09-03T05:30:54.765Z,codex,90398,1,0,codex:self_excluded claude:timeout antigravity:invalid_output copilot:success grok:success,
+rev_20260903053824_rizz,2026-09-03T05:38:24.400Z,codex,94938,8,0,codex:self_excluded claude:success antigravity:invalid_output copilot:timeout grok:success,
+rev_20260904122139_k5t0,2026-09-04T12:21:39.538Z,claude,51065,3,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,
+rev_20260904123202_wtem,2026-09-04T12:32:02.508Z,claude,55348,1,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,
+rev_20260904124105_fn4a,2026-09-04T12:41:05.466Z,claude,56970,1,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,
+rev_20260904124819_wj01,2026-09-04T12:48:19.341Z,claude,57726,0,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:timeout,
+rev_20260904125430_ikxg,2026-09-04T12:54:30.749Z,claude,59064,0,0,codex:timeout claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260904131435_mf6w,2026-09-04T13:14:35.636Z,claude,36443,3,1,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,momm 1.12.0 dispatcher/ledger/setup-ui changes (momm reviewing momm)
+rev_20260904131705_l4z2,2026-09-04T13:17:05.173Z,claude,36443,4,1,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,momm 1.12.0 dispatcher/ledger/setup-ui changes (momm reviewing momm)
+rev_20260904131823_wvxh,2026-09-04T13:18:23.817Z,claude,2438,26,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,manuscript peer-review specimen: evening blue light and working memory
+rev_20260904134441_i82j,2026-09-04T13:44:41.552Z,claude,51239,1,0,codex:timeout claude:self_excluded antigravity:invalid_output copilot:success grok:timeout,
+rev_20260904134630_bl2v,2026-09-04T13:46:30.303Z,claude,44905,4,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,"momm 1.13.0 release gate: supervise timeout fix, ledger speech guard + rollup, myskills redaction"
+rev_20260904135239_z6w4,2026-09-04T13:52:39.132Z,claude,51827,0,0,codex:timeout claude:self_excluded antigravity:success copilot:timeout grok:timeout,
+rev_20260904140911_r33c,2026-09-04T14:09:11.109Z,claude,52188,3,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260904141902_p13y,2026-09-04T14:19:02.362Z,claude,55304,4,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,
+rev_20260904143228_40ov,2026-09-04T14:32:28.360Z,claude,57416,5,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,
+rev_20260904144812_gpdv,2026-09-04T14:48:12.069Z,claude,59824,4,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,
+rev_20260904150042_x1r8,2026-09-04T15:00:42.560Z,claude,61687,4,0,codex:success claude:self_excluded antigravity:success copilot:success grok:success,
+rev_20260904152252_yvrw,2026-09-04T15:22:52.944Z,claude,2438,14,0,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,"manuscript peer-review specimen, re-run with quotation corroboration"
+rev_20260904153705_95x7,2026-09-04T15:37:05.344Z,claude,2438,11,9,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,"manuscript peer-review specimen, re-run with quotation corroboration (1.14.0 prose mode)"
+rev_20260904154021_uctu,2026-09-04T15:40:21.723Z,claude,29660,5,1,codex:success claude:self_excluded antigravity:invalid_output copilot:success grok:success,"momm 1.14.0 gate: prose corroboration, --tier, invalid_output diagnostics, redaction, installer target, CSV export"

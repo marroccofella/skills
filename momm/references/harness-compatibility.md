@@ -15,7 +15,7 @@ Use one canonical skill directory. Link or install that directory with the harne
 
 - Local graphical setup (recommended): `node momm/scripts/setup-ui.mjs`
 - Guided first run (readiness, privacy explanation, and exact next actions): `node momm/scripts/onboard.mjs --governor <current-harness> --link`
-- Every detected harness at once: `node momm/scripts/install.mjs --target all`
+- Every detected harness at once (you must type it — the installer never guesses): `node momm/scripts/install.mjs --target all`
 - Individually: `--target codex` (links `~/.agents/skills`), `--target claude` (links `~/.claude/skills`), `--target gemini` (uses the native `gemini skills link`)
 - Any other Agent Skills host: `--custom-dir <that-host's-skill-parent>`
 - Hosts without skills support: skip installation and pipe into `scripts/multi-review.mjs` directly

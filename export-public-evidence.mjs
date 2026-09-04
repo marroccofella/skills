@@ -137,12 +137,17 @@ function pageStats() {
   const byDay = {}; for (const r of runs) { const d = String(r.timestamp).slice(0, 10); byDay[d] = (byDay[d] ?? 0) + 1; }
   const agreement = reportList.filter((r) => typeof r.insights?.agreement_score === "number" && (r.findings ?? []).length).map((r) => ({ t: r.run_id.slice(4, 12), a: r.insights.agreement_score, n: r.findings.length }));
   const specimen = reports.rev_20260904131823_wvxh?.report; const selfrun = reports.rev_20260904131435_mf6w?.report;
+  // The specimen re-run with 1.14.0's prose corroboration: the latest run whose subject says so.
+  const rerun = [...runs].reverse().find((r) => String(r.subject).startsWith("manuscript peer-review specimen, re-run"));
+  const rerunReport = rerun ? reports[rerun.run_id]?.report : null;
+  const specimen2 = rerunReport ? { run: rerun.run_id, findings: (rerunReport.findings ?? []).length, corroborated: (rerunReport.findings ?? []).filter((f) => (f.sources ?? []).length >= 2).length, agreement: rerunReport.insights?.agreement_score ?? null, version: rerunReport.dispatcher_version ?? null } : null;
   return {
     generated: data.generated, runs: runs.length, sealed_reports: reportList.length, completed_peer_reviews: completed, findings, criticals: severity.CRITICAL, severity, dispositions: dispositions.length,
     disp_totals: { applied: dispositions.filter((d) => String(d.disposition).startsWith("applied")).length, rejected: dispositions.filter((d) => d.disposition === "rejected").length },
     first_run: runs[0]?.timestamp, last_run: runs.at(-1)?.timestamp, routes: routeStats, size_timeout: sizeTimeout, by_day: byDay, agreement,
     specimen: specimen ? { run: specimen.run_id, findings: specimen.findings.length, critical: specimen.findings.filter((f) => f.severity === "CRITICAL").length, verdicts: specimen.reviewers.filter((r) => r.verdict).map((r) => ({ agent: r.agent, verdict: r.verdict, confidence: r.confidence, persona: r.persona, s: +(r.duration_ms / 1000).toFixed(0) })), rules: specimen.project_rules_applied } : null,
     selfrun: selfrun ? { run: selfrun.run_id, findings: selfrun.findings.map((f) => ({ id: f.id, severity: f.severity, file: f.target_file, sources: f.sources })), agreement: selfrun.insights.agreement_score } : null,
+    specimen2,
   };
 }
 const pagePath = path.join(path.dirname(outDir), "momm", "index.html");
@@ -153,7 +158,32 @@ if (fs.existsSync(pagePath)) {
   if (statsBlock.test(page)) {
     const stats = pageStats();
     scan("page stats", stats);
-    fs.writeFileSync(pagePath, page.replace(statsBlock, () => `<script id="page-stats" type="application/json">${JSON.stringify(stats).replace(/<\//g, "<\\/")}</script>`));
+    // The same numbers as copyable text: CSV files beside the page, and a
+    // static HTML table the page shows without JavaScript. A project whose
+    // claims resolve to hashes must not present its evidence only as canvases.
+    const dataDir = path.join(path.dirname(pagePath), "data");
+    fs.mkdirSync(dataDir, { recursive: true });
+    // Cells beginning with = + - @ (or tab/CR) are formulas to a spreadsheet;
+    // prefix them with an apostrophe so a reviewer-written reason can never
+    // execute on someone's desk (finding public-csv-bypasses-scan,
+    // rev_20260904154021_uctu). Every cell is re-scanned for local paths.
+    const cell = (c) => {
+      let s = String(c ?? "");
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = (rows) => { scan("csv", rows); return rows.map((r) => r.map(cell).join(",")).join("\n") + "\n"; };
+    fs.writeFileSync(path.join(dataDir, "routes.csv"), csv([["route", "completed_reviews", "timeouts", "other_failures", "median_seconds", "p90_seconds", "accept_verdicts", "modify_verdicts", "reject_verdicts", "mean_confidence", "suggestions_applied", "suggestions_rejected", "governor_acceptance_rate"], ...stats.routes.map((r) => [r.route, r.completed, r.timeouts, r.other, r.median_s, r.p90_s, r.verdicts.ACCEPT, r.verdicts.MODIFY, r.verdicts.REJECT, r.mean_confidence, r.applied, r.rejected, r.precision])]));
+    fs.writeFileSync(path.join(dataDir, "runs.csv"), csv([["run_id", "timestamp", "governor", "input_bytes", "findings", "corroborated", "reviewer_status", "subject"], ...runs.map((r) => [r.run_id, r.timestamp, r.governor, r.input_bytes, r.findings_count, r.corroborated_count, Object.entries(r.reviewer_status ?? {}).map(([a, s]) => `${a}:${s}`).join(" "), r.subject])]));
+    fs.writeFileSync(path.join(dataDir, "findings-by-severity.csv"), csv([["severity", "findings"], ...Object.entries(stats.severity)]));
+    fs.writeFileSync(path.join(dataDir, "input-size-vs-time.csv"), csv([["input_kb", "routes_dispatched", "routes_timed_out", "slowest_completed_seconds"], ...stats.size_timeout.map((p) => [p.kb, p.routes, p.timeouts, p.maxdur])]));
+    fs.writeFileSync(path.join(dataDir, "runs-per-day.csv"), csv([["day", "runs"], ...Object.entries(stats.by_day).sort()]));
+    fs.writeFileSync(path.join(dataDir, "dispositions.csv"), csv([["timestamp", "run_id", "reviewer", "disposition", "suggestion", "reason"], ...dispositions.map((d) => [d.timestamp, d.run_id, d.reviewer, d.disposition, d.suggestion, d.reason])]));
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const routeTable = `<table class="matrix" id="route-table"><thead><tr><th>route</th><th>completed</th><th>timeouts</th><th>median s</th><th>p90 s</th><th>accept / modify / reject</th><th>applied</th><th>rejected</th><th>acceptance rate</th></tr></thead><tbody>${stats.routes.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.completed}</td><td>${r.timeouts}</td><td>${r.median_s}</td><td>${r.p90_s}</td><td>${r.verdicts.ACCEPT} / ${r.verdicts.MODIFY} / ${r.verdicts.REJECT}</td><td>${r.applied}</td><td>${r.rejected}</td><td>${r.precision === null ? "n/a" : Math.round(r.precision * 100) + "%"}</td></tr>`).join("")}</tbody></table>`;
+    const withStats = page.replace(statsBlock, () => `<script id="page-stats" type="application/json">${JSON.stringify(stats).replace(/<\//g, "<\\/")}</script>`);
+    const tableBlock = /<!-- route-table:start -->[\s\S]*?<!-- route-table:end -->/;
+    fs.writeFileSync(pagePath, tableBlock.test(withStats) ? withStats.replace(tableBlock, () => `<!-- route-table:start -->${routeTable}<!-- route-table:end -->`) : withStats);
     pageRefreshed = true;
   }
 }

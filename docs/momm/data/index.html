@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>MOMM page data (CSV)</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{background:#080a0a;color:#e6ffe6;font:14px/1.6 ui-monospace,Consolas,monospace;max-width:760px;margin:0 auto;padding:40px 20px}a{color:#8ef0c6}p{color:#9be29b}h1 span{color:#00ff99}</style>
+<h1><span>◆</span> MOMM page data</h1>
+<p>The tables behind <a href="../">the momm page</a>, as CSV, regenerated with the public evidence export and its digest. Self-review numbers: every run is this project reviewing itself.</p>
+<ul>
+<li><a href="routes.csv">routes.csv</a> — per route: completed reviews, timeouts, median and p90 seconds, verdict counts, mean confidence, suggestions applied and rejected, governor acceptance rate (applied ÷ adjudicated — not precision).</li>
+<li><a href="runs.csv">runs.csv</a> — every run: id, time, driving harness, input bytes, findings, corroborated count, per-route status, subject.</li>
+<li><a href="findings-by-severity.csv">findings-by-severity.csv</a> — raw findings by reviewer-assigned severity, before reproduction.</li>
+<li><a href="input-size-vs-time.csv">input-size-vs-time.csv</a> — per report: input KB, routes dispatched, routes timed out, slowest completed reviewer in seconds.</li>
+<li><a href="runs-per-day.csv">runs-per-day.csv</a></li>
+<li><a href="dispositions.csv">dispositions.csv</a> — every applied / rejected / deferred ruling with its reason and run id.</li>
+</ul>
+<p>Source of truth: <a href="../../evidence/momm-evidence.json">momm-evidence.json</a> and its <a href="../../evidence/momm-evidence.json.sha256">sha256 sidecar</a>.</p>

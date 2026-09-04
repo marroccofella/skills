@@ -1,91 +1,103 @@
 WEBVTT
 
-00:00:00.150 --> 00:00:06.254
-What you are hearing is a synthetic clone of my voice, generated locally with my consent.
+00:00:00.000 --> 00:00:04.000
+[Narration: a consented synthetic clone of Dominic Marrocco's voice, generated locally]
 
-00:00:06.304 --> 00:00:07.792
-I am Dominic Marrocco.
+00:00:00.150 --> 00:00:01.220
+This is real.
 
-00:00:07.842 --> 00:00:20.100
-This is MOMM, the Mixture of Model Modality: every frontier model on your machine, reviewing your work together, while the agent you are talking to stays the only one allowed to write.
+00:00:01.270 --> 00:00:08.316
+My coding agent changed its own process supervisor, then sent the diff to the other models on this machine.
 
-00:00:20.950 --> 00:00:23.190
+00:00:08.366 --> 00:00:15.784
+Two of them, independently, flagged the same defect: a child that timed out was being reported as a normal exit.
+
+00:00:15.834 --> 00:00:22.133
+A failing reproduction confirmed it before a line was changed, and the fix shipped with a test.
+
+00:00:22.183 --> 00:00:24.000
+That is the whole idea.
+
+00:00:24.850 --> 00:00:27.090
 Here is the problem it solves.
 
-00:00:23.240 --> 00:00:25.861
+00:00:27.140 --> 00:00:29.761
 Today's coding agents grade their own homework.
 
-00:00:25.911 --> 00:00:32.349
+00:00:29.811 --> 00:00:36.249
 The model that writes a change also reviews it, with the same blind spots on both sides.
 
-00:00:32.399 --> 00:00:35.020
+00:00:36.299 --> 00:00:38.920
 When the session ends, the reasoning evaporates.
 
-00:00:35.070 --> 00:00:39.600
+00:00:38.970 --> 00:00:43.500
 And a second opinion usually means another API key to pay for.
 
-00:00:40.450 --> 00:00:45.655
+00:00:44.350 --> 00:00:49.555
 It turns the models you already subscribe to into a standing review coalition.
 
-00:00:45.705 --> 00:00:49.697
+00:00:49.605 --> 00:00:53.597
 Your agent, the governor, pipes a diff to the dispatcher.
 
-00:00:49.747 --> 00:00:53.739
+00:00:53.647 --> 00:00:57.639
 A readiness check probes every route with zero model calls.
 
-00:00:53.789 --> 00:01:01.420
+00:00:57.689 --> 00:01:05.320
 Then the other installed reviewers, from four different companies, review it in parallel, each through its own official login.
 
-00:01:01.470 --> 00:01:09.100
+00:01:05.370 --> 00:01:13.000
 Every API key variable is stripped, and a route without a login is refused before any tokens are spent.
 
-00:01:09.950 --> 00:01:11.660
+00:01:13.850 --> 00:01:15.560
 Reviewers are read-only instruments.
 
-00:01:11.710 --> 00:01:14.300
+00:01:15.610 --> 00:01:18.200
 Their findings are claims, not verdicts.
 
-00:01:14.350 --> 00:01:22.220
+00:01:18.250 --> 00:01:26.120
 Before a single line changes, the governor must reproduce each critical or warning finding with a failing test.
 
-00:01:22.270 --> 00:01:28.820
+00:01:26.170 --> 00:01:32.720
 Every suggestion gets an explicit disposition, applied or rejected with a reason, on the record.
 
-00:01:28.870 --> 00:01:31.900
+00:01:32.770 --> 00:01:35.800
 The governor never reviews its own work.
 
-00:01:32.750 --> 00:01:34.284
+00:01:36.650 --> 00:01:38.184
 Every run is sealed.
 
-00:01:34.334 --> 00:01:39.432
+00:01:38.234 --> 00:01:43.332
 The report is content-addressed and bound to the exact input by its hash.
 
-00:01:39.482 --> 00:01:44.184
+00:01:43.382 --> 00:01:48.084
 Your private ledger lives beside your project and never leaves your machine.
 
-00:01:44.234 --> 00:01:52.500
+00:01:48.134 --> 00:01:56.400
 This project reviews itself with MOMM and publishes its sanitised evidence, so every number on the page resolves to a hash.
 
-00:01:53.350 --> 00:01:55.732
+00:01:57.250 --> 00:01:59.632
 And it is not only code.
 
-00:01:55.782 --> 00:02:10.730
+00:01:59.682 --> 00:02:14.630
 Hand MOMM a manuscript, a PDF, or an image, and the same protocol becomes editorial peer review: parallel referees with different training, an editor who must reproduce before deciding, and a decision ledger that survives the session.
 
-00:02:10.780 --> 00:02:16.000
+00:02:14.680 --> 00:02:19.900
 Put your reviewer guidelines in a rules file, and every referee follows them.
 
-00:02:16.850 --> 00:02:20.262
+00:02:20.750 --> 00:02:24.162
 One command installs it into every harness you have.
 
-00:02:20.312 --> 00:02:24.877
+00:02:24.212 --> 00:02:28.777
 Then just tell your agent: use momm to review my current changes.
 
-00:02:24.927 --> 00:02:25.262
+00:02:28.827 --> 00:02:29.162
 Relax.
 
-00:02:25.312 --> 00:02:26.800
+00:02:29.212 --> 00:02:30.700
 It is already over.
 
-00:02:27.500 --> 00:02:32.500
-[Synthetic voice: a consented local clone of Dominic Marrocco's voice, F5-TTS via Promptus]
+00:02:31.550 --> 00:02:42.797
+The voice you have been hearing is a synthetic clone of mine, generated locally with my consent and checked word by word before it was used.
+
+00:02:42.847 --> 00:02:44.100
+Thanks for watching.

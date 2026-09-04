@@ -1,0 +1,409 @@
+{
+  "report_schema": "momm-report/1",
+  "dispatcher_version": "1.14.0",
+  "tier": "default",
+  "policy": "oauth-only",
+  "run_id": "rev_20260904153705_95x7",
+  "label": "manuscript peer-review specimen, re-run with quotation corroboration (1.14.0 prose mode)",
+  "governor": "claude",
+  "input_bytes": 2438,
+  "input_sha256": "5d4ca458c3a741cdf55abdc92a8efadca79849f3797f7fdd802fdddb61ef6d3d",
+  "input_modified": "2026-09-04T13:13:55.435Z",
+  "secret_redactions": 0,
+  "timeout_ms": 300000,
+  "project_rules_applied": true,
+  "preflight": [
+    {
+      "agent": "codex",
+      "installed": true,
+      "version": "codex-cli 0.147.0",
+      "ready": true,
+      "auth": "ok",
+      "modalities": [
+        "text",
+        "image"
+      ]
+    },
+    {
+      "agent": "claude",
+      "role": "governor",
+      "ready": false,
+      "note": "self-excluded (governor never reviews its own work)"
+    },
+    {
+      "agent": "antigravity",
+      "installed": true,
+      "version": "1.1.26",
+      "ready": true,
+      "auth": "present",
+      "modalities": [
+        "text"
+      ],
+      "note": "weak evidence: ~/.gemini is shared with the Gemini CLI"
+    },
+    {
+      "agent": "copilot",
+      "installed": true,
+      "version": "GitHub Copilot CLI 1.0.82.\nRun 'copilot update' to check for updates.",
+      "ready": true,
+      "auth": "present",
+      "modalities": [
+        "text"
+      ]
+    },
+    {
+      "agent": "grok",
+      "installed": true,
+      "version": "grok 1.0.5 (5115b46bc9) [stable]",
+      "ready": true,
+      "auth": "present",
+      "modalities": [
+        "text"
+      ]
+    }
+  ],
+  "reviewers": [
+    {
+      "agent": "codex",
+      "status": "success",
+      "attempts": 1,
+      "duration_ms": 88888,
+      "persona": "surgeon",
+      "detail": null,
+      "verdict": "REJECT",
+      "confidence": 0.99,
+      "summary": "The headline conclusion is invalidated by nonrandom order-based allocation, an uncorrected six-outcome analysis whose only positive result is p = 0.047, and mutually inconsistent effect-size statistics. Additional numerical errors, unsupported mechanistic and clinical claims, an impossible participant count, and inadequate reproducibility prevent publication in its present form.",
+      "suggested_improvements": [
+        "Run a preregistered, adequately powered randomized trial, preferably using a counterbalanced crossover design to reduce between-person variance.",
+        "Prespecify one primary outcome and a multiple-comparison procedure for all secondary outcomes, reporting effect sizes with confidence intervals.",
+        "Use a spectrally appropriate matched-luminance control, objective sleep measurements, allocation concealment, and blinded outcome scoring.",
+        "Publish deidentified participant-level data, task materials, scoring rules, spreadsheet formulas, and a versioned analysis script.",
+        "State the manufacturer's role in study design, analysis, interpretation, and publication decisions."
+      ]
+    },
+    {
+      "agent": "claude",
+      "status": "self_excluded",
+      "attempts": 1,
+      "duration_ms": 46,
+      "persona": null,
+      "detail": null,
+      "verdict": null,
+      "confidence": null,
+      "summary": null,
+      "suggested_improvements": null
+    },
+    {
+      "agent": "antigravity",
+      "status": "invalid_output",
+      "attempts": 1,
+      "duration_ms": 16118,
+      "persona": "adversary",
+      "detail": "reviewer did not return the required JSON schema — JSON present but no findings[] object; stdout 1263 bytes, stderr 303 bytes; sample: \"{\"conversation_id\":\"7a82372d-40ec-4b61-a52e-e2ffbca7ad85\",\"status\":\"SUCCESS\",\"response\":\"\",\"duration_seconds\":12.1204307,\"num_turns\":1,\"json_schema\":{\"type\":\"object\",\"additionalProperties\":false,\"requ\"",
+      "verdict": null,
+      "confidence": null,
+      "summary": null,
+      "suggested_improvements": null
+    },
+    {
+      "agent": "copilot",
+      "status": "success",
+      "attempts": 1,
+      "duration_ms": 101702,
+      "persona": "verifier",
+      "detail": null,
+      "verdict": "REJECT",
+      "confidence": 0.9,
+      "summary": "The manuscript reports a single nominally significant result (p=0.047) out of six uncorrected comparisons in a 12-person, non-randomized, single-lab study, then draws causal, mechanistic, and 'large effect' conclusions the design and statistics do not support; it also contains two internal numeric inconsistencies (9+4≠12 participants, and a miscalculated 14% relative improvement that is actually ~8.5%).",
+      "suggested_improvements": [
+        "Use a priori power analysis to justify sample size before data collection.",
+        "Randomize and, where feasible, blind group assignment instead of using enrollment order.",
+        "Report confidence intervals alongside p-values and effect sizes for all six outcome measures.",
+        "Preregister the primary outcome and analysis plan to avoid post hoc emphasis on the single significant measure.",
+        "Recruit participants independently of the research team to reduce demand-characteristic risk."
+      ]
+    },
+    {
+      "agent": "grok",
+      "status": "success",
+      "attempts": 1,
+      "duration_ms": 148501,
+      "persona": "innovator",
+      "detail": null,
+      "verdict": "REJECT",
+      "confidence": 0.93,
+      "summary": "This excerpt cannot support its title or Discussion: n and sex counts disagree, allocation is sequential rather than randomised, six uncorrected tests leave p = 0.047 as a non-credible headline, Cohen’s d = 0.31 is both the wrong magnitude for t(10) = 2.27 and not a large effect, the 14% improvement is arithmetically false, and a p = 0.08 sleep-quality difference is used as a causal mechanism. The work needs a properly controlled, preregistered, multiplicity-aware design with open data before any claim that evening blue light improves adult working memory.",
+      "suggested_improvements": [
+        "Preregister a single primary endpoint (2-back) and treat the other tasks as a jointly modelled specificity profile rather than six separate t-tests.",
+        "Replace photopic lux matching with a melanopic-EDI–matched, blue-depleted 300 lux control so wavelength, not brightness or time-of-enrollment, is the contrast.",
+        "Deposit raw trial-level data, the spreadsheet or analysis script, LED spectral power, and task parameters in a public repository instead of “on reasonable request.”",
+        "Idea, not a defect: recast assignment as an exact randomization test over all C(12,6) partitions of the enrollment order and use that permutation distribution as a built-in audit of the first-six-versus-last-six confound, then embed each volunteer in an N-of-1 evening-blue versus morning-melanopic-counterpulse crossover with actigraphy-mediated sleep as a within-person causal path."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "uncorrected-six-test-family",
+      "severity": "CRITICAL",
+      "target_file": "2.3 Analysis",
+      "line_range": null,
+      "issue": "\"Because the measures address distinct cognitive domains, no correction for multiple comparisons was applied\" leaves the sole positive result at p = 0.047 uncorrected across six tested outcomes.",
+      "rationale": "Testing six outcomes at alpha 0.05 produces a family-wise false-positive probability of about 26.5%; the 2-back result fails Bonferroni correction (threshold 0.0083; adjusted p approximately 0.282), so the headline conclusion rests on a result that is not significant under the stated outcome family.",
+      "test_suggestion": "python -c \"print('alpha=',0.05/6,'FWER=',1-0.95**6,'adjusted_p=',min(1,0.047*6))\"",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "allocation-confounds-causal-claim",
+      "severity": "CRITICAL",
+      "target_file": "2.2 Design / 4. Discussion",
+      "line_range": null,
+      "issue": "\"The first six enrollees formed the blue-light group and the remaining six the control group\" makes treatment perfectly confounded with enrollment order, contradicting the claim that exposure \"causes\" improved memory.",
+      "rationale": "Any enrollment-time difference in participant characteristics, testing, season, equipment, or researcher behavior maps directly onto condition; without randomization or baseline measurements, the observed group difference cannot be attributed specifically to blue light.",
+      "test_suggestion": "Tabulate treatment assignment against enrollment rank; ranks 1-6 and 7-12 will perfectly predict condition, demonstrating the confounding.",
+      "sources": [
+        "codex",
+        "copilot"
+      ]
+    },
+    {
+      "id": "effect-size-internally-impossible",
+      "severity": "CRITICAL",
+      "target_file": "3. Results / 4. Discussion",
+      "line_range": null,
+      "issue": "\"The effect size (Cohen's d = 0.31) indicates a large effect\" is both numerically inconsistent with t(10) = 2.27 for two groups of six and incorrectly labels d = 0.31 as large.",
+      "rationale": "For the reported equal-group pooled independent-samples t-test, d = t*sqrt(1/n1+1/n2), giving approximately 1.31 rather than 0.31; moreover, 0.31 is conventionally small, and no confidence interval or clinical threshold supports the claimed magnitude or clinical importance.",
+      "test_suggestion": "python -c \"import math; print(2.27*math.sqrt(1/6+1/6))\"",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "causal-overreach",
+      "severity": "CRITICAL",
+      "target_file": "prompt.txt",
+      "line_range": [
+        61,
+        61
+      ],
+      "issue": "The discussion states \"These results demonstrate that a single hour of evening blue-light exposure causes a clinically meaningful improvement in working memory in adults,\" asserting causation from a small, non-randomized, uncorrected single comparison.",
+      "rationale": "Causal language is not warranted given the allocation method (enrollment order, not randomization) and lack of multiple-comparison control; this overstates what the design can support.",
+      "test_suggestion": "Rewrite the claim as an association (e.g., \"was associated with\") and qualify it as preliminary pending a randomized replication.",
+      "sources": [
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "unsupported-sleep-mechanism",
+      "severity": "WARNING",
+      "target_file": "3. Results",
+      "line_range": null,
+      "issue": "\"Self-reported sleep quality was lower in the blue-light group (p = 0.08), which we interpret as evidence that blue light consolidates memory through mild sleep restriction\" asserts a mechanism from a nonsignificant secondary outcome without a mediation analysis.",
+      "rationale": "At the prespecified alpha of 0.05, p = 0.08 is not evidence of a group difference; even a genuine association would not establish that sleep restriction mediated the 2-back result, especially without objective sleep measurement or individual-level mediation data.",
+      "test_suggestion": "Verify that 0.08 exceeds the stated alpha, then require an individual-level, temporally ordered mediation analysis before making the mechanism claim.",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "relative-improvement-miscalculated",
+      "severity": "WARNING",
+      "target_file": "4. Discussion",
+      "line_range": null,
+      "issue": "\"The 14% relative improvement we observed (81.3 vs 74.9)\" miscalculates the relative improvement, which is approximately 8.5%.",
+      "rationale": "The absolute difference is 6.4 percentage points, and 6.4/74.9 is approximately 0.0854; the reported 14% exaggerates the observed contrast and undermines comparison with prior 3-5% reports.",
+      "test_suggestion": "python -c \"print((81.3-74.9)/74.9*100)\"",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "participant-count-contradiction",
+      "severity": "WARNING",
+      "target_file": "2.1 Participants",
+      "line_range": null,
+      "issue": "\"Twelve volunteers (n = 12; 9 women, 4 men...)\" reports sex-category counts totaling 13 participants.",
+      "rationale": "The impossible denominator prevents verification of sample composition and raises uncertainty about whether the stated group sizes, degrees of freedom, and analyses used the correct observations.",
+      "test_suggestion": "python -c \"assert 9+4==12, 'reported categories total 13, not 12'\"",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "population-and-clinical-overreach",
+      "severity": "WARNING",
+      "target_file": "2.1 Participants / 4. Discussion",
+      "line_range": null,
+      "issue": "\"These results demonstrate ... a clinically meaningful improvement ... in adults\" and the recommendation for workplace adoption exceed evidence from twelve graduate students recruited from the authors' own laboratory group.",
+      "rationale": "The narrow convenience sample provides no basis for generalizing to adults or workplace populations, while accuracy on one laboratory task supplies neither a validated clinical endpoint nor a minimal clinically important difference.",
+      "test_suggestion": "Restrict the conclusion to this convenience sample and compare the observed effect and its confidence interval with a prespecified validated clinical threshold.",
+      "sources": [
+        "codex"
+      ]
+    },
+    {
+      "id": "analysis-not-reproducible",
+      "severity": "WARNING",
+      "target_file": "2.2 Design / 2.3 Analysis / Data availability",
+      "line_range": null,
+      "issue": "\"Analyses were performed in a spreadsheet; the raw data are available from the corresponding author on reasonable request\" does not provide the data, task implementations, scoring rules, spreadsheet formulas, or software details needed to reproduce the result.",
+      "rationale": "An independent reader cannot reconstruct the outcomes, verify exclusions and assumptions, or recalculate the reported statistics from the manuscript, so the numerical inconsistencies cannot be audited.",
+      "test_suggestion": "Attempt a clean reproduction using only the manuscript materials; it stops before analysis because observations, scoring specifications, and executable calculations are absent.",
+      "sources": [
+        "codex",
+        "copilot",
+        "grok"
+      ]
+    },
+    {
+      "id": "small-homogeneous-unrepresentative-sample",
+      "severity": "WARNING",
+      "target_file": "prompt.txt",
+      "line_range": [
+        49,
+        49
+      ],
+      "issue": "Participants were \"recruited from the authors' laboratory group\" and \"All participants were graduate students in the same department,\" with only n=12 total.",
+      "rationale": "A small, single-lab, single-department sample limits generalizability to the broader \"adults\" population claimed in the title and discussion, and raises risk of experimenter demand effects.",
+      "test_suggestion": "Recruit an independently sourced, demographically varied sample and perform an a priori power analysis to justify sample size.",
+      "sources": [
+        "copilot"
+      ]
+    },
+    {
+      "id": "funding-conflict-of-interest",
+      "severity": "WARNING",
+      "target_file": "prompt.txt",
+      "line_range": [
+        63,
+        63
+      ],
+      "issue": "The funding statement notes \"the LED panel was supplied by its manufacturer,\" a potential conflict of interest not discussed elsewhere in the manuscript.",
+      "rationale": "Equipment provided by a manufacturer with commercial interest in the study's outcome should be disclosed and discussed as a potential source of bias, not left to a single line.",
+      "test_suggestion": "Add an explicit conflict-of-interest statement in the discussion addressing the manufacturer relationship.",
+      "sources": [
+        "copilot",
+        "grok"
+      ]
+    }
+  ],
+  "consensus": {
+    "corroborated": [
+      "uncorrected-six-test-family",
+      "allocation-confounds-causal-claim",
+      "effect-size-internally-impossible",
+      "causal-overreach",
+      "unsupported-sleep-mechanism",
+      "relative-improvement-miscalculated",
+      "participant-count-contradiction",
+      "analysis-not-reproducible",
+      "funding-conflict-of-interest"
+    ],
+    "single_source": [
+      "population-and-clinical-overreach",
+      "small-homogeneous-unrepresentative-sample"
+    ]
+  },
+  "insights": {
+    "agreement_score": 0.82,
+    "verdict_split": {
+      "REJECT": 3
+    },
+    "unique_findings_by_reviewer": {
+      "codex": [
+        "population-and-clinical-overreach"
+      ],
+      "copilot": [
+        "small-homogeneous-unrepresentative-sample"
+      ]
+    },
+    "risk_heatmap": [
+      {
+        "file": "prompt.txt",
+        "findings": 3,
+        "max_severity": "CRITICAL"
+      },
+      {
+        "file": "2.3 Analysis",
+        "findings": 1,
+        "max_severity": "CRITICAL"
+      },
+      {
+        "file": "2.2 Design / 4. Discussion",
+        "findings": 1,
+        "max_severity": "CRITICAL"
+      },
+      {
+        "file": "3. Results / 4. Discussion",
+        "findings": 1,
+        "max_severity": "CRITICAL"
+      },
+      {
+        "file": "3. Results",
+        "findings": 1,
+        "max_severity": "WARNING"
+      },
+      {
+        "file": "4. Discussion",
+        "findings": 1,
+        "max_severity": "WARNING"
+      },
+      {
+        "file": "2.1 Participants",
+        "findings": 1,
+        "max_severity": "WARNING"
+      },
+      {
+        "file": "2.1 Participants / 4. Discussion",
+        "findings": 1,
+        "max_severity": "WARNING"
+      },
+      {
+        "file": "2.2 Design / 2.3 Analysis / Data availability",
+        "findings": 1,
+        "max_severity": "WARNING"
+      }
+    ],
+    "reviewer_track_record": {},
+    "investigation_order": [],
+    "track_record_note": "precision here is the governor's acceptance rate on this project (applied / adjudicated), not precision against a labeled ground truth; use it to order attention, never to skip reproduction"
+  },
+  "outstanding": {
+    "untriaged_suggestions": 14,
+    "suggestions_by_reviewer": {
+      "codex": 5,
+      "copilot": 5,
+      "grok": 4
+    },
+    "material_findings_awaiting_reproduction": 11,
+    "dispositions_logged_for_this_run": 0,
+    "complete": false,
+    "required_next_actions": [
+      "Reproduce each of the 11 CRITICAL/WARNING finding(s) with a failing test before authoring any fix.",
+      "Triage all 14 suggested_improvements — apply-and-verify or reject with a reason. None may be silently dropped.",
+      "Append one JSONL line per ruling to .ensemble_reviews/dispositions.jsonl with run_id rev_20260904153705_95x7, then present the disposition table."
+    ]
+  },
+  "decision_rule": "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
+  "evidence": {
+    "persisted": true,
+    "log_indexed": true,
+    "report_path": ".ensemble_reviews/reports/rev_20260904153705_95x7.json",
+    "report_sha256": "3cacb39b5ec13f6d60c032e143ca69de3d828857df3dc356f4e77290ed5551a2",
+    "report_sha256_covers": "stored_report_bytes",
+    "gitignore": "not_a_git_repo"
+  },
+  "update_available": null
+}

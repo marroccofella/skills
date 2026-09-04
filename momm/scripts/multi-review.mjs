@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-const MOMM_VERSION = "1.13.0";
+const MOMM_VERSION = "1.14.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -395,7 +395,7 @@ function renderStats(trackRecord) {
   if (!agents.length && !unRows) return "No disposition history found in .ensemble_reviews/dispositions.jsonl — run reviews and triage suggestions first.\n";
   const lines = [
     "Reviewer track record (from this project's disposition ledger)",
-    "reviewer      applied  rejected  deferred  other  precision  note",
+    "reviewer      applied  rejected  deferred  other  accepted   note",
     "-".repeat(72),
   ];
   const totals = { applied: 0, rejected: 0, deferred: 0, other: 0 };
@@ -413,7 +413,7 @@ function renderStats(trackRecord) {
   }
   const all = totals.applied + totals.rejected + totals.deferred + totals.other;
   lines.push("-".repeat(72), row("total", totals, { precision: "", text: `${all} rows` }));
-  lines.push("", "Precision = suggestions applied / (applied + rejected), as triaged by the governor; deferred and other rows are counted, not adjudicated.", "Advisory prior only: every material finding still requires reproduction.");
+  lines.push("", "accepted = suggestions the governor applied / adjudicated (applied + rejected); deferred and other rows are counted, not adjudicated.", "This is agreement with the governor's own later triage on this project — an acceptance rate, not ground-truth precision.", "Advisory attention prior only: every material finding still requires reproduction.");
   return `${lines.join("\n")}\n`;
 }
 
@@ -522,6 +522,23 @@ function normalizeAgentName(value) {
   return name;
 }
 
+// Tiers are presets, never overrides: a value the user set explicitly is kept.
+const DEFAULT_POOL = ["codex", "claude", "antigravity", "copilot", "grok"];
+const QUICK_POOL = ["copilot", "antigravity"]; // shortest median time-to-verdict in the ledger
+function applyTier(options) {
+  if (!options.tier) return options;
+  // Provenance, not content: an explicit --reviewers list is kept even when
+  // it happens to equal the default pool (finding
+  // explicit-default-reviewers-overridden, rev_20260904154021_uctu).
+  if (options.tier === "quick") {
+    if (!options.reviewersExplicit) options.reviewers = [...QUICK_POOL];
+    if (!options.timeoutExplicit) { options.timeoutMs = 60_000; options.timeoutExplicit = true; }
+  } else if (options.tier === "deep") {
+    if (!options.minSuccess) options.minSuccess = 2;
+  }
+  return options;
+}
+
 function usage() {
   return `Usage:
   node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
@@ -554,6 +571,9 @@ Options:
                             gemini=fresheyes, antigravity=adversary, copilot=verifier, grok=innovator.
                             Personas shape tone and angle, never the schema and never the truthfulness of findings.
   --stats                   Print this project's per-reviewer track record (applied vs rejected suggestions) and exit
+  --tier <quick|deep>       quick: the two fastest routes (copilot, antigravity) with a 60 s budget — for staged commits;
+                            deep: the full pool with --min-success 2 — for release gates. An explicit --reviewers /
+                            --timeout / --min-success always wins over the tier's defaults.
   --ui / --no-ui            Force the live progress display on/off (default: on when stderr is a TTY and --stream is absent)
   --pretty                  Pretty-print JSON
   --version                 Print dispatcher version and report schema
@@ -587,7 +607,7 @@ function parseArgs(argv) {
 
     if (arg === "--governor") options.governor = normalizeAgentName(next());
     else if (arg === "--input" || arg === "--patch") options.input = next();
-    else if (arg === "--reviewers") options.reviewers = next().split(",").map(normalizeAgentName).filter(Boolean);
+    else if (arg === "--reviewers") { options.reviewers = next().split(",").map(normalizeAgentName).filter(Boolean); options.reviewersExplicit = true; }
     else if (arg === "--timeout") { options.timeoutMs = Math.max(1, Number(next())) * 1000; options.timeoutExplicit = true; }
     else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
     else if (arg === "--strict") options.strict = true;
@@ -596,6 +616,11 @@ function parseArgs(argv) {
     else if (arg === "--doctor") options.doctor = true;
     else if (arg === "--preflight") options.preflight = true;
     else if (arg === "--stats") options.stats = true;
+    else if (arg === "--tier") {
+      const tier = String(next() ?? "").toLowerCase();
+      if (!["quick", "deep"].includes(tier)) throw new Error("--tier must be quick or deep");
+      options.tier = tier;
+    }
     else if (arg === "--store-input") options.storeInput = true;
     else if (arg === "--label") options.label = clipped(next(), 120);
     else if (arg === "--attach") (options.attach ??= []).push(next());
@@ -641,7 +666,9 @@ function cleanOauthEnv(source = process.env) {
 function sanitizeText(text) {
   let redactions = 0;
   const patterns = [
-    /\b(?:sk-ant-|sk-proj-|xai-|ghp_)[A-Za-z0-9._-]{12,}\b/g,
+    /\b(?:sk-ant-|sk-proj-|xai-|ghp_|gho_|ghu_|ghs_|github_pat_)[A-Za-z0-9._-]{12,}\b/g,
+    /\bsk-[A-Za-z0-9]{20,}\b/g,
+    /\bAKIA[0-9A-Z]{16}\b/g,
     /((?:api[_-]?key|password|secret|bearer)\s*[:=]\s*["']?)[^\s"']{8,}/gi,
   ];
   let value = text;
@@ -1042,7 +1069,20 @@ async function invokeReviewer(agent, artifact, options) {
   }
   if (result.code !== 0 || result.error || result.timedOut) return { agent, ...classifyFailure(result) };
   const payload = unwrapReviewPayload(result.stdout);
-  if (!payload) return { agent, status: "invalid_output", detail: "reviewer did not return the required JSON schema" };
+  if (!payload) {
+    // Say WHAT came back, not just that it was wrong: the failure class
+    // (empty reply, prose instead of JSON, truncated stream, wrapper drift)
+    // must be diagnosable from the ledger without re-running the route.
+    const sample = (text) => sanitizeText(String(text || "")).value.replace(/\s+/g, " ").replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"']+/gi, "<home>").replace(/\/(?:Users|home)\/[^/\s"']+/g, "/<home>").trim().slice(0, 200);
+    const out = result.stdout || "";
+    const err = result.stderr || "";
+    const shape = !out.trim() ? "empty stdout" : extractJsonObjects(out).length ? "JSON present but no findings[] object" : "no JSON object in stdout";
+    return {
+      agent,
+      status: "invalid_output",
+      detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
+    };
+  }
   return { agent, status: "success", review: normalizeReview(agent, payload) };
 }
 
@@ -1090,8 +1130,51 @@ function overlappingKey(grouped, finding) {
   return null;
 }
 
-function rationalize(results) {
+// Prose artifacts (manuscripts, docs, proposals) carry section labels in
+// target_file and no line_range, so neither location key fires and identical
+// defects fragment — the manuscript specimen rev_20260904131823_wvxh scored
+// 26 raw findings / 0 corroborated while three referees quoted the same
+// sentences. For a finding with no line range, a shared run of six normalized
+// words is treated as the location: two referees citing the same sentence of
+// the artifact are citing the same defect. Never joins two findings from the
+// same reviewer.
+const SHINGLE_WORDS = 6;
+function textShingles(finding) {
+  const words = `${finding.issue ?? ""} ${finding.rationale ?? ""}`.toLowerCase().replace(/[^a-z0-9%.= ]+/g, " ").split(/\s+/).filter(Boolean);
+  const set = new Set();
+  for (let i = 0; i + SHINGLE_WORDS <= words.length; i += 1) set.add(words.slice(i, i + SHINGLE_WORDS).join(" "));
+  return set;
+}
+// A shared six-word run only counts as a quotation when it occurs in the
+// reviewed artifact; two reviewers sharing a stock rationale sentence are
+// not citing the same defect (finding boilerplate-creates-false-corroboration,
+// rev_20260904154021_uctu).
+function artifactShingles(artifact) {
+  return textShingles({ issue: String(artifact || ""), rationale: "" });
+}
+function quotationKey(grouped, finding, agent, prose = false, corpus = null) {
+  const mine = textShingles(finding);
+  if (!mine.size) return null;
+  for (const [key, candidate] of grouped) {
+    if ((!prose && normalizedRange(candidate)) || candidate.sources.includes(agent)) continue;
+    const theirs = textShingles(candidate);
+    for (const shingle of mine) if (theirs.has(shingle) && (!corpus || corpus.has(shingle))) return key;
+  }
+  return null;
+}
+
+// A diff has files and line numbers; plain text does not, and reviewers
+// asked to give line_range for prose invent one (the live re-run
+// rev_20260904152252_yvrw returned "prompt.txt:49", "§2.3 Analysis:11" and
+// "2. Methods:3" for the same sentence). In prose mode location keys are
+// therefore ignored and a shared quotation is the location.
+function looksLikeDiff(artifact) {
+  return /^(?:diff --git |--- a\/|\+\+\+ b\/|@@ )/m.test(String(artifact || ""));
+}
+
+function rationalize(results, { prose = false, artifact = null } = {}) {
   const grouped = new Map();
+  const corpus = artifact === null ? null : artifactShingles(artifact);
   const byId = new Map();
   for (const result of results) {
     if (result.status !== "success") continue;
@@ -1102,13 +1185,14 @@ function rationalize(results) {
       // fall back to the wording fingerprint. Fallback ids embed the agent
       // name, so they can never collide across reviewers.
       const idKey = `${(finding.target_file || "").toLowerCase()}|${finding.id.toLowerCase()}`;
-      let key = byId.get(idKey) ?? overlappingKey(grouped, finding) ?? fingerprint(finding);
+      const quoted = prose || !normalizedRange(finding) ? quotationKey(grouped, finding, result.agent, prose, corpus) : null;
+      let key = byId.get(idKey) ?? quoted ?? (prose ? null : overlappingKey(grouped, finding)) ?? fingerprint(finding);
       // Precise locations beat fuzzy wording in BOTH directions: if the
       // candidate group sits at line ranges that demonstrably do not overlap
       // this finding's, they are different defects however similarly they are
       // worded — merging them would inflate the agreement score.
       const collision = grouped.get(key);
-      if (collision && disjointRanges(collision, finding)) {
+      if (!prose && collision && disjointRanges(collision, finding)) {
         key = `${key}|@${Math.min(finding.line_range[0], finding.line_range[1])}`;
       }
       byId.set(idKey, key);
@@ -1210,6 +1294,7 @@ function buildInsights(findings, results) {
       (SEVERITY_RANK[b.max_severity] - SEVERITY_RANK[a.max_severity]) || (b.findings - a.findings)),
     reviewer_track_record: trackRecord,
     investigation_order: investigationOrder,
+    track_record_note: "precision here is the governor's acceptance rate on this project (applied / adjudicated), not precision against a labeled ground truth; use it to order attention, never to skip reproduction",
   };
 }
 
@@ -1416,6 +1501,20 @@ function createUi(enabled, outStream = process.stderr) {
       this.stop();
       paint();
       out(`\n  ${color(ANSI.bold, "✔")} ${verdictText} · ${findingsText} · ${color(ANSI.dim, report.run_id)}\n`);
+      // The scannable part: material findings with their anchors and the
+      // reviewer's own reproduction idea — what a human reads first.
+      // Reviewer strings reach a TTY here: strip control characters so a
+      // payload cannot carry OSC/CSI sequences (finding
+      // reviewer-terminal-control-injection, rev_20260904154021_uctu).
+      const plain = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+      const material = report.findings.filter((f) => f.severity !== "NITPICK").slice(0, 6);
+      for (const f of material) {
+        const where = f.target_file ? `${plain(f.target_file)}${Array.isArray(f.line_range) && f.line_range[0] ? `:${f.line_range[0]}${f.line_range[1] && f.line_range[1] !== f.line_range[0] ? `-${f.line_range[1]}` : ""}` : ""}` : "(no anchor)";
+        out(`  ${color(f.severity === "CRITICAL" ? ANSI.red : ANSI.yellow, f.severity === "CRITICAL" ? "▲" : "△")} ${f.severity.padEnd(8)} ${where}  ${plain(f.id)}  ${color(ANSI.dim, `[${(f.sources ?? []).map(plain).join("+")}]`)}\n`);
+        if (f.test_suggestion) out(`    ${color(ANSI.dim, "reproduce:")} ${plain(f.test_suggestion).replace(/\s+/g, " ").slice(0, 110)}\n`);
+      }
+      const failed = report.reviewers.filter((r) => r.status !== "success" && r.status !== "self_excluded");
+      if (failed.length) out(`  ${color(ANSI.yellow, "⚠")} ${failed.length} route${failed.length === 1 ? "" : "s"} did not review: ${failed.map((r) => `${plain(r.agent)} (${plain(r.status)})`).join(", ")}\n`);
       if (ledgerUrl) out(`  ${color(ANSI.green, "◆")} your private ledger: ${color(ANSI.cyan, ledgerUrl)} ${color(ANSI.dim, "(owner-only, local)")}\n`);
       out("\n");
       api.rendered = true;
@@ -1580,6 +1679,68 @@ async function selfTest(pretty) {
       const record = computeTrackRecord([JSON.stringify({ reviewer: "constructor", disposition: "applied" }), JSON.stringify({ reviewer: "toString", disposition: "rejected" })].join("\n"));
       return record.constructor.applied === 1 && record.tostring.rejected === 1 && Object.keys(record).length === 2;
     })(),
+    prose_findings_merge_on_shared_quotation: (() => {
+      const quote = "the first six enrollees formed the blue-light group and the remaining six the control group";
+      const mk = (agent, id, target, extra) => ({ status: "success", agent, review: { findings: [{ id, severity: "CRITICAL", target_file: target, line_range: null, issue: `${extra} "${quote}" makes the causal claim invalid.`, rationale: "r" }] } });
+      const merged = rationalize([mk("codex", "allocation-order", "§2.2 Design and §4 Discussion", "The sentence"), mk("copilot", "non-random-assignment", "Methods, 2.2 Design", "Quoted:"), mk("grok", "sequential-assignment", "2.2 Design", "Assignment was")], { prose: true, artifact: `Design. ${quote}.` });
+      return merged.length === 1 && merged[0].sources.length === 3;
+    })(),
+    prose_mode_ignores_invented_line_ranges: (() => {
+      const quote = "because the measures address distinct cognitive domains no correction for multiple comparisons was applied";
+      const mk = (agent, id, target, range) => ({ status: "success", agent, review: { findings: [{ id, severity: "CRITICAL", target_file: target, line_range: range, issue: `Quoted: "${quote}" leaves the result unsupported.`, rationale: "r" }] } });
+      const results = [mk("codex", "uncorrected", "§2.3 Analysis", [11, 11]), mk("copilot", "multiple-comparisons", "prompt.txt", [53, 57]), mk("grok", "six-tests", "2. Methods", [3, 3])];
+      return rationalize(results, { prose: true, artifact: `Analysis. ${quote}.` }).length === 1 && rationalize(results, { prose: true, artifact: `Analysis. ${quote}.` })[0].sources.length === 3 && !looksLikeDiff("# Manuscript\n\nSome prose.") && looksLikeDiff("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n");
+    })(),
+    tier_quick_keeps_explicit_reviewers_even_when_they_equal_the_default: (() => {
+      const kept = applyTier(parseArgs(["--governor", "claude", "--tier", "quick", "--reviewers", "codex,claude,antigravity,copilot,grok"]));
+      return kept.reviewers.length === 5 && kept.reviewersExplicit === true;
+    })(),
+    prose_boilerplate_rationale_does_not_corroborate: (() => {
+      const artifact = "Twelve volunteers (n = 12; 9 women, 4 men) were recruited. We recommend that blue-light panels be adopted in workplace wellness programmes.";
+      const stock = "This materially undermines confidence in the reported conclusion and should be addressed before publication.";
+      const mk = (agent, id, target, issue) => ({ status: "success", agent, review: { findings: [{ id, severity: "WARNING", target_file: target, line_range: null, issue, rationale: stock }] } });
+      const different = rationalize([mk("codex", "a", "2.1 Participants", "The sex counts do not sum to n."), mk("copilot", "b", "4. Discussion", "The workplace recommendation is unsupported.")], { prose: true, artifact });
+      const same = rationalize([mk("codex", "a", "2.1 Participants", 'The sentence "we recommend that blue-light panels be adopted in workplace wellness programmes" overreaches.'), mk("copilot", "b", "Discussion", 'Quoted: "we recommend that blue-light panels be adopted in workplace wellness programmes" is unsupported.')], { prose: true, artifact });
+      return different.length === 2 && same.length === 1 && same[0].sources.length === 2;
+    })(),
+    ui_strips_control_sequences_from_reviewer_strings: (() => {
+      const chunks = [];
+      const ui = createUi(true, { write: (s) => { chunks.push(String(s)); return true; }, isTTY: true, columns: 120 });
+      ui.finish({ run_id: "rev_t", reviewers: [{ agent: "codex", status: "success", verdict: "MODIFY" }], findings: [{ id: "bad\u001b]52;c;AAAA\u0007id", severity: "CRITICAL", target_file: "a.js\u001b[31m", line_range: [1, 2], sources: ["codex"], test_suggestion: "run\u0007it" }] }, null);
+      const text = chunks.join("");
+      return text.includes("badid") === false && !text.includes("\u001b]52") && !text.includes("\u0007") && text.includes("bad ") && text.includes("a.js ");
+    })(),
+    prose_findings_with_different_quotes_stay_separate: (() => {
+      const mk = (agent, id, issue) => ({ status: "success", agent, review: { findings: [{ id, severity: "WARNING", target_file: "4. Discussion", line_range: null, issue, rationale: "r" }] } });
+      const merged = rationalize([mk("codex", "a", "The sentence \"the effect size indicates a large effect\" is wrong."), mk("copilot", "b", "The sentence \"we recommend that blue-light panels be adopted\" overreaches.")]);
+      return merged.length === 2;
+    })(),
+    prose_merge_never_joins_same_reviewer: (() => {
+      const quote = "self-reported sleep quality was lower in the blue-light group";
+      const f = (id, issue) => ({ id, severity: "WARNING", target_file: "3. Results", line_range: null, issue, rationale: "r" });
+      const merged = rationalize([{ status: "success", agent: "codex", review: { findings: [f("one", `Quoted sentence: "${quote}" is read as a mechanism.`), f("two", `A different defect entirely, but it also cites "${quote}" for reproducibility.`)] } }]);
+      return merged.length === 2;
+    })(),
+    code_findings_keep_line_range_merge_rules: (() => {
+      const mk = (agent, id, range, issue) => ({ status: "success", agent, review: { findings: [{ id, severity: "WARNING", target_file: "a.js", line_range: range, issue, rationale: "r" }] } });
+      const merged = rationalize([mk("codex", "x", [10, 12], "the loop bound skips the last element of the array here"), mk("copilot", "y", [40, 41], "the loop bound skips the last element of the array here")]);
+      return merged.length === 2;
+    })(),
+    tier_quick_picks_fast_routes_and_short_budget: (() => {
+      const quick = applyTier(parseArgs(["--governor", "claude", "--tier", "quick"]));
+      const kept = applyTier(parseArgs(["--governor", "claude", "--tier", "quick", "--reviewers", "codex", "--timeout", "300"]));
+      const deep = applyTier(parseArgs(["--governor", "claude", "--tier", "deep"]));
+      let rejected = false; try { parseArgs(["--governor", "claude", "--tier", "medium"]); } catch { rejected = true; }
+      return JSON.stringify(quick.reviewers) === JSON.stringify(["copilot", "antigravity"]) && quick.timeoutMs === 60_000 && kept.reviewers.join() === "codex" && kept.timeoutMs === 300_000 && deep.minSuccess === 2 && rejected;
+    })(),
+    redacts_common_token_prefixes: (() => {
+      const r = sanitizeText("a ghp_abcdefghijklmnopqrstuvwxyz0123 b github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 c AKIAABCDEFGHIJKLMNOP d sk-abcdefghijklmnopqrstuvwxyz0123 e");
+      return r.redactions === 4 && !/ghp_|github_pat_|AKIA|sk-abc/.test(r.value);
+    })(),
+    template_strings_and_env_lookups_survive_sanitizer: (() => {
+      const src = "const url = `${base}/api?key=${key}`; const k = process.env.OPENAI_API_KEY; import sklearn as sk-learn";
+      return sanitizeText(src).value === src;
+    })(),
     verify_first_flags_only_low_precision_single_sources: (() => {
       const trackRecord = {
         copilot: { applied: 1, rejected: 9, samples: 10, precision: 0.1 },
@@ -1739,6 +1900,7 @@ async function main() {
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
   const sanitized = sanitizeText(rawArtifact);
+  applyTier(options);
   options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
   // Each --attach was an explicit per-file act by the user; staging copies the
   // media with metadata stripped and re-states exactly what is being shared
@@ -1795,12 +1957,14 @@ async function main() {
   }
   const preflightEntries = await preflightPromise;
   const externalSuccesses = results.filter((result) => result.agent !== options.governor && result.status === "success").length;
-  const findings = rationalize(results);
+  const prose = !looksLikeDiff(sanitized.value);
+  const findings = rationalize(results, { prose, artifact: sanitized.value });
   // Join key linking this report, the run log, and governor dispositions.
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
   const report = {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
+    tier: options.tier ?? "default",
     policy: "oauth-only",
     run_id: runId,
     ...(options.label ? { label: options.label } : {}),

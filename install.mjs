@@ -55,7 +55,7 @@ function sameTarget(linkPath, sourcePath) {
 }
 
 function parseArgs(argv) {
-  const o = { targets: ["auto"], customDirs: [], dryRun: false, pretty: false, help: false };
+  const o = { targets: [], customDirs: [], dryRun: false, pretty: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`Missing value for ${a}`); return argv[++i]; };
@@ -100,13 +100,20 @@ function linkGemini(skills, options) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write("Usage: node install.mjs [--target auto|all|codex|gemini|claude|antigravity] [--custom-dir <skill-parent>] [--dry-run] [--pretty]\n\nLinks every skill (dir with a SKILL.md) in this repo into the chosen harness skill directories.\n");
+    process.stdout.write("Usage: node install.mjs --target <codex|gemini|claude|antigravity|all|auto>[,…] [--custom-dir <skill-parent>] [--dry-run] [--pretty]\n\nLinks every skill (dir with a SKILL.md) in this repo into the harness skill directories you name.\n--target is required: this writes into an agent harness, so choose it explicitly. `--dry-run` previews.\n");
     return;
   }
   const skills = discoverSkills();
   if (!skills.length) { process.stderr.write("No skills found (no top-level directory contains a SKILL.md).\n"); process.exitCode = 1; return; }
 
   let targets = options.targets;
+  if (!targets.length && !options.customDirs.length) {
+    // Never write into every detected harness by default: name the target.
+    const detected = ["codex", commandExists("gemini") && "gemini", commandExists("claude") && "claude", commandExists(antigravityCommand()) && "antigravity"].filter(Boolean);
+    process.stderr.write(`--target is required (this links skills into an agent harness).\nDetected on this machine: ${detected.join(", ")}\n  node install.mjs --target ${detected[0] ?? "claude"}          # one harness\n  node install.mjs --target ${detected.join(",")}   # the ones you choose\n  node install.mjs --target all --dry-run          # preview every harness\n`);
+    process.exitCode = 2;
+    return;
+  }
   if (targets.includes("auto")) {
     targets = ["codex"];
     if (commandExists("gemini")) targets.push("gemini");

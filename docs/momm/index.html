@@ -3,52 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MOMM — Mixture of Model Modality</title>
-<meta name="description" content="OAuth-only multi-model peer review for AI coding agents and for documents: Codex, Claude, Antigravity, Copilot and Grok referee your diff, manuscript, PDF or image in parallel while your own agent stays the sole writer — reproduction-gated, content-addressed evidence, zero API keys.">
+<title>MOMM — local multi-CLI code review with a reproduction gate</title>
+<meta name="description" content="MOMM is a local script that sends your diff or document to the other AI coding CLIs already logged in on your machine (Codex, Claude Code, Antigravity, Copilot, Grok), keeps their output read-only, and makes your own agent reproduce a finding before it changes code. Every run is logged locally.">
 <link rel="canonical" href="https://marroccofella.github.io/skills/momm/">
-<meta name="version" content="1.13.0">
+<meta name="version" content="1.14.0">
 <meta name="theme-color" content="#080a0a">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23080a0a%27/%3E%3Cpath d=%27M16 5l11 11-11 11L5 16z%27 fill=%27%2300ff99%27/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
-<meta property="og:title" content="MOMM — Mixture of Model Modality">
-<meta property="og:description" content="Every frontier model on your machine, refereeing your code and your papers together — using only the subscriptions you already pay for. Reproduction-gated, sealed evidence, zero API keys.">
+<meta property="og:title" content="MOMM — local multi-CLI code review with a reproduction gate">
+<meta property="og:description" content="Fan a diff out to the AI CLIs already on your machine, keep them read-only, and make your agent reproduce a finding before it fixes it.">
 <meta property="og:url" content="https://marroccofella.github.io/skills/momm/">
 <meta property="og:image" content="https://marroccofella.github.io/skills/momm/momm-walkthrough-poster.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="MOMM — Mixture of Model Modality">
-<meta name="twitter:description" content="OAuth-only multi-model peer review for code and documents. Five routes, sealed evidence, zero API keys.">
+<meta name="twitter:title" content="MOMM — local multi-CLI code review with a reproduction gate">
+<meta name="twitter:description" content="Fan a diff out to the AI CLIs already on your machine, keep them read-only, and make your agent reproduce a finding before it fixes it.">
 <meta name="twitter:image" content="https://marroccofella.github.io/skills/momm/momm-walkthrough-poster.jpg">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "MOMM (Mixture of Model Modality)",
+  "name": "MOMM",
   "alternateName": "momm",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux (Node.js 18+)",
-  "softwareVersion": "1.13.0",
+  "softwareVersion": "1.14.0",
   "license": "https://opensource.org/licenses/MIT",
   "url": "https://marroccofella.github.io/skills/momm/",
   "downloadUrl": "https://github.com/marroccofella/skills",
   "codeRepository": "https://github.com/marroccofella/skills",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "description": "OAuth-only multi-model peer review for AI coding agents and Agent Skills harnesses. Dispatches a git diff, a document, or attached media to locally installed Codex, Claude Code, Antigravity, GitHub Copilot and Grok CLIs in parallel; the driving agent remains the sole writer and must reproduce findings before acting. Content-addressed evidence reports, tuned reviewer personas, ledger-derived track records, quorum gates, a private per-user dashboard, and a sanitized public evidence export.",
-  "featureList": "Five OAuth reviewer routes; zero API keys (fail-closed); per-agent tuned personas; reviewer track record and verify-first flags; multimedia review with metadata stripping; .reviewrules journal-style guidelines; content-addressed evidence bound to the input hash; quorum gates; live terminal UI; private local dashboards with read-aloud; public sealed evidence ledger",
-  "sameAs": ["https://github.com/marroccofella/skills", "https://42.uk", "https://www.promptus.ai"],
-  "author": {
-    "@type": "Person",
-    "name": "Dominic Marrocco",
-    "jobTitle": "Professor of Technology Commercialization and Entrepreneur in Residence, University of Nevada, Las Vegas",
-    "sameAs": ["https://www.unlv.edu/people/dominic-marrocco", "https://uk.linkedin.com/in/marroccofella", "https://www.researchgate.net/profile/Dominic-Marrocco", "https://42.uk"]
-  }
+  "description": "Local multi-CLI code review with a reproduction gate: a single Node script dispatches a git diff, a document, or attached media to the other locally installed AI coding CLIs (Codex, Claude Code, Antigravity, GitHub Copilot, Grok) in parallel using their existing logins; reviewer output is read-only and untrusted; the driving agent must reproduce a finding before acting; every run is logged locally with content hashes.",
+  "author": { "@type": "Person", "name": "Dominic Marrocco", "sameAs": ["https://www.unlv.edu/people/dominic-marrocco", "https://uk.linkedin.com/in/marroccofella", "https://42.uk"] }
 }
 </script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "VideoObject",
-  "name": "MOMM walkthrough — how multi-model peer review works",
-  "description": "A narrated walkthrough of MOMM: the problem of agents grading their own homework, the governor and reviewer coalition, the reproduction gate, sealed evidence, and refereeing manuscripts. Narration is a consented synthetic clone of the creator's voice generated locally with F5-TTS through Promptus.",
+  "name": "MOMM walkthrough — a real catch, then how it works",
+  "description": "Opens on a real run in which two other CLIs flagged a defect in the driving agent's own code; then the workflow: fan-out, read-only reviewers, the reproduction gate, local logs, documents. Narration is a consented synthetic clone of the creator's voice generated locally with F5-TTS through Promptus.",
   "thumbnailUrl": "https://marroccofella.github.io/skills/momm/momm-walkthrough-poster.jpg",
   "contentUrl": "https://marroccofella.github.io/skills/momm/momm-walkthrough.mp4",
   "uploadDate": "2026-09-04",
@@ -60,11 +53,10 @@
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    { "@type": "Question", "name": "What is MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "MOMM (Mixture of Model Modality) is an Agent Skill that lets the AI coding agent you are talking to dispatch your code diff, a document, or attached media to every other frontier-model CLI installed on your machine — Codex, Claude Code, Antigravity, GitHub Copilot, and Grok — for parallel peer review. Your agent stays the sole writer and must reproduce any finding before acting on it." } },
-    { "@type": "Question", "name": "Does MOMM need API keys?", "acceptedAnswer": { "@type": "Answer", "text": "No — and it refuses them. MOMM is OAuth-only: it uses the provider CLIs' official browser logins (the subscriptions you already pay for) and strips every known API-key environment variable from reviewer subprocesses. A route that is not logged in fails closed." } },
-    { "@type": "Question", "name": "How do I install MOMM?", "acceptedAnswer": { "@type": "Answer", "text": "git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target all — this links every skill into each detected AI harness (Claude Code, Codex, Gemini, Antigravity). Then run node momm/scripts/multi-review.mjs --preflight --governor <your-harness> to see the exact install and login command for any route that is not ready, and tell your agent: use momm." } },
-    { "@type": "Question", "name": "Can MOMM review scientific papers, not just code?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Pass a manuscript with --input, or a PDF or image with --attach, and put your journal's reviewer guidelines in a .reviewrules file — every referee receives them. The specimen on this page is a synthetic methods-and-results excerpt with planted flaws: three referees returned REJECT and caught every planted flaw, and the sealed report is published beside the page." } },
-    { "@type": "Question", "name": "How do I know reviewer feedback was really used?", "acceptedAnswer": { "@type": "Answer", "text": "Every run persists a content-addressed report (sha256 over the stored bytes, bound to the exact reviewed input by its own hash). Every reviewer suggestion receives an explicit applied-or-rejected disposition with named evidence. The project reviews its own code with MOMM and publishes the sanitized ledger — including the run in which MOMM found a CRITICAL defect in itself." } }
+    { "@type": "Question", "name": "Does MOMM send my code anywhere?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Each route you run sends the redacted, metadata-stripped input to that vendor (OpenAI, Anthropic, Google, GitHub, xAI) over your own CLI login. That is the whole point of a review. Nothing else is sent, and this website sends nothing." } },
+    { "@type": "Question", "name": "Do I need all five CLIs?", "acceptedAnswer": { "@type": "Answer", "text": "No. It runs with whatever is logged in; one external route is enough. Routes that are missing or logged out are reported as such and skipped. --tier quick uses the two fastest routes with a 60-second budget." } },
+    { "@type": "Question", "name": "What does the acceptance-rate chart measure?", "acceptedAnswer": { "@type": "Answer", "text": "How often the driving agent kept a route's suggestions after trying to reproduce them on this project. It is agreement with that agent's later triage, not precision against a labeled ground truth, and it only orders attention." } },
+    { "@type": "Question", "name": "How do I install it?", "acceptedAnswer": { "@type": "Answer", "text": "git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target claude --dry-run, then the same command without --dry-run. The installer requires you to name the harness it writes into." } }
   ]
 }
 </script>
@@ -74,7 +66,6 @@
     --text: #e6ffe6; --muted: #9be29b; --dim: #5c6f60;
     --accent: #00ff99; --accent-dim: #00cc88; --link: #8ef0c6;
     --warn: #ffd166; --crit: #ff7a7a;
-    /* reviewer routes — fixed categorical order, validated for the dark surface */
     --r-codex: #3987e5; --r-antigravity: #d95926; --r-copilot: #199e70; --r-grok: #c98500; --r-claude: #d55181;
     --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
   }
@@ -84,31 +75,33 @@
   body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: radial-gradient(circle at top, rgba(0,255,153,.06), transparent 34%); pointer-events: none; }
   a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
   .wrap { max-width: 1020px; margin: 0 auto; padding: 0 22px; }
-  header.hero { padding: 64px 0 40px; border-bottom: 1px solid var(--border); }
+  header.hero { padding: 56px 0 36px; border-bottom: 1px solid var(--border); }
   .wordmark { font-size: 14px; letter-spacing: .12em; color: var(--muted); }
   .wordmark b { color: var(--accent); font-size: 18px; }
-  h1 { font-size: clamp(28px, 5vw, 46px); line-height: 1.12; margin: 18px 0 14px; text-wrap: balance; max-width: 22ch; }
+  h1 { font-size: clamp(26px, 4.4vw, 40px); line-height: 1.15; margin: 18px 0 14px; text-wrap: balance; max-width: 26ch; }
   h1 em { color: var(--accent); font-style: normal; }
-  .sub { color: var(--muted); max-width: 72ch; font-size: 15.5px; }
-  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+  .sub { color: var(--muted); max-width: 74ch; font-size: 15.5px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; }
   .badge { border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px; font-size: 12px; color: var(--muted); background: var(--panel); }
   .badge.hot { color: var(--accent); border-color: var(--accent-dim); }
-  .cmd { display: flex; gap: 10px; align-items: stretch; margin: 22px 0 0; }
+  .cmd { display: flex; gap: 10px; align-items: stretch; margin: 18px 0 0; }
   .cmd code, pre.block { display: block; flex: 1; background: #060808; border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--text); overflow-x: auto; white-space: pre; margin: 0; }
   pre.block { white-space: pre-wrap; line-height: 1.55; }
   button.copy { background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 0 14px; font: inherit; font-size: 12px; cursor: pointer; }
   button.copy:hover { color: var(--accent); border-color: var(--accent-dim); }
   .note { color: var(--dim); font-size: 12.5px; margin: 10px 0 0; }
+  .plain { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid var(--warn); background: var(--panel); border-radius: 0 10px 10px 0; color: var(--text); font-size: 13.5px; }
   nav.toc { position: sticky; top: 0; z-index: 5; background: rgba(8,10,10,.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
   nav.toc .wrap { display: flex; gap: 4px 18px; flex-wrap: wrap; padding: 8px 22px; font-size: 12px; }
   nav.toc a { color: var(--muted); } nav.toc a:hover { color: var(--accent); text-decoration: none; }
-  section { padding: 54px 0 22px; }
+  section { padding: 50px 0 22px; }
   section + section { border-top: 1px solid var(--border); }
   h2 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
-  h3.big { font-size: clamp(22px, 3.4vw, 32px); line-height: 1.2; margin: 0 0 14px; text-wrap: balance; }
+  h3.big { font-size: clamp(21px, 3.2vw, 30px); line-height: 1.2; margin: 0 0 14px; text-wrap: balance; }
   h4 { font-size: 15px; margin: 0 0 6px; }
   .lead { color: var(--muted); max-width: 78ch; }
   .lead b, .lead strong { color: var(--text); }
+  ul.plainlist { color: var(--muted); max-width: 78ch; padding-left: 20px; } ul.plainlist li { margin: 6px 0; } ul.plainlist b { color: var(--text); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 22px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
   .card h4 span { color: var(--accent); margin-right: 8px; }
@@ -130,9 +123,7 @@
   .chart .sub { font-size: 12px; color: var(--dim); margin: 2px 0 8px; }
   .chart svg { width: 100%; height: auto; display: block; font: 11px var(--mono); }
   .chart .axis { stroke: var(--border); stroke-width: 1; }
-  .chart text { fill: var(--muted); }
-  .chart .lbl { fill: var(--text); }
-  .chart .dimtxt { fill: var(--dim); }
+  .chart text { fill: var(--muted); } .chart .lbl { fill: var(--text); } .chart .dimtxt { fill: var(--dim); }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--muted); margin-top: 8px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   details.table { margin-top: 8px; font-size: 12px; color: var(--dim); }
@@ -148,56 +139,50 @@
   .route { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--rc); border-radius: 10px; padding: 12px 14px; }
   .route b { display: block; font-size: 15px; } .route small { color: var(--dim); display: block; }
   .route .p { margin-top: 6px; color: var(--muted); font-size: 12.5px; }
-  blockquote { margin: 16px 0 0; padding: 12px 16px; border-left: 3px solid var(--accent-dim); background: var(--panel); border-radius: 0 10px 10px 0; color: var(--text); font-size: 13.5px; }
-  blockquote footer { color: var(--dim); font-size: 12px; margin-top: 6px; }
   ol.steps { padding-left: 0; list-style: none; counter-reset: s; margin: 18px 0 0; }
   ol.steps li { counter-increment: s; position: relative; padding: 0 0 18px 44px; }
   ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--accent-dim); color: var(--accent); display: grid; place-items: center; font-size: 13px; }
   ol.steps li p { margin: 4px 0 8px; color: var(--muted); }
   ol.steps code { display: block; background: #060808; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; overflow-x: auto; white-space: pre; }
-  .term { background: #050707; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-top: 18px; font-size: 12.5px; min-height: 200px; }
+  .term { background: #050707; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-top: 18px; font-size: 12.5px; }
   .term .tbar { color: var(--dim); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
-  .term .line { opacity: 0; transform: translateY(4px); transition: opacity .35s, transform .35s; white-space: pre-wrap; }
-  .term .line.show { opacity: 1; transform: none; }
+  .term .line { white-space: pre-wrap; }
   .term .dim { color: var(--dim); } .term .ok { color: var(--accent); } .term .crit { color: var(--crit); } .term .warn { color: var(--warn); }
   .term .cx { color: var(--r-codex); } .term .cp { color: var(--r-copilot); } .term .gk { color: var(--r-grok); } .term .ag { color: var(--r-antigravity); }
   .faq details { border-bottom: 1px solid var(--border); padding: 10px 0; }
   .faq summary { cursor: pointer; color: var(--text); } .faq p { color: var(--muted); margin: 8px 0 0; font-size: 13.5px; }
   footer.site { border-top: 1px solid var(--border); padding: 30px 0 50px; color: var(--dim); font-size: 12px; }
   footer.site nav { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 14px; }
-  .reveal { opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease; }
-  .reveal.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } .term .line { transition: none; } }
   @media (max-width: 640px) { .cmd { flex-direction: column; } header.hero { padding-top: 40px; } }
 </style>
 </head>
 <body>
 
 <header class="hero"><div class="wrap">
-  <div class="wordmark"><b>◆ MOMM</b> · MIXTURE OF MODEL MODALITY · pronounced “mom” · v1.13.0</div>
-  <h1>Every frontier model on your machine, <em>refereeing your work together.</em></h1>
-  <p class="sub">MOMM is an Agent Skill for AI coding agents. Your agent dispatches a diff, a document, or attached media to the <i>other</i> installed LLM CLIs — OpenAI Codex, Claude Code, Google Antigravity, GitHub Copilot, xAI Grok — which review it in parallel and return structured, deduplicated findings. Your agent stays the sole writer, must reproduce every claim before acting, and seals the whole conversation as content-addressed evidence. It works the same way on source code and on manuscripts.</p>
+  <div class="wordmark"><b>◆ MOMM</b> · local multi-CLI code review with a reproduction gate · v1.14.0</div>
+  <h1>Have the other AI CLIs on your machine review your diff. <em>Then make your agent prove a finding before it fixes it.</em></h1>
+  <p class="sub">MOMM is one Node script, installed as an Agent Skill. Your coding agent pipes a diff, a document, or an attached file to whichever of Codex, Claude Code, Antigravity, GitHub Copilot and Grok are already logged in on the machine. They review in parallel, read-only. Their output is treated as untrusted data. Your agent stays the only writer, has to reproduce a finding before it changes anything, and records what it did with every suggestion. Every run is logged locally with content hashes.</p>
   <div class="badges">
-    <span class="badge hot">zero API keys — OAuth only, fail-closed</span>
-    <span class="badge">5 reviewer routes</span>
-    <span class="badge">v1.13.0 · MIT</span>
-    <span class="badge">any Agent Skills harness</span>
-    <span class="badge"><span data-stat="runs">…</span> sealed runs in the public ledger</span>
-    <span class="badge">no accounts · no trackers · no cookies</span>
+    <span class="badge hot">runs with whatever is logged in — one route is enough</span>
+    <span class="badge">uses your existing CLI logins, no API keys</span>
+    <span class="badge">reviewers are read-only</span>
+    <span class="badge">v1.14.0 · MIT · Node 18+</span>
+    <span class="badge">no accounts · no trackers · no cookies on this site</span>
   </div>
-  <div class="cmd"><code id="install-cmd">git clone https://github.com/marroccofella/skills &amp;&amp; cd skills &amp;&amp; node install.mjs --target all</code><button class="copy" data-copy="install-cmd">copy</button></div>
-  <p class="note">Links every skill into every AI harness it detects. Then tell your agent: <b>“use momm to review my current changes.”</b> Or paste this into any agent to have it install and run MOMM for you:</p>
-  <div class="cmd"><pre class="block" id="agent-prompt">Install the momm skill from https://github.com/marroccofella/skills — clone it, run `node install.mjs --target all`, then `node momm/scripts/multi-review.mjs --preflight --governor &lt;you&gt;` and relay every login hint to me verbatim. When a route is ready, use momm to review my current changes and follow momm/SKILL.md exactly: reproduce findings before fixing, and end with the disposition table.</pre><button class="copy" data-copy="agent-prompt">copy</button></div>
+  <div class="cmd"><code id="install-cmd">git clone https://github.com/marroccofella/skills &amp;&amp; cd skills &amp;&amp; node install.mjs --target claude --dry-run</code><button class="copy" data-copy="install-cmd">copy</button></div>
+  <p class="note">Preview, then run it again without <code>--dry-run</code>. The installer writes into the harness you name (<code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>antigravity</code>) and refuses to guess. <code>--target all</code> exists; you have to type it. Then tell your agent <b>“use momm to review my current changes.”</b> Or paste this into any agent:</p>
+  <div class="cmd"><pre class="block" id="agent-prompt">Install the momm skill from https://github.com/marroccofella/skills: clone it, run `node install.mjs --target &lt;this harness&gt;`, then `node momm/scripts/multi-review.mjs --preflight --governor &lt;you&gt;` and tell me which routes are logged in. Then use momm to review my current changes and follow momm/SKILL.md: reproduce a finding before fixing it, and end with the table of what you applied and rejected.</pre><button class="copy" data-copy="agent-prompt">copy</button></div>
+  <p class="plain"><b>What leaves your machine:</b> each route you run sends the redacted, metadata-stripped input to that vendor over your own login. That is the review. Nothing else is sent; this page sends nothing. “No API keys” is how it authenticates, not a privacy property.</p>
 </div></header>
 
 <nav class="toc"><div class="wrap">
-  <a href="#walkthrough">Walkthrough</a><a href="#why">Why</a><a href="#how">How it works</a><a href="#measured">Measured</a><a href="#self">MOMM on MOMM</a><a href="#science">Peer review &amp; publishing</a><a href="#coalition">Coalition</a><a href="#evidence">Evidence</a><a href="#start">Get started</a><a href="#faq">FAQ</a>
+  <a href="#walkthrough">Walkthrough</a><a href="#what">What it does</a><a href="#how">How it works</a><a href="#when">When to use it</a><a href="#numbers">Its own logs</a><a href="#self">Bugs it found in itself</a><a href="#docs">Documents</a><a href="#routes">Routes</a><a href="#start">Get started</a><a href="#faq">FAQ</a>
 </div></nav>
 
 <section id="walkthrough"><div class="wrap">
-  <h2>Watch the walkthrough</h2>
-  <h3 class="big">Two minutes. Narrated by Dom himself.</h3>
-  <p class="lead">The problem, the coalition, the reproduction gate, the sealed evidence, and how the same protocol referees a manuscript — with captions. The narration is a <b>consented synthetic clone</b> of creator Dominic Marrocco's voice, generated locally by F5-TTS through Promptus: the same on-device voice pipeline this repository ships as the <a href="https://github.com/marroccofella/skills/tree/main/promptus-clone-voice">promptus-clone-voice</a> skill. Every beat passed a signal-health gate and a local Whisper word-accuracy gate before it was allowed into the cut.</p>
+  <h2>Walkthrough</h2>
+  <h3 class="big">Under three minutes. It opens on a real catch.</h3>
+  <p class="lead">The first beat is a real run: the driving agent had changed its own process supervisor, and two other CLIs independently flagged that a timed-out child was being reported as a normal exit. Then the workflow: fan-out, read-only reviewers, the reproduction gate, local logs, documents. Captions included.</p>
   <div class="video">
     <video controls preload="metadata" poster="momm-walkthrough-poster.jpg" crossorigin="anonymous">
       <source src="momm-walkthrough.mp4" type="video/mp4">
@@ -205,122 +190,110 @@
       Your browser does not support video — <a href="momm-walkthrough.mp4">download the walkthrough</a>.
     </video>
   </div>
-  <div class="consent"><span>◈</span><span><b>Synthetic voice, used with recorded consent.</b> Voice powered by <a href="https://www.promptus.ai">Promptus AI</a> · F5-TTS ran entirely on the creator's machine; nothing was uploaded for generation. Seeds, gate thresholds and per-beat word-error rates are recorded in the build manifest. The earlier 62-second <a href="momm-simulation.mp4">simulation clip</a> remains available.</span></div>
+  <div class="consent"><span>◈</span><span><b>The narration is a synthetic clone of the creator's voice</b>, generated on his own machine with F5-TTS through <a href="https://www.promptus.ai">Promptus</a> with recorded consent; the pipeline ships in this repository as <a href="https://github.com/marroccofella/skills/tree/main/promptus-clone-voice">promptus-clone-voice</a>. Each beat passed a signal check and a local Whisper word-accuracy check (≤ 5 % word error) before it was used; the build manifest records seeds and rates. The creator's own listening verdict on this cut is still pending.</span></div>
 </div></section>
 
-<section id="why" class="reveal"><div class="wrap">
-  <h2>Why MOMM exists</h2>
-  <h3 class="big">The gap: agents grading their own homework.</h3>
-  <p class="lead">Every AI coding agent reviews its own output with the model that wrote it — same blind spots in, same blind spots out. Models measurably prefer their own output, so the judge is biased by construction; nothing in the loop is <i>rewarded</i> for finding what the writer missed; the reasoning lives in scrollback and evaporates with the session; and a second opinion usually means pay-per-token API keys duct-taped through environment variables. MOMM turns each weakness into a rule: a governor that cannot grade its own homework, rival models with nothing to protect, findings that are claims until reproduced, and every word sealed under a hash — using only the OAuth subscriptions already on the machine.</p>
-  <div class="grid">
-    <div class="card"><h4><span>◇</span>Monoculture risk</h4><p>One model family means correlated failures. Proof case: a NaN bug froze every ghost in a game on level 1 — the author's own green test suite missed it; a rival model caught it in one pass.</p></div>
-    <div class="card"><h4><span>◇</span>Self-certification</h4><p>An agent that writes, reviews, and approves is a rubber stamp. MOMM's governor self-excludes, and reviewers can't write — separation of powers, enforced in code.</p></div>
-    <div class="card"><h4><span>◇</span>Key sprawl</h4><p>Pay-per-token keys for models you already subscribe to, scattered through env vars. MOMM strips every known key variable and rides official OAuth logins only.</p></div>
-    <div class="card"><h4><span>◇</span>Vanishing reviews</h4><p>Chat-window reviews evaporate. MOMM seals every conversation content-addressed, binds it to the exact input hash, and answers every suggestion on the record.</p></div>
-  </div>
+<section id="what"><div class="wrap">
+  <h2>What it does</h2>
+  <h3 class="big">Four rules, one script.</h3>
+  <ul class="plainlist">
+    <li><b>Fan out.</b> Send the artifact to every other installed CLI at once, over each one's own login. Missing or logged-out routes are reported and skipped.</li>
+    <li><b>The writer does not grade its own diff.</b> The agent running the review is excluded from reviewing. Reviewers cannot write, commit, or run tools.</li>
+    <li><b>Nothing changes until it reproduces.</b> A finding is a claim. The agent has to write a failing reproduction before it authors a fix, and rejects on the record what it cannot reproduce.</li>
+    <li><b>Keep the transcripts.</b> Each run's report is stored locally with a sha256 over its bytes and the hash of the exact input, next to a log of what the agent applied and rejected and why.</li>
+  </ul>
+  <p class="lead" style="margin-top:16px">Honest accounting of what is new here: fan-out to several models is common (mixture-of-agents, multi-reviewer prompts). The parts worth keeping are the reproduction gate, the writer's self-exclusion, and the logged dispositions — plain engineering hygiene, written down as a protocol an agent actually follows, with the logs to check it did.</p>
 </div></section>
 
-<section id="how" class="reveal"><div class="wrap">
+<section id="how"><div class="wrap">
   <h2>How it works</h2>
-  <h3 class="big">One writer. Many referees. A gate between them.</h3>
+  <h3 class="big">One writer. Several read-only reviewers. A gate between them.</h3>
   <figure>
-  <svg viewBox="0 0 960 300" role="img" aria-label="Flow diagram: an artifact (diff, document or media) is sanitized and hashed; preflight probes every route with zero model calls; the artifact is dispatched read-only in parallel to Codex, Antigravity, Copilot and Grok, each under its own OAuth login and a tuned persona; their findings are deduplicated into a sealed content-addressed report; the governor reproduces findings before fixing and records a disposition for every suggestion.">
+  <svg viewBox="0 0 960 300" role="img" aria-label="Flow diagram: an artifact (diff, document or media) is redacted and hashed; a preflight probes every route with zero model calls; the artifact is dispatched read-only in parallel to Codex, Antigravity, Copilot and Grok, each under its own login and a default persona; their findings are deduplicated into a hash-bound report; the driving agent reproduces findings before fixing and records a disposition for every suggestion.">
     <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#00cc88"/></marker></defs>
-    <style>.bx{fill:#111316;stroke:#1f2a22;rx:10}.hot{stroke:#00cc88}.tx{fill:#e6ffe6;font:12px ui-monospace,Consolas,monospace}.sm{fill:#5c6f60;font:10px ui-monospace,Consolas,monospace}.ln{stroke:#00cc88;stroke-width:1.5;fill:none;marker-end:url(#ar)}.rl{stroke-width:1.5;fill:none}</style>
+    <style>.bx{fill:#111316;stroke:#1f2a22;rx:10}.hot{stroke:#00cc88}.tx{fill:#e6ffe6;font:12px ui-monospace,Consolas,monospace}.sm{fill:#5c6f60;font:10px ui-monospace,Consolas,monospace}.ln{stroke:#00cc88;stroke-width:1.5;fill:none;marker-end:url(#ar)}</style>
     <rect class="bx" x="10" y="118" width="140" height="64" rx="10"/><text class="tx" x="26" y="142">git diff · --input</text><text class="tx" x="26" y="158">--attach media</text><text class="sm" x="26" y="173">code · prose · media</text>
-    <rect class="bx hot" x="186" y="118" width="150" height="64" rx="10"/><text class="tx" x="202" y="142">sanitize + hash</text><text class="sm" x="202" y="158">secret redaction</text><text class="sm" x="202" y="173">input_sha256 · strip</text>
+    <rect class="bx hot" x="186" y="118" width="150" height="64" rx="10"/><text class="tx" x="202" y="142">redact + hash</text><text class="sm" x="202" y="158">token patterns removed</text><text class="sm" x="202" y="173">input_sha256 · strip</text>
     <rect class="bx" x="372" y="14" width="170" height="48" rx="10"/><text class="tx" x="388" y="35">preflight</text><text class="sm" x="388" y="51">zero model calls · login hints</text>
-    <rect class="bx hot" x="372" y="118" width="170" height="64" rx="10"/><text class="tx" x="388" y="142">parallel dispatch</text><text class="sm" x="388" y="158">read-only · OAuth env only</text><text class="sm" x="388" y="173">.reviewrules injected</text>
+    <rect class="bx hot" x="372" y="118" width="170" height="64" rx="10"/><text class="tx" x="388" y="142">parallel dispatch</text><text class="sm" x="388" y="158">read-only · your CLI logins</text><text class="sm" x="388" y="173">.reviewrules injected</text>
     <g font-family="ui-monospace,Consolas,monospace" font-size="11.5">
       <rect class="bx" x="372" y="214" width="80" height="34" rx="8" stroke="#3987e5"/><text x="380" y="229" fill="#e6ffe6">codex</text><text x="380" y="242" class="sm">surgeon</text>
       <rect class="bx" x="458" y="214" width="84" height="34" rx="8" stroke="#d95926"/><text x="466" y="229" fill="#e6ffe6">antigravity</text><text x="466" y="242" class="sm">adversary</text>
       <rect class="bx" x="372" y="256" width="80" height="34" rx="8" stroke="#199e70"/><text x="380" y="271" fill="#e6ffe6">copilot</text><text x="380" y="284" class="sm">verifier</text>
       <rect class="bx" x="458" y="256" width="84" height="34" rx="8" stroke="#c98500"/><text x="466" y="271" fill="#e6ffe6">grok</text><text x="466" y="284" class="sm">innovator</text>
     </g>
-    <rect class="bx hot" x="578" y="118" width="170" height="64" rx="10"/><text class="tx" x="594" y="138">dedup · consensus</text><text class="tx" x="594" y="154">sealed report</text><text class="sm" x="594" y="173">sha256 over stored bytes</text>
-    <rect class="bx hot" x="784" y="118" width="166" height="64" rx="10"/><text class="tx" x="800" y="138">governor gate</text><text class="sm" x="800" y="154">reproduce → fix → verify</text><text class="sm" x="800" y="173">disposition ledger</text>
-    <rect class="bx" x="784" y="214" width="166" height="48" rx="10"/><text class="tx" x="800" y="234">your agent</text><text class="sm" x="800" y="251">sole writer · self-excluded</text>
+    <rect class="bx hot" x="578" y="118" width="170" height="64" rx="10"/><text class="tx" x="594" y="138">dedup · corroborate</text><text class="tx" x="594" y="154">hash-bound report</text><text class="sm" x="594" y="173">sha256 over stored bytes</text>
+    <rect class="bx hot" x="784" y="118" width="166" height="64" rx="10"/><text class="tx" x="800" y="138">reproduction gate</text><text class="sm" x="800" y="154">reproduce → fix → verify</text><text class="sm" x="800" y="173">applied / rejected log</text>
+    <rect class="bx" x="784" y="214" width="166" height="48" rx="10"/><text class="tx" x="800" y="234">your agent</text><text class="sm" x="800" y="251">sole writer · excluded</text>
     <path class="ln" d="M150 150 H182"/><path class="ln" d="M336 150 H368"/><path class="ln" d="M420 118 V66"/><path class="ln" d="M457 182 V210"/><path class="ln" d="M542 150 H574"/><path class="ln" d="M748 150 H780"/><path class="ln" d="M867 214 V186"/>
   </svg>
-  <figcaption>Preflight never blocks dispatch; routes fail closed on their own. Each reviewer runs a tuned default persona calibrated from the ledger's track record. The report carries the schema version, dispatcher version, quorum outcome, timings per reviewer, and the insights block your agent reads out first: agreement score, verdict split, unique catches, risk heatmap.</figcaption>
+  <figcaption>Each route runs a default system prompt (“persona”) that leans into what that route has historically caught on this project and guards against its usual failure. They shape the angle, not the schema. The report carries dispatcher version, tier, timings per route, and a short insights block: agreement, verdict split, who found what, files ranked by severity.</figcaption>
   </figure>
   <figure>
-  <svg viewBox="0 0 960 190" role="img" aria-label="The governor gate as a sequence: reviewer findings arrive as claims; the governor inspects the cited code, writes a minimal failing reproduction, authors a fix only if the reproduction fails, re-runs the project's tests, records applied or rejected with a reason for every suggestion, and appends the disposition to the ledger with the run id.">
+  <svg viewBox="0 0 960 190" role="img" aria-label="The gate as a sequence: a finding arrives as a claim; the agent writes a minimal failing reproduction; it fixes only what reproduced; it re-runs the project's tests; it records applied or rejected with a reason for every suggestion. Findings that did not reproduce are rejected with the attempt as the reason.">
     <style>.g{fill:#111316;stroke:#1f2a22}.gt{fill:#e6ffe6;font:11.5px ui-monospace,Consolas,monospace}.gs{fill:#5c6f60;font:10px ui-monospace,Consolas,monospace}</style>
-    <g>
-      <rect class="g" x="10" y="40" width="150" height="56" rx="10"/><text class="gt" x="24" y="62">finding arrives</text><text class="gs" x="24" y="78">a claim, not a verdict</text>
-      <rect class="g" x="196" y="40" width="150" height="56" rx="10" stroke="#00cc88"/><text class="gt" x="210" y="62">reproduce</text><text class="gs" x="210" y="78">minimal failing test</text>
-      <rect class="g" x="382" y="40" width="150" height="56" rx="10"/><text class="gt" x="396" y="62">governor fixes</text><text class="gs" x="396" y="78">only what reproduced</text>
-      <rect class="g" x="568" y="40" width="150" height="56" rx="10"/><text class="gt" x="582" y="62">verify</text><text class="gs" x="582" y="78">suite + lint + new test</text>
-      <rect class="g" x="754" y="40" width="196" height="56" rx="10" stroke="#00cc88"/><text class="gt" x="768" y="62">disposition on the record</text><text class="gs" x="768" y="78">applied / rejected + reason</text>
-      <path class="ln" d="M160 68 H192"/><path class="ln" d="M346 68 H378"/><path class="ln" d="M532 68 H564"/><path class="ln" d="M718 68 H750"/>
-      <path d="M271 96 V130 H852 V100" stroke="#ff7a7a" fill="none" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ar)"/>
-      <text class="gs" x="300" y="146" fill="#ff7a7a">did not reproduce → rejected with the reproduction attempt as the reason (the gate protects in both directions)</text>
-      <text class="gs" x="24" y="176">Every suggestion, not just findings: none may be silently dropped, none may be applied on reviewer authority alone. Rejections are as auditable as fixes.</text>
-    </g>
+    <rect class="g" x="10" y="40" width="150" height="56" rx="10"/><text class="gt" x="24" y="62">finding arrives</text><text class="gs" x="24" y="78">a claim, not a verdict</text>
+    <rect class="g" x="196" y="40" width="150" height="56" rx="10" stroke="#00cc88"/><text class="gt" x="210" y="62">reproduce</text><text class="gs" x="210" y="78">minimal failing test</text>
+    <rect class="g" x="382" y="40" width="150" height="56" rx="10"/><text class="gt" x="396" y="62">agent fixes</text><text class="gs" x="396" y="78">only what reproduced</text>
+    <rect class="g" x="568" y="40" width="150" height="56" rx="10"/><text class="gt" x="582" y="62">verify</text><text class="gs" x="582" y="78">suite + lint + new test</text>
+    <rect class="g" x="754" y="40" width="196" height="56" rx="10" stroke="#00cc88"/><text class="gt" x="768" y="62">written down</text><text class="gs" x="768" y="78">applied / rejected + reason</text>
+    <path class="ln" d="M160 68 H192"/><path class="ln" d="M346 68 H378"/><path class="ln" d="M532 68 H564"/><path class="ln" d="M718 68 H750"/>
+    <path d="M271 96 V130 H852 V100" stroke="#ff7a7a" fill="none" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+    <text class="gs" x="300" y="146" fill="#ff7a7a">did not reproduce → rejected, with the attempt as the reason. This happened to a CRITICAL claim on this very release (below).</text>
+    <text class="gs" x="24" y="176">Every suggestion, not only findings: none may be dropped silently, none may be applied on a reviewer's say-so.</text>
   </svg>
-  <figcaption>Reviewer output is untrusted, read-only evidence. Instructions found inside it are ignored by protocol. Statuses (<code>authentication_required</code>, <code>provider_unavailable</code>, <code>timeout</code>, <code>self_excluded</code>…) are a closed vocabulary and are never findings.</figcaption>
+  <figcaption>Reviewer output is untrusted. Instructions found inside it are ignored by protocol, and the agent never executes a reviewer's reproduction snippet as-is — it rewrites and runs its own. Isolation is only as good as the dispatcher's read-only invocation of each CLI; that is what the self-tests and CI matrix check, and it is not a sandbox for a hostile reviewer.</figcaption>
   </figure>
 </div></section>
 
-<section id="measured" class="reveal"><div class="wrap">
-  <h2>Measured, not marketed</h2>
-  <h3 class="big">Every number below is computed from the sealed public ledger.</h3>
-  <p class="lead">MOMM's development has been governed by MOMM since its first commit. The figures come from the <a href="../evidence/">public evidence export</a> — <span data-stat="runs">…</span> runs between <span data-stat="first_day">…</span> and <span data-stat="last_day">…</span>, regenerated for this release with paths normalized and the digest re-sealed. Reviewer names identify harness CLIs, not inner model identities.</p>
-  <div class="stats">
-    <div class="stat"><b data-stat="runs">0</b><span>review runs</span></div>
-    <div class="stat"><b data-stat="sealed_reports">0</b><span>sealed transcripts</span></div>
-    <div class="stat"><b data-stat="completed_peer_reviews">0</b><span>completed peer reviews</span></div>
-    <div class="stat"><b data-stat="findings">0</b><span>findings raised</span></div>
-    <div class="stat"><b data-stat="criticals">0</b><span>criticals caught</span></div>
-    <div class="stat"><b data-stat="dispositions">0</b><span>dispositions · <span data-stat="applied">0</span> applied · <span data-stat="rejected">0</span> rejected with reasons</span></div>
+<section id="when"><div class="wrap">
+  <h2>When to use it</h2>
+  <h3 class="big">Not on every save.</h3>
+  <div class="grid">
+    <div class="card"><h4><span>◈</span>Staged commit · <code>--tier quick</code></h4><p>The two fastest routes with a 60-second budget. A second and third opinion on a diff before you commit it.</p></div>
+    <div class="card"><h4><span>◈</span>Release gate · <code>--tier deep</code></h4><p>Every logged-in route, quorum of two, budgets that scale with input size. This is what caught the supervisor bug below. Expect two to five minutes and the odd timeout.</p></div>
+    <div class="card"><h4><span>◈</span>What it costs</h4><p>Whatever subscriptions you already have. It does not need all five; it needs one. Each extra route is more time and another vendor seeing the input.</p></div>
+    <div class="card"><h4><span>◈</span>What it does not do</h4><p>It will not auto-apply anything, and it will not run reviewer-supplied code. The reproduction is still the agent's (or your) work — that is the point, and it is also why quick reviews should stay small.</p></div>
   </div>
-  <div class="charts" id="charts"></div>
-  <p class="note">Precision = suggestions the governor applied ÷ (applied + rejected), as triaged after reproduction. It is an attention prior only: the dispatcher ranks routes by it (<code>investigation_order</code>) and flags single-source findings from low-precision routes <code>verify_first</code>, but every material finding is still reproduced before it is believed. Timeouts scale with input size, which is why the dispatcher scales its budget with bytes and honours an explicit <code>--timeout</code> above the cap.</p>
 </div></section>
 
-<section id="self" class="reveal"><div class="wrap">
-  <h2>MOMM reviewing MOMM</h2>
-  <h3 class="big">This release was refereed by the coalition it commands.</h3>
-  <p class="lead">Before 1.13.0 shipped, the governor (Claude Code) piped the release's own dispatcher, ledger and Setup Center changes to the other routes. Run <a href="../evidence/">rev_20260904131435_mf6w</a>, agreement score <span data-stat="self_agreement">…</span>: Codex and Copilot independently found the same CRITICAL defect in the Setup Center's process supervisor — a timed-out child was being reported as a normal exit because of listener order. Each finding was reproduced with a failing script before a line changed; each fix shipped with a regression self-test; each suggestion got a disposition.</p>
+<section id="numbers"><div class="wrap">
+  <h2>Its own logs</h2>
+  <h3 class="big">Numbers from this project reviewing itself. Not an external evaluation.</h3>
+  <p class="lead">Every run below is MOMM's own development being reviewed by MOMM between <span data-stat="first_day">…</span> and <span data-stat="last_day">…</span> — <span data-stat="runs">…</span> runs. That is a process choice, published because the logs exist, not evidence that the tool works on your code. The figures are recomputed from the <a href="../evidence/">sanitized public export</a> on every release; the same tables are <a href="data/">CSV files beside this page</a>. Reviewer names identify CLIs, not the models behind them.</p>
+  <div class="stats">
+    <div class="stat"><b data-stat="runs">0</b><span>runs</span></div>
+    <div class="stat"><b data-stat="sealed_reports">0</b><span>stored reports</span></div>
+    <div class="stat"><b data-stat="completed_peer_reviews">0</b><span>completed reviews</span></div>
+    <div class="stat"><b data-stat="findings">0</b><span>raw findings</span></div>
+    <div class="stat"><b data-stat="criticals">0</b><span>rated CRITICAL by a reviewer</span></div>
+    <div class="stat"><b data-stat="dispositions">0</b><span>suggestions triaged · <span data-stat="applied">0</span> applied · <span data-stat="rejected">0</span> rejected</span></div>
+  </div>
+  <p class="plain" style="margin-top:18px"><b>Read the acceptance-rate chart correctly.</b> “Applied ÷ (applied + rejected)” is how often the driving agent kept a route's suggestions after trying to reproduce them. It is agreement with that agent's later triage on one codebase, not precision against a labeled ground truth. The dispatcher uses it only to order which route's findings to look at first.</p>
+  <div class="charts" id="charts"></div>
+  <!-- route-table:start --><table class="matrix" id="route-table"><thead><tr><th>route</th><th>completed</th><th>timeouts</th><th>median s</th><th>p90 s</th><th>accept / modify / reject</th><th>applied</th><th>rejected</th><th>acceptance rate</th></tr></thead><tbody><tr><td>codex</td><td>70</td><td>17</td><td>114.4</td><td>341.2</td><td>13 / 42 / 15</td><td>94</td><td>41</td><td>70%</td></tr><tr><td>antigravity</td><td>83</td><td>1</td><td>33.6</td><td>128.4</td><td>69 / 10 / 4</td><td>46</td><td>36</td><td>56%</td></tr><tr><td>copilot</td><td>101</td><td>2</td><td>32.2</td><td>213.3</td><td>65 / 29 / 7</td><td>76</td><td>101</td><td>43%</td></tr><tr><td>grok</td><td>68</td><td>25</td><td>31.9</td><td>328</td><td>14 / 48 / 6</td><td>34</td><td>31</td><td>52%</td></tr><tr><td>claude</td><td>21</td><td>2</td><td>43.5</td><td>274.5</td><td>7 / 14 / 0</td><td>26</td><td>37</td><td>41%</td></tr></tbody></table><!-- route-table:end -->
+  <p class="note">The table above is generated with the export and works without JavaScript. CSV: <a href="data/routes.csv">routes.csv</a> · <a href="data/runs.csv">runs.csv</a> · <a href="data/findings-by-severity.csv">findings-by-severity.csv</a> · <a href="data/input-size-vs-time.csv">input-size-vs-time.csv</a> · <a href="data/runs-per-day.csv">runs-per-day.csv</a> · <a href="data/dispositions.csv">dispositions.csv</a>. Route failures are a product problem, not a vocabulary: the input-size chart shows how many runs lost a route to a timeout, and the roadmap tracks per-route budgets and the Antigravity adapter.</p>
+</div></section>
+
+<section id="self"><div class="wrap">
+  <h2>Bugs it found in itself</h2>
+  <h3 class="big">Two routes failed on the flagship run. Two others found a real defect.</h3>
+  <p class="lead">Before 1.13.0, the driving agent (Claude Code) sent the release's own dispatcher, ledger and Setup Center changes to the other routes. Run <a href="../evidence/">rev_20260904131435_mf6w</a>: Antigravity returned unparseable output, Grok returned a placeholder, agreement was <span data-stat="self_agreement">…</span>. Codex and Copilot independently found the same CRITICAL defect in the process supervisor. Each finding was reproduced with a failing script before a line changed; each fix shipped with a regression test.</p>
   <table class="matrix" id="self-findings"><thead><tr><th>Finding</th><th>Severity</th><th>Where</th><th>Flagged by</th><th>What happened</th></tr></thead><tbody></tbody></table>
-  <p class="note">Antigravity returned <code>invalid_output</code> on this run — recorded as a status, never a finding. Grok returned a placeholder suggestion — rejected on the record. Full reasons: <a href="https://github.com/marroccofella/skills/blob/main/momm/references/release-1.13.0.md">release notes</a>.</p>
-  <div class="term" id="term" role="log" aria-live="polite" aria-label="Animated replay of the recorded review of this release">
+  <p class="lead" style="margin-top:16px">The release gate that followed (run rev_20260904134630_bl2v) is the other half of the story: Copilot rated a finding CRITICAL that did not reproduce — its own test snippet passed — and it was rejected on the record, while three Codex warnings did reproduce and were fixed. Full reasons in the <a href="https://github.com/marroccofella/skills/blob/main/momm/references/release-1.13.0.md">1.13.0 notes</a>; what changed after the external critique in the <a href="https://github.com/marroccofella/skills/blob/main/momm/references/release-1.14.0.md">1.14.0 notes</a>.</p>
+  <div class="term" id="term" role="log" aria-label="Recorded events from the review of this release">
     <div class="tbar">$ git diff HEAD -- momm | node momm/scripts/multi-review.mjs --governor claude --stream</div>
   </div>
 </div></section>
 
-<section id="science" class="reveal"><div class="wrap">
-  <h2>Peer review &amp; scientific publishing</h2>
-  <h3 class="big">The same protocol is editorial peer review — with the paperwork done for you.</h3>
-  <p class="lead">Strip away the code and MOMM is an editorial workflow: an <b>author</b> submits an artifact; several <b>referees</b> with different training read it independently and in parallel under the journal's <b>reviewer guidelines</b>; an <b>editor</b> who did not write the paper weighs the reports, checks the claims that matter, and records a decision with reasons; and the whole exchange is kept as an <b>auditable record</b>. Every one of those has a first-class counterpart below.</p>
-  <figure>
-  <svg viewBox="0 0 960 250" role="img" aria-label="Mapping of editorial peer review onto MOMM: author to governor input; journal reviewer guidelines to the .reviewrules file; referees to reviewer routes with personas; editor decision to the governor reproduction gate; decision letter and archive to dispositions and the content-addressed report.">
-    <style>.p1{fill:#0d1010;stroke:#1f2a22}.p2{fill:#111316;stroke:#00cc88}.pt{fill:#e6ffe6;font:12px ui-monospace,Consolas,monospace}.ps{fill:#9be29b;font:10.5px ui-monospace,Consolas,monospace}.pd{fill:#5c6f60;font:10px ui-monospace,Consolas,monospace}</style>
-    <text class="pd" x="12" y="22">EDITORIAL PEER REVIEW</text><text class="pd" x="12" y="160">MOMM</text>
-    <g>
-      <rect class="p1" x="12" y="34" width="168" height="62" rx="10"/><text class="pt" x="26" y="56">author submits</text><text class="ps" x="26" y="72">manuscript, figures,</text><text class="ps" x="26" y="86">supplementary data</text>
-      <rect class="p1" x="204" y="34" width="168" height="62" rx="10"/><text class="pt" x="218" y="56">reviewer guidelines</text><text class="ps" x="218" y="72">journal scope, priorities,</text><text class="ps" x="218" y="86">severity scale</text>
-      <rect class="p1" x="396" y="34" width="168" height="62" rx="10"/><text class="pt" x="410" y="56">independent referees</text><text class="ps" x="410" y="72">parallel, blind to each</text><text class="ps" x="410" y="86">other, different training</text>
-      <rect class="p1" x="588" y="34" width="168" height="62" rx="10"/><text class="pt" x="602" y="56">editor decides</text><text class="ps" x="602" y="72">checks the claims that</text><text class="ps" x="602" y="86">matter, not by vote</text>
-      <rect class="p1" x="780" y="34" width="168" height="62" rx="10"/><text class="pt" x="794" y="56">decision letter</text><text class="ps" x="794" y="72">point-by-point response,</text><text class="ps" x="794" y="86">archived record</text>
-    </g>
-    <g stroke="#00cc88" stroke-width="1" stroke-dasharray="3 3"><path d="M96 96 V166"/><path d="M288 96 V166"/><path d="M480 96 V166"/><path d="M672 96 V166"/><path d="M864 96 V166"/></g>
-    <g>
-      <rect class="p2" x="12" y="170" width="168" height="66" rx="10"/><text class="pt" x="26" y="192">--input paper.md</text><text class="ps" x="26" y="208">--attach figure.png</text><text class="ps" x="26" y="222">--attach paper.pdf</text>
-      <rect class="p2" x="204" y="170" width="168" height="66" rx="10"/><text class="pt" x="218" y="192">.reviewrules</text><text class="ps" x="218" y="208">injected into every</text><text class="ps" x="218" y="222">referee's prompt</text>
-      <rect class="p2" x="396" y="170" width="168" height="66" rx="10"/><text class="pt" x="410" y="192">reviewer routes</text><text class="ps" x="410" y="208">codex · antigravity · copilot</text><text class="ps" x="410" y="222">grok · claude, tuned personas</text>
-      <rect class="p2" x="588" y="170" width="168" height="66" rx="10"/><text class="pt" x="602" y="192">governor gate</text><text class="ps" x="602" y="208">reproduce, then rule;</text><text class="ps" x="602" y="222">verify_first on weak sources</text>
-      <rect class="p2" x="780" y="170" width="168" height="66" rx="10"/><text class="pt" x="794" y="192">dispositions + report</text><text class="ps" x="794" y="208">applied/rejected + reason,</text><text class="ps" x="794" y="222">sha256-bound to the input</text>
-    </g>
-  </svg>
-  <figcaption>What a journal adds by policy, MOMM adds by construction: referees cannot edit the manuscript, the editor cannot skip the reproduction, and the decision letter cannot be lost.</figcaption>
-  </figure>
-
-  <h4 style="margin-top:30px">The specimen: a manuscript with planted flaws.</h4>
-  <p class="lead">A short synthetic methods-and-results excerpt (“Ambient blue light exposure improves next-day working memory”) was written with deliberate defects, placed beside a <code>.reviewrules</code> file of journal guidelines, and handed to MOMM with <code>--input</code>. Run <span data-stat="specimen_run">…</span>: <b><span data-stat="specimen_verdicts">…</span></b>, <span data-stat="specimen_findings">…</span> raw findings, <span data-stat="specimen_critical">…</span> of them CRITICAL, guidelines confirmed applied by <code>project_rules_applied</code>. Every planted flaw was caught; the matrix shows who caught what.</p>
+<section id="docs"><div class="wrap">
+  <h2>Documents</h2>
+  <h3 class="big">It reads prose too. Treat that as experimental.</h3>
+  <p class="lead">Pass a manuscript or any text with <code>--input</code>, a PDF or figure with <code>--attach</code> (Codex and Claude read images; Claude and Gemini read PDFs), and put your own review guidelines in a <code>.reviewrules</code> file — every route receives them. The shape is the same as code review: several independent readers, a gate before anything is acted on, a record of what was decided.</p>
+  <h4 style="margin-top:26px">The specimen, honestly described.</h4>
+  <p class="lead">A short synthetic methods-and-results excerpt was written with textbook planted defects — enrollment-order assignment sold as causal, six outcomes with one p = 0.047, d = 0.31 called “large”, 9 women + 4 men = 12. A single frontier model catches these. What the multi-route pass adds is that three readers caught them independently and the result is logged. Run <span data-stat="specimen_run">…</span>: <b><span data-stat="specimen_verdicts">…</span></b>, <span data-stat="specimen_findings">…</span> raw findings.</p>
   <table class="matrix" id="specimen-matrix">
-    <thead><tr><th>Planted flaw</th><th class="c" style="color:var(--r-codex)">codex · surgeon</th><th class="c" style="color:var(--r-copilot)">copilot · verifier</th><th class="c" style="color:var(--r-grok)">grok · innovator</th></tr></thead>
+    <thead><tr><th>Planted flaw</th><th class="c" style="color:var(--r-codex)">codex</th><th class="c" style="color:var(--r-copilot)">copilot</th><th class="c" style="color:var(--r-grok)">grok</th></tr></thead>
     <tbody>
       <tr><td>Groups assigned by enrollment order, then a causal claim</td><td class="c ok">✓ CRITICAL</td><td class="c ok">✓ CRITICAL</td><td class="c ok">✓ CRITICAL</td></tr>
       <tr><td>Six outcomes, no multiple-comparison correction, one p = 0.047</td><td class="c ok">✓ CRITICAL</td><td class="c ok">✓ WARNING</td><td class="c ok">✓ CRITICAL</td></tr>
@@ -334,94 +307,64 @@
       <tr><td>LED panel supplied by its manufacturer (conflict of interest)</td><td class="c no">—</td><td class="c ok">suggested</td><td class="c no">—</td></tr>
     </tbody>
   </table>
-  <p class="note">Read it yourself: <a href="specimen/manuscript-excerpt.md">the excerpt</a> · <a href="specimen/reviewrules.txt">the reviewer guidelines</a> · <a href="specimen/review-report.json">the sealed report (sanitized)</a>. Honest caveat, also logged in the roadmap: on prose the findings carry section labels instead of line ranges, so the dispatcher's corroboration merge did not fire and reported <code>agreement_score 0</code> despite three referees flagging the same eight defects — verdict agreement (3/3 REJECT) is the right headline for documents until section-label normalization ships.</p>
-
-  <div class="grid">
-    <div class="card"><h4><span>◈</span>Manuscripts &amp; preprints</h4><p>Statistical validity, claims-versus-evidence, internal consistency, reproducibility — with your own guidelines in <code>.reviewrules</code>. Referee a draft before submission; referee a submission before the editor does.</p></div>
-    <div class="card"><h4><span>◈</span>Figures, PDFs, slides</h4><p><code>--attach</code> images and PDFs to vision-capable routes (Codex, Claude, Gemini). Metadata is stripped locally before anything leaves the machine; the report records only name, modality, bytes and sha256.</p></div>
-    <div class="card"><h4><span>◈</span>Grant proposals &amp; policy</h4><p>Ask the adversary persona to attack the plan, the fresh-eyes persona to find what a panel member would trip over, the innovator to propose the experiment you have not thought of — each in its own lane, none allowed to edit.</p></div>
-    <div class="card"><h4><span>◈</span>Code, still</h4><p>Diffs, patches, whole files. Timeouts scale with size; quorum gates (<code>--min-success</code>) stop a thinned coalition from passing a release; the private ledger keeps every run beside the repo.</p></div>
-    <div class="card"><h4><span>◈</span>Reproducible decisions</h4><p>Every verdict resolves to a hash and every suggestion to a disposition with a reason. A reviewer that was wrong is rejected on the record — and its precision falls in the next run's <code>investigation_order</code>.</p></div>
-    <div class="card"><h4><span>◈</span>Teaching &amp; assessment</h4><p>Have students' work refereed by five independent readers under a rubric file, then grade the referees against the rubric. The ledger's track record is the exercise.</p></div>
-  </div>
-  <ol class="steps" style="margin-top:26px">
-    <li><p>Put your guidelines beside the artifact — the dispatcher injects them into every referee's prompt and the report confirms it:</p><code>printf 'Priorities: statistical validity, claims vs evidence, reproducibility.\nCRITICAL = invalidates a headline conclusion.' &gt; .reviewrules</code></li>
-    <li><p>Referee a manuscript (text) or attach a PDF/figure for the vision-capable routes:</p><code>node skills/momm/scripts/multi-review.mjs --governor claude --input paper.md --label "manuscript v3"
-node skills/momm/scripts/multi-review.mjs --governor claude --attach paper.pdf --reviewers codex,claude --pretty</code></li>
-    <li><p>Or just tell your agent: <b>“use momm to referee this manuscript under the journal's rules in .reviewrules”</b> — it will read the insights first, reproduce what matters, and end with the disposition table.</p></li>
-  </ol>
+  <p class="plain"><b>What did not work, and what changed.</b> At review time the dispatcher's corroboration keyed on file paths and line ranges, which prose does not have — and when asked, reviewers invent line numbers — so it reported agreement 0 although the three readers plainly agreed. 1.14.0 treats non-diff input as prose: location keys are ignored and findings that quote the same sentence of the artifact are merged. <span data-stat="specimen2">…</span> Read it yourself: <a href="specimen/manuscript-excerpt.md">the excerpt</a> · <a href="specimen/reviewrules.txt">the guidelines</a> · <a href="specimen/review-report.json">the original report</a> · <a href="specimen/review-report-1.14.json">the re-run</a>.</p>
 </div></section>
 
-<section id="coalition" class="reveal"><div class="wrap">
-  <h2>The coalition</h2>
-  <h3 class="big">Five minds. Tuned angles. One gate. No blind trust.</h3>
-  <p class="lead">Reviewers are read-only diagnostic instruments. Each route ships with a default persona calibrated from the ledger's track record — leaning into what it demonstrably catches and guarded against its measured failure mode. Personas shape the angle, never the schema, and never the rule that findings must be real defects. Override any with <code>--personas</code>.</p>
+<section id="routes"><div class="wrap">
+  <h2>Routes</h2>
+  <h3 class="big">Five CLIs, each with a default angle. Use the ones you have.</h3>
   <div class="routes">
-    <div class="route" style="--rc:var(--r-codex)"><b>Codex · surgeon</b><small>OpenAI · ChatGPT OAuth · text + image</small><div class="p">Trace-it-or-drop-it precision on cross-layer, packaging and lifecycle defects. Highest measured precision; slowest on dense patches.</div></div>
-    <div class="route" style="--rc:var(--r-claude)"><b>Claude · architect</b><small>Anthropic OAuth · text + image + pdf</small><div class="p">Seams, invariants, missing tests. Governs or reviews — never both in one run.</div></div>
-    <div class="route" style="--rc:var(--r-antigravity)"><b>Antigravity · adversary</b><small>Google OAuth · text</small><div class="p">Must attempt concrete attacks and list them before any ACCEPT — the guard against its measured habit of fast confidence-1.0 approvals.</div></div>
-    <div class="route" style="--rc:var(--r-copilot)"><b>Copilot · verifier</b><small>GitHub OAuth · text</small><div class="p">Must quote the offending lines verbatim; unquotable findings are dropped — the anti-hallucination guard for its measured precision.</div></div>
-    <div class="route" style="--rc:var(--r-grok)"><b>Grok · innovator</b><small>xAI OAuth · text</small><div class="p">Novel ideas confined to suggestions; findings need quoted evidence. Gets 1.5× timeout headroom, measured, not assumed.</div></div>
+    <div class="route" style="--rc:var(--r-codex)"><b>Codex · surgeon</b><small>OpenAI · ChatGPT login · text + image</small><div class="p">Highest acceptance rate on this project; slowest on dense patches and the route that times out most.</div></div>
+    <div class="route" style="--rc:var(--r-claude)"><b>Claude · architect</b><small>Anthropic login · text + image + pdf</small><div class="p">Reviews when it is not the driving agent — never both in one run.</div></div>
+    <div class="route" style="--rc:var(--r-antigravity)"><b>Antigravity · adversary</b><small>Google login · text</small><div class="p">Fast; must list the attacks it tried before an ACCEPT. Returned unparseable output on every large run on release day — 1.14.0 records why, so it can be fixed.</div></div>
+    <div class="route" style="--rc:var(--r-copilot)"><b>Copilot · verifier</b><small>GitHub login · text</small><div class="p">Must quote the offending lines; the lowest acceptance rate here, and the route whose CRITICAL claim did not reproduce.</div></div>
+    <div class="route" style="--rc:var(--r-grok)"><b>Grok · innovator</b><small>xAI login · text</small><div class="p">Ideas go to suggestions, findings need quotes. Gets extra time; on the largest inputs it returns placeholders.</div></div>
   </div>
-  <blockquote>“How can a program claim to count from one to ten when it lacks a mechanism to advance its state?”<footer>— Antigravity as the Socratic challenger, opening its verdict on a planted infinite loop</footer></blockquote>
-  <blockquote>“The headline conclusion is invalidated by deterministic enrollment-order allocation and an uncorrected marginal result selected from six unregistered outcomes.”<footer>— Codex as the surgeon, first sentence of its REJECT on the manuscript specimen</footer></blockquote>
-  <p class="note">Optional sixth route: Gemini, for eligible Code Assist organization licenses (text, image, pdf, audio, video). Why “modality”? Each model family is treated as a distinct modality of judgment over the same artifact — and since 1.12.0 the word is literal too: images, PDFs, audio and video ride the routes that can see them and fail closed on the ones that cannot.</p>
+  <p class="note">“Persona” means a system prompt, calibrated on this project's own logs — nothing more. Optional sixth route: Gemini (text, image, pdf, audio, video) for eligible Code Assist organization licenses.</p>
 </div></section>
 
-<section id="evidence" class="reveal"><div class="wrap">
-  <h2>Evidence, not vibes</h2>
-  <h3 class="big">Every claim resolves to a hash.</h3>
-  <div class="grid">
-    <div class="card"><h4><span>◈</span>Content-addressed reports</h4><p>sha256 over the stored bytes, bound to the exact reviewed input by its own hash, indexed in a run log that carries the same digests. <code>--store-input</code> is opt-in; by default only the input's hash is kept.</p></div>
-    <div class="card"><h4><span>◈</span>Your private ledger</h4><p><code>node momm/scripts/ledger.mjs --open</code> renders your own <code>.ensemble_reviews/</code> into a dashboard with the track record, every transcript, every disposition, and a read-aloud control that speaks structure only — never reviewer prose. Gitignored by protocol; owner-only on POSIX.</p></div>
-    <div class="card"><h4><span>◈</span>The public export</h4><p>This site's <a href="../evidence/">Review Studio</a> is a deliberate, separate export of this project's own ledgers: paths normalized, private links removed, digest sidecar re-sealed, and CI refuses the build if a local path slips through.</p></div>
-    <div class="card"><h4><span>◈</span>Termination-proof</h4><p>Every reviewer subprocess runs inside a layered kill chain — tree kill → child-kill backstop → hard deadline → flush-then-exit — so even a kill-restricted sandbox always gets its structured report back. Simplifying it is forbidden by protocol, and the coalition rejected a suggestion to do exactly that.</p></div>
-  </div>
-  <p class="lead" style="margin-top:18px">The dispatcher is a single Node 18+ script with no dependencies, verified by <b>49 deterministic self-tests</b>, 20 Setup Center tests, 8 ledger tests, and a CI matrix across 3 operating systems × 3 Node versions on every push — including forced-failure drills for evidence persistence and stream purity. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
-</div></section>
-
-<section id="start" class="reveal"><div class="wrap">
+<section id="start"><div class="wrap">
   <h2>Get started</h2>
-  <h3 class="big">Three commands to a five-model review.</h3>
+  <h3 class="big">Three commands.</h3>
   <ol class="steps">
-    <li><p>Clone and link into every detected harness (Claude Code, Codex, Gemini, Antigravity — junctions on Windows, symlinks elsewhere):</p><code>git clone https://github.com/marroccofella/skills &amp;&amp; cd skills &amp;&amp; node install.mjs --target all</code></li>
-    <li><p>Check every route — zero model calls; prints the exact install/login command for anything that's down. Or open the local Setup Center (<code>node momm/scripts/setup-ui.mjs</code>) for guided OAuth onboarding on 127.0.0.1:</p><code>node momm/scripts/multi-review.mjs --preflight --governor claude --pretty</code></li>
-    <li><p>Review your changes — or just tell your agent “use momm”. Your private dashboard is one more command: <code style="display:inline;padding:1px 6px">node momm/scripts/ledger.mjs --open</code></p><code>git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --pretty</code></li>
+    <li><p>Clone and link into the harness you use (preview with <code>--dry-run</code> first; the installer will not guess):</p><code>git clone https://github.com/marroccofella/skills &amp;&amp; cd skills &amp;&amp; node install.mjs --target claude</code></li>
+    <li><p>Check every route — zero model calls; prints the exact install or login command for anything that is down:</p><code>node momm/scripts/multi-review.mjs --preflight --governor claude --pretty</code></li>
+    <li><p>Review your changes, quick or deep. Your local dashboard is one more command: <code style="display:inline;padding:1px 6px">node momm/scripts/ledger.mjs --open</code></p><code>git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --tier quick
+git diff HEAD | node momm/scripts/multi-review.mjs --governor claude --tier deep --pretty</code></li>
   </ol>
-  <p class="note">Release gates: add <code>--min-success N</code> so timeouts cannot thin the coalition below quorum. Conventions: a <code>.reviewrules</code> file at the repo root is injected into every reviewer's prompt. Every run confesses its version and checks once a day for a newer release (fail-silent; <code>NO_UPDATE_CHECK=1</code> disables).</p>
+  <p class="note">A <code>.reviewrules</code> file at the repo root is injected into every reviewer's prompt. Every run prints its version and checks once a day for a newer release (a cached GET of versions.json; <code>NO_UPDATE_CHECK=1</code> disables it). The dispatcher is a single dependency-free Node 18+ script with 61 self-tests, plus a CI matrix across three operating systems and three Node versions. <a href="https://github.com/marroccofella/skills/blob/main/momm/scripts/multi-review.mjs">Read the source.</a></p>
 </div></section>
 
-<section id="faq" class="reveal"><div class="wrap">
+<section id="faq"><div class="wrap">
   <h2>FAQ</h2>
   <div class="faq">
-    <details><summary>Does it send my code anywhere?</summary><p>Only to the providers you have deliberately logged into, through their official CLIs, for the review you asked for — that is its entire purpose. This website sends nothing anywhere. Setup and preflight never read credential contents; the Setup Center's optional connectivity test speaks one disclosed synthetic sentence.</p></details>
-    <details><summary>What if a reviewer is wrong?</summary><p>Then it fails reproduction and is rejected on the record, and its measured precision falls. The ledger already contains such rejections — the gate protects in both directions.</p></details>
-    <details><summary>Which harness can be the governor?</summary><p>Any of codex, claude, gemini, antigravity, copilot, grok, or “other”. The governor is always excluded from the reviewer pool for that run.</p></details>
-    <details><summary>Can I run it in CI?</summary><p>Yes — <code>--strict</code> and <code>--min-success</code> give non-zero exits, <code>--stream</code> gives NDJSON events on stderr with the report alone on stdout. Reviewers need network access and their OAuth token stores, which restricted sandboxes typically block; the dispatcher documents that case and still returns a structured report.</p></details>
-    <details><summary>Is the walkthrough voice real?</summary><p>It is a synthetic clone of the creator's own voice, generated locally with recorded consent, gated for signal health and word accuracy, and labeled as synthetic wherever it is shared. The repository ships the pipeline as the promptus-clone-voice skill.</p></details>
+    <details open><summary>Does it send my code anywhere?</summary><p>Yes. Each route you run sends the redacted, metadata-stripped input to that vendor — OpenAI, Anthropic, Google, GitHub or xAI — over your own CLI login. Nothing else is sent. Setup and preflight read no credentials and make no model calls; the Setup Center's optional connectivity test speaks one disclosed synthetic sentence.</p></details>
+    <details><summary>Do I need all five CLIs?</summary><p>No. One logged-in external route is enough; the rest are reported as missing or logged out and skipped. <code>--min-success</code> lets a release gate insist on a quorum.</p></details>
+    <details><summary>What if a reviewer is wrong?</summary><p>It fails reproduction and is rejected with the attempt as the reason. That happened to a CRITICAL claim on this release. Its acceptance rate falls, and single-source findings from low-acceptance routes are flagged to reproduce first.</p></details>
+    <details><summary>Which harness can drive it?</summary><p>Any of codex, claude, gemini, antigravity, copilot, grok, or “other”. The driving harness is excluded from the reviewer pool for that run.</p></details>
+    <details><summary>Can I run it in CI?</summary><p>Yes — <code>--strict</code> and <code>--min-success</code> give non-zero exits; <code>--stream</code> puts NDJSON events on stderr with the report alone on stdout. Routes need network access and their CLI token stores, which restricted sandboxes usually block.</p></details>
+    <details><summary>Is the walkthrough voice real?</summary><p>It is a synthetic clone of the creator's own voice, generated locally with recorded consent and checked for signal health and word accuracy. It is labeled as synthetic wherever it is shared.</p></details>
   </div>
 </div></section>
 
-<section class="reveal"><div class="wrap">
+<section><div class="wrap">
   <h2>Who built this</h2>
-  <h3 class="big">Professor Dominic Marrocco.</h3>
-  <p class="lead">MOMM is created and directed by <b>Dominic Marrocco</b> — serial technology entrepreneur and <a href="https://www.unlv.edu/people/dominic-marrocco">Professor of Technology Commercialization and Entrepreneur in Residence at the University of Nevada, Las Vegas</a>, with a career spanning UK telecoms and internet ventures through startup investment and technology commercialization. MOMM is part of his <a href="https://42.uk">42.uk</a> universe, with its voice workflows built on <a href="https://www.promptus.ai">Promptus</a>.</p>
-  <p class="note">Verify for yourself: <a href="https://www.unlv.edu/people/dominic-marrocco">UNLV faculty profile</a> · <a href="https://uk.linkedin.com/in/marroccofella">LinkedIn (marroccofella — the same handle that signs this repo)</a> · <a href="https://www.researchgate.net/profile/Dominic-Marrocco">ResearchGate</a></p>
+  <p class="lead">Written by <b>Dominic Marrocco</b> (<a href="https://42.uk">42.uk</a>) with the agents it reviews. Profiles: <a href="https://www.unlv.edu/people/dominic-marrocco">UNLV</a> · <a href="https://uk.linkedin.com/in/marroccofella">LinkedIn (marroccofella, the handle that signs this repo)</a>. The voice pipeline is built on <a href="https://www.promptus.ai">Promptus</a>.</p>
 </div></section>
 
 <footer class="site"><div class="wrap">
   <nav>
     <a href="https://github.com/marroccofella/skills">GitHub</a>
-    <a href="https://github.com/marroccofella/skills/blob/main/momm/references/release-1.13.0.md">Release 1.13.0</a>
-    <a href="../evidence/">Public evidence</a>
+    <a href="https://github.com/marroccofella/skills/blob/main/momm/references/release-1.14.0.md">Release 1.14.0</a>
+    <a href="../evidence/">Public evidence export</a>
+    <a href="data/">CSV data</a>
     <a href="../">All skills</a>
     <a href="https://42.uk" rel="me">42.uk</a>
-    <a href="https://www.promptus.ai" rel="external">Promptus</a>
   </nav>
-  <p>MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services. Reviewer names identify locally installed harness CLIs authenticated by their official OAuth flows; OpenAI, Anthropic, Google, GitHub, and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe · voice by <a href="https://www.promptus.ai">Promptus</a> (consent disclosure at the video above). RELAX. IT'S ALREADY OVER.</p>
+  <p>MIT licensed. This website sets no cookies, runs no trackers, and calls no third-party services. Reviewer names identify locally installed CLIs authenticated by their official logins; OpenAI, Anthropic, Google, GitHub and xAI trademarks belong to their owners — MOMM is an independent open-source project affiliated with none of them. Part of the <a href="https://42.uk">42.uk</a> universe · voice by <a href="https://www.promptus.ai">Promptus</a>. RELAX. IT'S ALREADY OVER.</p>
 </div></footer>
 
-<script id="page-stats" type="application/json">{"generated":"2026-09-04T14:06:38.742Z","runs":145,"sealed_reports":131,"completed_peer_reviews":340,"findings":533,"criticals":75,"severity":{"CRITICAL":75,"WARNING":336,"NITPICK":122},"dispositions":493,"disp_totals":{"applied":257,"rejected":220},"first_run":"2026-08-17T04:28:27.692Z","last_run":"2026-09-04T13:52:39.132Z","routes":[{"route":"codex","completed":62,"timeouts":17,"other":0,"median_s":112.2,"p90_s":271.4,"verdicts":{"ACCEPT":13,"MODIFY":37,"REJECT":12},"mean_confidence":0.96,"applied":72,"rejected":28,"precision":0.72},{"route":"antigravity","completed":81,"timeouts":1,"other":14,"median_s":32.3,"p90_s":97,"verdicts":{"ACCEPT":67,"MODIFY":10,"REJECT":4},"mean_confidence":0.98,"applied":44,"rejected":32,"precision":0.58},{"route":"copilot","completed":93,"timeouts":2,"other":3,"median_s":31.4,"p90_s":135.4,"verdicts":{"ACCEPT":64,"MODIFY":24,"REJECT":5},"mean_confidence":0.89,"applied":56,"rejected":90,"precision":0.38},{"route":"grok","completed":60,"timeouts":25,"other":2,"median_s":27,"p90_s":291.6,"verdicts":{"ACCEPT":14,"MODIFY":42,"REJECT":4},"mean_confidence":0.6,"applied":34,"rejected":28,"precision":0.55},{"route":"claude","completed":21,"timeouts":2,"other":0,"median_s":43.5,"p90_s":274.5,"verdicts":{"ACCEPT":7,"MODIFY":14,"REJECT":0},"mean_confidence":0.78,"applied":26,"rejected":37,"precision":0.41}],"size_timeout":[{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":3.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":2.2,"routes":3,"timeouts":0,"maxdur":0},{"kb":7.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":4.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":9.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":6.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":21.6,"routes":3,"timeouts":0,"maxdur":0},{"kb":13.9,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":16.6,"routes":3,"timeouts":1,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":22.5},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":27},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":29.8},{"kb":14,"routes":4,"timeouts":1,"maxdur":102.7},{"kb":14,"routes":4,"timeouts":2,"maxdur":56.9},{"kb":19,"routes":4,"timeouts":2,"maxdur":65.9},{"kb":19,"routes":4,"timeouts":0,"maxdur":241.1},{"kb":19.9,"routes":4,"timeouts":2,"maxdur":51.9},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":24.1},{"kb":7,"routes":4,"timeouts":1,"maxdur":33.4},{"kb":6.9,"routes":4,"timeouts":1,"maxdur":52},{"kb":20.7,"routes":4,"timeouts":0,"maxdur":253.9},{"kb":16.5,"routes":4,"timeouts":0,"maxdur":181.8},{"kb":5.1,"routes":4,"timeouts":0,"maxdur":67.5},{"kb":9.1,"routes":4,"timeouts":0,"maxdur":49.1},{"kb":6.7,"routes":4,"timeouts":0,"maxdur":135.6},{"kb":6.7,"routes":4,"timeouts":0,"maxdur":62.1},{"kb":69,"routes":4,"timeouts":2,"maxdur":74.9},{"kb":0,"routes":1,"timeouts":0,"maxdur":11.4},{"kb":69.1,"routes":4,"timeouts":1,"maxdur":317.6},{"kb":71.2,"routes":4,"timeouts":0,"maxdur":265.8},{"kb":10.6,"routes":4,"timeouts":0,"maxdur":352.4},{"kb":11.8,"routes":4,"timeouts":0,"maxdur":313.1},{"kb":14.4,"routes":4,"timeouts":0,"maxdur":157.7},{"kb":16.5,"routes":4,"timeouts":1,"maxdur":271.4},{"kb":16.9,"routes":4,"timeouts":1,"maxdur":205.2},{"kb":18.1,"routes":4,"timeouts":0,"maxdur":216.4},{"kb":19,"routes":4,"timeouts":1,"maxdur":285.9},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":0.8,"routes":4,"timeouts":0,"maxdur":17},{"kb":5,"routes":4,"timeouts":0,"maxdur":112.2},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":6.2,"routes":4,"timeouts":0,"maxdur":113.4},{"kb":7.2,"routes":4,"timeouts":2,"maxdur":115.9},{"kb":7.9,"routes":4,"timeouts":2,"maxdur":72.4},{"kb":3.4,"routes":4,"timeouts":0,"maxdur":30.7},{"kb":12.8,"routes":4,"timeouts":0,"maxdur":78.7},{"kb":108.1,"routes":4,"timeouts":0,"maxdur":226.3},{"kb":7.8,"routes":4,"timeouts":0,"maxdur":107.8},{"kb":8.5,"routes":4,"timeouts":1,"maxdur":83.1},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.9},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.1},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":15},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":31.9},{"kb":0,"routes":1,"timeouts":0,"maxdur":13.1},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":7.7},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":16,"routes":4,"timeouts":1,"maxdur":110.9},{"kb":18.9,"routes":4,"timeouts":0,"maxdur":161},{"kb":19,"routes":4,"timeouts":2,"maxdur":19},{"kb":19,"routes":4,"timeouts":0,"maxdur":179.9},{"kb":7.8,"routes":4,"timeouts":0,"maxdur":133.4},{"kb":9.7,"routes":4,"timeouts":0,"maxdur":139.3},{"kb":10.9,"routes":4,"timeouts":0,"maxdur":273.3},{"kb":12,"routes":4,"timeouts":0,"maxdur":128.3},{"kb":12.3,"routes":4,"timeouts":0,"maxdur":328},{"kb":13,"routes":4,"timeouts":0,"maxdur":241.1},{"kb":13.8,"routes":4,"timeouts":0,"maxdur":136.9},{"kb":51,"routes":4,"timeouts":1,"maxdur":427.4},{"kb":52.3,"routes":4,"timeouts":0,"maxdur":215.7},{"kb":64.7,"routes":4,"timeouts":0,"maxdur":237.8},{"kb":35.6,"routes":4,"timeouts":0,"maxdur":205.4},{"kb":35.6,"routes":4,"timeouts":0,"maxdur":401.1},{"kb":43.9,"routes":4,"timeouts":0,"maxdur":282.8},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.9},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":14.3},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":7.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":16.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":14.5},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.5},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":6.8},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":17.8},{"kb":50.5,"routes":4,"timeouts":0,"maxdur":279.3},{"kb":121.5,"routes":4,"timeouts":0,"maxdur":291.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.3},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.4},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.2,"routes":5,"timeouts":0,"maxdur":14.8},{"kb":76.3,"routes":4,"timeouts":1,"maxdur":57.3},{"kb":6.6,"routes":4,"timeouts":2,"maxdur":21.7},{"kb":6.6,"routes":2,"timeouts":0,"maxdur":238.8},{"kb":9.2,"routes":4,"timeouts":0,"maxdur":303.2},{"kb":122.4,"routes":4,"timeouts":0,"maxdur":196.3},{"kb":148.8,"routes":4,"timeouts":2,"maxdur":78.5},{"kb":88.7,"routes":4,"timeouts":1,"maxdur":198.4},{"kb":16.8,"routes":4,"timeouts":0,"maxdur":145.8},{"kb":19.3,"routes":3,"timeouts":0,"maxdur":202.5},{"kb":20.4,"routes":2,"timeouts":0,"maxdur":39.8},{"kb":88.3,"routes":4,"timeouts":1,"maxdur":176.3},{"kb":92.7,"routes":4,"timeouts":1,"maxdur":291.1},{"kb":49.9,"routes":4,"timeouts":2,"maxdur":277.6},{"kb":54.1,"routes":4,"timeouts":2,"maxdur":224.1},{"kb":55.6,"routes":4,"timeouts":2,"maxdur":229.3},{"kb":56.4,"routes":4,"timeouts":2,"maxdur":208.8},{"kb":57.7,"routes":4,"timeouts":1,"maxdur":128.4},{"kb":50,"routes":4,"timeouts":2,"maxdur":176.3},{"kb":50.6,"routes":4,"timeouts":3,"maxdur":196.5},{"kb":2.4,"routes":4,"timeouts":0,"maxdur":144.5}],"by_day":{"2026-08-17":26,"2026-08-18":29,"2026-08-19":16,"2026-08-23":32,"2026-08-24":8,"2026-08-26":1,"2026-08-27":14,"2026-08-28":2,"2026-08-29":1,"2026-09-02":3,"2026-09-03":2,"2026-09-04":11},"agreement":[{"t":"20260817","a":0,"n":2},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":1},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":1},{"t":"20260817","a":0,"n":4},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":13},{"t":"20260818","a":0,"n":5},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":14},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":6},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":9},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":15},{"t":"20260818","a":0,"n":12},{"t":"20260819","a":0,"n":4},{"t":"20260819","a":0,"n":28},{"t":"20260819","a":0.06,"n":18},{"t":"20260819","a":0,"n":7},{"t":"20260819","a":0,"n":9},{"t":"20260819","a":0,"n":17},{"t":"20260819","a":0,"n":21},{"t":"20260819","a":0,"n":1},{"t":"20260819","a":0,"n":14},{"t":"20260819","a":0,"n":8},{"t":"20260819","a":0,"n":7},{"t":"20260819","a":0,"n":2},{"t":"20260819","a":0,"n":4},{"t":"20260819","a":0,"n":5},{"t":"20260823","a":0,"n":19},{"t":"20260823","a":0,"n":5},{"t":"20260823","a":0,"n":2},{"t":"20260823","a":0,"n":8},{"t":"20260823","a":0,"n":18},{"t":"20260823","a":0,"n":7},{"t":"20260824","a":0,"n":4},{"t":"20260824","a":0,"n":9},{"t":"20260824","a":0,"n":5},{"t":"20260824","a":0,"n":3},{"t":"20260824","a":0,"n":4},{"t":"20260824","a":0,"n":5},{"t":"20260824","a":0,"n":6},{"t":"20260824","a":0,"n":2},{"t":"20260827","a":0,"n":4},{"t":"20260827","a":0,"n":4},{"t":"20260904","a":0.33,"n":3},{"t":"20260904","a":0.25,"n":4},{"t":"20260904","a":0,"n":4},{"t":"20260826","a":0,"n":13},{"t":"20260827","a":0.1,"n":10},{"t":"20260827","a":0,"n":2},{"t":"20260827","a":0,"n":16},{"t":"20260827","a":0,"n":15},{"t":"20260828","a":0.2,"n":10},{"t":"20260828","a":0,"n":4},{"t":"20260829","a":0,"n":6},{"t":"20260902","a":0,"n":8},{"t":"20260902","a":0,"n":7},{"t":"20260902","a":0,"n":3},{"t":"20260903","a":0,"n":1},{"t":"20260903","a":0,"n":8},{"t":"20260904","a":0,"n":3},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":26}],"specimen":{"run":"rev_20260904131823_wvxh","findings":26,"critical":8,"verdicts":[{"agent":"codex","verdict":"REJECT","confidence":0.99,"persona":"surgeon","s":103},{"agent":"copilot","verdict":"REJECT","confidence":0.85,"persona":"verifier","s":62},{"agent":"grok","verdict":"REJECT","confidence":0.91,"persona":"innovator","s":144}],"rules":true},"selfrun":{"run":"rev_20260904131435_mf6w","findings":[{"id":"timeout-close-misclassified","severity":"CRITICAL","file":"momm/scripts/setup-ui.mjs","sources":["codex","copilot"]},{"id":"stale-speech-handler-resets-new-run","severity":"WARNING","file":"momm/scripts/ledger.mjs","sources":["codex"]},{"id":"windows-drive-specific-reference-redaction","severity":"NITPICK","file":"myskills/scripts/run-all.mjs","sources":["codex"]}],"agreement":0.33}}</script>
+<script id="page-stats" type="application/json">{"generated":"2026-09-04T15:44:31.962Z","runs":153,"sealed_reports":139,"completed_peer_reviews":366,"findings":583,"criticals":89,"severity":{"CRITICAL":89,"WARNING":367,"NITPICK":127},"dispositions":570,"disp_totals":{"applied":302,"rejected":251},"first_run":"2026-08-17T04:28:27.692Z","last_run":"2026-09-04T15:40:21.723Z","routes":[{"route":"codex","completed":70,"timeouts":17,"other":0,"median_s":114.4,"p90_s":341.2,"verdicts":{"ACCEPT":13,"MODIFY":42,"REJECT":15},"mean_confidence":0.96,"applied":94,"rejected":41,"precision":0.7},{"route":"antigravity","completed":83,"timeouts":1,"other":20,"median_s":33.6,"p90_s":128.4,"verdicts":{"ACCEPT":69,"MODIFY":10,"REJECT":4},"mean_confidence":0.98,"applied":46,"rejected":36,"precision":0.56},{"route":"copilot","completed":101,"timeouts":2,"other":3,"median_s":32.2,"p90_s":213.3,"verdicts":{"ACCEPT":65,"MODIFY":29,"REJECT":7},"mean_confidence":0.88,"applied":76,"rejected":101,"precision":0.43},{"route":"grok","completed":68,"timeouts":25,"other":2,"median_s":31.9,"p90_s":328,"verdicts":{"ACCEPT":14,"MODIFY":48,"REJECT":6},"mean_confidence":0.59,"applied":34,"rejected":31,"precision":0.52},{"route":"claude","completed":21,"timeouts":2,"other":0,"median_s":43.5,"p90_s":274.5,"verdicts":{"ACCEPT":7,"MODIFY":14,"REJECT":0},"mean_confidence":0.78,"applied":26,"rejected":37,"precision":0.41}],"size_timeout":[{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":3.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":2.2,"routes":3,"timeouts":0,"maxdur":0},{"kb":7.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":4.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":9.4,"routes":3,"timeouts":0,"maxdur":0},{"kb":6.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":21.6,"routes":3,"timeouts":0,"maxdur":0},{"kb":13.9,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":3,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":16.6,"routes":3,"timeouts":1,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":22.5},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":27},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":29.8},{"kb":14,"routes":4,"timeouts":1,"maxdur":102.7},{"kb":14,"routes":4,"timeouts":2,"maxdur":56.9},{"kb":19,"routes":4,"timeouts":2,"maxdur":65.9},{"kb":19,"routes":4,"timeouts":0,"maxdur":241.1},{"kb":19.9,"routes":4,"timeouts":2,"maxdur":51.9},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":24.1},{"kb":7,"routes":4,"timeouts":1,"maxdur":33.4},{"kb":6.9,"routes":4,"timeouts":1,"maxdur":52},{"kb":20.7,"routes":4,"timeouts":0,"maxdur":253.9},{"kb":16.5,"routes":4,"timeouts":0,"maxdur":181.8},{"kb":5.1,"routes":4,"timeouts":0,"maxdur":67.5},{"kb":9.1,"routes":4,"timeouts":0,"maxdur":49.1},{"kb":6.7,"routes":4,"timeouts":0,"maxdur":135.6},{"kb":6.7,"routes":4,"timeouts":0,"maxdur":62.1},{"kb":69,"routes":4,"timeouts":2,"maxdur":74.9},{"kb":0,"routes":1,"timeouts":0,"maxdur":11.4},{"kb":69.1,"routes":4,"timeouts":1,"maxdur":317.6},{"kb":71.2,"routes":4,"timeouts":0,"maxdur":265.8},{"kb":10.6,"routes":4,"timeouts":0,"maxdur":352.4},{"kb":11.8,"routes":4,"timeouts":0,"maxdur":313.1},{"kb":14.4,"routes":4,"timeouts":0,"maxdur":157.7},{"kb":16.5,"routes":4,"timeouts":1,"maxdur":271.4},{"kb":16.9,"routes":4,"timeouts":1,"maxdur":205.2},{"kb":18.1,"routes":4,"timeouts":0,"maxdur":216.4},{"kb":19,"routes":4,"timeouts":1,"maxdur":285.9},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":0.8,"routes":4,"timeouts":0,"maxdur":17},{"kb":5,"routes":4,"timeouts":0,"maxdur":112.2},{"kb":0,"routes":0,"timeouts":0,"maxdur":0},{"kb":6.2,"routes":4,"timeouts":0,"maxdur":113.4},{"kb":7.2,"routes":4,"timeouts":2,"maxdur":115.9},{"kb":7.9,"routes":4,"timeouts":2,"maxdur":72.4},{"kb":3.4,"routes":4,"timeouts":0,"maxdur":30.7},{"kb":12.8,"routes":4,"timeouts":0,"maxdur":78.7},{"kb":108.1,"routes":4,"timeouts":0,"maxdur":226.3},{"kb":7.8,"routes":4,"timeouts":0,"maxdur":107.8},{"kb":8.5,"routes":4,"timeouts":1,"maxdur":83.1},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.9},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.1},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":15},{"kb":0.1,"routes":4,"timeouts":0,"maxdur":31.9},{"kb":0,"routes":1,"timeouts":0,"maxdur":13.1},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":0,"routes":1,"timeouts":0,"maxdur":7.7},{"kb":0,"routes":1,"timeouts":0,"maxdur":0},{"kb":16,"routes":4,"timeouts":1,"maxdur":110.9},{"kb":18.9,"routes":4,"timeouts":0,"maxdur":161},{"kb":19,"routes":4,"timeouts":2,"maxdur":19},{"kb":19,"routes":4,"timeouts":0,"maxdur":179.9},{"kb":7.8,"routes":4,"timeouts":0,"maxdur":133.4},{"kb":9.7,"routes":4,"timeouts":0,"maxdur":139.3},{"kb":10.9,"routes":4,"timeouts":0,"maxdur":273.3},{"kb":12,"routes":4,"timeouts":0,"maxdur":128.3},{"kb":12.3,"routes":4,"timeouts":0,"maxdur":328},{"kb":13,"routes":4,"timeouts":0,"maxdur":241.1},{"kb":13.8,"routes":4,"timeouts":0,"maxdur":136.9},{"kb":51,"routes":4,"timeouts":1,"maxdur":427.4},{"kb":52.3,"routes":4,"timeouts":0,"maxdur":215.7},{"kb":64.7,"routes":4,"timeouts":0,"maxdur":237.8},{"kb":35.6,"routes":4,"timeouts":0,"maxdur":205.4},{"kb":35.6,"routes":4,"timeouts":0,"maxdur":401.1},{"kb":43.9,"routes":4,"timeouts":0,"maxdur":282.8},{"kb":29,"routes":4,"timeouts":0,"maxdur":341.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.9},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":14.3},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":7.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":16.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":14.5},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":10.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":8.5},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":6.8},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":11.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":17.8},{"kb":50.5,"routes":4,"timeouts":0,"maxdur":279.3},{"kb":121.5,"routes":4,"timeouts":0,"maxdur":291.6},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.2},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.3},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":12.7},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":13.4},{"kb":0.1,"routes":1,"timeouts":0,"maxdur":0},{"kb":0.2,"routes":5,"timeouts":0,"maxdur":14.8},{"kb":76.3,"routes":4,"timeouts":1,"maxdur":57.3},{"kb":6.6,"routes":4,"timeouts":2,"maxdur":21.7},{"kb":6.6,"routes":2,"timeouts":0,"maxdur":238.8},{"kb":9.2,"routes":4,"timeouts":0,"maxdur":303.2},{"kb":122.4,"routes":4,"timeouts":0,"maxdur":196.3},{"kb":148.8,"routes":4,"timeouts":2,"maxdur":78.5},{"kb":88.7,"routes":4,"timeouts":1,"maxdur":198.4},{"kb":16.8,"routes":4,"timeouts":0,"maxdur":145.8},{"kb":19.3,"routes":3,"timeouts":0,"maxdur":202.5},{"kb":20.4,"routes":2,"timeouts":0,"maxdur":39.8},{"kb":88.3,"routes":4,"timeouts":1,"maxdur":176.3},{"kb":92.7,"routes":4,"timeouts":1,"maxdur":291.1},{"kb":49.9,"routes":4,"timeouts":2,"maxdur":277.6},{"kb":54.1,"routes":4,"timeouts":2,"maxdur":224.1},{"kb":55.6,"routes":4,"timeouts":2,"maxdur":229.3},{"kb":56.4,"routes":4,"timeouts":2,"maxdur":208.8},{"kb":57.7,"routes":4,"timeouts":1,"maxdur":128.4},{"kb":50,"routes":4,"timeouts":2,"maxdur":176.3},{"kb":50.6,"routes":4,"timeouts":3,"maxdur":196.5},{"kb":51,"routes":4,"timeouts":0,"maxdur":423.8},{"kb":54,"routes":4,"timeouts":0,"maxdur":387.4},{"kb":56.1,"routes":4,"timeouts":0,"maxdur":630.8},{"kb":58.4,"routes":4,"timeouts":0,"maxdur":750},{"kb":60.2,"routes":4,"timeouts":0,"maxdur":523.5},{"kb":2.4,"routes":4,"timeouts":0,"maxdur":144.5},{"kb":2.4,"routes":4,"timeouts":0,"maxdur":377.3},{"kb":2.4,"routes":4,"timeouts":0,"maxdur":148.5}],"by_day":{"2026-08-17":26,"2026-08-18":29,"2026-08-19":16,"2026-08-23":32,"2026-08-24":8,"2026-08-26":1,"2026-08-27":14,"2026-08-28":2,"2026-08-29":1,"2026-09-02":3,"2026-09-03":2,"2026-09-04":19},"agreement":[{"t":"20260817","a":0,"n":2},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":1},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":4},{"t":"20260817","a":0,"n":1},{"t":"20260817","a":0,"n":4},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":13},{"t":"20260818","a":0,"n":5},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":14},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":6},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":2},{"t":"20260818","a":0,"n":3},{"t":"20260818","a":0,"n":9},{"t":"20260818","a":0,"n":4},{"t":"20260818","a":0,"n":15},{"t":"20260818","a":0,"n":12},{"t":"20260819","a":0,"n":4},{"t":"20260819","a":0,"n":28},{"t":"20260819","a":0.06,"n":18},{"t":"20260819","a":0,"n":7},{"t":"20260819","a":0,"n":9},{"t":"20260819","a":0,"n":17},{"t":"20260819","a":0,"n":21},{"t":"20260819","a":0,"n":1},{"t":"20260819","a":0,"n":14},{"t":"20260819","a":0,"n":8},{"t":"20260819","a":0,"n":7},{"t":"20260819","a":0,"n":2},{"t":"20260819","a":0,"n":4},{"t":"20260819","a":0,"n":5},{"t":"20260823","a":0,"n":19},{"t":"20260823","a":0,"n":5},{"t":"20260823","a":0,"n":2},{"t":"20260823","a":0,"n":8},{"t":"20260823","a":0,"n":18},{"t":"20260823","a":0,"n":7},{"t":"20260824","a":0,"n":4},{"t":"20260824","a":0,"n":9},{"t":"20260824","a":0,"n":5},{"t":"20260824","a":0,"n":3},{"t":"20260824","a":0,"n":4},{"t":"20260824","a":0,"n":5},{"t":"20260824","a":0,"n":6},{"t":"20260824","a":0,"n":2},{"t":"20260827","a":0,"n":4},{"t":"20260827","a":0,"n":4},{"t":"20260904","a":0.33,"n":3},{"t":"20260904","a":0.25,"n":4},{"t":"20260904","a":0,"n":4},{"t":"20260904","a":0.2,"n":5},{"t":"20260826","a":0,"n":13},{"t":"20260827","a":0.1,"n":10},{"t":"20260827","a":0,"n":2},{"t":"20260827","a":0,"n":16},{"t":"20260827","a":0,"n":15},{"t":"20260828","a":0.2,"n":10},{"t":"20260828","a":0,"n":4},{"t":"20260829","a":0,"n":6},{"t":"20260902","a":0,"n":8},{"t":"20260902","a":0,"n":7},{"t":"20260902","a":0,"n":3},{"t":"20260903","a":0,"n":1},{"t":"20260903","a":0,"n":8},{"t":"20260904","a":0,"n":3},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":1},{"t":"20260904","a":0,"n":3},{"t":"20260904","a":0,"n":4},{"t":"20260904","a":0,"n":5},{"t":"20260904","a":0,"n":4},{"t":"20260904","a":0,"n":4},{"t":"20260904","a":0,"n":26},{"t":"20260904","a":0,"n":14},{"t":"20260904","a":0.82,"n":11}],"specimen":{"run":"rev_20260904131823_wvxh","findings":26,"critical":8,"verdicts":[{"agent":"codex","verdict":"REJECT","confidence":0.99,"persona":"surgeon","s":103},{"agent":"copilot","verdict":"REJECT","confidence":0.85,"persona":"verifier","s":62},{"agent":"grok","verdict":"REJECT","confidence":0.91,"persona":"innovator","s":144}],"rules":true},"selfrun":{"run":"rev_20260904131435_mf6w","findings":[{"id":"timeout-close-misclassified","severity":"CRITICAL","file":"momm/scripts/setup-ui.mjs","sources":["codex","copilot"]},{"id":"stale-speech-handler-resets-new-run","severity":"WARNING","file":"momm/scripts/ledger.mjs","sources":["codex"]},{"id":"windows-drive-specific-reference-redaction","severity":"NITPICK","file":"myskills/scripts/run-all.mjs","sources":["codex"]}],"agreement":0.33},"specimen2":{"run":"rev_20260904153705_95x7","findings":11,"corroborated":9,"agreement":0.82,"version":"1.14.0"}}</script>
 <script>
 (() => {
   const S = JSON.parse(document.getElementById("page-stats").textContent);
@@ -432,17 +375,15 @@ node skills/momm/scripts/multi-review.mjs --governor claude --attach paper.pdf -
     runs: S.runs, sealed_reports: S.sealed_reports, completed_peer_reviews: S.completed_peer_reviews, findings: S.findings, criticals: S.criticals,
     dispositions: S.dispositions, applied: S.disp_totals.applied, rejected: S.disp_totals.rejected, first_day: day(S.first_run), last_day: day(S.last_run),
     self_agreement: S.selfrun ? S.selfrun.agreement.toFixed(2) : "n/a",
-    specimen_run: S.specimen ? S.specimen.run : "n/a", specimen_findings: S.specimen ? S.specimen.findings : "n/a", specimen_critical: S.specimen ? S.specimen.critical : "n/a",
+    specimen_run: S.specimen ? S.specimen.run : "n/a", specimen_findings: S.specimen ? S.specimen.findings : "n/a",
     specimen_verdicts: S.specimen ? `${S.specimen.verdicts.filter((v) => v.verdict === "REJECT").length}/${S.specimen.verdicts.length} REJECT` : "n/a",
+    specimen2: S.specimen2 ? `Live re-run ${S.specimen2.run} with ${S.specimen2.version}: ${S.specimen2.findings} findings after merging, ${S.specimen2.corroborated} corroborated by two or more routes, agreement ${S.specimen2.agreement}.` : "A live re-run is pending.",
   };
   document.querySelectorAll("[data-stat]").forEach((el) => { el.textContent = stat[el.dataset.stat]; });
-
-  // copy buttons
   document.querySelectorAll("button.copy").forEach((b) => b.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = "copied"; setTimeout(() => { b.textContent = "copy"; }, 1400); } catch { b.textContent = "select + copy"; }
   }));
 
-  // ---- charts (SVG, computed from the embedded stats) ----
   const charts = document.getElementById("charts");
   const chart = (title, sub, svg, legend, table) => {
     const el = document.createElement("div"); el.className = "chart";
@@ -451,115 +392,78 @@ node skills/momm/scripts/multi-review.mjs --governor claude --attach paper.pdf -
   };
   const routes = S.routes.filter((r) => r.completed >= 5);
   const W = 420;
-
-  // 1. precision by route — single measure, single hue, direct labels
   {
     const rows = [...routes].filter((r) => r.precision !== null).sort((a, b) => b.precision - a.precision);
     const rh = 26, H = rows.length * rh + 12;
-    let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Precision by reviewer route">`;
-    rows.forEach((r, i) => {
-      const y = 6 + i * rh, w = Math.round(r.precision * 250);
-      g += `<text x="0" y="${y + 16}" class="lbl">${esc(r.route)}</text><rect x="96" y="${y + 4}" width="${w}" height="16" rx="4" fill="#00cc88"><title>${esc(r.route)}: ${Math.round(r.precision * 100)}% precision — ${r.applied} applied, ${r.rejected} rejected</title></rect><text x="${100 + w}" y="${y + 16}">${Math.round(r.precision * 100)}% <tspan class="dimtxt">n=${r.applied + r.rejected}</tspan></text>`;
-    });
+    let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Governor acceptance rate by route">`;
+    rows.forEach((r, i) => { const y = 6 + i * rh, w = Math.round(r.precision * 250); g += `<text x="0" y="${y + 16}" class="lbl">${esc(r.route)}</text><rect x="96" y="${y + 4}" width="${w}" height="16" rx="4" fill="#00cc88"><title>${esc(r.route)}: ${Math.round(r.precision * 100)}% of suggestions kept — ${r.applied} applied, ${r.rejected} rejected</title></rect><text x="${100 + w}" y="${y + 16}">${Math.round(r.precision * 100)}% <tspan class="dimtxt">n=${r.applied + r.rejected}</tspan></text>`; });
     g += `<line x1="96" y1="2" x2="96" y2="${H - 2}" class="axis"/></svg>`;
-    chart("Precision by route", "suggestions applied ÷ (applied + rejected), after reproduction", g, "", `<table><tr><th>route</th><th>applied</th><th>rejected</th><th>precision</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.applied}</td><td>${r.rejected}</td><td>${Math.round(r.precision * 100)}%</td></tr>`).join("")}</table>`);
+    chart("Governor acceptance rate by route", "suggestions the driving agent kept ÷ adjudicated — not precision", g, "", `<table><tr><th>route</th><th>applied</th><th>rejected</th><th>rate</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.applied}</td><td>${r.rejected}</td><td>${Math.round(r.precision * 100)}%</td></tr>`).join("")}</table>`);
   }
-  // 2. time to verdict — median and p90 per route (dumbbell)
   {
     const rows = [...routes].sort((a, b) => a.median_s - b.median_s);
     const max = Math.max(...rows.map((r) => r.p90_s)), sx = (v) => 96 + Math.round(v / max * 290);
     const rh = 26, H = rows.length * rh + 12;
     let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Median and 90th percentile seconds to verdict by route">`;
-    rows.forEach((r, i) => {
-      const y = 6 + i * rh + 12;
-      g += `<text x="0" y="${y + 4}" class="lbl">${esc(r.route)}</text><line x1="${sx(r.median_s)}" y1="${y}" x2="${sx(r.p90_s)}" y2="${y}" stroke="#1f2a22" stroke-width="2"/>`;
-      g += `<circle cx="${sx(r.median_s)}" cy="${y}" r="5" fill="#00ff99"><title>${esc(r.route)} median ${r.median_s}s</title></circle><circle cx="${sx(r.p90_s)}" cy="${y}" r="5" fill="#0d1010" stroke="#00ff99" stroke-width="2"><title>${esc(r.route)} p90 ${r.p90_s}s</title></circle>`;
-      g += `<text x="${sx(r.p90_s) + 9}" y="${y + 4}" class="dimtxt">${r.median_s}s → ${r.p90_s}s</text>`;
-    });
+    rows.forEach((r, i) => { const y = 6 + i * rh + 12; g += `<text x="0" y="${y + 4}" class="lbl">${esc(r.route)}</text><line x1="${sx(r.median_s)}" y1="${y}" x2="${sx(r.p90_s)}" y2="${y}" stroke="#1f2a22" stroke-width="2"/><circle cx="${sx(r.median_s)}" cy="${y}" r="5" fill="#00ff99"><title>${esc(r.route)} median ${r.median_s}s</title></circle><circle cx="${sx(r.p90_s)}" cy="${y}" r="5" fill="#0d1010" stroke="#00ff99" stroke-width="2"><title>${esc(r.route)} p90 ${r.p90_s}s</title></circle><text x="${sx(r.p90_s) + 9}" y="${y + 4}" class="dimtxt">${r.median_s}s → ${r.p90_s}s</text>`; });
     g += `</svg>`;
-    chart("Time to verdict", "seconds per completed review, from the sealed reports", g, `<span><i style="background:#00ff99"></i>median</span><span><i style="background:#0d1010;border:2px solid #00ff99;width:8px;height:8px"></i>90th percentile</span>`, `<table><tr><th>route</th><th>n</th><th>median s</th><th>p90 s</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.completed}</td><td>${r.median_s}</td><td>${r.p90_s}</td></tr>`).join("")}</table>`);
+    chart("Time to verdict", "seconds per completed review; the slow tail is why quick and deep tiers exist", g, `<span><i style="background:#00ff99"></i>median</span><span><i style="background:#0d1010;border:2px solid #00ff99;width:8px;height:8px"></i>90th percentile</span>`, `<table><tr><th>route</th><th>n</th><th>median s</th><th>p90 s</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.completed}</td><td>${r.median_s}</td><td>${r.p90_s}</td></tr>`).join("")}</table>`);
   }
-  // 3. verdict split per route — status colors with labels
   {
     const rows = [...routes].sort((a, b) => (b.verdicts.ACCEPT / b.completed) - (a.verdicts.ACCEPT / a.completed));
     const rh = 26, H = rows.length * rh + 12, C = { ACCEPT: "#00cc88", MODIFY: "#ffd166", REJECT: "#ff7a7a" };
     let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Verdict split by route">`;
-    rows.forEach((r, i) => {
-      const y = 6 + i * rh, total = r.verdicts.ACCEPT + r.verdicts.MODIFY + r.verdicts.REJECT; let x = 96;
-      g += `<text x="0" y="${y + 16}" class="lbl">${esc(r.route)}</text>`;
-      for (const k of ["ACCEPT", "MODIFY", "REJECT"]) { const w = Math.round(r.verdicts[k] / total * 250); if (!w) continue; g += `<rect x="${x}" y="${y + 4}" width="${Math.max(0, w - 2)}" height="16" rx="3" fill="${C[k]}"><title>${esc(r.route)} ${k}: ${r.verdicts[k]} of ${total}</title></rect>`; x += w; }
-      g += `<text x="${x + 6}" y="${y + 16}" class="dimtxt">${Math.round(r.verdicts.ACCEPT / total * 100)}% accept</text>`;
-    });
+    rows.forEach((r, i) => { const y = 6 + i * rh, total = r.verdicts.ACCEPT + r.verdicts.MODIFY + r.verdicts.REJECT; let x = 96; g += `<text x="0" y="${y + 16}" class="lbl">${esc(r.route)}</text>`; for (const k of ["ACCEPT", "MODIFY", "REJECT"]) { const w = Math.round(r.verdicts[k] / total * 250); if (!w) continue; g += `<rect x="${x}" y="${y + 4}" width="${Math.max(0, w - 2)}" height="16" rx="3" fill="${C[k]}"><title>${esc(r.route)} ${k}: ${r.verdicts[k]} of ${total}</title></rect>`; x += w; } g += `<text x="${x + 6}" y="${y + 16}" class="dimtxt">${Math.round(r.verdicts.ACCEPT / total * 100)}% accept</text>`; });
     g += `</svg>`;
-    chart("Verdict split by route", "ACCEPT / MODIFY / REJECT across completed reviews", g, `<span><i style="background:#00cc88"></i>ACCEPT</span><span><i style="background:#ffd166"></i>MODIFY</span><span><i style="background:#ff7a7a"></i>REJECT</span>`, `<table><tr><th>route</th><th>accept</th><th>modify</th><th>reject</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.verdicts.ACCEPT}</td><td>${r.verdicts.MODIFY}</td><td>${r.verdicts.REJECT}</td></tr>`).join("")}</table>`);
+    chart("Verdict split by route", "how often each route accepts, asks for changes, or rejects", g, `<span><i style="background:#00cc88"></i>ACCEPT</span><span><i style="background:#ffd166"></i>MODIFY</span><span><i style="background:#ff7a7a"></i>REJECT</span>`, `<table><tr><th>route</th><th>accept</th><th>modify</th><th>reject</th></tr>${rows.map((r) => `<tr><td>${esc(r.route)}</td><td>${r.verdicts.ACCEPT}</td><td>${r.verdicts.MODIFY}</td><td>${r.verdicts.REJECT}</td></tr>`).join("")}</table>`);
   }
-  // 4. severity of findings
   {
     const sev = S.severity, keys = ["CRITICAL", "WARNING", "NITPICK"], C = { CRITICAL: "#ff7a7a", WARNING: "#ffd166", NITPICK: "#9be29b" }, max = Math.max(...keys.map((k) => sev[k]));
-    let g = `<svg viewBox="0 0 ${W} 90" role="img" aria-label="Findings by severity">`;
+    let g = `<svg viewBox="0 0 ${W} 90" role="img" aria-label="Raw findings by reviewer-assigned severity">`;
     keys.forEach((k, i) => { const y = 6 + i * 26, w = Math.round(sev[k] / max * 250); g += `<text x="0" y="${y + 16}" class="lbl">${k}</text><rect x="96" y="${y + 4}" width="${w}" height="16" rx="4" fill="${C[k]}"><title>${k}: ${sev[k]} findings</title></rect><text x="${100 + w}" y="${y + 16}">${sev[k]}</text>`; });
     g += `</svg>`;
-    chart("Findings by severity", `${S.findings} findings across ${S.sealed_reports} sealed reports — each a claim until reproduced`, g, "", `<table><tr><th>severity</th><th>findings</th></tr>${keys.map((k) => `<tr><td>${k}</td><td>${sev[k]}</td></tr>`).join("")}</table>`);
+    chart("Raw findings by reviewer-assigned severity", `${S.findings} claims across ${S.sealed_reports} reports, before reproduction`, g, "", `<table><tr><th>severity</th><th>findings</th></tr>${keys.map((k) => `<tr><td>${k}</td><td>${sev[k]}</td></tr>`).join("")}</table>`);
   }
-  // 5. timeouts vs input size — scatter, two states by shape + color
   {
     const pts = S.size_timeout.filter((p) => p.kb > 0), maxKb = Math.max(...pts.map((p) => p.kb)), maxS = Math.max(...pts.map((p) => p.maxdur), 1);
-    const L = 40, B = 24, PW = W - L - 8, PH = 150;
-    const sx = (kb) => L + kb / maxKb * PW, sy = (s) => 6 + PH - s / maxS * PH;
+    const L = 40, B = 24, PW = W - L - 8, PH = 150, sx = (kb) => L + kb / maxKb * PW, sy = (s) => 6 + PH - s / maxS * PH;
     let g = `<svg viewBox="0 0 ${W} ${PH + B + 10}" role="img" aria-label="Slowest reviewer time versus input size; runs with a timed-out route are marked">`;
-    g += `<line x1="${L}" y1="${6 + PH}" x2="${W - 8}" y2="${6 + PH}" class="axis"/><line x1="${L}" y1="6" x2="${L}" y2="${6 + PH}" class="axis"/>`;
-    g += `<text x="${W - 8}" y="${PH + B + 4}" text-anchor="end" class="dimtxt">input size, KB (max ${maxKb})</text><text x="${L - 4}" y="12" text-anchor="end" class="dimtxt">${Math.round(maxS)}s</text><text x="${L - 4}" y="${6 + PH}" text-anchor="end" class="dimtxt">0</text>`;
-    for (const p of pts) {
-      const t = `${p.kb} KB · slowest completed reviewer ${p.maxdur}s · ${p.timeouts} of ${p.routes} routes timed out`;
-      g += p.timeouts ? `<path d="M${sx(p.kb)} ${sy(p.maxdur) - 5} l5 9 h-10 z" fill="#ff7a7a" stroke="#080a0a" stroke-width="1.5"><title>${esc(t)}</title></path>` : `<circle cx="${sx(p.kb)}" cy="${sy(p.maxdur)}" r="4" fill="#00cc88" fill-opacity=".8" stroke="#080a0a" stroke-width="1.5"><title>${esc(t)}</title></circle>`;
-    }
+    g += `<line x1="${L}" y1="${6 + PH}" x2="${W - 8}" y2="${6 + PH}" class="axis"/><line x1="${L}" y1="6" x2="${L}" y2="${6 + PH}" class="axis"/><text x="${W - 8}" y="${PH + B + 4}" text-anchor="end" class="dimtxt">input size, KB (max ${maxKb})</text><text x="${L - 4}" y="12" text-anchor="end" class="dimtxt">${Math.round(maxS)}s</text><text x="${L - 4}" y="${6 + PH}" text-anchor="end" class="dimtxt">0</text>`;
+    for (const p of pts) { const t = `${p.kb} KB · slowest completed reviewer ${p.maxdur}s · ${p.timeouts} of ${p.routes} routes timed out`; g += p.timeouts ? `<path d="M${sx(p.kb)} ${sy(p.maxdur) - 5} l5 9 h-10 z" fill="#ff7a7a" stroke="#080a0a" stroke-width="1.5"><title>${esc(t)}</title></path>` : `<circle cx="${sx(p.kb)}" cy="${sy(p.maxdur)}" r="4" fill="#00cc88" fill-opacity=".8" stroke="#080a0a" stroke-width="1.5"><title>${esc(t)}</title></circle>`; }
     g += `</svg>`;
     const timedOut = pts.filter((p) => p.timeouts).length;
-    chart("Input size vs. review time", `${timedOut} of ${pts.length} runs lost at least one route to a timeout — budgets scale with bytes`, g, `<span><i style="background:#00cc88;border-radius:50%"></i>all routes completed</span><span><i style="background:#ff7a7a;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>a route timed out</span>`, `<table><tr><th>KB</th><th>slowest s</th><th>timeouts</th></tr>${[...pts].sort((a, b) => a.kb - b.kb).map((p) => `<tr><td>${p.kb}</td><td>${p.maxdur}</td><td>${p.timeouts}/${p.routes}</td></tr>`).join("")}</table>`);
+    chart("Input size vs. review time", `${timedOut} of ${pts.length} runs lost at least one route to a timeout — a known problem, tracked on the roadmap`, g, `<span><i style="background:#00cc88;border-radius:50%"></i>all routes completed</span><span><i style="background:#ff7a7a;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>a route timed out</span>`, `<table><tr><th>KB</th><th>slowest s</th><th>timeouts</th></tr>${[...pts].sort((a, b) => a.kb - b.kb).map((p) => `<tr><td>${p.kb}</td><td>${p.maxdur}</td><td>${p.timeouts}/${p.routes}</td></tr>`).join("")}</table>`);
   }
-  // 6. runs per day
   {
     const days = Object.keys(S.by_day).sort(), max = Math.max(...days.map((d) => S.by_day[d]));
     const bw = Math.max(6, Math.floor((W - 40) / days.length) - 2), H = 120;
-    let g = `<svg viewBox="0 0 ${W} ${H + 30}" role="img" aria-label="Review runs per day">`;
+    let g = `<svg viewBox="0 0 ${W} ${H + 30}" role="img" aria-label="Runs per day">`;
     days.forEach((d, i) => { const h = Math.round(S.by_day[d] / max * H), x = 4 + i * (bw + 2); g += `<rect x="${x}" y="${6 + H - h}" width="${bw}" height="${h}" rx="3" fill="#00cc88"><title>${d}: ${S.by_day[d]} runs</title></rect>`; if (i === 0 || i === days.length - 1) g += `<text x="${x}" y="${H + 24}" class="dimtxt">${d.slice(5)}</text>`; });
     g += `<line x1="4" y1="${6 + H}" x2="${W - 4}" y2="${6 + H}" class="axis"/></svg>`;
-    chart("Runs per day", `${S.runs} runs on ${days.length} active days — the tool that governed its own development`, g, "", `<table><tr><th>day</th><th>runs</th></tr>${days.map((d) => `<tr><td>${d}</td><td>${S.by_day[d]}</td></tr>`).join("")}</table>`);
+    chart("Runs per day", `${S.runs} runs on ${days.length} active days of development`, g, "", `<table><tr><th>day</th><th>runs</th></tr>${days.map((d) => `<tr><td>${d}</td><td>${S.by_day[d]}</td></tr>`).join("")}</table>`);
   }
 
-  // ---- self-review findings table ----
   if (S.selfrun) {
     const what = {
-      "timeout-close-misclassified": "Reproduced with a 100 ms budget against a 3 s child (reported timedOut:false). Fixed with a flag read by the single close listener; regression self-test timeout_reports_timed_out.",
-      "stale-speech-handler-resets-new-run": "Reproduced with a fake speech engine delivering the cancelled utterance's error late. Reset now guarded by utterance identity; two ledger self-tests added.",
+      "timeout-close-misclassified": "Reproduced with a 100 ms budget against a 3 s child (reported timedOut:false). Fixed with a flag read by the single close listener; regression test timeout_reports_timed_out.",
+      "stale-speech-handler-resets-new-run": "Reproduced with a fake speech engine delivering the cancelled utterance's error late. Reset now guarded by utterance identity; two ledger tests added.",
       "windows-drive-specific-reference-redaction": "Reproduced with a C: path. Redaction now keys on any path separator and never prints the path.",
     };
     document.querySelector("#self-findings tbody").innerHTML = S.selfrun.findings.map((f) => `<tr><td><code>${esc(f.id)}</code></td><td class="sev-${esc(f.severity)}">${esc(f.severity)}</td><td>${esc(f.file)}</td><td>${f.sources.map((s) => `<span style="color:${ROUTE_COLOR[s] || "inherit"}">${esc(s)}</span>`).join(" + ")}</td><td>${esc(what[f.id] || "fixed and verified")}</td></tr>`).join("");
   }
-
-  // ---- terminal replay of the self-review (recorded events) ----
   const LINES = [
-    ["dim", "dispatch  governor=claude  reviewers=codex,claude,antigravity,copilot,grok  input=36443 bytes  label=\"momm 1.12.0 dispatcher/ledger/setup-ui changes\""],
-    ["dim", "claude       ⊘ self-excluded — the governor never reviews its own work"],
-    ["gk",  "grok         ✓ MODIFY   confidence 0.50    7.6s   [innovator]  0 findings"],
-    ["warn", "antigravity  ✗ invalid_output                 24s   [adversary]  — a status, not a finding"],
+    ["dim", "dispatch  governor=claude  reviewers=codex,claude,antigravity,copilot,grok  input=36443 bytes"],
+    ["dim", "claude       ⊘ excluded — the driving agent does not review its own diff"],
+    ["gk",  "grok         ✓ MODIFY   confidence 0.50    7.6s   [innovator]  0 findings (placeholder — rejected later)"],
+    ["warn", "antigravity  ✗ invalid_output                 24s   [adversary]  did not review"],
     ["cp",  "copilot      ✓ MODIFY   confidence 0.80  135.0s   [verifier]   1 finding · 1 CRITICAL"],
     ["crit", "  ▲ CRITICAL  momm/scripts/setup-ui.mjs:211-222  timeout-close-misclassified"],
     ["cx",  "codex        ✓ MODIFY   confidence 0.96  205.4s   [surgeon]    4 findings"],
-    ["ok",  "✔ 3 findings after merge · 1 corroborated (codex+copilot) · agreement 0.33 · evidence sealed sha256✓"],
-    ["dim", "THIS RUN IS NOT FINISHED — reproduce 2 material findings, triage 6 suggestions, log dispositions for rev_20260904131435_mf6w"],
+    ["ok",  "✔ 3 findings after merge · 1 corroborated (codex+copilot) · agreement 0.33 · 2 of 5 routes did not review"],
+    ["dim", "THIS RUN IS NOT FINISHED — reproduce 2 material findings, triage 6 suggestions, log dispositions"],
   ];
   const term = document.getElementById("term");
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  LINES.forEach(([cls, text], i) => {
-    const el = document.createElement("div"); el.className = "line " + cls; el.textContent = text; term.appendChild(el);
-    const reveal = () => el.classList.add("show");
-    if (reduced) reveal(); else setTimeout(reveal, 600 + i * 650);
-  });
-
-  // ---- scroll reveals ----
-  if (reduced || !("IntersectionObserver" in window)) document.querySelectorAll(".reveal").forEach((el) => el.classList.add("in"));
-  else { const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }, { threshold: 0.12 }); document.querySelectorAll(".reveal").forEach((el) => io.observe(el)); }
+  LINES.forEach(([cls, text]) => { const el = document.createElement("div"); el.className = "line " + cls; el.textContent = text; term.appendChild(el); });
 })();
 </script>
 </body>

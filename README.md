@@ -4,22 +4,22 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.13.0-00cc88)
+![momm](https://img.shields.io/badge/momm-1.14.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install every skill (one command)
 
 ```bash
-git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target all
+git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target claude --dry-run   # then again without --dry-run
 ```
 
-Links every skill in this repo into each AI harness it detects (Claude Code, Codex, Gemini, Antigravity) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. `--dry-run` previews; `--target codex,claude` picks specific harnesses. Update anytime with `git pull` (no reinstall). Per-skill installs still work via each skill's own path.
+Links every skill in this repo into the harness you name (`claude`, `codex`, `gemini`, `antigravity`, or a comma list) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. The installer writes into an agent harness, so `--target` is required and `--dry-run` previews; `--target all` still exists but has to be typed. Update anytime with `git pull` (no reinstall). Per-skill installs still work via each skill's own path.
 
 | Skill | What it does |
 |-------|--------------|
 | [myskills](myskills/) | Run every skill together from any harness and confirm each one works — one command, one verdict, exit-code gated. |
-| [momm](momm/) | **M**ixture **o**f **M**odel **M**odality (formerly multi-llm-review) — OAuth-only multi-model peer review: dispatches a git diff, a document, or attached media to the *other* installed LLM CLIs in parallel and returns structured, deduplicated findings — while the driving agent stays the sole writer. Code review, manuscript refereeing, sealed evidence. **[Live page + narrated walkthrough →](https://marroccofella.github.io/skills/momm/)** |
+| [momm](momm/) | Local multi-CLI code review with a reproduction gate (formerly multi-llm-review): dispatches a git diff, a document, or attached media to the *other* installed AI coding CLIs in parallel over your existing logins, keeps their output read-only and untrusted, and makes the driving agent reproduce a finding before it changes code. Every run is logged locally with hashes. **[Page + walkthrough →](https://marroccofella.github.io/skills/momm/)** |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 | [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
 | [yorky](yorky/) | Short callable name for **yorkshire-pudding** — say "yorky" to turn owt into Yorkshire dialect. |
@@ -27,11 +27,11 @@ Links every skill in this repo into each AI harness it detects (Claude Code, Cod
 | [myrepo](myrepo/) | Publish a project to GitHub as its own repository with a live in-browser Pages site — 42.uk-themed docs, a local-path + secret-file + inline-credential + git-history privacy scan, symlink guards, and live-URL verification. Confirms visibility and previews with `--dry-run` before any public push. |
 | [myvoice](myvoice/) | Short callable name for **promptus-clone-voice** — consented local F5-TTS voice cloning in Promptus, fail-closed signal/word gates and a recorded human listening verdict before acceptance. |
 
-## momm — Mixture of Model Modality
+## momm — local multi-CLI code review with a reproduction gate
 
 > **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. A deprecated alias remains at [`multi-llm-review/`](multi-llm-review/) whose scripts forward to `momm/scripts/`, so existing commands and skill links keep working with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The alias will be removed in a future release.
 
-Have every frontier model on your machine review your code, using only the subscriptions you already pay for — zero API keys, ever.
+Have the other AI CLIs on your machine review your code, over the logins you already have. What leaves the machine: each route you run receives the redacted input — that is the review; nothing else is sent. It runs with whatever is logged in; one route is enough (`--tier quick` for staged commits, `--tier deep` for release gates).
 
 One reviewed manifest defines all six provider surfaces — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — including their official install, sign-in, model, and help routes. The harness named as governor is removed from that pool everywhere, so it can never review its own work.
 
@@ -118,8 +118,8 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 
 ```bash
 # 1. Link the skill into your harness so you can invoke $momm afterwards
-#    (once per machine; use --target all for every detected harness).
-node install.mjs --target all
+#    (once per machine; --target is required — name the harness).
+node install.mjs --target claude
 
 # 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.
@@ -131,7 +131,7 @@ node momm/scripts/setup-ui.mjs
 node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It reads no credential contents, launches only fixed allowlisted install/login/update/model actions after a click, and sends no repository source during setup — its optional connectivity check speaks one disclosed synthetic sentence. Every non-success outcome keeps its real status (`authentication_required`, `provider_unavailable`, `ineligible_tier`, `timeout`, …) instead of collapsing into “needs login”. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. Release history lives in [momm/references/](momm/references/) — latest: [MOMM 1.13.0](momm/references/release-1.13.0.md).
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It reads no credential contents, launches only fixed allowlisted install/login/update/model actions after a click, and sends no repository source during setup — its optional connectivity check speaks one disclosed synthetic sentence. Every non-success outcome keeps its real status (`authentication_required`, `provider_unavailable`, `ineligible_tier`, `timeout`, …) instead of collapsing into “needs login”. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. Release history lives in [momm/references/](momm/references/) — latest: [MOMM 1.14.0](momm/references/release-1.14.0.md), written in response to an external critique of the 1.13.0 page.
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 

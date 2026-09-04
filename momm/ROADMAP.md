@@ -6,63 +6,31 @@ rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
 ## Planned — next release
 
-### Prose-artifact correlation (non-code peer review)
+### POSIX process-group termination
 
-Observed 2026-09-04 on the manuscript specimen run (rev_20260904131823_wvxh):
-three referees flagged the same eight defects, yet `agreement_score` was 0
-and `corroborated_count` 0, because prose findings carry free-text section
-labels in `target_file` ("§2.3 Analysis" vs "Methods, 2.3 Analysis") and no
-`line_range`, so neither merge key fires. Next: normalize section labels
-(strip §/numbering/"Methods," prefixes, lowercase, token overlap) and fall
-back to quoted-sentence overlap when line ranges are absent, so manuscript
-and document reviews get the same corroboration signal code gets. Verdict
-agreement is unaffected and must stay the headline for prose.
+The kill chain on POSIX sends SIGKILL to the direct child only; a reviewer
+CLI that forks helpers can leave orphans holding the pipes (Windows already
+uses taskkill /T). Spawn reviewers in their own process group (detached) and
+kill the group, with the same layered backstops. Needs a POSIX machine to
+verify; the Actions matrix covers ubuntu/macos, so ship with a forced-timeout
+drill there. Raised 2026-09-04 by the external kill-chain review.
 
-### Antigravity structured-output regressions
+### Route failures are product bugs, not vocabulary
 
-antigravity returned `invalid_output` on both 2026-09-04 runs (and 3 of its
-last 22 momm-folder runs). Status, not finding — but the adapter's parser
-should record the first 200 sanitized characters of the unparseable reply in
-`detail` so the failure class (schema drift vs truncation vs refusal) is
-diagnosable from the ledger without re-running.
+Diagnosed 2026-09-04 with the 1.14.0 invalid_output detail: on inputs of
+about 30 KB and up antigravity returns `{"status":"SUCCESS","response":""}`
+— an empty reply with the schema echoed back — while a 300-byte diff
+succeeds. Likely a prompt-length cap in the CLI's structured-output mode.
+Next: probe the size threshold, then either chunk the artifact for that route
+or fail it closed as `unsupported` above the threshold instead of spending
+20–60 s on an empty reply.
 
-### Read-aloud, premium voice engine (baseline SHIPPED in 1.11.0)
-
-The ledger's baseline read-aloud is live (see Shipped). Remaining premium
-tier: consented local voice via the promptus-clone-voice / myvoice pipeline
-(F5-TTS in Promptus). Constraints are non-negotiable and inherited from that
-skill: explicit owner consent per voice, generation stays entirely local,
-output audibly/visibly labeled as synthetic, and the voice reference never
-ships with MOMM — the integration points at the user's own installed preset
-(e.g. a `MOMM_READALOUD_COSYFLOW` setting), it never bundles one. Precedent:
-the FREEL*ADER 42 longplay video (2026-08) proved the event→script→synthesize
-pattern end-to-end. Also still open: an optional `--read-aloud` dispatcher
-flag that speaks the run summary when a review completes.
-Non-goals stand: no cloud TTS; never auto-read reviewer prose verbatim.
-
-### Multimedia review — remaining tiers (core SHIPPED in 1.12.0)
-
-Shipped: modality matrix, `--attach` for image/pdf/audio/video with per-route
-mechanisms, metadata stripping, fail-closed `unsupported` gate, `region`
-finding field, hash-only evidence, Setup Center modality rows (see Shipped).
-
-Still open, evidence-first:
-
-- **Verify antigravity's image path live**, then promote it in
-  MODALITY_SUPPORT — capability claims stay evidence-only.
-- **Synthetic test-card probe** in Setup Center: a locally generated image
-  (the visual analog of the harmless sentence) verifying each vision route
-  end-to-end before real media rides.
-- **Video, frame-sampled tier**: extract N keyframes locally (ffmpeg) and
-  review as images on every vision route, so video review is not
-  gemini-exclusive. Proven artifact: the autopilot longplay.
-- **Audio-as-word-gate workflow**: a documented recipe using
-  `--attach narration.flac --reviewers gemini` as the second word gate when
-  local Whisper is unavailable (the exact gap hit 2026-08). Voice content
-  inherits myvoice consent rules; synthetic audio declared as such.
-
-Explicit non-goals stand: reviewer-side code execution and reviewer web
-access during review.
+31 of 120 sealed runs lost at least one route to a timeout, and antigravity
+returned invalid_output on every 2026-09-04 run. The status vocabulary keeps
+the ledger honest, but the page and the terminal now say plainly how many
+routes did not review. Next: per-route adaptive budgets from the ledger's
+own p90 (grok and codex already get headroom), and an antigravity adapter
+fix once the 1.14.0 invalid_output diagnostics show the failure class.
 
 ### Second-reviewer cross-check for verify-first findings
 
@@ -93,6 +61,22 @@ from pre-persona data and need their own A/B evidence. One added field per
 disposition line; ledger table gains a persona column when present.
 
 ## Shipped (do not re-propose)
+
+- **1.14.0** — response to external critique (2026-09-04): prose
+  corroboration by shared quotation (a finding with no line_range merges
+  with another reviewer's finding that shares six normalized words; the
+  manuscript specimen goes from 26 raw / 0 corroborated to 10 defects / 9
+  corroborated, agreement 0.90; four self-tests); `--tier quick|deep`
+  presets (quick = copilot+antigravity, 60 s; deep = pool + quorum 2;
+  explicit flags always win); `invalid_output` now records the failure
+  class, byte counts and a sanitized 200-char sample; token-prefix redaction
+  extended (gho_/ghu_/ghs_/github_pat_/AKIA/bare sk-) with a template-string
+  survival test; `--stats` and the report's insights call the metric what
+  it is — the governor's acceptance rate, not ground-truth precision; the
+  live UI ends with material findings, anchors, the reviewer's reproduction
+  idea and the routes that did not review; `install.mjs` requires an
+  explicit `--target`. Closes the prose-artifact correlation and the
+  antigravity diagnostics items.
 
 - **1.13.0** — lineage reconciliation: merged the published 1.10.0–1.10.2
   Setup Center line into the installed 1.11–1.12.0 line (kept the single-file
