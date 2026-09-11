@@ -1,0 +1,4 @@
+interface:
+  display_name: "My Travel"
+  short_description: "Compare complete journeys, costs and comfort"
+  default_prompt: "Use $mytravel to find and complete the best-value booking that meets my exact requirements. Use the available tools, test useful variations, challenge the winner, and verify the full cost, booking and benefits."

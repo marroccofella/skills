@@ -18,7 +18,8 @@ Links every skill in this repo into the harness you name (`claude`, `codex`, `ge
 
 | Skill | What it does |
 |-------|--------------|
-| [myskills](myskills/) | Run every skill together from any harness and confirm each one works — one command, one verdict, exit-code gated. |
+| [mytravel](mytravel/SKILL.md) | **My Travel** — compare complete journeys and reservations using available tools, loyalty value, mixed cabins, stopovers and ground links; verify the exact booking and usable benefits. |
+| [myskills](myskills/) | Check the five executable skill families in one command, with exit-code-gated functional health and separate dependency readiness. |
 | [momm](momm/) | Local multi-CLI code review with a reproduction gate (formerly multi-llm-review): dispatches a git diff, a document, or attached media to the *other* installed AI coding CLIs in parallel over your existing logins, keeps their output read-only and untrusted, and makes the driving agent reproduce a finding before it changes code. Every run is logged locally with hashes. **[Page + walkthrough →](https://marroccofella.github.io/skills/momm/)** |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
 | [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
@@ -26,6 +27,18 @@ Links every skill in this repo into the harness you name (`claude`, `codex`, `ge
 | [myautoness](myautoness/) | Self-playing task completion by deterministic search and verified replay — classical AI (simulation-model search, planning, seeded exploration), explicitly not a neural network. `autopilot` is its legacy alias. |
 | [myrepo](myrepo/) | Publish a project to GitHub as its own repository with a live in-browser Pages site — 42.uk-themed docs, a local-path + secret-file + inline-credential + git-history privacy scan, symlink guards, and live-URL verification. Confirms visibility and previews with `--dry-run` before any public push. |
 | [myvoice](myvoice/) | Short callable name for **promptus-clone-voice** — consented local F5-TTS voice cloning in Promptus, fail-closed signal/word gates and a recorded human listening verdict before acceptance. |
+
+## My Travel — complete journeys, verified bookings
+
+Say **"Use My Travel"** or invoke **`$mytravel`** in a compatible harness. For example:
+
+> Use My Travel to get me from my hotel to my final home address, with the intended city stopover. Compare allowed dates, arrival airports, mixed cabins, cash and my eligible loyalty options. Preserve my hard requirements, verify the full cost and usable benefits, and complete the booking within my authorisation.
+
+My Travel 1.0.0 discovers the tools and authorised sessions available in the current harness, tests materially different constructions, and challenges the proposed winner against the whole journey. It checks exact dates, cabins, passengers, ground links, ticket/payment evidence and requested benefits. Generalised case lessons and synthetic decision checks cover common mistakes, including incomplete totals, stale balances, missed stopovers, blocked searches and duplicate-payment recovery.
+
+The skill provides portable instructions; it does not bundle airline APIs, email access, account credentials or a fare engine. It aims for the best verified result within the specified requirements and search coverage. Availability and prices still require live verification. Behavioural desk checks assess decision rules and do not prove a live booking succeeded. My Travel is outside the myskills executable health suite.
+
+The root installer discovers every top-level skill directory containing `SKILL.md`, including `mytravel`; preview with `node install.mjs --target codex --dry-run`. To install only this skill, copy or link the [`mytravel/`](mytravel/) folder into your harness's documented skill directory. Personal travel records and account details stay private; the published examples are generalised or synthetic.
 
 ## momm — local multi-CLI code review with a reproduction gate
 
