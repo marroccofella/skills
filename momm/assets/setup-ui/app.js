@@ -179,9 +179,9 @@ function renderMaintenance() {
   const skillActions = [
     repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="diff">Review diff</button>' : "",
     repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="commit">Commit…</button>' : "",
-    skillUpdates.length && maintenance.skills.repository_present && !repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="update">Update skills</button>' : "",
+    skillUpdates.length && maintenance.skills.repository_present && !repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="update">Preview MOMM update</button>' : "",
   ].join("");
-  const dirtyNote = repoDirty ? "This repository has local changes. Automatic pulls remain blocked until you review and handle them. Commit opens a guided terminal; it never stages or commits without you." : "The skills repository is clean. Published updates can be fast-forwarded safely when available.";
+  const dirtyNote = repoDirty ? "This repository has local changes. Review and handle them before applying an update. Commit opens a guided terminal; it never stages or commits without you." : "The repository is clean. Preview a signed MOMM update, inspect its policy diff, then choose explicitly whether to apply it. Other skill updates remain separate decisions.";
 
   const environmentLabels = {
     api_key_names_present: "API-key variable names are present; MOMM strips them and remains OAuth-only.",

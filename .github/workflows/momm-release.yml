@@ -1,0 +1,105 @@
+name: MOMM signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact version already committed on main and approved for release
+        required: true
+        type: string
+      mode:
+        description: Publish a stable release or only an explicitly approved main checkpoint
+        required: true
+        default: stable
+        type: choice
+        options: [stable, main-checkpoint]
+
+permissions: {}
+concurrency:
+  group: momm-signed-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.26.0'
+          cache: false
+      - name: Require completed safety matrix for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/self-test.yml/runs?head_sha=$RELEASE_SHA&event=push" > "$RUNNER_TEMP/momm-ci.json"
+          node --input-type=module -e 'import fs from "node:fs";const d=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/momm-ci.json"));if(!d.workflow_runs.some(r=>r.head_sha===process.env.RELEASE_SHA&&r.status==="completed"&&r.conclusion==="success"))throw new Error("Exact-commit safety matrix is not green");'
+      - name: Verify release content and public information
+        env:
+          NO_UPDATE_CHECK: '1'
+        run: |
+          node scripts/momm-release.mjs --check
+          node momm/scripts/update.test.mjs
+          node momm/scripts/multi-review.mjs --self-test
+          node scripts/render-momm-site.mjs --check
+          node scripts/check-momm-site.mjs
+          node myrepo/scripts/publish.mjs --self-test
+          test -z "$(git status --porcelain)"
+      - name: Install pinned signer in the release runner
+        run: go install github.com/sigstore/gitsign@v0.17.1
+      - name: Sign, verify and publish immutable tags
+        env:
+          MOMM_RELEASE_VERSION: ${{ inputs.version }}
+          MOMM_RELEASE_MODE: ${{ inputs.mode }}
+          GITSIGN_TOKEN_PROVIDER: github-actions
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MOMM_RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$MOMM_RELEASE_MODE" == stable || "$MOMM_RELEASE_MODE" == main-checkpoint ]]
+          tag="momm-$MOMM_RELEASE_VERSION"
+          checkpoint="momm-main-$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node -e 'if(require("./versions.json").momm!==process.env.MOMM_RELEASE_VERSION)process.exit(1)'
+          git config --local user.name "MOMM Release"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          refs=("$checkpoint")
+          if [[ "$MOMM_RELEASE_MODE" == stable ]]; then refs+=("$tag"); fi
+          pushes=()
+          for ref in "${refs[@]}"; do
+            if git show-ref --verify --quiet "refs/tags/$ref"; then
+              test "$(git rev-parse "$ref^{commit}")" = "$GITHUB_SHA"
+              echo "Verifying existing immutable tag before retry: $ref"
+            else
+              git -c gpg.format=x509 -c gpg.x509.program=gitsign tag -s "$ref" "$GITHUB_SHA" -m "MOMM $MOMM_RELEASE_VERSION; explicit verified checkpoint"
+            fi
+            gitsign verify-tag "$ref" \
+              --certificate-identity "https://github.com/marroccofella/skills/.github/workflows/momm-release.yml@refs/heads/main" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-github-workflow-repository "marroccofella/skills" \
+              --certificate-github-workflow-ref "refs/heads/main" \
+              --certificate-github-workflow-sha "$GITHUB_SHA"
+            pushes+=("refs/tags/$ref:refs/tags/$ref")
+          done
+          git push --atomic origin "${pushes[@]}"
+          if [[ "$MOMM_RELEASE_MODE" == stable ]]; then
+            if gh release view "$tag" --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/momm-existing-release.json"; then
+              node -e 'const r=require(process.env.RUNNER_TEMP+"/momm-existing-release.json");if(r.tagName!=="momm-"+process.env.MOMM_RELEASE_VERSION||r.isDraft||r.isPrerelease)throw new Error("Existing release does not match stable publication");'
+            else
+              gh release create "$tag" --verify-tag --title "MOMM $MOMM_RELEASE_VERSION" --notes-file "momm/references/release-$MOMM_RELEASE_VERSION.md"
+            fi
+          fi

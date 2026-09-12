@@ -23,6 +23,14 @@ jobs:
       # guards, JSON parsing, and forced-timeout settlement deterministically.
       - name: Safety self-test
         run: node momm/scripts/multi-review.mjs --self-test --pretty
+      - name: Explicit updater transaction and recovery fixtures
+        timeout-minutes: 8
+        run: node momm/scripts/update.test.mjs
+      - name: Public information is deterministic and internally linked
+        timeout-minutes: 2
+        run: |
+          node scripts/render-momm-site.mjs --check
+          node scripts/check-momm-site.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Guided onboarding is zero-call and rejects unknown routes

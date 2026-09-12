@@ -157,7 +157,9 @@ function actionCommand(provider, action) {
     const quoted = windows
       ? `'${skillsRoot.replaceAll("'", "''")}'`
       : `'${skillsRoot.replaceAll("'", `'\\''`)}'`;
-    if (action === "update") return `git -C ${quoted} pull --ff-only`;
+    if (action === "update") return windows
+      ? `Set-Location ${quoted}; node momm/scripts/multi-review.mjs update --dry-run`
+      : `cd ${quoted} && node momm/scripts/multi-review.mjs update --dry-run`;
     if (action === "diff") return windows
       ? `Set-Location ${quoted}; git status --short; git diff --stat; git diff`
       : `cd ${quoted} && git status --short && git diff --stat && git diff`;
@@ -171,7 +173,7 @@ function actionCommand(provider, action) {
 }
 
 function actionNote(provider, action) {
-  if (provider === "skills" && action === "update") return "The terminal will fast-forward the skills repository only if Git can do so safely.";
+  if (provider === "skills" && action === "update") return "The terminal previews a signed update and its protocol diff. It does not install. Applying requires your explicit update --apply command and protocol acceptance when changed.";
   if (provider === "skills" && action === "diff") return "The terminal shows the current skill changes without modifying them.";
   if (provider === "skills" && action === "commit") return "The terminal shows Git status and leaves staging and the commit message under your control.";
   if (action === "models") return providers[provider]?.modelsNote;
@@ -655,7 +657,7 @@ async function selfTest() {
     unknown_provider_rejected: actionCommand("unknown", "login") === null,
     unknown_action_rejected: actionCommand("claude", "delete") === null,
     commands_are_fixed: Object.keys(providers).every((name) => ["login", "install", "update", "models"].every((action) => actionCommand(name, action))),
-    skill_actions_are_fixed: actionCommand("skills", "update")?.includes("pull --ff-only") === true
+    skill_actions_are_fixed: actionCommand("skills", "update")?.includes("update --dry-run") === true
       && actionCommand("skills", "diff")?.includes("git diff") === true
       && actionCommand("skills", "commit")?.includes("git status") === true,
     loopback_only: isLoopback("127.0.0.1") && isLoopback("::1") && !isLoopback("192.168.1.5"),

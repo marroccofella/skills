@@ -1,6 +1,29 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.14.1",
+  "momm": "1.15.0",
+  "momm_release_schema": "momm-releases/1",
+  "momm_releases": [
+    {
+      "version": "1.15.0",
+      "tag": "momm-1.15.0",
+      "sha256": "4be1d5aa59174267cf56e89e96ad98eb0e2d9d7ac3c52b97c49bd448e926680f",
+      "hash_covers": "git-tree-blobs-excluding-versions/1",
+      "changes": [
+        "Explicit check, signed preview, apply and offline previous-installation recovery; no automatic updates.",
+        "Per-harness installation receipts, stable/pinned/main channels and separate protocol acceptance.",
+        "DO_NOT_TRACK and once-daily notice handling; actual dispatcher, updater and protocol hashes in reports.",
+        "Five focused information pages and deterministic, reconciled public evidence tables."
+      ]
+    },
+    {
+      "version": "1.14.1",
+      "tag": "momm-1.14.1",
+      "legacy_unsigned": true,
+      "changes": [
+        "Visible FAQ, bounded review-output parsing and copyable evidence tables. Legacy unsigned release; not installable through the signature-enforcing updater."
+      ]
+    }
+  ],
   "myautoness": "1.2.0",
   "myrepo": "1.3.2",
   "myvoice": "1.0.0",

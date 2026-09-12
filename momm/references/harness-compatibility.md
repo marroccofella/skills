@@ -22,9 +22,18 @@ Use one canonical skill directory. Link or install that directory with the harne
 
 ## Adapter status
 
+The 1.15 candidate additionally uses flags checked against installed help:
+Claude 2.1.233 `--safe-mode` preserves account auth while disabling customizations;
+text reviews use no built-in tools and media reviews expose only Read. Grok 1.0.5
+uses `--verbatim --no-subagents` without removing plan mode. Copilot 1.0.83 uses
+`--stream off` with the existing viewer-only allowlist. Older CLIs lacking these
+flags fail closed; flag availability is not a completed-review or liveness test.
+The September 12 release gate did not reach quorum: Claude/Grok timed out and
+Copilot reported an exhausted monthly quota. Do not represent that attempt as a pass.
+
 - Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.
 - Gemini reviewer: enabled when Gemini is not the governor; run headlessly in plan mode. CLI 0.55.1 is installed, but individual/Pro/Ultra access was retired (reported as `ineligible_tier`); Standard or Enterprise Gemini Code Assist organization licenses remain supported, and for consumer accounts Antigravity is the successor route.
-- Claude reviewer: enabled when Claude is not the governor; verified against CLI 2.1.240 (`-p` + `--output-format json` + `--permission-mode plan`). Requires a one-time `claude` browser login; fails closed as `authentication_required` until then.
+- Claude reviewer: enabled when Claude is not the governor; historical adapter used `-p` + `--output-format json` + `--permission-mode plan`. The candidate adds the containment flags documented above. Requires the provider's browser login when authentication is actually reported missing.
 - Antigravity reviewer: enabled when Antigravity is not the governor; verified against CLI 1.1.19 using `--new-project`, `--mode=plan`, `--sandbox`, structured JSON output, and a temporary sanitized artifact. Never add `--dangerously-skip-permissions` or `--disable-slash-commands` to this adapter.
 - Copilot reviewer: enabled when Copilot is not the governor; verified against GitHub Copilot CLI 1.0.80 using `-p` + `-s` with a temporary sanitized artifact (stdin is ignored in prompt mode). Containment: `--available-tools=view` (read-only file viewer is the model's only tool), `--no-custom-instructions`, `--disable-builtin-mcps`, `--no-remote-export`, `--add-dir` scoped to the temp directory. Auth is the GitHub keyring login (`copilot login` or an authenticated `gh`); fails closed as `authentication_required` otherwise. GitHub-side 5xx outages are classified as `provider_unavailable` (retry later), not as an auth problem.
 - Grok reviewer: adapter shipped, verified against Grok CLI 1.0.5 flag surface (`--prompt-file` carries contract+artifact so the model needs no tools, `--permission-mode plan`, `--disable-web-search`, `--json-schema` constrains output; temp-dir isolation). Auth is `grok login` (xAI account browser flow, or `grok login --device-code`); unauthenticated runs verified to fail closed as `authentication_required` with the provider's own text. Full authenticated review pending first login; defaults to the `innovator` persona.

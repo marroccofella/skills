@@ -6,6 +6,34 @@ rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
 ## Planned — next release
 
+### 1.15 release candidate — explicit updates and clearer public information
+
+Implemented in the candidate: installation receipts with per-harness scopes;
+manifest-only check, signed staged preview, explicit apply, protocol acceptance,
+stable/pinned/main channels, retained offline rollback, daily opt-outs, executable
+hashes, five focused information pages, and deterministic public-data rendering.
+Publication remains gated by the OS/Node matrix, MOMM dispositions, privacy scans
+and a verified Sigstore-signed tag. Do not call this candidate released until those
+gates pass. Main-channel updates require a signed development checkpoint; an
+ordinary unsigned branch head is not eligible. Legacy unsigned tags stay intact.
+
+Candidate release testing also found interrupted notice claims, changed ignore
+rules stranding rollback, and browser default speech bypassing local-only voice
+selection. Each now has a regression fixture. The signing workflow can reuse
+matching verified tags on retry, and has an explicit main-checkpoint-only mode.
+Claude's text review disables customizations and tools while retaining OAuth and
+plan permissions (verified flag surface: 2.1.233); Grok preserves the supplied
+prompt with --verbatim and disables subagents (1.0.5). Live re-verification is
+still required; unsupported flags fail closed on older installations.
+Output parsing now prefers the final review and refuses explicitly non-final
+Grok envelopes; regression fixtures cover intermediate/final ordering. Copilot
+requests non-streamed final text while preserving its viewer-only tool allowlist.
+An unmet external-review quorum can no longer coexist with outstanding.complete.
+
+The attached broader proposals are not silently bundled: API-key support conflicts
+with OAuth-only policy; a repository split, automatic execution of peer-authored
+tests, independent benchmarking and marketing outreach remain separate decisions.
+
 ### POSIX process-group termination
 
 The kill chain on POSIX sends SIGKILL to the direct child only; a reviewer

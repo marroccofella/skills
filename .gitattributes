@@ -1,4 +1,19 @@
-# The public evidence export is sealed by a sha256 sidecar over its exact
-# bytes — newline conversion on Windows checkouts must never rewrite it.
+# Deterministic text bytes across Windows, macOS and Linux. Release package
+# hashes use Git blobs; generated public outputs also retain LF on checkout.
+* text=auto
+.gitattributes text eol=lf
 docs/evidence/** text eol=lf
 *.mjs text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.csv text eol=lf
+*.sha256 text eol=lf
+*.yml text eol=lf
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.flac binary
+*.wav binary

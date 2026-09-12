@@ -33,7 +33,7 @@ The **Skills & diagnostics** panel groups skills as **Update available**, **Modi
 - distinguishes provider login from account-specific model availability; and
 - reports only the names of API-key, update-control, model, endpoint, and proxy variables that may alter behavior.
 
-It never returns environment values. An update is applied only after the user clicks **Update**, confirms the action, and sees the provider's official updater in a visible terminal. Skill updates use `git pull --ff-only` and are withheld when local repository changes are present.
+It never returns environment values. Provider CLI updates open their official updater only after an explicit user action. The MOMM update action opens `update --dry-run`: a staged signed preview, never an installation. Applying requires the user's own `update --apply` command and `--accept-protocol` when policy changes. It does not bypass the updater with `git pull`. See [updating.md](updating.md).
 
 For headless machines or people who prefer the terminal, replace `codex` with the harness currently driving the work:
 
