@@ -30,7 +30,7 @@ Routes not yet used, ranked by whether they add a new model family under an acco
 | State / config dir | `~/.codex` (`config.toml`, `auth.json`, `models_cache.json`) | `~/.claude/`, `~/.claude.json`, `.claude/settings*.json` | `~/.gemini/antigravity-cli/settings.json`; shares `~/.gemini` | `~/.copilot/` (`COPILOT_HOME`) | `~/.grok/` (`config.toml`, `bin/`, `leader.sock`) | `~/.gemini/settings.json`, `~/.gemini/.env` |
 | API-key path (MOMM refuses) | `codex login --with-api-key`, `OPENAI_API_KEY` | `ANTHROPIC_API_KEY`, `--bare` | `GEMINI_API_KEY` + `modelProvider: gemini` | `COPILOT_PROVIDER_*` (BYOK), tokens via `GH_TOKEN` | `XAI_API_KEY` (env) | `GEMINI_API_KEY`, Vertex |
 | Update | `codex update` / npm | `claude update` | `agy update` | `copilot update` (auto-update on unless CI) | `grok update` | npm |
-| Quota surface seen | model requires newer CLI (cleared by upgrading to 0.154.0 on 2026-09-13) | — | empty `response` above ~30 KB | "exceeded your monthly quota" | placeholder or `max turns reached` on large input | individual tiers retired 2026-06-18 |
+| Quota surface seen | model requires newer CLI (cleared by upgrading to 0.154.0 on 2026-09-13) | — | empty `response` when the agent roams outside the temp project (not size-related) | "exceeded your monthly quota" | placeholder or `max turns reached` on large input | individual tiers retired 2026-06-18 |
 
 ## How MOMM invokes each route (dispatcher 1.14.1, published)
 
@@ -56,7 +56,7 @@ Every non-success is a status, never a finding. Map provider text to MOMM status
 | `Not signed in`, `login`, `unauthorized` in provider output | session missing or expired | `authentication_required` + the route's login hint |
 | `requires a newer version of Codex` (models cache error) | CLI older than the configured model | `error` (1.15) — 1.14.1 misfiles it as auth; fix is upgrading the CLI (0.154.0 resolved it here on 2026-09-13) |
 | `exceeded your monthly quota` (Copilot) | billing, not auth | `error`; wait for the period or change plan |
-| `{"status":"SUCCESS","response":""}` (agy) | empty reply on a large prompt | `invalid_output` |
+| `{"status":"SUCCESS","response":""}` (agy) + stderr `a tool required the "read_file" permission that headless mode cannot prompt for` | agent tried to read/run outside the temp project and was auto-denied (Gemini 3.8 Flash since 2026-09-02; see antigravity.md) | `invalid_output`; surface the stderr line, do not retry with a bigger timeout |
 | Grok `stopReason: "tool_use"` / `"cancelled"` / `Error: max turns reached` | model wanted a tool turn (with `--disallowed-tools` the attempt is cancelled instead of executed) | `invalid_output` / `error`; not fixable by prompt alone |
 | `ineligible_tier` (gemini) | account tier retired | use antigravity |
 | 5xx from the vendor | outage | `provider_unavailable`, retried once |

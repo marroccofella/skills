@@ -26,9 +26,34 @@ Google's terminal agent, successor route for consumer Google accounts after Gemi
 
 Output envelope (json): `{"conversation_id":…,"status":"SUCCESS","response":"<text>","duration_seconds":…,"num_turns":…,"json_schema":{…}}` — the review is inside `response`.
 
-## Observed behaviour (2026-09-04 and 2026-09-12)
+## Why `response` comes back empty (root cause, established 2026-09-13)
 
-- **Empty response on larger prompts**: for inputs of roughly 30 KB and above (and, on 2026-09-12, most 12 KB pieces: 34 of 46) the envelope comes back `"status":"SUCCESS","response":""` with the schema echoed, after 15–60 s. MOMM reports `invalid_output` with that sample. A 300-byte diff succeeds. Likely a prompt-length limit in structured-output mode; the adapter should probe the threshold and fail closed above it rather than spend the time.
+The empty envelope is **not** a prompt-size limit. It is the agent being auto-denied a tool permission in headless mode and exiting without a final answer. Evidence, all from the CLI's own state under `~/.gemini/antigravity-cli/`:
+
+1. **stderr says so** — every empty run writes (MOMM's report shows only "stderr 307 bytes" and never surfaced the text):
+   `jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json … Alternatively, re-run with --dangerously-skip-permissions`
+2. **The conversation databases** (`conversations/<id>.db`, SQLite, table `steps`) show the trail. A failing run on 2026-09-13 (MOMM run `rev_20260912224530_4o8x`, conversation `f7c7b9a2…`): `view_file prompt.txt` ×3 → `list_dir` of the temp project → `find_by_name *multi-review*` in the temp dir (nothing) → `find_by_name multi-review.mjs` across **`D:\1code projects`** (allowed; the 30 s `Error running find: context deadline exceeded` in the log) → `view_file D:\1code projects\Claude\momm\scripts\multi-review.mjs` → `permission check failed for read_file … user denied permission` → stream stopped, `response:""`. Other empty runs end on `read_file C:\Users\marro`, `grep_search C:\Users\marro`, `run_command node -e …` or `run_command Get-ChildItem ..\momm-*`, all auto-denied. Runs that stay inside the temp project answer normally.
+3. **The trigger is the model change, not MOMM.** The CLI log label switched from `Gemini 3.7 Flash (High)` to `Gemini 3.8 Flash (High)` between 14:05 and 16:45 local on 2026-09-02; the first empty review in the ledger is 16:55 that day. Across 202 August MOMM conversations 3 roamed outside the temp dir and 10 ended on a denied step (5 %); from 2 September onward 8 of 13, 8 of 10, 20 of 35 … 47 of 78 (12 September) ended denied. The adapter's argument vector is byte-identical to the August one apart from prompt wording, and August reviews succeeded at 108–149 KB in 40–60 s.
+4. **Plan mode is now "planning mode"**: the prompt is expanded to `/plan …` and the system text asks the agent to *create a detailed implementation plan artifact and get user approval before making code changes*. That invites investigation of the files the diff names. It is what `--mode=plan` means in agy 1.2.x; it is not a read-only tool filter.
+
+What the sandbox does and does not contain (verified from the same trails): reading file **contents** outside the temp project is denied; `find_by_name` and `list_dir` **outside** the project are allowed, so file *names* under `D:\` and the user's home can reach the model; `run_command` is denied. Read-only containment holds; "nothing else is looked at" does not.
+
+Size correlation was a red herring: tonight's 12 KB pieces split 7 success / 7 empty / 1 timeout, and the deciding factor was whether the model chose to look for files it could not read.
+
+**Controlled probes (agy 1.2.2, 2026-09-13):** the exact MOMM vector with MOMM's real schema on a 10 KB diff succeeded (1 turn, 44 s); without `--mode=plan` it also succeeded (3 turns); without `--sandbox` it produced the empty envelope with the stderr hint above (so the sandbox is not the cause — roaming is). Text mode and no-schema mode both returned reviews. A/B result for the prompt-side remedy is recorded below when complete.
+
+**A/B on the prompt-side remedy (agy 1.2.2, 2026-09-13, piece-06 artifact — the one that provoked the roaming above, 4 runs each):**
+
+| Prompt | Outcome | Tool trail |
+| --- | --- | --- |
+| Current MOMM wording | 3 of 4 reviews; 1 empty envelope (`run_command` auto-denied, stderr hint) | 1 to 19 tool calls per run: repeated `view_file`, `find_by_name`, `grep_search`, one `run_command` |
+| Current wording + *"The prompt file is the complete input: do not search, list, or read any other file or directory, and do not run commands. Files named in the diff are not available; review only the text supplied."* | 4 of 4 reviews, each 2 turns, 49–51 s | one `view_file` of the prompt, then the answer |
+
+Eight runs is a small sample, but the mechanism and the trails agree: telling the model up front that nothing else exists removes the roaming that headless mode then denies. Adapter recommendations for the author: add that sentence to the antigravity `-p` text; surface the CLI's stderr hint in `invalid_output` detail instead of "stderr 307 bytes"; treat `--mode=plan` as a permission profile, not as proof the agent only reads; keep `--sandbox` (without it the same roaming still ends empty).
+
+## Observed behaviour (2026-09-04 and 2026-09-12, before the cause was known)
+
+- **Empty response**: MOMM reports `invalid_output` with the envelope `"status":"SUCCESS","response":""`; on 2026-09-12, 34 of 46 pieces. See the root-cause section above; the "prompt-length limit" hypothesis recorded here earlier was wrong.
 - Fast when it works (median 32 s), and its findings on this project are accepted at 58 %.
 - Successful antigravity reviews arrive schema-constrained, so they parse cleanly.
 
