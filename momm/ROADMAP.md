@@ -32,6 +32,17 @@ An unmet external-review quorum can no longer coexist with outstanding.complete.
 Executable hashes are captured at dispatcher startup, not retroactively from
 files changed during review; a changed installation clears verified-release status.
 
+Candidate lifecycle hardening: peer-review/2 requires explicit completion and
+artifact quotations; malformed/over-limit/error-wrapped replies fail closed before
+normalization. A governor validator checks original report/log linkage, unique
+item decisions, required before/after or refutation records, and current source,
+test and output hashes. It records completion separately and keeps stale/deferred
+work visibly open. The controlled zero-model-call regression runs real authored
+tests before/after a seeded fix and tests conflicting/missing/forged decisions.
+This validates consistency, not an agent's honesty, test adequacy or all harnesses.
+Current source capture supports local text input and exact current Git text A/M
+diffs; binary/deleted/renamed source and media lifecycle binding remain open.
+
 The attached broader proposals are not silently bundled: API-key support conflicts
 with OAuth-only policy; a repository split, automatic execution of peer-authored
 tests, independent benchmarking and marketing outreach remain separate decisions.
@@ -190,8 +201,9 @@ dispositions belong beside the review log the dispatcher wrote.
 
 ## Open items
 
-- **Source-bearing peer review of the momm release diff** — pending the
-  owner's explicit approval sentence; do not dispatch without it.
+- **Fresh source-bearing release review** — sharing updater/installer/protocol/
+  release-test diffs with Claude, Copilot and Grok is approved. Additional provider
+  sharing is not implied; the latest substantive release quorum remains unmet.
 - The running Setup Center instance must be relaunched after upgrades; old
   processes serve stale UI (observed live on 1.9.x → 1.10.0).
 - **Agent timeout hard cap defeats --timeout on dense inputs** (observed

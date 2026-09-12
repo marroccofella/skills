@@ -54,6 +54,7 @@ jobs:
           node scripts/momm-release.mjs --check
           node momm/scripts/update.test.mjs
           node momm/scripts/multi-review.mjs --self-test
+          node momm/scripts/governor.test.mjs
           node scripts/render-momm-site.mjs --check
           node scripts/check-momm-site.mjs
           node myrepo/scripts/publish.mjs --self-test

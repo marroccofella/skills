@@ -9,6 +9,10 @@ on:
 jobs:
   self-test:
     runs-on: ${{ matrix.os }}
+    env:
+      NO_UPDATE_CHECK: '1'
+      MOMM_NO_UPDATE_CHECK: '1'
+      DO_NOT_TRACK: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +30,9 @@ jobs:
       - name: Explicit updater transaction and recovery fixtures
         timeout-minutes: 8
         run: node momm/scripts/update.test.mjs
+      - name: Governor review-to-decision lifecycle (offline)
+        timeout-minutes: 5
+        run: node momm/scripts/governor.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |

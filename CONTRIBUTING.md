@@ -20,6 +20,8 @@ node <your-skill>/scripts/<entry>.mjs --self-test --pretty
 | --- | --- |
 | `momm/SKILL.md` | Agent protocol; policy changes require update acceptance |
 | `momm/scripts/multi-review.mjs` | Read-only reviewer dispatch and report persistence |
+| `momm/scripts/review-contract.mjs` | Completed reply/schema and quoted-scope validation |
+| `momm/scripts/governor.mjs`, `governor.test.mjs` | Offline decision/evidence validation and controlled lifecycle tests |
 | `momm/scripts/update.mjs` | Explicit update transaction, receipts and retained recovery runner |
 | `momm/scripts/update.test.mjs` | Offline, disposable-Git transaction/failure fixtures |
 | `momm/scripts/setup-ui.mjs`, `momm/assets/setup-ui/` | Local setup, guided provider actions and update preview |
@@ -35,6 +37,7 @@ renderer or the deliberately approved source snapshot, then regenerate:
 
 ```text
 node momm/scripts/multi-review.mjs --self-test
+node momm/scripts/governor.test.mjs
 node momm/scripts/update.test.mjs
 node momm/scripts/setup-ui.mjs --self-test
 node momm/scripts/ledger.mjs --self-test

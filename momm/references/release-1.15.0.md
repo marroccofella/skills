@@ -21,6 +21,11 @@ review and signed-tag verification; this file is not proof that the tag exists.
   signed-tag reuse on publication retry, and a main-checkpoint-only signing mode.
 - Local-only public read-aloud refuses browser-default or remote voices. Review
   parsing prefers final envelopes; an unmet quorum cannot be labeled complete.
+- Completed-review contract with quoted scope and strict pre-normalization
+  validation; incomplete, malformed and oversized replies never silently qualify.
+- Offline governor completion command: unique item decisions, original seals,
+  reproduction/refutation records and final source/test/output hashes. A receipt
+  is separate from the original report; later edits invalidate current completion.
 
 ## Evidence corrections
 
@@ -52,7 +57,11 @@ damaged storage or missing harness prerequisites. It refuses local edits and an
 unrelated concurrent checkout. Legacy unsigned releases require an explicit
 bootstrap; they are not update targets or retroactively signed.
 
-This release does not solve every reviewer reliability issue or mechanize the
-governor's reproduction protocol. See the maintained roadmap for large-input route
-failures, POSIX descendant cleanup and decision-lifecycle work. No API-key support,
+The controlled lifecycle test runs real authored failing/passing tests with
+synthetic peer replies, without provider calls. It is not proof that every harness
+obeys the protocol. Record validation cannot establish that an observation is
+truthful or a chosen test adequate; no peer snippet is executed automatically.
+This release does not solve every reviewer reliability issue. See the maintained
+roadmap for large-input route failures, POSIX descendant cleanup and unsupported
+source/media lifecycle binding. No API-key support,
 repository split, telemetry collection or marketing outreach was added.

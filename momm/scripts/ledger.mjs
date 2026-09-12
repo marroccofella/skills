@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { inspectCompletion } from "./governor.mjs";
 
 // Read-aloud narration: composed ONLY from structured, closed-vocabulary
 // fields (statuses, verdicts, severity counts, disposition tallies) plus the
@@ -263,6 +264,8 @@ const HARNESS = { codex: "Codex CLI · ChatGPT OAuth", claude: "Claude Code · A
 
 const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).map((run) => {
   const rpt = reports[run.run_id]?.report;
+  const completion = rpt?.source_snapshot ? inspectCompletion(process.cwd(), run.run_id) : null;
+  const completionLine = completion ? `<p class="dim">${completion.complete ? "Local completion evidence validated" : "Governor verification incomplete or stale"} · ${esc(completion.evidence_level)}${completion.complete ? "" : ` · ${esc([...completion.errors, ...completion.unresolved.map(i => i.reason)].join("; "))}`}</p>` : "<p class=\"dim\">Historical record — completion not validated under the current protocol.</p>";
   const runDispositions = dispositionsByRun.get(run.run_id) ?? [];
   const subject = run.label ?? "";
   const statuses = Object.entries(run.reviewer_status ?? {}).map(([agent, status]) => `<span class="st st-${esc(status)}" title="${esc(agent)}: ${esc(status)}">${esc(agent)}</span>`).join(" ");
@@ -279,6 +282,7 @@ const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(Strin
     ? `<p class="dim">Routes without a review: ${rpt.reviewers.filter((r) => r.status !== "success" && r.status !== "self_excluded").map((r) => `${esc(r.agent)} (${esc(r.status)})`).join(", ")}.</p>` : "";
   const detail = rpt ? `<details><summary>${successes.length ? `full transcript · ${rpt.findings.length} finding${rpt.findings.length === 1 ? "" : "s"}` : "run record · no completed reviews"} · report sha256 ${esc(reports[run.run_id].sha256.slice(0, 12))}…</summary>
     ${failedLine}
+    ${completionLine}
     ${successes.map((r) => `<div class="rev"><b>${esc(r.agent)}</b> <span class="dim">${esc(HARNESS[r.agent] ?? "")}${r.persona ? ` · persona: ${esc(r.persona)}` : ""}${r.duration_ms ? ` · ${(r.duration_ms / 1000).toFixed(1)}s` : ""}</span><span class="v v-${esc(r.verdict)}">${esc(r.verdict)}</span>${r.confidence != null ? ` <span class="dim">conf ${r.confidence}</span>` : ""}<p>${esc(r.summary ?? "(verdict without prose — see suggestions)")}</p>${r.suggested_improvements?.length ? `<ul>${r.suggested_improvements.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
     ${rpt.findings.length ? `<h4>Findings — claims awaiting reproduction</h4>${rpt.findings.map((f) => `<div class="find f-${esc(f.severity)}"><b>${esc(f.severity)}</b> ${esc(f.id)} <span class="dim">by ${(f.sources ?? []).join(", ")}${f.verify_first ? " · verify first" : ""}</span><p>${esc(f.issue)}</p></div>`).join("")}` : ""}
     ${runDispositions.length ? `<h4>Your dispositions</h4><table><tr><th>reviewer</th><th>suggestion</th><th>disposition</th><th>reason</th></tr>${runDispositions.map((d) => `<tr><td>${esc(d.reviewer)}</td><td>${esc(d.suggestion)}</td><td class="d-${esc(d.disposition)}">${esc(d.disposition)}</td><td>${esc(d.reason)}${d.evidence ? `<br><span class="dim">evidence: ${esc(d.evidence)}</span>` : ""}</td></tr>`).join("")}</table>` : ""}
