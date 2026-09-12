@@ -37,6 +37,14 @@ MOMM sends sanitized input to the selected external providers via their CLI
 account sessions. Redaction is not a confidentiality guarantee. One ready
 external reviewer is enough to start; quotas and account restrictions still apply.
 
+For release reviews, use `--tier deep` and an explicit success quorum. The default
+base allowance is 180 seconds (deep: 240; Grok: 1.5x); `--timeout` overrides it.
+`--stream` emits elapsed-time and byte-count updates without exposing reasoning.
+A running process is not a completed review. `--effort medium` explicitly selects
+the verified Claude/Grok effort setting; omission preserves provider defaults.
+On Windows, native and official npm launchers run without shell interpretation;
+an unsupported custom shim receives a specific explanation, not a login prompt.
+
 ## Explicit updates
 
 ```text

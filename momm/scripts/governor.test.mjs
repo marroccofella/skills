@@ -30,6 +30,22 @@ const buggy = good.replace("/ a.length", "/ (a.length + 1)");
 const peer = (changes = {}) => ({ review_status: "complete", reviewed_scope: [{ quote: "a.length", assessment: "The denominator determines the arithmetic mean." }], verdict: "ACCEPT", confidence: 0, summary: "The arithmetic mean calculation is assessed below.", findings: [], suggested_improvements: [], ...changes });
 try {
   test("completed clean review and zero confidence remain valid", () => assert.equal(reviewProblem(peer(), good), null));
+  test('quotation matching tolerates only platform line endings', () => {
+    const sample='const x = 1;\nconst y = 2;';
+    const p=peer({reviewed_scope:[{quote:sample,assessment:'Two constant declarations.'}]});
+    assert.equal(reviewProblem(p,sample.replaceAll('\n','\r\n')),null);
+    assert.equal(reviewProblem({...p,reviewed_scope:[{quote:sample.replaceAll('\n','\r\n'),assessment:'Two declarations.'}]},sample),null);
+    assert(reviewProblem(p,sample.replace('x = 1','x = 9')));
+    assert(reviewProblem(p,sample.replace('x = 1','x  = 1')));
+  });
+  test("validator rejects absent or non-string artifact without coercion", () => {
+    for (const a of [undefined, null, {}, 42, Buffer.from("a.length")]) {
+      const payload = peer({ reviewed_scope: [{ quote: String(a), assessment: "Fabricated coercion corpus" }] });
+      assert(reviewProblem(payload, a));
+    }
+  });
+  test("scope overflow identifies over-limit rather than missing work", () => assert.match(reviewProblem(peer({ reviewed_scope: Array(13).fill(peer().reviewed_scope[0]) }), good), /over-limit/));
+  test("short legitimate artifacts remain reviewable", () => assert.equal(reviewProblem(peer({ reviewed_scope: [{ quote: "x", assessment: "Single symbol" }] }), "x"), null));
   for (const [name, payload] of [
     ["missing fields", { findings: [] }], ["starting-review placeholder", { verdict: "MODIFY", confidence: 0, findings: [], summary: "Reading the full artifact before issuing a verdict.", suggested_improvements: [] }],
     ["declared incomplete", peer({ review_status: "incomplete" })], ["missing assessed scope", peer({ reviewed_scope: [] })],
@@ -130,6 +146,30 @@ try {
     write(".ensemble_reviews/review-log.jsonl", originalLog);
   });
   test("direct source changed during capture refused", () => assert.equal(captureSourceSnapshot(fixture, buggy, "mean.cjs").complete, false));
+  test("finding paths preserve actual a/b directories before removing diff prefixes", () => {
+    const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
+    const start = gov.indexOf("// A cited real project file"), end = gov.indexOf("if (target &&", start);
+    assert(start >= 0 && end > start);
+    const target = (name, paths) => vm.runInNewContext(gov.slice(start, end) + ";target", {
+      obligation: { kind: "finding", content: { target_file: name } }, report: { source_snapshot: { files: paths.map(path => ({ path })) } },
+    });
+    assert.equal(target("a/mean.cjs", ["a/mean.cjs", "mean.cjs"]), "a/mean.cjs");
+    assert.equal(target("a/mean.cjs", ["mean.cjs"]), "mean.cjs");
+    assert.equal(target("b/other.cjs", ["mean.cjs"]), "b/other.cjs");
+  });
+  test("explicit source containing a sample diff is still file input", () => {
+    const sample = 'const sample = `\ndiff --git a/x b/x\n`;\n'; write("sample.cjs", sample);
+    assert.equal(captureSourceSnapshot(fixture, sample, "sample.cjs").complete, true);
+  });
+  test("malformed strict policy retains item inventory and explains missing routes", () => {
+    const malformed = { ...report, run_id: "rev_fixture_malformed_policy", gate_policy: { strict: true, quorum_required: 2 } };
+    const p = `.ensemble_reviews/reports/${malformed.run_id}.json`; write(p, malformed);
+    const originalLog = fs.readFileSync(path.join(fixture, ".ensemble_reviews/review-log.jsonl"), "utf8");
+    write(".ensemble_reviews/review-log.jsonl", originalLog + JSON.stringify({ run_id: malformed.run_id, report_path: p, report_sha256: ref(p).sha256, input_sha256: malformed.input_sha256 }) + "\n");
+    const result = inspectCompletion(fixture, malformed.run_id);
+    assert.equal(result.complete, false); assert.equal(result.items.length, 5); assert(result.errors.some(e => /requested_routes/.test(e)));
+    write(".ensemble_reviews/review-log.jsonl", originalLog);
+  });
   test("fresh Git scope accepted; stale, deleted and binary scope refused", () => {
     const cwd = path.join(fixture, "scope"); fs.mkdirSync(cwd);
     const git = args => { const r = spawnSync("git", ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
@@ -137,6 +177,20 @@ try {
     git(["add", "."]); git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture baseline"]);
     fs.writeFileSync(path.join(cwd, "x.txt"), "after\n"); const diff = git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]);
     assert.equal(captureSourceSnapshot(cwd, diff).complete, true);
+    const subdir = path.join(cwd, "subdir"); fs.mkdirSync(subdir);
+    assert.match(captureSourceSnapshot(subdir, diff).reason, /repository root/i);
+    // Mutate after the initial diff comparison, at the first source read.
+    // This makes the race deterministic rather than relying on wall-clock timing.
+    let changed = false;
+    const racedFs = new Proxy(fs, { get(target, key) {
+      if (key !== "readFileSync") return target[key];
+      return (file, ...args) => { if (!changed && path.resolve(file) === path.join(cwd, "x.txt")) { changed = true; fs.writeFileSync(file, "concurrent\n"); } return fs.readFileSync(file, ...args); };
+    } });
+    const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
+    const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function inspectCompletion")).replace("export function", "function") + ";captureSourceSnapshot", {
+      fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); },
+    });
+    assert.equal(capture(cwd, diff).complete, false, "concurrent source must not bind to an older reviewed diff");
     fs.writeFileSync(path.join(cwd, "x.txt"), "stale\n"); assert.equal(captureSourceSnapshot(cwd, diff).complete, false);
     fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,5,6])); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
     fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2])); fs.unlinkSync(path.join(cwd, "blob.bin")); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);

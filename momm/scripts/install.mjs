@@ -127,7 +127,13 @@ function main() {
   }
   for (const customDir of options.customDirs) results.push({ target: "custom", ...linkSkill(customDir, options) });
   const output = { source: skillRoot, results, note: "Existing paths are never overwritten. No credentials are copied." };
-  output.installation = recordInstall(path.resolve(skillRoot, ".."), "momm/scripts/install.mjs", results, { dryRun: options.dryRun });
+  try { output.installation = recordInstall(path.resolve(skillRoot, ".."), "momm/scripts/install.mjs", results, { dryRun: options.dryRun }); }
+  catch (error) {
+    output.installation = { updater_available: false, error: error.message,
+      reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
+    process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
+    process.exitCode = 1;
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;
 }

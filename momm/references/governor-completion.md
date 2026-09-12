@@ -6,7 +6,9 @@ what actually happened. No command inside a report or decision is executed.
 
 ## Workflow
 
-1. Review a project-local file with `--input`, or the exact current Git diff HEAD.
+1. Review a project-local file with `--input`, or the exact current Git diff HEAD
+   from the repository root. Git paths and the evidence directory must share that
+   root; a subdirectory invocation gets an explicit refusal rather than guessed scope.
    Source hashes are captured at dispatch. For diffs, text additions/modifications
    are supported; stale/filtered patches, binaries, deletions, renames and type
    changes cannot currently receive validated completion. The review may still

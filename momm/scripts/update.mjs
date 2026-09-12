@@ -270,7 +270,9 @@ function exclusive(dir, action) {
   const file = path.join(dir, "update.active");
   let fd;
   if (regular(file, true)) {
-    const active = readJSON(file);
+    let active;
+    try { active = readJSON(file); }
+    catch { throw new Error(`Update claim is invalid or incomplete: ${file}. It was preserved. Confirm no updater is running before repairing this claim; do not remove the transaction journal or installation receipt.`); }
     if (Number.isInteger(active.pid) && active.pid > 0) {
       try { process.kill(active.pid, 0); }
       catch (e) { if (e.code === "ESRCH") fs.unlinkSync(file); }

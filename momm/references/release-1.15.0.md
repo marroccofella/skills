@@ -26,6 +26,14 @@ review and signed-tag verification; this file is not proof that the tag exists.
 - Offline governor completion command: unique item decisions, original seals,
   reproduction/refutation records and final source/test/output hashes. A receipt
   is separate from the original report; later edits invalidate current completion.
+- Stabilisation: visible partial-installer results, skill-list whitespace handling,
+  actionable torn-claim and malformed-policy errors, source-snapshot race checks,
+  explicit root guidance and accurate a/b path binding. Dirty checkouts cannot pass
+  the release seal. Signing dependencies and successful-run lookup are hardened.
+- Preview redirects/error handling, copy-feedback races and restored harness
+  selections are covered by offline tests. Grok uses explicit tool denies instead
+  of an ineffective empty tools argument, with a bounded four-turn final-response
+  budget; this is CLI policy, not an OS sandbox or a universal reliability claim.
 
 ## Evidence corrections
 

@@ -4,7 +4,7 @@ Purpose: keep parallel sessions and future releases pointed the same way.
 Before proposing or building a MOMM feature, read this file; after shipping or
 rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
-## Planned — next release
+## Candidate — not released
 
 ### 1.15 release candidate — explicit updates and clearer public information
 
@@ -43,18 +43,72 @@ This validates consistency, not an agent's honesty, test adequacy or all harness
 Current source capture supports local text input and exact current Git text A/M
 diffs; binary/deleted/renamed source and media lifecycle binding remain open.
 
+Candidate reviewer reliability: real source probes completed after the former
+120/180-second windows. The default base is now 180 seconds (deep: 240), with
+existing Grok 1.5x headroom and explicit timeout overrides retained. Scope prose
+is concise and useful novelty is optional; all material findings remain required.
+--stream sends content-free elapsed/deadline/byte-count progress, never reasoning.
+An explicit --effort medium is supported for locally verified Claude/Grok flags;
+default leaves account settings alone. Output is decoded across UTF-8 chunks and
+bounded in bytes, malformed JSON scans linearly, and Windows uses native/verified
+npm bin launchers instead of shell argument interpretation. Transport fixtures
+run in the OS/Node matrix; local success is not a cross-machine certification.
+Grok's text adapter uses ordinary final JSON, explicit deny rules for read/search,
+shell/edit, MCP and web tool classes, and a four-turn ceiling within the unchanged
+wall-clock deadline. An empty --tools value did not disable reads in a local
+1.0.5 canary; explicit deny rules withheld its marker. This is CLI policy, not an
+OS filesystem sandbox or certification of every future binary. A 38 KB synthetic
+control completed after an earlier quotation-invalid reply; real-source quorum
+is still required. The local peer contract remains mandatory. Failed/non-final
+probes are not successful reviews.
+
+Stabilisation regressions now cover CLI/model errors versus real login failures,
+partial installation receipts, comma-separated skill names, torn update claims,
+strict-policy shape diagnostics, source text containing sample diffs, repository
+root guidance, concurrent Git-source changes, and genuine a/b source directories.
+The release seal refuses a dirty checkout; prepare requires the intended files
+staged first. The signing job pins setup-node and queries successful exact-commit
+push runs explicitly. Preview stream failures, slash redirects, copy feedback and
+restored harness snippets have offline regressions. None of this marks the
+candidate released or turns legacy decision counts into validated completion.
+
+Candidate CLI maintenance now inventories all six installations independently of
+governor self-exclusion. The dashboard shows installed/latest versions, source,
+installation type and explicit update actions. Failed checks stay unknown; AGY
+has no verified read-only latest query and needs an explicit native update.
+Native updater commands bind to the detected path; npm commands bind to the
+detected global prefix. Homebrew, project-local and unknown wrappers receive
+guidance rather than a guessed global install. A launched terminal is not an
+update success; changed versions invalidate prior live checks. Offline fixtures
+cover inventory, failed native checks, prereleases, origins and declined consent.
+Local Windows binaries were updated and re-probed on 2026-09-12; account quotas,
+tier eligibility and real-source review quorum remain separate gates.
+
+Quotation validation treats CRLF/LF as equivalent while retaining all other
+literal characters and the original input byte hashes. This repairs a reproduced
+cross-platform false rejection; it does not certify the cause of every earlier
+invalid reply. Setup update endpoints require the displayed command, readiness
+probes require the local token, and request bodies are byte-bounded and decoded
+once. Supervised POSIX children now own groups; deadlines and normal leader exit
+kill residual members. Handled shutdown signals allow nested dispatchers to
+cancel their reviewer groups before bounded escalation. Windows retains taskkill
+tree termination and a direct-child backstop. Cross-platform policy fixtures pass
+locally; real POSIX descendant drills must pass in CI before release. This is not
+OS sandboxing: an uncatchable crash, blocked event loop or independently detached
+helper can defeat signal forwarding. Hard settlement still prevents hung pipes
+from stranding the dispatcher or Setup Center.
+
 The attached broader proposals are not silently bundled: API-key support conflicts
 with OAuth-only policy; a repository split, automatic execution of peer-authored
 tests, independent benchmarking and marketing outreach remain separate decisions.
 
-### POSIX process-group termination
+## Planned — later work
 
-The kill chain on POSIX sends SIGKILL to the direct child only; a reviewer
-CLI that forks helpers can leave orphans holding the pipes (Windows already
-uses taskkill /T). Spawn reviewers in their own process group (detached) and
-kill the group, with the same layered backstops. Needs a POSIX machine to
-verify; the Actions matrix covers ubuntu/macos, so ship with a forced-timeout
-drill there. Raised 2026-09-04 by the external kill-chain review.
+### Stronger process containment
+
+The candidate owns ordinary POSIX descendant groups and tests nested cancellation.
+Independent OS job/cgroup containment remains separate future work; do not claim
+group signalling contains arbitrary detached processes or survives every crash.
 
 ### Route failures are product bugs, not vocabulary
 
@@ -206,11 +260,8 @@ dispositions belong beside the review log the dispatcher wrote.
   sharing is not implied; the latest substantive release quorum remains unmet.
 - The running Setup Center instance must be relaunched after upgrades; old
   processes serve stale UI (observed live on 1.9.x → 1.10.0).
-- **Agent timeout hard cap defeats --timeout on dense inputs** (observed
-  2026-08-23): agentTimeoutMs clamps to 360s even when the user passes
-  `--timeout 420`, so codex cannot finish a 63KB dense patch. Either honor an
-  explicit --timeout above the cap, or surface the clamp in the report so a
-  timeout is distinguishable from an impossible budget.
+- Explicit timeout overrides are already honored (see 1.12.0 above); provider
+  completion reliability remains a separate open item, not an unimplemented cap fix.
 
 ## Parked ideas (small, fun, or unproven)
 

@@ -1,5 +1,13 @@
 # Getting started without surprises
 
+## CLI versions and explicit updates
+
+In the local Setup Center, open **CLI versions, skills & diagnostics**. The six-CLI table includes the active controller even though it cannot review itself. It shows the installed version, latest checked version, source and installation type. **Check everything** refreshes these observations without installing anything. An unknown latest version is not a current version; Antigravity has no verified check-only updater, so its **Check / update…** action needs explicit consent.
+
+Each update previews the exact command, then asks before opening its terminal. npm updates target the detected prefix; native updates target the detected executable. Homebrew, project-local and unknown wrappers use their update guide rather than a guessed global install. Finish in the terminal, then check versions again. A changed version invalidates the old connectivity result; verify the connection separately. An update does not repair exhausted quota or an ineligible account tier.
+
+This panel runs locally; the public GitHub Pages information site cannot inspect or update software on your computer.
+
 MOMM lets the coding agent you are already using ask other locally installed agent CLIs for read-only peer reviews. Your current agent remains the governor: it is the only writer, and it must reproduce a finding before changing code.
 
 ## The easiest first command

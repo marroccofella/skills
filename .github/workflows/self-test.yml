@@ -8,6 +8,7 @@ on:
 
 jobs:
   self-test:
+    timeout-minutes: 25
     runs-on: ${{ matrix.os }}
     env:
       NO_UPDATE_CHECK: '1'
@@ -26,7 +27,17 @@ jobs:
       # Zero model calls: the self-test exercises env scrubbing, recursion
       # guards, JSON parsing, and forced-timeout settlement deterministically.
       - name: Safety self-test
+        timeout-minutes: 2
         run: node momm/scripts/multi-review.mjs --self-test --pretty
+      - name: Reviewer transport and hostile-output regression
+        timeout-minutes: 2
+        run: node momm/scripts/transport.test.mjs
+      - name: Process ownership and real POSIX cancellation drills
+        timeout-minutes: 2
+        run: node momm/scripts/process-scope.test.mjs
+      - name: Release stabilisation regressions (offline)
+        timeout-minutes: 2
+        run: node momm/scripts/stabilisation.test.mjs
       - name: Explicit updater transaction and recovery fixtures
         timeout-minutes: 8
         run: node momm/scripts/update.test.mjs
@@ -54,9 +65,12 @@ jobs:
           if (unsafe.status === 0 || unsafe.stderr.includes("\u001b")) throw new Error("unknown reviewer input was not safely rejected");
           console.log("guided onboarding is zero-call, self-excluding, and input-safe");
       - name: Local Setup Center safety contract
-        # This self-test starts the live loopback server and proves forged
-        # Host/Origin requests cannot reach /api/session or mutate state.
+        # Offline helper assertions; maintenance fixtures separately exercise
+        # token/Host handling through a simulated HTTP handler.
         run: node momm/scripts/setup-ui.mjs --self-test
+      - name: CLI maintenance regression tests
+        timeout-minutes: 2
+        run: node momm/scripts/setup-maintenance.test.mjs
       - name: Setup Center JavaScript syntax
         run: |
           node --check momm/scripts/setup-ui.mjs

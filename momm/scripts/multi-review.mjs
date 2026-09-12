@@ -9,6 +9,10 @@ import { spawn } from "node:child_process";
 import { update, dailyCheck, updateCheckDisabled, provenance } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import { captureSourceSnapshot } from "./governor.mjs";
+import { createProcessScope } from "./process-scope.mjs";
+
+const processScope = createProcessScope();
+processScope.installSignalHandlers();
 
 const MOMM_VERSION = "1.15.0";
 const REPORT_SCHEMA = "momm-report/1";
@@ -96,18 +100,18 @@ if (Number.isFinite(nodeMajor) && nodeMajor < 18) {
   process.exit(1);
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 function runtimeProvenance() {
   const hashes = {};
-  for (const [key, name] of [["governor_sha256", "governor.mjs"], ["peer_contract_sha256", "review-contract.mjs"]]) {
+  for (const [key, name] of [["governor_sha256", "governor.mjs"], ["peer_contract_sha256", "review-contract.mjs"], ["process_scope_sha256", "process-scope.mjs"]]) {
     try { hashes[key] = createHash("sha256").update(fs.readFileSync(path.join(SKILLS_ROOT, "momm/scripts", name))).digest("hex"); } catch { hashes[key] = null; }
   }
   return { ...provenance(SKILLS_ROOT), ...hashes };
 }
 const STARTUP_PROVENANCE = Object.freeze(runtimeProvenance());
 function reportProvenance(start, finish) {
-  const changed = ["dispatcher_sha256", "updater_sha256", "protocol_sha256", "governor_sha256", "peer_contract_sha256", "release_commit"].some(key => start[key] !== finish[key]);
+  const changed = ["dispatcher_sha256", "updater_sha256", "protocol_sha256", "governor_sha256", "peer_contract_sha256", "process_scope_sha256", "release_commit"].some(key => start[key] !== finish[key]);
   return { ...start, executable_hash_observed_at: "dispatcher_start",
     installation_changed_during_run: changed,
     release_verified: Boolean(start.release_verified && finish.release_verified && !changed) };
@@ -287,7 +291,7 @@ function attachmentContractSection(attachments) {
 // confidence-1.0 ACCEPTs). Override any of them with --personas, including
 // agent=none to run a route with the plain shared contract.
 const PERSONAS = {
-  innovator: "Persona — the Innovator (wild imagination, grounded claims): treat every artifact as a springboard. In suggested_improvements ALWAYS include at least one genuinely novel, inventive, or unconventional idea — a different algorithm, an unexpected capability, a creative repurposing — clearly phrased as an idea, not a defect. Creativity lives ONLY in suggested_improvements: every entry in findings must quote the exact artifact line(s) it concerns inside its issue or rationale, and a defect you cannot quote is a defect you must not report.",
+  innovator: "Persona — the Innovator (useful ideas, grounded claims): suggest a novel approach only when it offers a concrete benefit within this artifact's scope. Empty suggested_improvements is valid; do not invent work to fill a quota. Creativity lives ONLY in suggested_improvements: every entry in findings must quote the exact artifact line(s) it concerns inside its issue or rationale, and a defect you cannot quote is a defect you must not report.",
   socratic: "Persona — the Socratic challenger (question everything): interrogate every assumption the artifact makes — inputs, invariants, naming, error handling, even whether the change should exist. Where fitting, phrase rationale as pointed questions the author should be able to answer. Be demanding and skeptical; accept nothing on authority. Verdicts and findings must still be grounded in evidence from the artifact, never suspicion alone.",
   futureproof: "Persona — the Future-proofer: judge how this artifact survives the next several years — rapidly improving AI tools and agents maintaining it, provider and API churn, dependency drift, scale growth. Flag brittleness to plausible future change in suggested_improvements, clearly labeled as future-proofing. Findings must remain present-tense, real defects only.",
   surgeon: "Persona — the Surgeon (trace-it-or-drop-it precision): your specialty is the defect classes single-file review misses — cross-layer contracts, artifact and packaging breaks (generated files, missing assets, clean-checkout failures), lifecycle and teardown paths, state that must survive a transition. For every finding, trace the failing path step by step through the artifact and state the concrete trigger scenario; a finding you cannot walk end-to-end is not ready to report. Prefer three traced findings over ten suspicions.",
@@ -468,7 +472,8 @@ Review for concrete logic defects, regressions, security issues, race conditions
 Also assess quality: efficiency (possible speed-ups or wasted work), elegance (simpler or more idiomatic ways to express the same logic), and any other concrete improvements worth suggesting even when the code is defect-free.
 Respond with ONLY one JSON object - no markdown fences, no prose. Fields:
 - "review_status": "complete" only AFTER reviewing the supplied artifact; otherwise "incomplete". A plan to start reviewing is not a review.
-- "reviewed_scope": 1–12 objects with "quote" (an exact excerpt from the artifact, up to 500 characters) and "assessment" (your completed assessment of that excerpt, up to 1000 characters). Empty only for incomplete reviews. This is a declared scope, not proof of correctness.
+- "reviewed_scope": 1–12 objects with "quote" (an exact excerpt from the artifact, up to 500 UTF-16 code units) and "assessment" (your completed assessment of that excerpt, up to 1000 UTF-16 code units). CRLF/LF line endings are equivalent; all other characters must match literally. Empty only for incomplete reviews. This is a declared scope, not proof of correctness.
+Prefer 1–3 representative excerpts with a one- or two-sentence assessment each. Review the whole supplied artifact, but do not narrate every branch or repeat findings in scope. The limits are ceilings, not targets. Keep prose concise without omitting material defects.
 - "verdict": "ACCEPT", "MODIFY", or "REJECT".
 - "confidence": number between 0 and 1 for your confidence in the verdict.
 - "findings": array, EMPTY if you found no real defects. Each element:
@@ -479,11 +484,13 @@ Respond with ONLY one JSON object - no markdown fences, no prose. Fields:
   - "issue": one sentence describing the actual defect you found
   - "rationale": why it matters
   - "test_suggestion": a minimal executable reproduction snippet (runnable test code) when feasible, otherwise a one-line reproduction idea, or null
-- "summary": one short paragraph assessing this specific change, at most 1000 characters.
+- "summary": one short paragraph assessing this specific change, at most 1000 UTF-16 code units.
 - "suggested_improvements": array of short strings (EMPTY if none) with concrete efficiency, elegance, or design improvements that are not defects — e.g. a faster algorithm, a simpler construct, better naming.
-At most 50 findings and 20 suggestions; do not silently omit work to meet these limits: report incomplete if necessary. Finding limits: id 80, target_file 500, issue/rationale 2000, test_suggestion 1500 characters; suggestions 500 characters each. Use unique finding ids.
+At most 50 findings and 20 suggestions; do not silently omit work to meet these limits: report incomplete if necessary. Finding limits: id 80, target_file 500, issue/rationale 2000, test_suggestion 1500 UTF-16 code units; suggestions 500 UTF-16 code units each. Non-BMP symbols such as emoji count as two units. Use unique finding ids.
 Describe only defects genuinely present in the artifact; never emit placeholder or example text.`;
 
+// Antigravity's generation hint. Other routes receive the prose contract;
+// every completed reply is independently checked by reviewProblem below.
 const REVIEW_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -502,22 +509,22 @@ const REVIEW_JSON_SCHEMA = {
         additionalProperties: false,
         required: ["id", "severity", "target_file", "line_range", "issue", "rationale", "test_suggestion"],
         properties: {
-          id: { type: "string" },
+          id: { type: "string", maxLength: 80 },
           severity: { type: "string", enum: ["CRITICAL", "WARNING", "NITPICK"] },
-          target_file: { type: ["string", "null"] },
+          target_file: { type: ["string", "null"], maxLength: 500 },
           line_range: {
             anyOf: [
               { type: "array", prefixItems: [{ type: "integer" }, { type: "integer" }], minItems: 2, maxItems: 2 },
               { type: "null" },
             ],
           },
-          issue: { type: "string" },
-          rationale: { type: "string" },
-          test_suggestion: { type: ["string", "null"] },
+          issue: { type: "string", maxLength: 2000 },
+          rationale: { type: "string", maxLength: 2000 },
+          test_suggestion: { type: ["string", "null"], maxLength: 1500 },
         },
       },
     },
-    summary: { type: "string" },
+    summary: { type: "string", maxLength: 1000 },
   },
 };
 
@@ -541,6 +548,7 @@ function applyTier(options) {
     if (!options.timeoutExplicit) { options.timeoutMs = 60_000; options.timeoutExplicit = true; }
   } else if (options.tier === "deep") {
     if (!options.minSuccess) options.minSuccess = 2;
+    if (!options.timeoutExplicit) options.timeoutMs = Math.max(options.timeoutMs, 240_000);
   }
   return options;
 }
@@ -554,7 +562,8 @@ function usage() {
 Options:
   --input, --patch <file>    Review a file instead of git diff HEAD/stdin
   --reviewers <csv>         Requested peers (default: codex,claude,antigravity,copilot,grok)
-  --timeout <seconds>       Per-reviewer timeout (default: 120)
+  --timeout <seconds>       Base timeout (default: 180; deep: 240; Grok gets 1.5x)
+  --effort <default|medium> Explicit Claude/Grok effort; default keeps provider settings
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
   --min-success <n>         Exit 3 unless at least n external reviews succeeded (quorum
@@ -615,6 +624,10 @@ function parseArgs(argv) {
     else if (arg === "--input" || arg === "--patch") options.input = next();
     else if (arg === "--reviewers") { options.reviewers = next().split(",").map(normalizeAgentName).filter(Boolean); options.reviewersExplicit = true; }
     else if (arg === "--timeout") { options.timeoutMs = Math.max(1, Number(next())) * 1000; options.timeoutExplicit = true; }
+    else if (arg === "--effort") {
+      options.effort = next();
+      if (!["default", "medium"].includes(options.effort)) throw new Error("--effort must be default or medium");
+    }
     else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
     else if (arg === "--strict") options.strict = true;
     else if (arg === "--stream") options.stream = true;
@@ -689,14 +702,44 @@ function sanitizeText(text) {
   return { value, redactions };
 }
 
-function platformCommand(command, args) {
-  // Native executables do not need cmd.exe. Keeping agy.exe direct also
-  // avoids cmd's quoting rules corrupting its JSON Schema argument.
+function platformCommand(command, args, env = process.env) {
+  // Never put paths, schema JSON or prompt arguments through cmd.exe: even
+  // quoted %variables% and & can be interpreted by shell wrappers on Windows.
   if (process.platform !== "win32" || String(command).toLowerCase().endsWith(".exe")) return { command, args };
-  return {
-    command: process.env.ComSpec || "cmd.exe",
-    args: ["/d", "/s", "/c", command, ...args],
-  };
+  // GitHub Desktop can prepend a git.cmd forwarding wrapper to PATH. Git is
+  // a native dependency, not an npm reviewer: ask Windows for git.exe directly,
+  // as the updater's shell:false Git invocations already do implicitly.
+  if (command === "git") return { command: "git.exe", args };
+  const packages = { codex: "@openai/codex", claude: "@anthropic-ai/claude-code", copilot: "@github/copilot", gemini: "@google/gemini-cli" };
+  const name = path.basename(command).replace(/\.(cmd|bat)$/i, "");
+  const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
+  const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, ""));
+  const dirs = path.dirname(command) !== "." ? [path.dirname(path.resolve(command))] : pathDirs;
+  for (const dir of dirs) {
+    const native = path.join(dir, `${name}.exe`);
+    if (fs.existsSync(native)) return { command: native, args };
+    if (![".cmd", ".bat"].some(ext => fs.existsSync(path.join(dir, name + ext)))) continue;
+    try {
+      if (!packages[name]) throw new Error("unknown package");
+      const root = fs.realpathSync(path.join(dir, "node_modules", packages[name]));
+      const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+      const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.[name];
+      if (pkg.name !== packages[name] || typeof bin !== "string" || path.isAbsolute(bin)) throw new Error("invalid package bin");
+      const executable = fs.realpathSync(path.resolve(root, bin));
+      const rel = path.relative(root, executable);
+      if (!rel || rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel) || !fs.statSync(executable).isFile()) throw new Error("bin outside package");
+      if (/\.exe$/i.test(executable)) return { command: executable, args };
+      if (/\.(?:js|cjs|mjs)$/i.test(executable)) {
+        // npm shims prefer their adjacent Node, then PATH. A harness's bundled
+        // runtime can be older than a correctly installed reviewer's runtime.
+        const node = [dir, ...pathDirs].map(p => path.join(p, "node.exe")).find(p => fs.existsSync(p) && fs.statSync(p).isFile()) ?? process.execPath;
+        return { command: node, args: [executable, ...args] };
+      }
+    } catch { /* A found but unverifiable shim must not fall through to another install. */ }
+    throw Object.assign(new Error(`Unsupported Windows launcher for ${name}: shell shim refused; install the official native executable or npm package with a verified bin entry`), { code: "MOMM_UNSUPPORTED_LAUNCHER" });
+  }
+  // Missing executables keep the ordinary ENOENT classification. No shell.
+  return { command, args };
 }
 
 function antigravityCommand() {
@@ -707,57 +750,46 @@ function antigravityCommand() {
   return "agy";
 }
 
-function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS, env = cleanOauthEnv(), cwd = process.cwd() } = {}) {
+function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS, env = cleanOauthEnv(), cwd = process.cwd(), onProgress = null, progressIntervalMs = 15000 } = {}) {
   return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
+    const output = { chunks: [], bytes: 0, received: 0 }, errors = { chunks: [], bytes: 0, received: 0 };
+    const startedAt = Date.now();
+    let firstOutputMs = null;
     let settled = false;
     let timedOut = false;
     let outputLimited = false;
 
-    const invocation = platformCommand(command, args);
-    const child = spawn(invocation.command, invocation.args, {
+    let child;
+    try {
+    const invocation = platformCommand(command, args, env);
+    child = processScope.spawn(invocation.command, invocation.args, {
       cwd,
       env,
       shell: false,
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    } catch (error) { resolve({ code: null, error, stdout: "", stderr: "", timedOut: false, outputLimited: false }); return; }
 
-    const append = (current, chunk) => {
-      const combined = current + chunk.toString("utf8");
-      if (Buffer.byteLength(combined, "utf8") > MAX_OUTPUT_BYTES) {
-        outputLimited = true;
-        return combined.slice(0, MAX_OUTPUT_BYTES);
-      }
-      return combined;
+    // Decode once after concatenation: UTF-8 code points can span chunks.
+    // Bound retained BYTES, not JS characters; never repeatedly copy a prefix.
+    const append = (sink, chunk) => {
+      firstOutputMs ??= Date.now() - startedAt;
+      sink.received += chunk.length;
+      const take = Math.min(chunk.length, MAX_OUTPUT_BYTES - sink.bytes);
+      if (take < chunk.length) outputLimited = true;
+      if (take) { sink.chunks.push(Buffer.from(chunk.subarray(0, take))); sink.bytes += take; }
     };
 
-    child.stdout.on("data", (chunk) => { stdout = append(stdout, chunk); });
-    child.stderr.on("data", (chunk) => { stderr = append(stderr, chunk); });
+    child.stdout.on("data", (chunk) => append(output, chunk));
+    child.stderr.on("data", (chunk) => append(errors, chunk));
+    const progress = () => ({ elapsed_ms: Date.now() - startedAt, timeout_ms: timeoutMs,
+      stdout_bytes: output.received, stderr_bytes: errors.received, first_output_ms: firstOutputMs });
+    const progressTimer = onProgress ? setInterval(() => {
+      try { onProgress(progress()); } catch { /* UI observers cannot break containment. */ }
+    }, progressIntervalMs) : null;
 
-    // On Windows the direct child is cmd.exe; child.kill() would orphan its
-    // descendants (the actual CLI), which then hold the stdio pipes open so
-    // the "close" event never fires and the dispatcher cannot exit.
-    const killTree = () => {
-      if (process.platform === "win32" && child.pid) {
-        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        // Sandboxed harnesses may block taskkill entirely. Backstop by killing
-        // at least the direct child so the exit fallback can settle; a
-        // descendant may leak as an orphan, but the dispatcher never hangs.
-        killer.on("error", () => child.kill());
-        if (typeof killer.unref === "function") killer.unref();
-        const backstop = setTimeout(() => {
-          if (!settled) child.kill();
-        }, 2000);
-        if (typeof backstop.unref === "function") backstop.unref();
-      } else {
-        child.kill("SIGKILL");
-      }
-    };
+    const killTree = () => processScope.terminate(child);
 
     // Hard deadline: in a sandbox that blocks taskkill AND child.kill(), no
     // child event will ever fire, so settle unconditionally. Deliberately
@@ -775,14 +807,17 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (progressTimer) clearInterval(progressTimer);
       if (hardDeadline) clearTimeout(hardDeadline);
+      processScope.release(child);
       // Destroy the pipes and drop the child handle so nothing a surviving
       // process does can keep this process alive after the result is decided.
       child.stdout.destroy();
       child.stderr.destroy();
       child.stdin.destroy();
       if (typeof child.unref === "function") child.unref();
-      resolve({ ...result, stdout, stderr, timedOut, outputLimited });
+      resolve({ ...result, stdout: Buffer.concat(output.chunks, output.bytes).toString("utf8"),
+        stderr: Buffer.concat(errors.chunks, errors.bytes).toString("utf8"), timedOut, outputLimited, progress: progress() });
     };
 
     child.on("error", (error) => finish({ code: null, error }));
@@ -801,29 +836,22 @@ function runProcess(command, args, { input = "", timeoutMs = DEFAULT_TIMEOUT_MS,
 
 function extractJsonObjects(text) {
   const objects = [];
-  for (let start = 0; start < text.length; start += 1) {
-    if (text[start] !== "{") continue;
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let end = start; end < text.length; end += 1) {
-      const char = text[end];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (char === "\\") escaped = true;
-        else if (char === '"') inString = false;
-        continue;
-      }
-      if (char === '"') inString = true;
-      else if (char === "{") depth += 1;
-      else if (char === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          try { objects.push(JSON.parse(text.slice(start, end + 1))); } catch {}
-          start = end;
-          break;
-        }
-      }
+  let start = -1, depth = 0, inString = false, escaped = false;
+  // Single forward scan; malformed nested prefixes never restart a suffix scan.
+  for (let end = 0; end < text.length; end++) {
+    const char = text[end];
+    if (start < 0) { if (char === "{") { start = end; depth = 1; } continue; }
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) {
+      try { objects.push(JSON.parse(text.slice(start, end + 1))); } catch {}
+      start = -1;
     }
   }
   return objects;
@@ -913,14 +941,21 @@ function normalizeReview(agent, payload) {
 }
 
 function classifyFailure(result) {
+  if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { status: "unsupported", detail: result.error.message };
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
-  if (result.timedOut) return { status: "timeout", detail: "reviewer exceeded the time limit (timeout_ms in this report scales with input size unless --timeout is set) — re-run, raise --timeout, or if this route was never logged in, complete its browser login first" };
+  if (result.timedOut) return { status: "timeout", detail: "no completed review within the allotted time; inspect process_progress for the route's actual budget and received bytes, narrow the review or explicitly raise --timeout. A timeout alone is not an authentication diagnosis" };
   // Terminal-capability warnings bury the real failure; drop them, but fall
   // back through stdout before surrendering to the bare exit code.
-  const dropWarnings = (text) => String(text || "")
-    .split(/\r?\n/).filter((line) => line.trim() && !/^Warning:/i.test(line.trim())).join("\n");
-  const meaningful = dropWarnings(result.stderr) || dropWarnings(result.stdout);
-  const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.toLowerCase();
+  const dropWarnings = (text) => stripAnsi(text)
+    .split(/\r?\n/).filter((line) => line.trim() && !/^(?:Warning:|(?:\d{4}-\d\d-\d\dT\S+\s+)?WARN\b)/i.test(line.trim())).join("\n");
+  const cleanErr = dropWarnings(result.stderr), cleanOut = dropWarnings(result.stdout);
+  const meaningful = cleanErr || cleanOut || result.error?.message;
+  const combined = `${cleanOut}\n${cleanErr}`.toLowerCase();
+  // Local model/cache compatibility failures can include OAuth diagnostics or
+  // echoed source. They are not evidence that the account needs a new login.
+  if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported/.test(combined)) {
+    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${clipped(meaningful, 700)}` };
+  }
   // A retired account tier is a permanent condition, not an auth problem —
   // classify it first (its message contains "authenticating") so the user is
   // pointed at the successor route instead of a futile re-login.
@@ -937,7 +972,7 @@ function classifyFailure(result) {
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
     return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
   }
-  if (/(?:log[ -]?in|sign[ -]?in|authenticate|authentication|oauth|browser)/.test(combined)) {
+  if (/not (?:signed|logged) in|(?:please|must|need to) (?:log[ -]?in|sign[ -]?in|authenticate)|(?:authentication|authorization) (?:required|failed)|unauthenticated|(?:oauth|access|refresh) token (?:is )?(?:expired|invalid|missing)|no (?:valid )?(?:oauth|login) session/.test(combined)) {
     // Keep the provider's own words: transient service errors can contain
     // auth-like phrasing, and the raw text is what distinguishes them.
     return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
@@ -1001,7 +1036,8 @@ async function invokeReviewer(agent, artifact, options) {
       // Verified in Claude 2.1.233 --help: safe mode preserves OAuth while
       // disabling custom instructions, hooks, plugins and MCPs. Text is
       // already on stdin; no tool is needed to read it or produce a review.
-      "--safe-mode", "--tools", attachments.length ? "Read" : "", ...mediaDirArgs];
+      "--safe-mode", "--tools", attachments.length ? "Read" : "", ...mediaDirArgs,
+      ...(options.effort === "medium" ? ["--effort", "medium"] : [])];
     input = `${contract}\n\n--- ARTIFACT TO REVIEW ---\n${artifact}`;
   } else if (agent === "antigravity") {
     // Verified against Antigravity CLI 1.1.13. Unlike Gemini, agy -p ignores
@@ -1067,7 +1103,9 @@ async function invokeReviewer(agent, artifact, options) {
     // Verified against Grok CLI 1.0.5: --prompt-file carries the complete
     // contract plus artifact (no model tools needed to read anything),
     // --permission-mode plan keeps the session read-only, web search is
-    // disabled, and --json-schema constrains the reply to the review schema.
+    // disabled. Use the completed JSON envelope, then validate the whole reply
+    // locally (same gate as Claude/Codex); provider schema-constrained mode
+    // stalled on real source while ordinary output completed in diagnostics.
     // Unauthenticated runs fail closed with a structured "Not signed in"
     // error, which classifies as authentication_required (live-verified in
     // run rev_20260818012311_bs4c; no portable CI test exists because CI
@@ -1081,10 +1119,15 @@ async function invokeReviewer(agent, artifact, options) {
       // Preserve the full supplied prompt instead of an offloaded summary;
       // retain plan-mode containment and disallow delegated subagents.
       "--verbatim", "--no-subagents",
+      // In 1.0.5 an empty --tools value still permits reads (live canary).
+      // Deny named tool classes explicitly; allow enough turns to return a
+      // final answer after a denied attempt. This is CLI policy, not an OS sandbox.
+      ...["Read", "Grep", "Bash", "Edit", "MCPTool", "WebFetch", "WebSearch"].flatMap(tool => ["--deny", tool]),
+      "--max-turns", "4",
       "--output-format", "json",
-      "--json-schema", JSON.stringify(REVIEW_JSON_SCHEMA),
       "--permission-mode", "plan",
       "--disable-web-search",
+      ...(options.effort === "medium" ? ["--reasoning-effort", "medium"] : []),
     ];
     input = "";
     cwd = temporaryDirectory;
@@ -1095,7 +1138,8 @@ async function invokeReviewer(agent, artifact, options) {
   let result;
   let cleanupError = null;
   try {
-    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd });
+    result = await runProcess(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd,
+      onProgress: options.onProgress ? progress => options.onProgress(agent, progress) : null });
   } finally {
     if (temporaryDirectory) {
       try {
@@ -1108,7 +1152,7 @@ async function invokeReviewer(agent, artifact, options) {
   if (cleanupError) {
     return { agent, status: "error", detail: `temporary review artifact cleanup failed: ${clipped(cleanupError.message, 600)}` };
   }
-  if (result.code !== 0 || result.error || result.timedOut) return { agent, ...classifyFailure(result) };
+  if (result.code !== 0 || result.error || result.timedOut) return { agent, ...classifyFailure(result), progress: result.progress };
   const payload = unwrapReviewPayload(result.stdout);
   if (!payload) {
     // Say WHAT came back, not just that it was wrong: the failure class
@@ -1121,12 +1165,13 @@ async function invokeReviewer(agent, artifact, options) {
     return {
       agent,
       status: "invalid_output",
+      progress: result.progress,
       detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
     };
   }
   const problem = result.outputLimited ? "output limit hit; review may be truncated" : reviewProblem(payload, artifact);
-  if (problem) return { agent, status: "invalid_output", detail: problem };
-  return { agent, status: "success", review: normalizeReview(agent, payload) };
+  if (problem) return { agent, status: "invalid_output", detail: problem, progress: result.progress };
+  return { agent, status: "success", progress: result.progress, review: normalizeReview(agent, payload) };
 }
 
 function fingerprint(finding) {
@@ -1269,7 +1314,7 @@ const SEVERITY_RANK = { CRITICAL: 3, WARNING: 2, NITPICK: 1 };
 // governor could finish a run believing it was done while every suggestion sat
 // untriaged and dispositions.jsonl stayed empty. This block makes the
 // outstanding work explicit, counted, and impossible to miss.
-function buildOutstanding(findings, results, runId, cwd, minSuccess = 1) {
+function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, completionScript = null) {
   const byReviewer = {};
   let total = 0;
   for (const result of results) {
@@ -1291,11 +1336,16 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1) {
   const actions = [];
   const completed = results.filter(result => result.status === "success").length;
   const required = Math.max(1, minSuccess || 1);
+  // This is a display command, never executed from reviewer data. Production
+  // supplies the actual installed path; single-quote for the documented shell.
+  const completionCheck = completionScript
+    ? `node '${completionScript.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}' --run ${runId}`
+    : `node <installed-momm>/scripts/governor.mjs --run ${runId}`;
   if (completed < required) actions.push(`Review quorum not met: ${completed}/${required} completed external reviews. Do not declare the review finished; resolve route failures or obtain the required completed reviews.`);
   if (material) actions.push(`Reproduce each of the ${material} CRITICAL/WARNING finding(s) with a failing test before authoring any fix.`);
   if (total) actions.push(`Triage all ${total} suggested_improvements — apply-and-verify or reject with a reason. None may be silently dropped.`);
   if (total || material) actions.push(`Append one JSONL line per ruling to .ensemble_reviews/dispositions.jsonl with run_id ${runId}, then present the disposition table.`);
-  actions.push(`Validate final source/tests and each decision with governor.mjs --run ${runId}; use --record only after its evidence checks pass. Read references/governor-completion.md for the record schema.`);
+  actions.push(`Validate final source/tests and each decision with ${completionCheck}; use --record only after its evidence checks pass. Read references/governor-completion.md for the record schema.`);
   return {
     untriaged_suggestions: total,
     suggestions_by_reviewer: byReviewer,
@@ -1304,7 +1354,7 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1) {
     review_quorum_met: completed >= required,
     complete: false,
     review_phase_complete: completed >= required,
-    completion_check: `node <installed-momm>/scripts/governor.mjs --run ${runId}`,
+    completion_check: completionCheck,
     required_next_actions: actions,
   };
 }
@@ -1379,6 +1429,7 @@ async function collectArtifact(options) {
 async function commandVersion(command) {
   const result = await runProcess(command, ["--version"], { timeoutMs: 5_000 });
   if (result.error?.code === "ENOENT") return { installed: false };
+  if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { installed: true, status: "unsupported", detail: result.error.message };
   return { installed: result.code === 0, version: clipped(result.stdout || result.stderr, 200) || null };
 }
 
@@ -1409,6 +1460,7 @@ async function preflightCheck(reviewers, governor) {
     // become a command execution, even of "<name> --version".
     if (!knownAdapters.has(agent)) return { agent, installed: false, ready: false, auth: "n/a", note: "no reviewed adapter exists" };
     const version = await commandVersion(agent === "antigravity" ? antigravityCommand() : agent === "grok" ? grokCommand() : agent);
+    if (version.status === "unsupported") return { agent, installed: true, status: "unsupported", ready: false, auth: "n/a", note: version.detail };
     if (!version.installed) {
       return { agent, installed: false, ready: false, auth: "n/a", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI not installed" };
     }
@@ -1516,7 +1568,7 @@ function createUi(enabled, outStream = process.stderr) {
       out("\x1b[?25l");
       // The cursor must never stay hidden after an interrupt or early exit.
       process.on("exit", () => out("\x1b[?25h"));
-      process.once("SIGINT", () => { out("\x1b[?25h"); process.exit(130); });
+      // The shared signal handler owns cancellation; the exit hook restores UI.
       timer = setInterval(paint, 120);
       timer.unref?.();
       paint();
@@ -1583,7 +1635,7 @@ async function doctor(pretty) {
     commands[name] = await commandVersion(name === "antigravity" ? antigravityCommand() : name === "grok" ? grokCommand() : name);
   }
   const forbiddenPresent = Object.keys(process.env).filter((key) => FORBIDDEN_ENV_NAMES.has(key.toUpperCase()) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(key.toUpperCase()));
-  const codexStatus = commands.codex.installed ? await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 }) : null;
+  const codexStatus = commands.codex.installed && !commands.codex.status ? await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 }) : null;
   const report = {
     dispatcher_version: MOMM_VERSION,
     policy: "oauth-only",
@@ -1801,6 +1853,13 @@ async function selfTest(pretty) {
       let rejected = false; try { parseArgs(["--governor", "claude", "--tier", "medium"]); } catch { rejected = true; }
       return JSON.stringify(quick.reviewers) === JSON.stringify(["copilot", "antigravity"]) && quick.timeoutMs === 60_000 && kept.reviewers.join() === "codex" && kept.timeoutMs === 300_000 && deep.minSuccess === 2 && rejected;
     })(),
+    deep_budget_and_effort_preserve_explicit_choices: (() => {
+      const normal = parseArgs([]), deep = applyTier(parseArgs(["--tier", "deep"]));
+      const explicit = applyTier(parseArgs(["--tier", "deep", "--timeout", "90", "--effort", "medium"]));
+      let invalid = false; try { parseArgs(["--effort", "unverified-value"]); } catch { invalid = true; }
+      return normal.timeoutMs === 180000 && !normal.effort && deep.timeoutMs === 240000
+        && explicit.timeoutMs === 90000 && explicit.effort === "medium" && invalid;
+    })(),
     redacts_common_token_prefixes: (() => {
       const r = sanitizeText("a ghp_abcdefghijklmnopqrstuvwxyz0123 b github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 c AKIAABCDEFGHIJKLMNOP d sk-abcdefghijklmnopqrstuvwxyz0123 e");
       return r.redactions === 4 && !/ghp_|github_pat_|AKIA|sk-abc/.test(r.value);
@@ -1922,6 +1981,9 @@ async function selfTest(pretty) {
     })(),
     classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
     warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
+    timestamped_warnings_do_not_hide_provider_error: classifyFailure({ code: 1,
+      stderr: "\x1b[2m2026-09-12T12:00:00Z\x1b[0m \x1b[33mWARN\x1b[0m permissions: ignored setting\nActual request refused: limit reached",
+      stdout: "" }).detail === "Actual request refused: limit reached",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
   };
   const passed = Object.values(tests).every(Boolean);
@@ -2009,7 +2071,8 @@ async function main() {
       const startedAt = Date.now();
       // Provider 5xx flaps (observed live with Copilot) usually clear within
       // seconds — absorb exactly one, and only for outages, never for auth.
-      const result = await invokeWithRetry(invokeReviewer, agent, sanitized.value, options,
+      const result = await invokeWithRetry(invokeReviewer, agent, sanitized.value, { ...options,
+        onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...progress }) },
         (reason) => emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason }));
       const info = {
         status: result.status,
@@ -2017,6 +2080,7 @@ async function main() {
         findings: result.review?.findings.length ?? 0,
         critical: result.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0,
         attempts: result.attempts,
+        ...(result.detail ? { detail: clipped(sanitizeText(result.detail).value, 1200) } : {}),
         // Wall time deliberately includes any failed attempt plus backoff.
         duration_ms: Date.now() - startedAt,
       };
@@ -2072,6 +2136,8 @@ async function main() {
       status: result.status,
       attempts: result.attempts ?? 1,
       duration_ms: result.duration_ms ?? null,
+      process_progress: result.progress ?? null,
+      requested_effort: ["claude", "grok"].includes(result.agent) ? (options.effort ?? "default") : null,
       persona: result.agent === options.governor ? null : personaFor(result.agent, options),
       detail: result.detail || null,
       verdict: result.review?.verdict || null,
@@ -2092,7 +2158,7 @@ async function main() {
     // What the GOVERNOR still owes: reproduction of material findings and an
     // explicit ruling on every suggestion. This immutable initial report is
     // never completion evidence; governor.mjs revalidates current evidence.
-    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess),
+    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess, fileURLToPath(new URL("./governor.mjs", import.meta.url))),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
   // Durable evidence, persisted BEFORE the stdout report so the emitted
@@ -2226,7 +2292,8 @@ async function main() {
   process.stdout.write(`${JSON.stringify({ ...report, evidence, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
   if (options.minSuccess && externalSuccesses < options.minSuccess) {
-    process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
+    if (options.stream) emitEvent(true, { event: "quorum_failed", achieved: externalSuccesses, required: options.minSuccess });
+    else process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
     process.exitCode = 3;
   }
 }
@@ -2241,6 +2308,6 @@ main().catch((error) => {
   // flushed (the empty write's callback runs after all prior writes); the
   // referenced timer covers a broken stdout pipe.
   const exitNow = () => process.exit(process.exitCode ?? 0);
-  process.stdout.write("", exitNow);
+  process.stdout.write("", () => process.stderr.write("", exitNow));
   setTimeout(exitNow, 2000);
 });

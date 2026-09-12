@@ -13,12 +13,17 @@ const demand = (ok, message) => { if (!ok) throw new Error(message); };
 
 export function captureSourceSnapshot(root, artifact, inputPath) {
   const files = [];
-  const isDiff = /^diff --git /m.test(artifact);
+  let verifyDiff = null;
+  // Explicit file input takes precedence over sample diff text inside source.
+  const isDiff = !inputPath && /^diff --git /m.test(artifact);
   let names = inputPath ? [path.relative(root, path.resolve(root, inputPath)).replaceAll("\\", "/")] : [];
   try {
     if (isDiff) {
-      const git = args => { const r = spawnSync("git", args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
+      const git = args => { const r = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
+      demand(path.relative(fs.realpathSync(git(["rev-parse", "--show-toplevel"]).trim()), fs.realpathSync(root)) === "",
+        "Run the review from the repository root; Git source paths and the private evidence directory must share that root");
       demand(git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "supplied diff differs from current Git diff HEAD");
+      verifyDiff = () => demand(git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "source changed while collecting the reviewed Git snapshot");
       demand(!/^GIT binary patch|^Binary files /m.test(artifact), "binary diff needs separate verified source scope");
       const fields = git(["diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "HEAD"]).split("\0");
       fields.pop(); names = [];
@@ -37,6 +42,10 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
       if (!isDiff) demand(bytes.toString("utf8") === artifact, "input file changed while collecting source snapshot");
       files.push({ path: name, sha256: digest(bytes) });
     }
+    // Re-read both the files and Git diff after collection. This detects
+    // concurrent edits during capture; it is not an atomic filesystem snapshot.
+    for (const file of files) demand(digest(fs.readFileSync(path.join(base, file.path))) === file.sha256, "source changed while collecting snapshot");
+    verifyDiff?.();
     return { complete: true, files };
   } catch (error) { return { complete: false, files: [], reason: error.message }; }
 }
@@ -89,8 +98,14 @@ export function inspectCompletion(root, runId) {
     demand(Number.isInteger(required) && required > 0, "invalid report quorum");
     state.quorum = { required, achieved: successful.length, met: successful.length >= required };
     if (!state.quorum.met) state.errors.push("external review quorum not met");
-    if (report.gate_policy?.strict && report.gate_policy.requested_routes.some(agent => agent !== report.governor
-      && !successful.some(r => r.agent === agent))) state.errors.push("strict reviewer policy not met");
+    if (report.gate_policy?.strict) {
+      const requested = report.gate_policy.requested_routes;
+      if (!Array.isArray(requested) || !requested.length || requested.some(agent => !nonempty(agent))) {
+        state.errors.push("invalid strict policy: requested_routes must name the required reviewer routes");
+      } else if (requested.some(agent => agent !== report.governor && !successful.some(r => r.agent === agent))) {
+        state.errors.push("strict reviewer policy not met");
+      }
+    }
     const item = (kind, reviewer, index, content) => {
       const id = digest(JSON.stringify([reportSha, kind, reviewer, index, content]));
       return { item_id: id, kind, reviewer, index, content };
@@ -120,7 +135,10 @@ export function inspectCompletion(root, runId) {
         if (!current) demand(report.source_snapshot.files.some(f => f.path === a.path && f.sha256 === a.sha256), "reproduction baseline differs from reviewed source");
       }
       // A cited real project file must actually be covered by the check.
-      const target = obligation.kind === "finding" ? obligation.content.target_file?.replaceAll("\\", "/").replace(/^[ab]\//, "") : null;
+      const rawTarget = obligation.kind === "finding" ? obligation.content.target_file?.replaceAll("\\", "/") : null;
+      const target = rawTarget && !report.source_snapshot.files.some(f => f.path === rawTarget)
+        && /^[ab]\//.test(rawTarget) && report.source_snapshot.files.some(f => f.path === rawTarget.slice(2))
+        ? rawTarget.slice(2) : rawTarget;
       if (target && !names.has(target)) {
         demand(phase === "investigation" && c.absent_paths?.includes(target)
           && !path.isAbsolute(target) && !target.includes(":") && target.split("/").every(p => p && p !== "." && p !== "..")

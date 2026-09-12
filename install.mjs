@@ -64,7 +64,7 @@ function parseArgs(argv) {
     else if (a === "--custom-dir") o.customDirs.push(path.resolve(next()));
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--pretty") o.pretty = true;
-    else if (a === "--skills") o.skills = next().split(",");
+    else if (a === "--skills") o.skills = [...new Set(next().split(",").map(s => s.trim()).filter(Boolean))];
     else if (a === "--help" || a === "-h") o.help = true;
     else throw new Error(`Unknown argument: ${a}`);
   }
@@ -146,7 +146,13 @@ function main() {
   for (const dir of options.customDirs) results.push({ target: "custom", links: linkAll(dir, skills, options) });
 
   const output = { source: repoRoot, skills, results, note: "Existing paths are never overwritten. No credentials are copied." };
-  output.installation = recordInstall(repoRoot, "install.mjs", results, { dryRun: options.dryRun, skills });
+  try { output.installation = recordInstall(repoRoot, "install.mjs", results, { dryRun: options.dryRun, skills }); }
+  catch (error) {
+    output.installation = { updater_available: false, error: error.message,
+      reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
+    process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
+    process.exitCode = 1;
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   const flat = results.flatMap((r) => r.links || []);
   // Non-zero exit on any failure OR an unsupported target, so a typo'd
