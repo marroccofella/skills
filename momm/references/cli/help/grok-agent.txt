@@ -21,7 +21,7 @@ Options:
       --agent-profile <PATH>
           Path to an agent profile file
       --plugin-dir <DIR>
-          Load a plugin from this directory for this process only (repeatable). Highest-priority plugin scope; always trusted — hooks and MCP servers activate without a prompt. Used by the Agent SDKs to inject per-connection plugins
+          Load a plugin from this directory for this process only (repeatable). Highest-priority plugin scope; always trusted: hooks and MCP servers activate without a prompt. Used by the Agent SDKs to inject per-connection plugins
       --leader
           Connect to a shared leader process instead of starting a new agent. Allows multiple clients to share one backend. Defaults to [cli] use_leader in config.toml
       --no-leader
@@ -41,4 +41,4 @@ Options:
   -h, --help
           Print help
       --leader-socket <PATH>
-          Use a custom leader socket path instead of the default `~/.grok/leader.sock`
+          Use a custom leader socket path instead of the default `~/.grok/leader.sock`. A local/branch build can thus run an isolated leader without colliding with the default one already running on the machine Name it `~/.grok/leader-*.sock` to keep `grok leader list/kill` able to find it; any other location works but won't be auto-discovered

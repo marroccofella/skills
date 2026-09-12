@@ -5,6 +5,7 @@ Usage: codex exec [OPTIONS] [PROMPT]
 
 Commands:
   resume  Resume a previous session by id or pick the most recent with --last
+  fork    Fork a previous session by id into a new session
   review  Run a code review against the current repository
   help    Print this message or the help of the given subcommand(s)
 
@@ -26,12 +27,12 @@ Options:
       --enable <FEATURE>
           Enable a feature (repeatable). Equivalent to `-c features.<name>=true`
 
+      --disable <FEATURE>
+          Disable a feature (repeatable). Equivalent to `-c features.<name>=false`
+
       --strict-config
           Error out when config.toml contains fields that are not recognized by this version of
           Codex
-
-      --disable <FEATURE>
-          Disable a feature (repeatable). Equivalent to `-c features.<name>=false`
 
   -i, --image <FILE>...
           Optional image(s) to attach to the initial prompt
@@ -68,8 +69,14 @@ Options:
   -C, --cd <DIR>
           Tell the agent to use the specified directory as its working root
 
+      --worktree
+          Run the session in a new managed Git worktree
+
       --add-dir <DIR>
           Additional directories that should be writable alongside the primary workspace
+
+      --thread-source <SOURCE>
+          Source classification for newly created or forked threads
 
       --skip-git-repo-check
           Allow running Codex outside a Git repository

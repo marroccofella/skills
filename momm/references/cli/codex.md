@@ -1,6 +1,6 @@
 # Codex CLI (`codex`)
 
-OpenAI's terminal agent. MOMM route `codex`, default persona `surgeon`. Installed: codex-cli 0.147.0 via npm (`codex doctor` reports 0.154.0 available). Raw help: [help/codex.txt](help/codex.txt), [help/codex-exec.txt](help/codex-exec.txt), [help/codex-login.txt](help/codex-login.txt).
+OpenAI's terminal agent. MOMM route `codex`, default persona `surgeon`. Installed: codex-cli 0.154.0 via npm (upgraded from 0.147.0 on 2026-09-13). Raw help: [help/codex.txt](help/codex.txt), [help/codex-exec.txt](help/codex-exec.txt), [help/codex-login.txt](help/codex-login.txt).
 
 ## Install and update
 
@@ -37,6 +37,8 @@ Output: with plain `exec`, stdout carries the session banner (`OpenAI Codex v…
 ## Observed behaviour (2026-09-12)
 
 - **Configured model newer than the CLI**: with `model = gpt-6-astra` in config, codex 0.147.0 fails every run with `The gpt-6-astra model requires a newer version of Codex. Update the CLI to continue.` It also logs `ERROR codex_models_manager::manager: failed to load models cache: missing field supports_parallel_tool_calls` and rewrites `models_cache.json`. MOMM 1.14.1 classified this as `authentication_required` (wrong); the 1.15 classifier returns `error` (right). The fix is the user's: `codex update` or `npm install -g @openai/codex@latest`.
+- **2026-09-13, after `npm install -g @openai/codex@latest` (0.154.0)**: the same config (`model = gpt-6-astra`) runs normally — `codex exec --sandbox read-only --skip-git-repo-check -` answered a one-word probe in one turn (7.2 K tokens; banner shows `reasoning effort: ultra`). The blocker above is cleared; no config change was needed.
+- New in the 0.154.0 help: `--worktree` (managed Git worktree), subcommands `agents`, `queue`, `migrate-rollouts`, `--thread-source`; the `untrusted` approval policy is no longer described under `exec --help` (`-a` still accepts values; MOMM never sets it because `--sandbox read-only` governs).
 - Review time scales with input: 102 s at 14 KB, 205–341 s at 30–45 KB; it is the slowest route and the one that times out most (17 of 70 completed reviews in the public ledger).
 - Highest governor acceptance rate on this project (70 %).
 

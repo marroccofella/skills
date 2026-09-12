@@ -1,6 +1,6 @@
 # Claude Code (`claude`)
 
-Anthropic's terminal agent. MOMM route `claude`, default persona `architect`; excluded whenever Claude is the governor. Installed: 2.1.233 via npm. Raw help: [help/claude.txt](help/claude.txt). Docs: https://code.claude.com/docs/en/cli-reference and https://code.claude.com/docs/en/settings (both fetched 2026-09-12).
+Anthropic's terminal agent. MOMM route `claude`, default persona `architect`; excluded whenever Claude is the governor. Installed: 2.1.270 via npm (upgraded 2026-09-13). Raw help: [help/claude.txt](help/claude.txt). Docs: https://code.claude.com/docs/en/cli-reference and https://code.claude.com/docs/en/settings (both fetched 2026-09-12).
 
 ## Install and update
 
@@ -21,6 +21,8 @@ Anthropic's terminal agent. MOMM route `claude`, default persona `architect`; ex
 - `--json-schema '<schema>'` validated structured output (print mode only).
 - `--permission-mode acceptEdits|auto|bypassPermissions|manual|dontAsk|plan` — MOMM uses `plan`.
 - `--tools <tools...>` — `""` disables all built-in tools, `"default"` enables all, or a list such as `"Read"`. **Verified 2026-09-12**: with `--safe-mode --tools ""` and a prompt asking to read a canary file, the model emitted the tool call as text and no file was read. (Its self-description of available tools is unreliable; test behaviour, not answers.)
+- `--restricted` (new in 2.1.270): removes the command- and code-running tools and WebFetch unless `--tools` names them, ignores user/project/local settings files, confines the file tools to the working directories, refuses `bypassPermissions`. **Verified 2026-09-13**: `claude -p "<read canary>" --restricted --tools "" --permission-mode plan --permission-prompts none --output-format json` returned `result: "NO-TOOLS"`, `is_error: false`, one turn — no read attempted. This is the strongest containment available and belongs in the adapter alongside `--safe-mode`.
+- `--permission-prompts host|none` (new): with `none`, anything that would prompt in print mode is denied automatically instead of hanging — use it in headless runs.
 - `--safe-mode` disables CLAUDE.md, skills, plugins, hooks, MCP servers, custom commands and agents; auth, model, built-in tools and permissions still work. `--bare` is stricter (API-key auth only) and unsuitable for MOMM.
 - `--add-dir <dirs...>` grants file-tool access to extra directories (MOMM's media staging dir); network paths are mostly blocked.
 - `--effort low|medium|high|xhigh|max` session-only; `--max-turns N` (exit 1 when hit); `--max-budget-usd`; `--no-session-persistence`; `--fallback-model`.
@@ -34,6 +36,7 @@ Precedence, highest first: managed settings → `claude --settings` → `.claude
 ## Observed behaviour
 
 - Reviews complete in 20–50 s on small inputs; 47 KB completed in the 1.15.0 author's run. The candidate's own ledger also shows 90 s timeouts on 2 KB inputs while the machine was busy — treat timeouts as load, not as a verdict.
+- Also new in 2.1.270 and irrelevant to MOMM: background sessions (`--bg`, `claude attach|logs|stop|rm|respawn`), `--system-prompt-snapshot`.
 - The 1.15.0 candidate adds `--safe-mode --tools ""` (text reviews) or `--tools Read` (media): transport probe succeeded in 24 s.
 - Self-review is impossible by protocol: when Claude governs, this route reports `self_excluded`.
 

@@ -1,6 +1,6 @@
 # GitHub Copilot CLI (`copilot`)
 
-GitHub's terminal agent. MOMM route `copilot`, default persona `verifier`. Installed: 1.0.83 via npm (`@github/copilot`). Raw help: [help/copilot.txt](help/copilot.txt) and the built-in topics [help/copilot-help-topics.txt](help/copilot-help-topics.txt) (`copilot help environment|limits|billing|permissions|config|sandbox`). Docs: https://docs.github.com/copilot/how-tos/copilot-cli (the reference pages fetched on 2026-09-12 covered `copilot login` only).
+GitHub's terminal agent. MOMM route `copilot`, default persona `verifier`. Installed: 1.0.83 via npm (`@github/copilot`; still current on 2026-09-13, help topics re-captured). Raw help: [help/copilot.txt](help/copilot.txt) and the built-in topics [help/copilot-help-topics.txt](help/copilot-help-topics.txt) (`copilot help environment|limits|billing|permissions|config|sandbox`). Docs: https://docs.github.com/copilot/how-tos/copilot-cli (the reference pages fetched on 2026-09-12 covered `copilot login` only).
 
 ## Install and update
 
@@ -23,6 +23,10 @@ GitHub's terminal agent. MOMM route `copilot`, default persona `verifier`. Insta
 - `--model`, `--effort none|minimal|low|medium|high|xhigh|max`, `--attachment <path>` (images/documents, non-interactive only), `--max-ai-credits` (soft cap, minimum 30).
 - `--allow-all`, `--yolo`, `--allow-all-paths`, `--allow-all-urls` must never appear in the adapter.
 
+## Models listed by `copilot help config` (1.0.83)
+
+`claude-sonnet-5`, `claude-fable-5.1`, `claude-fable-5`, `claude-opus-5`, `claude-opus-4.8[-fast]`, `claude-opus-4.7`, `claude-sonnet-4.6`, `claude-haiku-4.5`, `gpt-5.6-sol|terra|luna`, `gpt-5.5`, `gpt-5.4[-mini]`, `gpt-5.3-codex`, `gpt-5-mini`, `mai-code-1.1-flash`, `mai-code-1-flash-picker`, `gemini-3.8|3.7|3.6|3.5-flash`, `grok-4.5`, `kimi-k3`, `kimi-k2.7-code`. The Kimi entries would give MOMM a Moonshot second opinion under the existing GitHub login. **Probed 2026-09-13**: `--model kimi-k3` and `--model kimi-k2.7-code` both returned `Error: Model "…" from --model flag is not available.` while the default model returned the monthly-quota error, so plan eligibility could not be separated from quota exhaustion — re-probe when the quota resets. Config keys `defaultMode` and `defaultPermissionMode` (`manual|assisted|allow-all`) exist but explicitly do not apply to `-p` runs.
+
 ## Billing and limits
 
 Usage is measured in AI credits (legacy plans: premium requests). When the plan's monthly allowance is spent the CLI answers `You have exceeded your monthly quota (Request ID: …)` immediately (about 6 s) — MOMM records it as `error`, not `authentication_required`; logging in again does nothing. Session caps are opt-in via `--max-ai-credits`.
@@ -31,7 +35,7 @@ Usage is measured in AI credits (legacy plans: premium requests). When the plan'
 
 - Median 29 s per review, p90 about 2 min; completes reliably when quota exists.
 - Lowest governor acceptance rate on this project (38 %), and the route whose CRITICAL claim on 1.13.0 did not reproduce — which is why its persona demands verbatim quotes.
-- 2026-09-12: monthly quota exhausted for the whole day; every attempt returned the quota error.
+- 2026-09-12 and 2026-09-13: monthly quota exhausted; every attempt returned the quota error.
 
 ## Adapter notes
 

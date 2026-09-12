@@ -1,4 +1,3 @@
-=========== copilot help environment
 Environment Variables:
 
   `COPILOT_ALLOW_ALL`: allow all tools to run automatically without confirmation when set to "true".
@@ -79,7 +78,17 @@ Environment Variables:
 
   `OTEL_RESOURCE_ATTRIBUTES`: extra resource attributes as comma-separated key=value pairs.
 
-=========== copilot help limits
+  `OTEL_EXPORTER_OTLP_HEADERS`: authentication headers for the OTLP exporter (e.g., "Authorization=Bearer token").
+
+  `OTEL_EXPORTER_OTLP_CERTIFICATE`: path to a PEM file with extra CA certificate(s) to trust for the OTLP endpoint (e.g., a private/corporate CA). Merged with the OS trust store. Per-signal: `OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE`, `OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE`.
+
+  `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` / `OTEL_EXPORTER_OTLP_CLIENT_KEY`: paths to the client certificate and (unencrypted) private key PEM files for mutual TLS (mTLS). Both must be set together. Per-signal variants are supported.
+
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`: set to "true" to capture full prompt/response content.
+
+  `OTEL_LOG_LEVEL`: OTel diagnostic log level (not the CLI --log-level). One of: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, ALL.
+
+  See `copilot help monitoring` for detailed configuration and examples.
 Session Limits Controls:
 
   Session limits are opt-in. Usage accumulates across the entire session in both interactive and non-interactive runs.
@@ -120,7 +129,6 @@ Session Limits Controls:
     # Set an AI credit limit for the current interactive session
     /limits set max-ai-credits 30
 
-=========== copilot help billing
 AI credit usage:
 
   Several Copilot CLI features help you see and understand how much of your
@@ -169,7 +177,6 @@ Learn more:
 
   For the legacy billing model and premium requests, see
   https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy
-=========== copilot help permissions
 Permissions:
 
   The GitHub Copilot CLI provides granular control over tool, URL, and path permissions to ensure safe
@@ -250,7 +257,15 @@ Permissions:
   The --allow-all and --yolo flags are equivalent shortcuts that enable all permissions at once. They are
   equivalent to specifying --allow-all-tools --allow-all-paths --allow-all-urls together. These flags are
   useful for non-interactive scripts or when you want to run without any confirmation prompts.
-=========== copilot help config
+
+    # Enable all permissions with a single flag
+    $ copilot --allow-all
+    $ copilot --yolo
+
+    # Equivalent to:
+    $ copilot --allow-all-tools --allow-all-paths --allow-all-urls
+
+  It is expected that these permissions will be extended in the very near future to support wildcard matching and other richer functionality.
 Configuration Settings:
 
   `allowedUrls`: list of URLs or domains that are allowed to be accessed without prompting.
@@ -331,7 +346,161 @@ Configuration Settings:
 
   `includeCoAuthoredBy`: whether to instruct the agent to add a Co-authored-by trailer to git commits; defaults to `true`.
 
-=========== copilot help sandbox
+  `keepAlive`: keep-alive mode applied at CLI startup; prevents the system from sleeping while the session is active. Defaults to `"off"`.
+    - `"off"` (default): system sleeps normally.
+    - `"on"`: keep-alive is enabled for the duration of the session.
+    - `"busy"`: keep-alive is enabled only while the agent is working on a turn.
+    - Can also be set interactively with `/keep-alive [on|off|busy|<duration>]`.
+
+  `companyAnnouncements`: list of messages to display in the banner on startup.
+    - One message is randomly selected each time the CLI starts
+    - Useful for team announcements or reminders
+
+  `continueOnAutoMode`: whether to automatically switch to auto mode when rate-limited; defaults to `false`.
+    - When `true`, eligible rate limit errors (per-model, weekly, or integration limits) trigger an automatic switch to auto mode and retry
+    - Does not apply to global rate limits, generic 429s, or BYOK providers
+
+  `stayInAutopilot`: whether to stay in autopilot mode after an autopilot task completes; defaults to `true`.
+    - When `true` (default), the CLI remains in autopilot mode after the agent calls `task_complete` instead of exiting to interactive mode
+    - Set to `false` to revert to interactive mode after each completed task
+
+  `defaultMode`: agent mode new interactive sessions start in; defaults to "interactive".
+    - One of "interactive", "plan", or "autopilot"
+    - `--mode`, `--autopilot`, and `--plan` still win when passed
+    - Resumed sessions keep their own persisted mode, and it does not apply to `-p`/`--prompt`, `--server`, or `--acp` runs
+
+  `defaultPermissionMode`: permission mode new interactive sessions start in; defaults to "manual".
+    - `"manual"` (default): write and command requests are prompted; read-only requests are auto-approved
+    - `"assisted"`: an LLM safety check auto-approves requests it judges safe and prompts otherwise; requires the experimental auto-approval feature, and is ignored when that feature is off or policy blocks auto-approval
+    - `"allow-all"`: auto-approves everything, equivalent to launching with `--allow-all`; ignored when policy disables bypass-permissions mode
+    - Any value is ignored on resumed sessions, outside interactive runs, and when `--allow-all`/`--yolo` already elevated the session
+    - Pairs with `defaultMode: "autopilot"` to skip the autopilot permission confirmation entirely
+
+  `logLevel`: log level for CLI; defaults to "default". Set to "all" for debug logging.
+
+  `model`: AI model to use for Copilot CLI; can be changed with /model command or --model flag option.
+    - "claude-sonnet-5"
+    - "claude-fable-5.1"
+    - "claude-fable-5"
+    - "claude-opus-5"
+    - "claude-opus-4.8"
+    - "claude-opus-4.8-fast"
+    - "claude-opus-4.7"
+    - "claude-sonnet-4.6"
+    - "claude-haiku-4.5"
+    - "gpt-5.6-sol"
+    - "gpt-5.6-terra"
+    - "gpt-5.6-luna"
+    - "gpt-5.5"
+    - "gpt-5.4"
+    - "gpt-5.4-mini"
+    - "gpt-5.3-codex"
+    - "gpt-5-mini"
+    - "mai-code-1.1-flash"
+    - "mai-code-1-flash-picker"
+    - "gemini-3.8-flash"
+    - "gemini-3.7-flash"
+    - "gemini-3.6-flash"
+    - "gemini-3.5-flash"
+    - "grok-4.5"
+    - "kimi-k3"
+    - "kimi-k2.7-code"
+
+  `contextTier`: context window tier for tiered-pricing models (e.g., "default" or "long_context").
+    - Can also be set with --context flag (overrides persisted setting)
+    - Can be changed with /model command (context tier picker appears for eligible models)
+
+  `subagents.agents.<agent-name>`: per-subagent model, effortLevel, and contextTier selection.
+    - Each field can be set to "inherit" to use the parent session's effective value
+    - Configure interactively with the /subagents command
+
+  Session limits are opt-in. They apply across the current conversation; /clear and /new reset used AI credits but keep the configured limit until you unset it.
+    - Run /limits with no arguments to open the interactive limits dialog
+    - Use /limits set max-ai-credits <credits> to set the AI credit limit
+    - Use --max-ai-credits to set an initial AI credit limit when starting the session
+    - The minimum AI credit limit is 30; lower values are too small for a useful CLI turn
+    - AI credit usage is known only after a model call returns, so one call can exceed the limit before the CLI blocks
+      the next model call
+
+  `mouse`: whether to enable mouse support in alt screen mode; defaults to `true`.
+    - Can also be set with --mouse or --no-mouse
+    - Using either flag persists the preference to config
+    - When disabled, scroll wheel and click events are not captured by the CLI
+
+  `renderMarkdown`: whether to render markdown in the terminal; defaults to `true`.
+
+  `inlineImages`: whether to render images inline using the Kitty graphics protocol; defaults to `true`.
+    - Requires the experimental `INLINE_IMAGES` feature (staff or experimental mode); otherwise image attachments show a text placeholder
+    - Only takes effect on terminals that support Kitty graphics (e.g. Ghostty, kitty, WezTerm), and inside tmux with passthrough enabled
+    - In a herdr pane, images are off by default: herdr draws them itself rather than passing them through, which additionally requires `experimental.kitty_graphics = true` in herdr's own config and cannot be detected from inside a pane. Set `COPILOT_INLINE_IMAGES_HERDR=1` to opt in once that setting is on
+    - When disabled, image attachments show a text placeholder instead
+
+  `inlineImageLiveWindow`: maximum number of inline images kept resident in the terminal at once (the most-recent N by timeline order); defaults to `50`.
+    - Images beyond N render as a text caption and have their data freed from the terminal, bounding its image memory in long, image-heavy sessions
+    - Set to `0` to disable the cap (keep every inline image resident)
+    - The `COPILOT_INLINE_IMAGE_LIMIT` environment variable overrides this setting
+
+  `scrollbar`: whether to show the scrollbar in scrollable views; defaults to `true`.
+    - When `false`, the scrollbar is hidden and its gutter is reclaimed so content uses the full terminal width.
+
+  `respectGitignore`: whether to exclude gitignored files from the `@` file mention picker; defaults to `true`.
+    - When `false`, the `@` picker includes files that are normally excluded by `.gitignore`
+    - Useful when sub-repositories or vendor directories are gitignored but still need to be referenced
+
+  `screenReader`: whether to enable screen reader optimizations; defaults to `false`.
+
+  `showTipsOnStartup`: whether to show a random command tip when the CLI starts; defaults to `true`.
+
+  `stream`: whether to enable streaming mode; defaults to `true`.
+
+  `streamerMode`: whether to enable streamer mode; defaults to `false`.
+    - Hides preview model names and quota details (useful for streaming or screen sharing)
+    - Toggle with the staff-only /streamer-mode command (persists across sessions)
+    - Note: this setting is not exposed via /settings because /streamer-mode is staff-gated
+
+  `statusLine`: configuration for a custom status line displayed below the input.
+    - `type`: optional; when set, must be "command"
+    - `command`: path to an executable script or a shell command that generates status line content.
+      Supports `~` (home directory) and environment variables (`$HOME`, `${HOME}`, `${VAR:-default}`).
+      Plain commands are run with the platform shell (`/bin/sh` on Unix-like systems, `cmd.exe` on Windows).
+      The command receives the current session status as JSON on stdin and should print the status line to stdout.
+    - `padding`: optional number of spaces to pad each line on the left
+    - `refreshInterval`: optional integer number of seconds between command re-runs (minimum `1`, maximum `2147483`); omit to refresh only on events
+
+  `tabs`: configuration for the home screen navigation tab bar (Session, Agents, Issues, Pull requests, Gists).
+    - `enabled`: whether to show the tab bar; defaults to `true`. Set to `false` to hide it entirely.
+    - `sort`: array of tab identifiers controlling display order. Accepted identifiers (case-insensitive): `copilot` (Session), `agents`, `issues`, `pull-requests`, `gists`. Tabs not listed keep their default order after the listed ones; unknown identifiers are ignored.
+    - `hide`: array of tab identifiers to hide (same identifiers as `sort`). Unknown identifiers are ignored; the `copilot` (Session) tab cannot be hidden.
+
+  `terminalProgress`: whether to emit terminal progress indicators (OSC 9;4) while the agent is working; defaults to `true`.
+    - Shows an indeterminate progress indicator in the terminal title bar or tab on supported emulators (Windows Terminal, iTerm2, Ghostty, ConEmu)
+    - Set to `false` to suppress these escape sequences on terminals that render them as visible artifacts
+
+  `theme`: color palette / theme for output; defaults to "github".
+    - One of: "default", "github", "dim", "high-contrast", "colorblind"
+    - Set via /settings theme <value>, or /theme <value> (deprecated)
+    - `colorMode` is a legacy alias for `theme` and still works for now
+
+  `trustedFolders`: list of folders where permission to read or execute files has been granted.
+
+  `updateTerminalTitle`: whether to update the terminal tab/window title with current intent; defaults to `true`.
+    - Shows what the agent is currently working on in the terminal title bar
+    - Only works on supported terminal emulators (xterm, iTerm, Windows Terminal, etc.)
+    - Can also be disabled via the `COPILOT_DISABLE_TERMINAL_TITLE` environment variable
+
+  `disableAllHooks`: whether to disable all hooks (repo-level and user-level); defaults to `false`.
+
+  `hooks`: inline hook definitions, keyed by event name (same schema as .github/hooks/*.json).
+    - In global config.json these act as user-level hooks; in repo settings.json they act as repo-level hooks
+
+  `ide.autoConnect`: whether to automatically connect to an IDE workspace on startup; defaults to `true`.
+    - When `false`, the CLI will not auto-connect to IDEs or watch for new IDE lock files
+    - You can still manually connect using the /ide command
+
+  `ide.openDiffOnEdit`: whether to open file edit diffs in the connected IDE for approval; defaults to `true`.
+    - When `false`, file edit approvals are shown only in the terminal
+    - The IDE connection is unaffected; diagnostics and selection features still work
+
 Command Sandboxing (experimental):
 
   When sandboxing is enabled, shell commands run inside an OS-level sandbox with
@@ -412,3 +581,113 @@ Supported hosts:
   policy leaves `allowBypass` on — approve a per-command bypass and that command
   runs unsandboxed. If the policy also sets `allowBypass: false`, the session
   can't run shell commands at all; contact your administrator, who can deploy
+  the prerequisites or scope the policy.
+
+What you can lock down:
+
+  With sandboxing enabled you (and your organization) can restrict how the agent
+  interacts with your machine along several dimensions:
+
+  Filesystem   Grant read/write only to specific paths, grant read-only access
+               to others, and deny paths outright. By default access is limited
+               to your working directory, PATH directories, the temp directory,
+               and your user profile. Everything else is inaccessible unless you
+               add it to the policy.
+
+  Network      Allow or block outbound network connections, and separately allow
+               or block connections to your local network, so commands can't
+               exfiltrate data or reach internal services you haven't approved.
+
+  Credentials  Decide whether git and `gh` credentials are injected into
+               sandboxed commands. These tokens are never injected while the
+               sandbox is disabled, and you can keep them out of the sandbox
+               entirely. This control covers only git/`gh` injection; other
+               credentials already present in your shell environment are still
+               inherited unless they fall under the runtime's env blocklist.
+
+  Subprocesses Choose whether local (stdio) MCP servers and LSP servers are also
+               spawned inside the sandbox so they inherit the same restrictions.
+               Remote (HTTP/SSE) MCP servers are never sandboxed.
+
+  Keychain     On macOS, control whether the system keychain is reachable from
+               inside the sandbox.
+
+  Bypass       Optionally allow (or forbid) a per-command escape hatch that lets
+               a single command opt out of the sandbox when it needs
+               unrestricted access.
+
+Enabling and disabling:
+
+  /sandbox            Show the current status. In interactive mode, opens a
+                      dialog to configure the sandbox policy.
+  /sandbox enable     Turn command sandboxing on.
+  /sandbox disable    Turn command sandboxing off.
+
+  Enabling seeds a sensible starting policy: filesystem access is limited to your
+  working directory, PATH directories, the temp directory, and your user profile;
+  outbound network connections are allowed; git/`gh` credentials are injected for
+  sandboxed commands; and a per-command bypass escape hatch is available.
+
+Configuration:
+
+  Settings are stored in `settings.json` under the `sandbox` key. Edit them there
+  or via the `/sandbox` dialog.
+
+  `enabled`: whether command sandboxing is on.
+
+  `addCurrentWorkingDirectory`: grant read/write access to the current working
+    directory; on by default when enabling.
+
+  `allowDevToolAccess`: auto-grant access to the dev-tool locations builds need;
+    on by default. Read access covers common dev-tool caches, toolchains, and
+    registry/proxy config in their default locations (for example `~/.npmrc`,
+    `~/.m2/settings.xml`), so builds resolve custom registries without your
+    exporting `CARGO_HOME`/`GOPATH`/etc. Read/write access covers shared scratch
+    caches (go-build, ccache, sccache, Gradle), Cargo's registry and git stores,
+    and the Unix `gh` cache at `$XDG_CACHE_HOME/gh` or `~/.cache/gh`. Cargo's
+    installed binaries are read-only; its config and credentials are not granted.
+    A relocated `CARGO_HOME` gets the same subpath-specific grants.
+
+    Grants are scoped per command: only the ecosystems the command invokes,
+    plus those implied by the build manifests sitting in your working directory
+    (`Cargo.toml`, `go.mod`, `package.json`, `pom.xml`, and the like). A
+    `make` recipe that shells out to `cargo` therefore still gets the Rust
+    caches, and a cwd with no Java manifest keeps `~/.m2` ungranted. Manifests
+    are matched by file name only. Other tool homes found through your
+    environment are granted regardless, but a relocated `CARGO_HOME` is
+    granted only to Rust-scoped commands.
+
+    The trade-off: sandboxed commands can read those config files — including
+    any registry tokens they hold — and can write to caches shared with your
+    other projects. Dedicated credential stores (`~/.ssh`, `credentials.toml`,
+    and the like) stay excluded either way. Turn this off if you'd rather grant
+    build paths explicitly through `readonlyPaths`/`readwritePaths`.
+
+  `allowBypass`: allow a single command to opt out of the sandbox when it needs
+    unrestricted access (a per-command escape hatch).
+
+  `auth.git` / `auth.gh`: inject git and `gh` credentials into sandboxed commands so
+    authenticated git/`gh` operations keep working inside the sandbox. Tokens are
+    never injected while the sandbox is disabled.
+
+  `sandboxMcpServers` / `sandboxLspServers`: whether local (stdio) MCP servers and
+    LSP servers are also spawned inside the sandbox. Remote (HTTP/SSE) MCP servers
+    are never sandboxed.
+
+  `userPolicy.filesystem.readwritePaths` / `readonlyPaths` / `deniedPaths`: extra
+    paths to grant read/write, grant read-only, or deny.
+
+  `userPolicy.filesystem.clearPolicyOnExit`: reset the stored filesystem policy
+    when the session ends.
+
+  `userPolicy.network.allowOutbound`: allow outbound network connections.
+
+  `userPolicy.network.allowLocalNetwork`: allow connections to the local network.
+
+  `userPolicy.seatbelt.keychainAccess` (macOS): allow access to the system
+    keychain from inside the sandbox.
+
+Learn more:
+
+  For details on cloud and local sandboxes, see
+  https://docs.github.com/en/copilot/concepts/about-cloud-and-local-sandboxes

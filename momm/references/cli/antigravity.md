@@ -1,6 +1,6 @@
 # Antigravity CLI (`agy`)
 
-Google's terminal agent, successor route for consumer Google accounts after Gemini CLI's individual tiers were retired (2026-06-18). MOMM route `antigravity` (alias `agy`), default persona `adversary`. Installed: 1.1.26 (`agy --version` prints `1.2.2` for the tool bundle on this machine). Raw help: [help/agy.txt](help/agy.txt). Docs: https://antigravity.google/docs/cli/getting-started, https://antigravity.google/docs/cli/install (fetched); https://antigravity.google/docs/cli/reference documents slash commands and `settings.json`, not flags.
+Google's terminal agent, successor route for consumer Google accounts after Gemini CLI's individual tiers were retired (2026-06-18). MOMM route `antigravity` (alias `agy`), default persona `adversary`. Installed: 1.2.2 (`agy --version`, 2026-09-13; already current when the other CLIs were upgraded, help text unchanged). Raw help: [help/agy.txt](help/agy.txt). Docs: https://antigravity.google/docs/cli/getting-started, https://antigravity.google/docs/cli/install (fetched); https://antigravity.google/docs/cli/reference documents slash commands and `settings.json`, not flags.
 
 ## Install and update
 

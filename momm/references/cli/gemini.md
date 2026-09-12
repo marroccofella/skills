@@ -1,6 +1,6 @@
 # Gemini CLI (`gemini`)
 
-Google's open-source terminal agent. MOMM route `gemini` — opt-in only, default persona `fresheyes`. Installed: 0.55.1 via npm. Raw help: [help/gemini.txt](help/gemini.txt). Docs: https://geminicli.com/docs/cli/headless/ and https://geminicli.com/docs/get-started/authentication/ (fetched 2026-09-12); the configuration page under `/docs/cli/configuration/` returned 404.
+Google's open-source terminal agent. MOMM route `gemini` — opt-in only, default persona `fresheyes`. Installed: 0.59.0 via npm (upgraded 2026-09-13; help text unchanged). Raw help: [help/gemini.txt](help/gemini.txt). Docs: https://geminicli.com/docs/cli/headless/ and https://geminicli.com/docs/get-started/authentication/ (fetched 2026-09-12); the configuration page under `/docs/cli/configuration/` returned 404.
 
 ## Why it is opt-in
 
