@@ -54,6 +54,9 @@ excluding `versions.json` (the digest's own container). Git blobs avoid checkout
 line-ending differences. Reports separately hash actual installed dispatcher,
 updater and SKILL.md bytes and state whether the clean installation matches a
 verified local receipt. Initial clone/install alone is not signature verification.
+Those hashes are observed at dispatcher startup. A detected installation change
+during a review is reported and clears verified-release status; the report is
+never relabeled with a later checkout's identity.
 
 ## Apply and rollback
 

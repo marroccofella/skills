@@ -29,6 +29,8 @@ Output parsing now prefers the final review and refuses explicitly non-final
 Grok envelopes; regression fixtures cover intermediate/final ordering. Copilot
 requests non-streamed final text while preserving its viewer-only tool allowlist.
 An unmet external-review quorum can no longer coexist with outstanding.complete.
+Executable hashes are captured at dispatcher startup, not retroactively from
+files changed during review; a changed installation clears verified-release status.
 
 The attached broader proposals are not silently bundled: API-key support conflicts
 with OAuth-only policy; a repository split, automatic execution of peer-authored

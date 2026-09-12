@@ -95,6 +95,14 @@ if (Number.isFinite(nodeMajor) && nodeMajor < 18) {
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const STARTUP_PROVENANCE = Object.freeze(provenance(SKILLS_ROOT));
+function reportProvenance(start, finish) {
+  const changed = ["dispatcher_sha256", "updater_sha256", "protocol_sha256", "release_commit"].some(key => start[key] !== finish[key]);
+  return { ...start, executable_hash_observed_at: "dispatcher_start",
+    installation_changed_during_run: changed,
+    release_verified: Boolean(start.release_verified && finish.release_verified && !changed) };
+}
 const DEFAULT_MAX_BYTES = 120_000;
 const MAX_OUTPUT_BYTES = 2_000_000;
 const VALID_GOVERNORS = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"]);
@@ -1581,6 +1589,14 @@ async function selfTest(pretty) {
   const tests = {
     removes_api_keys: !("OPENAI_API_KEY" in cleaned),
     preserves_oauth_tokens: cleaned.CLAUDE_CODE_OAUTH_TOKEN === "allowed-oauth",
+    report_provenance_keeps_startup_identity_on_concurrent_update: (() => {
+      const before = { dispatcher_sha256: "a", updater_sha256: "b", protocol_sha256: "c", release_commit: "d", release_verified: true };
+      const after = { ...before, dispatcher_sha256: "new-code", release_commit: "new-commit" };
+      const result = reportProvenance(before, after);
+      return result.dispatcher_sha256 === "a" && result.release_commit === "d"
+        && result.installation_changed_during_run && result.release_verified === false
+        && reportProvenance(before, { ...before }).release_verified === true;
+    })(),
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
     parses_nested_json: parsed?.verdict === "ACCEPT",
     final_review_wins_over_intermediate_wrapper: (() => {
@@ -1987,7 +2003,7 @@ async function main() {
   const report = {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
-    ...provenance(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")),
+    ...reportProvenance(STARTUP_PROVENANCE, provenance(SKILLS_ROOT)),
     tier: options.tier ?? "default",
     policy: "oauth-only",
     run_id: runId,
