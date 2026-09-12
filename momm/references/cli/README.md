@@ -13,6 +13,8 @@ Captured 2026-09-12 on Windows 11 from the installed versions below. Re-capture 
 | grok | `grok` (`~/.grok/bin/grok`, x.ai installer) | 1.0.5 stable | [grok.md](grok.md) |
 | gemini | `gemini` (npm `@google/gemini-cli`) | 0.55.1 | [gemini.md](gemini.md) |
 
+Routes not yet used, ranked by whether they add a new model family under an account login: [candidates.md](candidates.md).
+
 ## Comparison matrix
 
 | Concern | codex | claude | antigravity (agy) | copilot | grok | gemini |
