@@ -6,7 +6,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createUpdateClock, applyUpdates, readSettings, writeSettings, DEFAULT_SETTINGS, skillSource, npmSource, grokSource, antigravitySource, modelsSource, timerCommand, installTimer, parseSet, cliMain, UPDATE_COMMANDS, readState, writeState } from "./update-clock.mjs";
+import { createUpdateClock, applyUpdates, readSettings, writeSettings, DEFAULT_SETTINGS, skillSource, npmSource, grokSource, antigravitySource, modelsSource, timerCommand, installTimer, parseSet, cliMain, UPDATE_COMMANDS, CLIS, readState, writeState } from "./update-clock.mjs";
 import { MANIFEST_URL } from "./update.mjs";
 
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-clock-"));
@@ -21,7 +21,7 @@ function env(overrides = {}) {
   const responses = overrides.responses || {};
   const fetcher = async (url, init) => {
     calls.push({ url, headers: init.headers });
-    const r = typeof responses[url] === "function" ? responses[url](init) : responses[url];
+    const r = typeof responses[url] === "function" ? await responses[url](init) : responses[url];
     if (!r) return { status: 404, ok: false, headers: new Headers(), text: async () => "" };
     if (r.throw) throw new Error(r.throw);
     return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: new Headers(r.headers || {}), text: async () => JSON.stringify(r.body || {}) };
@@ -188,6 +188,20 @@ await test("protocol change blocks unless accept_protocol, then passes --accept-
   writeSettings(e.home, { auto_update: { accept_protocol: true } }); calls = [];
   const applied = await applyUpdates(e.clock, { runUpdater });
   assert.deepEqual(calls, [["--dry-run"], ["--apply", "--yes", "--accept-protocol"]]); assert.equal(applied.applied.length, 1);
+  assert.equal(e.clock.status().sources[0].needs_protocol_acceptance, false, "flag cleared once the protocol change is applied with --accept-protocol");
+});
+
+await test("needs_protocol_acceptance is cleared by any later successful skill apply, even without --accept-protocol", async () => {
+  const diff = PREVIEW.replace("No policy changes.", "--- a/momm/SKILL.md\n+++ b/momm/SKILL.md\n+new rule");
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.16.0") }, sources: [skillSource()] });
+  writeSettings(e.home, { auto_update: { enabled: true } }); await e.clock.trigger("manual");
+  await applyUpdates(e.clock, { runUpdater: async () => ({ code: 0, output: diff }) });
+  assert.equal(e.clock.status().sources[0].needs_protocol_acceptance, true, "precondition: flag set by the blocked apply");
+  const calls = [];
+  const out = await applyUpdates(e.clock, { runUpdater: async args => { calls.push(args); return { code: 0, output: args[0] === "--dry-run" ? PREVIEW : "Installed" }; } });
+  assert.deepEqual(calls, [["--dry-run"], ["--apply", "--yes"]]); assert.equal(out.applied.length, 1);
+  assert.equal(e.clock.status().sources[0].needs_protocol_acceptance, false, "a release without protocol changes applies and clears the stale flag");
+  assert.equal(readState(e.stateFile).sources.skill.needs_protocol_acceptance, false, "cleared in the persisted state, not only in memory");
 });
 
 await test("cli: exact official command, re-read version, probe recorded, managed installs refused", async () => {
@@ -276,6 +290,114 @@ await test("CLI entry: set parses keys and minutes, enable/disable toggle, statu
   assert.equal(timer.done, false);
   const direct = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "update-clock.mjs"), "set", "models", "sideways"], { encoding: "utf8", env: { ...process.env, HOME: e.home, USERPROFILE: e.home } });
   assert.equal(direct.status, 1); assert.match(direct.stderr, /must be true or false/);
+});
+
+// ---- momm run rev_20260913144715_1e05 reproductions --------------------------
+await test("lock: empty or truncated lock file is corrupt -> removed with a recorded notice, never thrown", async () => {
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.15.1") }, sources: [skillSource()] });
+  fs.mkdirSync(path.dirname(e.stateFile), { recursive: true });
+  fs.writeFileSync(`${e.stateFile}.lock`, "");
+  const first = await e.clock.trigger("manual");
+  assert.equal(first.ran, true, "0-byte lock (crash right after openSync) is stale; the run proceeds");
+  assert.equal(fs.existsSync(`${e.stateFile}.lock`), false, "lock released after run");
+  fs.writeFileSync(`${e.stateFile}.lock`, '{"pid": 12');
+  assert.equal((await e.clock.trigger("manual")).ran, true, "truncated JSON lock is stale too");
+  fs.writeFileSync(`${e.stateFile}.lock`, JSON.stringify({ pid: "not-a-pid" }));
+  assert.equal((await e.clock.trigger("manual")).ran, true, "lock without a usable pid is stale");
+  const notices = readState(e.stateFile).history.filter(h => h.source === "lock");
+  assert.equal(notices.length, 3, "each removal is recorded in history");
+  for (const h of notices) { assert.equal(h.outcome, "stale_lock_removed"); assert.match(h.notice, /empty|corrupt|unreadable/i); assert.equal(h.trigger, "manual"); }
+  const e2 = env({ responses: { [MANIFEST_URL]: ok("1.15.1") }, sources: [skillSource()] });
+  fs.mkdirSync(path.dirname(e2.stateFile), { recursive: true }); fs.writeFileSync(`${e2.stateFile}.lock`, "");
+  await e2.clock.trigger("manual"); e2.time.t += 60_000; fs.writeFileSync(`${e2.stateFile}.lock`, "");
+  const idle = await e2.clock.trigger("review.finish");
+  assert.equal(idle.skipped_reason, "nothing_due"); assert.equal(fs.existsSync(`${e2.stateFile}.lock`), false);
+  assert.equal(readState(e2.stateFile).history.filter(h => h.source === "lock").length, 2, "notice recorded even when nothing was due");
+});
+
+await test("applyUpdates takes the clock lock: live-pid lock -> skipped_reason locked; cannot interleave with an in-flight trigger", async () => {
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.16.0") }, sources: [skillSource()] });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  const historyBefore = readState(e.stateFile).history.length;
+  fs.writeFileSync(`${e.stateFile}.lock`, JSON.stringify({ pid: process.pid }));
+  let ran = false;
+  const locked = await applyUpdates(e.clock, { runUpdater: async () => { ran = true; return { code: 0, output: PREVIEW }; } });
+  assert.equal(locked.skipped_reason, "locked"); assert.equal(ran, false, "updater never invoked under a foreign live lock");
+  assert.deepEqual([locked.applied, locked.skipped, locked.failed, locked.notices], [[], [], [], []], "module's own result shape, so setup-ui renders it");
+  assert.equal(readState(e.stateFile).history.length, historyBefore, "state untouched");
+  assert.equal(fs.existsSync(`${e.stateFile}.lock`), true, "a lock we do not own is left alone");
+  fs.unlinkSync(`${e.stateFile}.lock`);
+  let release; const gate = new Promise(r => { release = r; });
+  e.responses[MANIFEST_URL] = async () => { await gate; return ok("1.16.0", '"v3"'); };
+  const inflight = e.clock.trigger("manual");
+  await new Promise(r => setImmediate(r));
+  const during = await applyUpdates(e.clock, { runUpdater: async a => ({ code: 0, output: a[0] === "--dry-run" ? PREVIEW : "Installed" }) });
+  assert.equal(during.skipped_reason, "locked", "a trigger holding the lock blocks applyUpdates instead of racing its state write");
+  release(); assert.equal((await inflight).ran, true);
+  const out = await applyUpdates(e.clock, { runUpdater: async a => ({ code: 0, output: a[0] === "--dry-run" ? PREVIEW : "Installed" }) });
+  assert.equal(out.applied.length, 1); assert.equal(out.skipped_reason, null);
+  assert.equal(readState(e.stateFile).history.at(-1).outcome, "applied", "sequential apply after the trigger keeps its history");
+  assert.equal(fs.existsSync(`${e.stateFile}.lock`), false, "applyUpdates releases the lock");
+});
+
+await test("grok: a successful update clears the stale hint; update_available compares the re-read version against latest", async () => {
+  const exec = async (cmd, args) => cmd === "grok" && args[1] === "--check" ? { code: 0, stdout: JSON.stringify({ updateAvailable: true, latestVersion: "1.0.31" }), stderr: "" } : { code: 0, stdout: "", stderr: "" };
+  const e = env({ sources: [grokSource()], exec, installed: { grok: "1.0.30" } });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  assert.equal(e.clock.status().sources[0].update_available, true, "1.0.30 installed, 1.0.31 latest");
+  e.clock.setInstalled("grok", "1.0.31");
+  assert.equal(e.clock.status().sources[0].update_available, false, "installed == latest means no update, whatever the recorded hint says");
+  e.clock.setInstalled("grok", "1.0.30");
+  const execs = [];
+  const applyExec = async (cmd, args) => { execs.push([cmd, ...args]); return { code: 0, stdout: "", stderr: "" }; };
+  const first = await applyUpdates(e.clock, { exec: applyExec, versionOf: async () => "grok 1.0.31 (deadbeef)" });
+  assert.deepEqual(execs, [["grok", "update"]]); assert.deepEqual(first.applied.map(a => [a.from, a.to]), [["1.0.30", "1.0.31"]]);
+  const second = await applyUpdates(e.clock, { exec: applyExec, versionOf: async () => "grok 1.0.31 (deadbeef)" });
+  assert.deepEqual(execs, [["grok", "update"]], "no second `grok update` once the re-read version matches latest");
+  assert.deepEqual(second.applied, []);
+  assert.equal(readState(e.stateFile).sources["cli:grok"].update_available_hint, undefined, "hint cleared in the persisted state");
+  const fresh = createUpdateClock({ home: e.home, stateFile: e.stateFile, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: { grok: "1.0.31" } });
+  assert.equal(fresh.status().sources[0].update_available, false, "a new process over the same state does not re-update");
+  const unknown = createUpdateClock({ home: e.home, stateFile: e.stateFile, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: {} });
+  assert.equal(unknown.status().sources[0].update_available, null, "unknown installed version and no hint -> unknown, not a loop");
+});
+
+await test("models source runs against every CLI route when installedVersions knows only the skill", async () => {
+  const seen = [];
+  const e = env({ sources: [modelsSource()], installed: { skill: "1.15.1" }, listModels: async r => { seen.push(r); return r === "grok" ? ["grok-4"] : null; } });
+  const r = await e.clock.trigger("manual");
+  assert.equal(r.results[0].outcome, "unchanged");
+  assert.deepEqual(seen, CLIS, "routes default to the CLI list, not the empty set");
+  assert.deepEqual(Object.keys(readState(e.stateFile).sources.models.models), ["grok"]);
+  assert.equal(e.clock.status().sources[0].update_available, null, "models stay record-only");
+  const seen2 = [];
+  const e2 = env({ sources: [modelsSource()], installed: { skill: "1.15.1", codex: "0.154.0" }, listModels: async r => { seen2.push(r); return null; } });
+  await e2.clock.trigger("manual");
+  assert.deepEqual(seen2, ["codex"], "known installations still narrow the route list");
+});
+
+await test("timerCommand win32: /TR quoting for spaced paths is exact and survives cmd.exe -> CRT argv parsing", async () => {
+  const node = "C:\\Program Files\\nodejs\\node.exe", script = "D:\\1code projects\\Claude\\momm\\scripts\\update-clock.mjs";
+  const win = timerCommand("win32", node, script);
+  assert.equal(win.install, 'schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "\\"C:\\Program Files\\nodejs\\node.exe\\" \\"D:\\1code projects\\Claude\\momm\\scripts\\update-clock.mjs\\" trigger daily.tick"');
+  if (process.platform !== "win32") return;
+  // schtasks.exe and node.exe both split argv with the Windows CRT rules, so swapping `schtasks` for a node
+  // argv echo shows exactly what schtasks receives as its /TR value once cmd.exe has processed the line.
+  const echo = spawnSync(`"${process.execPath}" -e "console.log(JSON.stringify(process.argv.slice(1)))" ${win.install.slice("schtasks ".length)}`, { shell: true, encoding: "utf8" });
+  assert.equal(echo.status, 0, echo.stderr);
+  const argv = JSON.parse(echo.stdout);
+  assert.deepEqual(argv.slice(0, 8), ["/Create", "/SC", "HOURLY", "/MO", "6", "/TN", "MOMM-UpdateClock", "/TR"]);
+  assert.equal(argv[8], `"${node}" "${script}" trigger daily.tick`, "the /TR value arrives as one argument with its inner quotes intact");
+  assert.equal(argv.length, 9);
+  // The inner command must itself launch a script whose path contains spaces.
+  const dir = path.join(fixture, "spaced dir"); fs.mkdirSync(dir, { recursive: true });
+  const spaced = path.join(dir, "echo args.mjs"); fs.writeFileSync(spaced, "console.log(JSON.stringify(process.argv.slice(2)))\n");
+  const inner = timerCommand("win32", process.execPath, spaced).install.match(/\/TR "(.*)"$/)[1].replaceAll('\\"', '"');
+  const run = spawnSync(inner, { shell: true, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), ["trigger", "daily.tick"]);
 });
 
 fs.rmSync(fixture, { recursive: true, force: true });

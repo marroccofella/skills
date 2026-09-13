@@ -67,14 +67,27 @@ export function readState(stateFile) {
 export function writeState(stateFile, state) { writeJSON(stateFile, { ...state, history: state.history.slice(-MAX_HISTORY) }); }
 const freshEntry = min => ({ last_checked_at: null, next_due_at: 0, interval_ms: min, etag: null, last_modified: null, last_seen_version: null, consecutive_unchanged: 0, last_error: null, last_trigger: null, tight_until: 0 });
 // Lock file next to the state; a lock whose pid is dead is stale and removed.
+// The owner is written after openSync("wx"), so a concurrent reader or a crash in
+// between leaves a 0-byte or truncated file: that is corrupt, not live, and must
+// never throw (it would wedge every later run behind an unowned lock).
+function readLockOwner(file) {
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch (e) { return e.code === "ENOENT" ? { gone: true } : { corrupt: "unreadable" }; }
+  if (!text.trim()) return { corrupt: "empty" };
+  try { const pid = JSON.parse(text)?.pid; return Number.isInteger(pid) && pid > 0 ? { pid } : { corrupt: "corrupt (no usable pid)" }; } catch { return { corrupt: "truncated or corrupt JSON" }; }
+}
+// Returns { release, notices } or null when a live process holds the lock. Each
+// stale/corrupt removal is described in `notices` so callers can record it.
 function acquireLock(stateFile, isAlive) {
-  const file = `${stateFile}.lock`;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); const fd = fs.openSync(file, "wx", 0o600); fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() })); fs.closeSync(fd); return () => { try { fs.unlinkSync(file); } catch {} }; }
+  const file = `${stateFile}.lock`, notices = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); const fd = fs.openSync(file, "wx", 0o600); fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() })); fs.closeSync(fd); return { release: () => { try { fs.unlinkSync(file); } catch {} }, notices }; }
     catch (e) {
       if (e.code !== "EEXIST") throw e;
-      const pid = readJSON(file, {})?.pid;
-      if (Number.isInteger(pid) && pid > 0 && isAlive(pid)) return null;
+      const owner = readLockOwner(file);
+      if (owner.gone) continue;
+      if (owner.pid && isAlive(owner.pid)) return null;
+      notices.push(owner.corrupt ? `removed ${owner.corrupt} lock file ${path.basename(file)} (crashed or interrupted writer)` : `removed stale lock file ${path.basename(file)} left by dead pid ${owner.pid}`);
       try { fs.unlinkSync(file); } catch {}
     }
   }
@@ -172,35 +185,50 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
     schedule(entry, outcome, t, settings.clock);
     return { name: source.name, outcome, latest: entry.last_seen_version, installed: installedFor(source), error: entry.last_error };
   }
-  const withLock = async fn => {
-    const release = acquireLock(stateFile, isAlive);
-    if (!release) return { ran: false, skipped_reason: "locked", results: [] };
-    try { return await fn(); } finally { release(); }
+  // Every state read-modify-write goes through here: trigger, record and applyUpdates
+  // share one lock so their writes cannot interleave. `fn` receives the lock notices
+  // (stale/corrupt lock removals) so it can record them in the state history.
+  const withLock = async (fn, lockedResult = { ran: false, skipped_reason: "locked", results: [] }) => {
+    const lock = acquireLock(stateFile, isAlive);
+    if (!lock) return lockedResult;
+    try { return await fn(lock.notices); } finally { lock.release(); }
   };
+  const lockHistory = (notices, t, trigger) => notices.map(notice => ({ at: t, trigger, source: "lock", outcome: "stale_lock_removed", notice }));
   const clock = {
     stateFile, installedVersions,
     settings: () => readSettings(home),
     setInstalled(name, version) { installedVersions[name] = version; },
+    locked: withLock,
+    // A known installed version compared against the latest seen wins; the source's
+    // own hint (grok's `update --check`) only stands in while one side is unknown,
+    // otherwise a hint recorded before an update would re-trigger it forever.
     updateAvailable(source, entry) {
+      const installed = installedFor(source), latest = entry.last_seen_version;
+      if (latest && installed) return newer(latest, installed);
       if (entry.update_available_hint !== undefined) return entry.update_available_hint;
-      const installed = installedFor(source);
-      return entry.last_seen_version && installed ? newer(entry.last_seen_version, installed) : null;
+      return null;
     },
-    trigger: event => withLock(async () => {
+    trigger: event => withLock(async lockNotices => {
       if (!EVENTS.has(event)) throw new Error(`Unknown update-clock event: ${event}`);
       const settings = readSettings(home), t = now(), state = readState(stateFile), forced = FORCED_EVENTS.has(event);
-      if (event === "review.start" && state.last_review_start_check_at && t - state.last_review_start_check_at < settings.clock.min_interval_ms) return { ran: false, skipped_reason: "rate_limited", results: [] };
+      state.history.push(...lockHistory(lockNotices, t, event));
+      const skip = reason => { if (lockNotices.length) writeState(stateFile, state); return { ran: false, skipped_reason: reason, results: [] }; };
+      if (event === "review.start" && state.last_review_start_check_at && t - state.last_review_start_check_at < settings.clock.min_interval_ms) return skip("rate_limited");
       for (const s of sources) state.sources[s.name] ||= freshEntry(settings.clock.min_interval_ms);
       const due = sources.filter(s => forced || t >= state.sources[s.name].next_due_at);
-      if (!due.length) return { ran: false, skipped_reason: "nothing_due", results: [] };
+      if (!due.length) return skip("nothing_due");
       if (event === "review.start") state.last_review_start_check_at = t;
-      const ctx = { fetcher, exec, listModels, routes: routes.filter(r => installedVersions[r]), now: t };
+      // Routes narrow to the CLIs with a known installation; when none is known (the
+      // default only carries the skill version) every route is asked, so the models
+      // source can run at all. Model lists are recorded only, never acted on.
+      const known = routes.filter(r => installedVersions[r]);
+      const ctx = { fetcher, exec, listModels, routes: known.length ? known : [...routes], now: t };
       const results = [];
       for (const s of due) { results.push(await check(s, state.sources[s.name], ctx, t, event, settings)); state.history.push({ at: t, trigger: event, source: s.name, outcome: results.at(-1).outcome }); }
       writeState(stateFile, state);
       return { ran: true, skipped_reason: null, results };
     }),
-    record(entries) { const state = readState(stateFile); state.history.push(...entries); writeState(stateFile, state); },
+    record: entries => withLock(async lockNotices => { const state = readState(stateFile); state.history.push(...lockHistory(lockNotices, now(), "record"), ...entries); writeState(stateFile, state); return { recorded: true, skipped_reason: null }; }, { recorded: false, skipped_reason: "locked" }),
     status() {
       const settings = readSettings(home), state = readState(stateFile), iso = ms => (ms ? new Date(ms).toISOString() : null);
       const rows = sources.map(s => { const e = state.sources[s.name] || freshEntry(settings.clock.min_interval_ms); return { name: s.name, kind: s.kind, last_checked_at: iso(e.last_checked_at), next_due_at: iso(e.next_due_at), interval_ms: e.interval_ms, latest: e.last_seen_version, installed: installedFor(s), update_available: clock.updateAvailable(s, e), last_error: e.last_error, status: e.status || null, new_models: e.new_models || null, needs_protocol_acceptance: e.needs_protocol_acceptance || false }; });
@@ -212,10 +240,17 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
 
 // ---- auto-apply (only when settings.auto_update.enabled) -------------------------
 function parsePreview(output) { return { ok: /Preview complete\./.test(output), protocolChanged: /Protocol \/ default-rules \/ persona diff/.test(output) && !/No policy changes\./.test(output) }; }
+// Runs under the clock's lock (the same one `trigger` takes), so its state write can
+// never interleave with a check in flight; a lock held by a live process yields
+// { skipped_reason: "locked" } in the module's own result shape.
 export async function applyUpdates(clock, { runUpdater = defaultRunUpdater, exec = defaultExec, versionOf = async () => null, postUpdateProbe = null, isManaged = () => false, commands = UPDATE_COMMANDS, now = Date.now } = {}) {
-  const out = { applied: [], skipped: [], failed: [], notices: [] }, settings = clock.settings();
+  const out = { applied: [], skipped: [], failed: [], notices: [], skipped_reason: null }, settings = clock.settings();
   if (!settings.auto_update.enabled) { out.skipped.push({ name: "*", reason: "auto_update.enabled is false" }); return out; }
-  const history = [], note = (source, outcome, notice, extra = {}) => { history.push({ at: now(), trigger: "apply", source, outcome, notice, ...extra }); out.notices.push(notice); };
+  return clock.locked(lockNotices => applyLocked(clock, out, settings, lockNotices, { runUpdater, exec, versionOf, postUpdateProbe, isManaged, commands, now }), { ...out, skipped_reason: "locked" });
+}
+async function applyLocked(clock, out, settings, lockNotices, { runUpdater, exec, versionOf, postUpdateProbe, isManaged, commands, now }) {
+  const history = lockNotices.map(notice => ({ at: now(), trigger: "apply", source: "lock", outcome: "stale_lock_removed", notice }));
+  const note = (source, outcome, notice, extra = {}) => { history.push({ at: now(), trigger: "apply", source, outcome, notice, ...extra }); out.notices.push(notice); };
   const status = clock.status();
   for (const row of status.sources) {
     if (row.kind === "skill" && settings.auto_update.skill && row.update_available) {
@@ -240,7 +275,22 @@ export async function applyUpdates(clock, { runUpdater = defaultRunUpdater, exec
     }
   }
   const flagged = history.filter(h => h.needs_protocol_acceptance).map(h => h.source);
-  if (history.length) { const state = readState(clock.stateFile); for (const s of flagged) if (state.sources[s]) state.sources[s].needs_protocol_acceptance = true; for (const f of out.failed) if (state.sources[f.name]) state.sources[f.name].last_error = f.reason; state.history.push(...history); writeState(clock.stateFile, state); }
+  if (history.length) {
+    const state = readState(clock.stateFile);
+    for (const s of flagged) if (state.sources[s]) state.sources[s].needs_protocol_acceptance = true;
+    for (const a of out.applied) {
+      const entry = state.sources[a.name];
+      if (!entry) continue;
+      // A successful skill apply (with or without --accept-protocol) settles any
+      // pending acceptance; a successful CLI update retires the source's pre-update
+      // hint so the re-read installed version, not the hint, decides what comes next.
+      if (a.name === "skill") entry.needs_protocol_acceptance = false;
+      else delete entry.update_available_hint;
+    }
+    for (const f of out.failed) if (state.sources[f.name]) state.sources[f.name].last_error = f.reason;
+    state.history.push(...history);
+    writeState(clock.stateFile, state);
+  }
   return out;
 }
 
