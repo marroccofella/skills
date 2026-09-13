@@ -8,6 +8,9 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
+import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
+import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
+import { rollupUsage } from "./usage.mjs";
 
 const processScope = createProcessScope();
 processScope.installSignalHandlers(undefined, {graceful:true});
@@ -17,6 +20,9 @@ const assetDir = path.join(scriptDir, "..", "assets", "setup-ui");
 const skillsRoot = path.resolve(scriptDir, "..", "..");
 const onboardScript = path.join(scriptDir, "onboard.mjs");
 const dispatcherScript = path.join(scriptDir, "multi-review.mjs");
+const ledgerScript = path.join(scriptDir, "ledger.mjs");
+const updaterScript = path.join(scriptDir, "update.mjs");
+const updateClockScript = path.join(scriptDir, "update-clock.mjs");
 const localVersionsFile = path.join(skillsRoot, "versions.json");
 const publishedVersionsUrl = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 const governors = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok", "other"]);
@@ -25,6 +31,8 @@ const jobs = new Map();
 const maxJobs = 12;
 let activeServer = null;
 let maintenanceCache = null;
+let updateClock = null;   // created at server start; null under --self-test
+let ledgerWatcher = null; // idem
 
 // Connectivity checks must outlive the slowest legitimate route: the
 // dispatcher grants grok 1.5x of the 120s base (180s), its kill path allows a
@@ -569,6 +577,299 @@ function startConnectivityJob(provider, governor) {
   return job;
 }
 
+// --- Standing guidance (1.16 E3/E4) --------------------------------------------
+// The editor writes the PROJECT file only; the user-level file is shown
+// read-only. Every write carries the sha256 the editor loaded, so an edit made
+// elsewhere in the meantime (the CLI, another session, a git pull) is refused
+// with 409 instead of being overwritten. A successful save trusts exactly the
+// bytes written, and nothing else, through the same trust store the dispatcher
+// consults. Previews are built by the dispatcher's own prompt assembler with a
+// literal placeholder for the artifact, so no source ever reaches this page.
+const GUIDANCE_ROUTES = Object.freeze(["codex", "claude", "gemini", "antigravity", "copilot", "grok"]);
+const GUIDANCE_BODY_LIMIT = 64 * 1024;
+const CONTRACT_STUB = "[review contract omitted: the dispatcher supplies the full momm-peer-review/2 contract here]";
+
+function guidanceFileSha(file) {
+  return fs.existsSync(file) ? sha256(fs.readFileSync(file)) : null;
+}
+
+function guidanceSnapshot({ cwd = process.cwd(), home } = {}) {
+  const file = projectGuidanceFiles(cwd).guidance;
+  const value = {
+    file, user_file: userGuidancePath(home), routes: [...GUIDANCE_ROUTES], budget: { ...GUIDANCE_BUDGET },
+    project: null, project_error: null, project_sha256: guidanceFileSha(file), trusted: false,
+    user: null, user_error: null, effective: {}, governor: null, preview: {}, notices: [], resolve_error: null,
+  };
+  try { value.project = readGuidanceFile(file); } catch (error) { value.project_error = safeDetail(error.message); }
+  try { value.user = readGuidanceFile(userGuidancePath(home)); } catch (error) { value.user_error = safeDetail(error.message); }
+  try { value.trusted = value.project_sha256 !== null && isTrusted(cwd, "guidance", value.project_sha256, { home }); } catch (error) { value.project_error ||= safeDetail(error.message); }
+  try {
+    const resolved = resolveGuidance({ cwd, home, routes: GUIDANCE_ROUTES });
+    value.effective = resolved.routes;
+    value.governor = resolved.governor;
+    value.notices = resolved.notices;
+    for (const route of GUIDANCE_ROUTES) value.preview[route] = formatEffectivePrompt(CONTRACT_STUB, resolved.routes[route].text, 0);
+  } catch (error) { value.resolve_error = safeDetail(error.message); }
+  return value;
+}
+
+// Courtesy pre-check of the per-route stack so the editor can refuse a save
+// that would fail every later run. Mirrors guidance.mjs stack(): layers joined
+// with a blank line, project blocks replaced by the candidate. The resolver
+// remains the authority at dispatch; this only decides between 400 and a write.
+function guidanceBudgetProblem(candidate, effective) {
+  for (const route of GUIDANCE_ROUTES) {
+    const fixed = (effective?.[route]?.layers || []).filter((layer) => layer.name !== "persona" && (!layer.name.startsWith("project:") || layer.name === "project:.reviewrules"));
+    const blocks = [...fixed.map((layer) => layer.chars), ...["*", route].map((key) => candidate.reviewers?.[key]).filter((text) => typeof text === "string" && text.trim()).map((text) => text.length)];
+    const total = blocks.reduce((sum, chars) => sum + chars, 0) + Math.max(0, blocks.length - 1) * 2;
+    if (total > GUIDANCE_BUDGET.per_route) return `guidance for route ${route} would be ${total} characters with the user-level and .reviewrules layers; the cap is ${GUIDANCE_BUDGET.per_route}`;
+  }
+  return null;
+}
+
+function saveGuidance(body, { cwd = process.cwd(), home } = {}) {
+  const file = projectGuidanceFiles(cwd).guidance;
+  let guidance;
+  try { guidance = validateGuidance(body?.guidance, ".momm/guidance.json"); } catch (error) { return { status: 400, value: { error: safeDetail(error.message) } }; }
+  const expected = body?.expected_sha256 ?? null;
+  if (expected !== null && !/^[0-9a-f]{64}$/.test(String(expected))) return { status: 400, value: { error: "expected_sha256 must be the sha256 the editor loaded, or null for a new file" } };
+  const before = guidanceSnapshot({ cwd, home });
+  const budget = guidanceBudgetProblem(guidance, before.effective);
+  if (budget) return { status: 400, value: { error: budget } };
+  if (before.project_sha256 !== expected) return { status: 409, value: { error: "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.", project_sha256: before.project_sha256 } };
+  const text = `${JSON.stringify(guidance, null, 2)}\n`;
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, text, { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(temp, file);
+  // `expect` pins the trust entry to the bytes just written; a race with
+  // another writer between rename and trust is refused rather than trusted.
+  trustProject(cwd, { home, expect: sha256(text) });
+  return { status: 200, value: guidanceSnapshot({ cwd, home }) };
+}
+
+// --- Usage (1.16 E1 in the Setup Center) -----------------------------------------
+// Reads the local sealed reports only and never estimates: a reviewer whose CLI
+// reported nothing counts toward n and never toward the numerator, so the page
+// shows "0 of n reported", never a zero. Accepted findings come from the
+// governor's own disposition rows for the same run and reviewer.
+const USAGE_REPORT_LIMIT = 200;
+const DISPOSITIONS_READ_LIMIT = 8 * 1024 * 1024;
+
+function acceptedFindingsIndex(file) {
+  const index = new Map();
+  try {
+    if (fs.statSync(file).size > DISPOSITIONS_READ_LIMIT) return index;
+    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let row; try { row = JSON.parse(line); } catch { continue; }
+      if (!row || typeof row !== "object" || !String(row.disposition || "").startsWith("applied")) continue;
+      const key = `${row.run_id}\u0000${row.reviewer}`;
+      index.set(key, (index.get(key) || 0) + 1);
+    }
+  } catch {}
+  return index;
+}
+
+function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
+  const dir = path.join(cwd, ".ensemble_reviews", "reports");
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((name) => /^rev_[A-Za-z0-9_]+\.json$/.test(name))
+      .map((name) => { try { return { name, mtime: fs.statSync(path.join(dir, name)).mtimeMs }; } catch { return null; } })
+      .filter(Boolean).sort((a, b) => b.mtime - a.mtime);
+  } catch {}
+  const accepted = acceptedFindingsIndex(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"));
+  const rows = [];
+  let scanned = 0, withUsage = 0;
+  for (const { name } of files.slice(0, limit)) {
+    let report;
+    try { report = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
+    if (!Array.isArray(report?.reviewers)) continue;
+    scanned += 1;
+    let carries = false;
+    for (const reviewer of report.reviewers) {
+      if (reviewer?.status !== "success") continue; // self-excluded, failed and timed-out routes are not reviews
+      const usage = reviewer.usage && typeof reviewer.usage === "object" ? reviewer.usage : null;
+      if (usage?.reported) carries = true;
+      rows.push({ agent: reviewer.agent, status: reviewer.status, reported: usage?.reported ?? null, coverage: usage?.coverage ?? { tokens: false, cost: false }, accepted_findings: accepted.get(`${report.run_id}\u0000${reviewer.agent}`) ?? 0 });
+    }
+    if (carries) withUsage += 1;
+  }
+  return {
+    rows: rollupUsage(rows),
+    coverage: { reports_available: files.length, reports_scanned: scanned, reports_with_usage: withUsage, reviews: rows.length, limit },
+    note: withUsage ? null : scanned ? "No report carries CLI-reported usage yet. Counts appear after a review on a route whose CLI reports its own token usage; nothing here is estimated." : "No sealed reports in this project yet. Verify a connection or run a review to populate usage.",
+  };
+}
+
+// --- Update clock (1.16 E6) --------------------------------------------------------
+// One clock per server, off by default (~/.momm/settings.json). Every child it
+// needs runs through processScope so a closing server never leaves an updater
+// or a `grok update --check` behind, and never blocks the event loop the way the
+// module's synchronous defaults would inside a server.
+const clockActivity = { running: false, last_event: null, last_started_at: null, last_finished_at: null, last_result: null, last_error: null };
+
+// Only constant command tables reach this (UPDATE_COMMANDS, timerCommand, the
+// grok check-only command). Windows needs a shell for npm's .cmd shims; the
+// module's own defaultExec makes the same choice.
+function clockExec(command, args = [], { timeout = 60_000, shell = false } = {}) {
+  return new Promise((resolve) => {
+    const child = processScope.spawn(command, args, {
+      cwd: process.cwd(),
+      env: { ...process.env, NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
+      shell: shell || process.platform === "win32",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    supervise(child, { timeoutMs: timeout, stdoutLimit: 1_000_000, stderrLimit: 100_000, resolve });
+  });
+}
+
+function clockRunUpdater(args) {
+  return runNode(updaterScript, args, { timeoutMs: 600_000 }).then((result) => ({ code: result.code, output: `${result.stdout}${result.stderr}` }));
+}
+
+async function cliVersion(agent) {
+  const result = await runCommand(agent === "antigravity" ? "agy" : agent, ["--version"], { timeoutMs: 15_000 });
+  return result.code === 0 ? safeDetail(result.stdout || result.stderr) : null;
+}
+
+// npm (with a known prefix) and native self-updating binaries are the only
+// installations MOMM will touch; everything else belongs to a package manager.
+function cliIsManaged(agent) {
+  return !["npm", "native"].includes(detectInstallation(agent).kind);
+}
+
+function createServerClock() {
+  try { return createUpdateClock({ exec: clockExec, installedVersions: { skill: localSkillVersion() } }); }
+  catch (error) { process.stderr.write(`Update clock unavailable: ${safeDetail(error.message)}\n`); return null; }
+}
+
+function triggerClock(clock, event) {
+  if (!clock) return Promise.resolve(null);
+  clockActivity.running = true;
+  clockActivity.last_event = event;
+  clockActivity.last_started_at = new Date().toISOString();
+  return clock.trigger(event)
+    .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
+    .catch((error) => { clockActivity.last_error = safeDetail(error.message); return null; })
+    .finally(() => { clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
+}
+
+function clockTimer(platform = platformKey()) {
+  const command = timerCommand(platform, process.execPath, updateClockScript);
+  return { platform: command.platform, install: command.install, remove: command.remove, plist_path: command.plist_path || null };
+}
+
+function clockSnapshot(clock) {
+  return { ...clock.status(), timer: clockTimer(), activity: clockActivity };
+}
+
+async function handleUpdateClock(body, clock, deps = {}) {
+  if (!clock) return { status: 503, value: { error: "The update clock is not running in this Setup Center." } };
+  const op = String(body?.op || "");
+  if (op === "set") {
+    const patch = body.patch;
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { status: 400, value: { error: "patch must be an object with auto_update and/or clock keys" } };
+    const unknown = Object.keys(patch).filter((key) => !["auto_update", "clock"].includes(key));
+    if (unknown.length) return { status: 400, value: { error: `Unknown settings key(s): ${unknown.join(", ")}` } };
+    try { writeSettings(deps.home, patch); } catch (error) { return { status: 400, value: { error: safeDetail(error.message) } }; }
+    return { status: 200, value: clockSnapshot(clock) };
+  }
+  if (op === "trigger") {
+    const event = String(body.event || "");
+    if (!["setup.check", "manual"].includes(event)) return { status: 400, value: { error: "Only setup.check or manual can be triggered from the Setup Center" } };
+    const result = await triggerClock(clock, event);
+    return { status: 200, value: { result, ...clockSnapshot(clock) } };
+  }
+  if (op === "apply") {
+    // Never call the applier while disabled: the no-op answer below is the
+    // module's own shape, so the page renders both paths identically.
+    if (!clock.settings().auto_update.enabled) return { status: 200, value: { applied: [], skipped: [{ name: "*", reason: "auto_update.enabled is false" }], failed: [], notices: [], ...clockSnapshot(clock) } };
+    const result = await applyUpdates(clock, {
+      runUpdater: deps.runUpdater || clockRunUpdater,
+      exec: deps.exec || clockExec,
+      versionOf: deps.versionOf || cliVersion,
+      isManaged: deps.isManaged || cliIsManaged,
+    });
+    maintenanceCache = null; // installed versions may have changed
+    return { status: 200, value: { ...result, ...clockSnapshot(clock) } };
+  }
+  if (op === "timer") {
+    const action = String(body.action || "");
+    if (!["install", "remove"].includes(action)) return { status: 400, value: { error: "timer action must be install or remove" } };
+    const command = clockTimer()[action];
+    // Same exact-command pattern as /api/action: the page must echo the command
+    // it showed, and the confirm flag must be the literal true.
+    if ((body.expected_command !== undefined && body.expected_command !== command) || body.confirm !== true) return { status: 409, value: { error: "Confirm the exact command first.", command } };
+    const run = action === "install" ? installTimer : removeTimer;
+    const result = await run({ platform: platformKey(), nodePath: process.execPath, scriptPath: updateClockScript, exec: deps.exec || clockExec, confirm: true });
+    return { status: result.done ? 200 : 500, value: { ...result, ...clockSnapshot(clock) } };
+  }
+  return { status: 400, value: { error: "Unsupported update-clock op" } };
+}
+
+// --- Ledger auto-regeneration (1.16 E3) -----------------------------------------
+// Watches the two append-only telemetry files while the server runs and
+// rebuilds the private ledger page. A burst of appends costs one rebuild
+// (debounce), and rebuilds are at least 5 s apart so a runaway writer cannot
+// make the server spin. Only the two named files count: the rebuild itself
+// writes ledger.html into the same directory and must not retrigger.
+const LEDGER_FILES = new Set(["review-log.jsonl", "dispositions.jsonl"]);
+const LEDGER_MIN_GAP_MS = 5000;
+
+function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MIN_GAP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, watch = fs.watch } = {}) {
+  const state = { watching: false, running: false, pending: false, regenerations: 0, last_regenerated_at: null, last_exit_code: null, last_error: null };
+  let debounce = null, retry = null, watcher = null, lastRunAt = -Infinity;
+  async function regenerate() {
+    if (state.running) { state.pending = true; return; }
+    state.running = true;
+    lastRunAt = now();
+    try {
+      const result = await run();
+      state.last_exit_code = result?.code ?? null;
+      state.last_error = result && result.code !== 0 ? (safeDetail(result.stderr) || `exit ${result.code}`) : null;
+      state.last_regenerated_at = new Date().toISOString();
+      state.regenerations += 1;
+    } catch (error) { state.last_error = safeDetail(error.message); }
+    finally {
+      state.running = false;
+      if (state.pending) { state.pending = false; schedule(); }
+    }
+  }
+  function schedule() {
+    if (debounce) clearTimer(debounce);
+    const wait = Math.max(debounceMs, lastRunAt + minGapMs - now());
+    debounce = setTimer(() => { debounce = null; regenerate(); }, wait);
+    debounce?.unref?.();
+  }
+  function notify(filename) {
+    if (LEDGER_FILES.has(String(filename ?? ""))) schedule();
+  }
+  function start() {
+    try {
+      watcher = watch(dir, { persistent: false }, (_event, filename) => notify(filename));
+      watcher.on?.("error", () => { state.watching = false; watcher = null; retryLater(); });
+      state.watching = true;
+    } catch { state.watching = false; retryLater(); } // directory absent until the first review
+  }
+  function retryLater() {
+    if (retry) return;
+    retry = setTimer(() => { retry = null; start(); }, 30_000);
+    retry?.unref?.();
+  }
+  function stop() {
+    if (debounce) clearTimer(debounce);
+    if (retry) clearTimer(retry);
+    debounce = retry = null;
+    try { watcher?.close?.(); } catch {}
+    watcher = null;
+    state.watching = false;
+  }
+  return { start, stop, notify, status: () => ({ ...state }) };
+}
+
 function isLoopback(address) {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
@@ -615,14 +916,17 @@ function sendJson(response, status, value) {
   response.end(`${JSON.stringify(value)}\n`);
 }
 
-function readBody(request) {
+// 4 KiB covers every action body; only the guidance editor (eight blocks of
+// up to 2000 characters, multi-byte allowed) is granted a larger, still
+// bounded, budget by its route.
+function readBody(request, limit = 4096) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let bytes = 0, failed = false;
     request.on("data", (chunk) => {
       if (failed) return;
       const buffer = Buffer.from(chunk); bytes += buffer.length;
-      if (bytes > 4096) { failed=true; chunks.length=0; reject(new Error("Request body too large")); request.destroy(); return; }
+      if (bytes > limit) { failed=true; chunks.length=0; reject(new Error("Request body too large")); request.destroy(); return; }
       chunks.push(buffer);
     });
     request.on("end", () => {
@@ -665,7 +969,19 @@ function createServer() {
         if (!authorized(request)) return sendJson(response, 403, {error:'Invalid local session'});
         const governor = String(requestUrl.searchParams.get("governor") || "codex").toLowerCase();
         if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
-        return sendJson(response, 200, await readiness(governor));
+        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null });
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/api/guidance") {
+        if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        return sendJson(response, 200, guidanceSnapshot());
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/api/usage") {
+        if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        return sendJson(response, 200, usageReport());
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/api/update-clock") {
+        if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        return updateClock ? sendJson(response, 200, clockSnapshot(updateClock)) : sendJson(response, 503, { error: "The update clock is not running in this Setup Center." });
       }
       if (request.method === "GET" && requestUrl.pathname.startsWith("/api/job/")) {
         const job = jobs.get(requestUrl.pathname.slice("/api/job/".length));
@@ -673,7 +989,15 @@ function createServer() {
       }
       if (request.method === "POST") {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
-        const body = await readBody(request);
+        const body = await readBody(request, requestUrl.pathname === "/api/guidance" ? GUIDANCE_BODY_LIMIT : undefined);
+        if (requestUrl.pathname === "/api/guidance") {
+          const saved = saveGuidance(body);
+          return sendJson(response, saved.status, saved.value);
+        }
+        if (requestUrl.pathname === "/api/update-clock") {
+          const handled = await handleUpdateClock(body, updateClock);
+          return sendJson(response, handled.status, handled.value);
+        }
         if (requestUrl.pathname === "/api/action") {
           const provider = String(body.provider || "").toLowerCase();
           const action = String(body.action || "").toLowerCase();
@@ -693,7 +1017,15 @@ function createServer() {
           const governor = String(body.governor || "codex").toLowerCase();
           if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
           if (body.force === true) maintenanceCache = null;
-          return sendJson(response, 200, await maintenanceReport(governor));
+          const value = await maintenanceReport(governor);
+          // Installed versions feed the clock's "update available" column; the
+          // explicit "Check everything" click is the setup.check event. Neither
+          // is awaited: a slow registry must not delay the maintenance answer.
+          if (updateClock) {
+            for (const item of value.cli_updates) if (item.current) updateClock.setInstalled(item.agent, item.current);
+            if (body.force === true) triggerClock(updateClock, "setup.check");
+          }
+          return sendJson(response, 200, value);
         }
         if (requestUrl.pathname === "/api/test") {
           const provider = String(body.provider || "").toLowerCase();
@@ -705,6 +1037,7 @@ function createServer() {
         }
         if (requestUrl.pathname === "/api/shutdown") {
           sendJson(response, 202, { closing: true });
+          ledgerWatcher?.stop();
           processScope.stop({graceful:true});
           activeServer?.close();
           setTimeout(() => { processScope.force(); activeServer?.closeAllConnections?.(); process.exit(0); }, 1200);
@@ -729,10 +1062,114 @@ function readDispatcherModalities() {
   } catch { return null; }
 }
 
+// 1.16 dashboard regression suite: temp project + temp home, injected fakes,
+// no network, no child processes. Each check is a boolean so a failure names
+// itself in the --self-test output.
+async function dashboardRegression() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "momm-setup-regression-"));
+  const checks = {};
+  const fixture = (name) => {
+    const cwd = path.join(root, name, "proj"), home = path.join(root, name, "home");
+    fs.mkdirSync(cwd, { recursive: true }); fs.mkdirSync(home, { recursive: true });
+    return { cwd, home };
+  };
+  const writeJson = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); };
+  try {
+    // Guidance: round-trip byte-exact, trusted on save, stale write and over-budget refused.
+    const g = fixture("guidance");
+    const guidance = { governor: "Governor: prefer\tsmall diffs\nand quote lines — ünïcödé 😀", reviewers: { "*": "STAR block  with  spacing ", codex: "  codex block\nline two" } };
+    const saved = saveGuidance({ expected_sha256: null, guidance }, g);
+    const onDisk = JSON.parse(fs.readFileSync(projectGuidanceFiles(g.cwd).guidance, "utf8"));
+    checks.guidance_round_trip_byte_exact = saved.status === 200
+      && JSON.stringify(onDisk) === JSON.stringify(guidance)
+      && JSON.stringify(saved.value.project) === JSON.stringify(guidance)
+      && saved.value.trusted === true
+      && saved.value.effective.codex.text === `${guidance.reviewers["*"]}\n\n${guidance.reviewers.codex}`
+      && saved.value.effective.grok.text === guidance.reviewers["*"]
+      && saved.value.governor.text === guidance.governor
+      && /^[0-9a-f]{64}$/.test(saved.value.project_sha256);
+    const bytesBefore = fs.readFileSync(projectGuidanceFiles(g.cwd).guidance);
+    const stale = saveGuidance({ expected_sha256: "0".repeat(64), guidance: { governor: "overwrite attempt" } }, g);
+    checks.guidance_stale_write_refused_409 = stale.status === 409 && fs.readFileSync(projectGuidanceFiles(g.cwd).guidance).equals(bytesBefore)
+      && saveGuidance({ expected_sha256: null, guidance: { governor: "x" } }, g).status === 409;
+    const block = saveGuidance({ expected_sha256: saved.value.project_sha256, guidance: { reviewers: { grok: "g".repeat(2001) } } }, g);
+    const u = fixture("budget");
+    writeJson(userGuidancePath(u.home), { reviewers: { "*": "a".repeat(1900), codex: "b".repeat(1900) } });
+    const stack = saveGuidance({ expected_sha256: null, guidance: { reviewers: { "*": "c".repeat(1900), codex: "d".repeat(1900) } } }, u);
+    checks.guidance_over_budget_refused_400 = block.status === 400 && /2001.*2000/.test(block.value.error)
+      && stack.status === 400 && /route codex.*6000/.test(stack.value.error) && !fs.existsSync(projectGuidanceFiles(u.cwd).guidance)
+      && fs.readFileSync(projectGuidanceFiles(g.cwd).guidance).equals(bytesBefore);
+    const preview = saved.value.preview.codex;
+    checks.guidance_preview_has_placeholder_and_no_artifact = typeof preview === "string"
+      && preview.endsWith("--- ARTIFACT TO REVIEW ---\n<artifact omitted: 0 bytes>")
+      && preview.includes(guidance.reviewers.codex) && preview.startsWith(CONTRACT_STUB)
+      && preview.split("--- ARTIFACT TO REVIEW ---").length === 2 && !preview.includes("diff --git")
+      && Object.values(saved.value.preview).every((text) => text.includes("<artifact omitted: 0 bytes>"));
+
+    // Usage: routes without reported usage read "0 of n", never zero.
+    const usage = fixture("usage");
+    const reports = path.join(usage.cwd, ".ensemble_reviews", "reports");
+    writeJson(path.join(reports, "rev_1_a.json"), { run_id: "rev_1_a", reviewers: [{ agent: "codex", status: "success" }, { agent: "grok", status: "timeout" }] });
+    writeJson(path.join(reports, "rev_2_b.json"), { run_id: "rev_2_b", reviewers: [{ agent: "codex", status: "success", usage: { reported: null, coverage: { tokens: false, cost: false } } }] });
+    const rolled = usageReport({ cwd: usage.cwd });
+    const codexRow = rolled.rows.find((row) => row.agent === "codex");
+    checks.usage_zero_of_n_for_reports_without_usage = rolled.rows.length === 1 && codexRow.coverage.tokens === "0 of 2" && codexRow.coverage.cost === "0 of 2"
+      && codexRow.median_total_tokens === null && codexRow.total_cost_usd === null && typeof rolled.note === "string"
+      && rolled.coverage.reports_scanned === 2 && !JSON.stringify(rolled).includes("NaN");
+    writeJson(path.join(reports, "rev_3_c.json"), { run_id: "rev_3_c", reviewers: [{ agent: "codex", status: "success", usage: { reported: { total_tokens: 900, cost_usd: 0.02 }, coverage: { tokens: true, cost: true } } }] });
+    fs.writeFileSync(path.join(usage.cwd, ".ensemble_reviews", "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_3_c", reviewer: "codex", disposition: "applied" })}\n{"broken"\n`);
+    const withUsage = usageReport({ cwd: usage.cwd }).rows[0];
+    checks.usage_counts_reported_rows_and_accepted_findings = withUsage.coverage.tokens === "1 of 3" && withUsage.median_total_tokens === 900 && withUsage.cost_per_accepted_finding === 0.02;
+
+    // Update clock: settings default off, `set` round-trips, apply is a no-op while disabled, timer needs confirm.
+    const c = fixture("clock");
+    let updaterRuns = 0, execs = 0;
+    const clock = createUpdateClock({ home: c.home, stateFile: path.join(c.cwd, "state", "update-clock.json"), sources: [], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => { execs += 1; return { code: 0, stdout: "", stderr: "" }; }, installedVersions: { skill: "1.16.0" } });
+    const defaults = clock.settings();
+    const set = await handleUpdateClock({ op: "set", patch: { auto_update: { skill: false, models: false } } }, clock, { home: c.home });
+    const after = clock.settings();
+    const badSet = await handleUpdateClock({ op: "set", patch: { auto_update: { enabled: "yes" } } }, clock, { home: c.home });
+    const unknownSet = await handleUpdateClock({ op: "set", patch: { extra: true } }, clock, { home: c.home });
+    checks.update_clock_defaults_off_and_set_round_trips = defaults.auto_update.enabled === false && defaults.auto_update.accept_protocol === false
+      && set.status === 200 && after.auto_update.enabled === false && after.auto_update.skill === false && after.auto_update.models === false && after.auto_update.clis === true
+      && set.value.auto_update.skill === false && typeof set.value.timer?.install === "string" && badSet.status === 400 && unknownSet.status === 400;
+    const applied = await handleUpdateClock({ op: "apply" }, clock, { home: c.home, runUpdater: async () => { updaterRuns += 1; return { code: 0, output: "" }; }, exec: async () => { execs += 1; return { code: 0 }; } });
+    checks.update_clock_apply_disabled_is_noop = applied.status === 200 && applied.value.applied.length === 0 && /enabled is false/.test(applied.value.skipped[0]?.reason) && updaterRuns === 0 && execs === 0;
+    const timerDefault = await handleUpdateClock({ op: "timer", action: "install" }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    const timerMismatch = await handleUpdateClock({ op: "timer", action: "install", confirm: true, expected_command: "something else" }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    const timerFalse = await handleUpdateClock({ op: "timer", action: "remove", confirm: "true" }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    checks.timer_install_without_confirm_refused = timerDefault.status === 409 && timerDefault.value.command === clockTimer().install
+      && timerMismatch.status === 409 && timerFalse.status === 409 && execs === 0;
+    const badEvent = await handleUpdateClock({ op: "trigger", event: "daily.tick" }, clock, {});
+    checks.update_clock_rejects_unknown_ops = badEvent.status === 400 && (await handleUpdateClock({ op: "nuke" }, clock, {})).status === 400 && (await handleUpdateClock({ op: "set" }, null, {})).status === 503;
+
+    // Ledger watcher: debounce collapses a burst, unrelated files are ignored, rebuilds stay 5 s apart.
+    const timers = [];
+    let runs = 0, clockNow = 100_000;
+    const watcher = createLedgerWatcher({ dir: root, run: async () => { runs += 1; return { code: 0, stdout: "", stderr: "" }; }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => { throw new Error("directory absent"); } });
+    watcher.start();
+    const retryScheduled = timers.length === 1 && timers[0].ms === 30_000 && watcher.status().watching === false;
+    watcher.notify("review-log.jsonl"); watcher.notify("dispositions.jsonl"); watcher.notify("ledger.html"); watcher.notify(null);
+    const live = timers.filter((timer) => !timer.cleared && timer.ms !== 30_000);
+    const burstCollapsed = live.length === 1 && live[0].ms === 1500 && timers.length === 3;
+    live[0].fn(); await Promise.resolve(); await Promise.resolve();
+    const ranOnce = runs === 1 && watcher.status().regenerations === 1 && watcher.status().last_regenerated_at !== null;
+    clockNow += 1000; watcher.notify("dispositions.jsonl");
+    const spaced = timers.at(-1).ms === 4000; // 5 s gap minus the 1 s elapsed, not the 1.5 s debounce
+    watcher.stop();
+    checks.ledger_watcher_debounces_and_rate_limits = retryScheduled && burstCollapsed && ranOnce && spaced && timers.every((timer) => timer.cleared || timer === live[0]);
+  } catch (error) {
+    checks.dashboard_regression_threw = false;
+    process.stderr.write(`dashboard regression: ${error.stack || error.message}\n`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  return checks;
+}
+
 async function selfTest() {
   // A child that outlives its budget must be reported as timed out — the
   // listener-order regression this guards against was found by momm review.
   const timedOutProbe = await runCommand(process.execPath, ["-e", "setTimeout(() => {}, 3000)"], { timeoutMs: 100 });
+  const regression = await dashboardRegression();
   const dispatcherModalities = readDispatcherModalities();
   const sampleEnvironment = classifyEnvironmentNames(["SAFE_NAME", "XAI_API_KEY", "HTTP_PROXY", "NO_UPDATE_CHECK", "COPILOT_MODEL", "OPENAI_BASE_URL"]);
   const tests = {
@@ -774,6 +1211,20 @@ async function selfTest() {
       && sampleEnvironment.endpoint_overrides_present[0] === "OPENAI_BASE_URL",
     version_comparison: compareVersions("1.9.0", "1.8.9") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
     assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
+    theme_toggle_markup_present: (() => {
+      try {
+        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
+        return html.includes('id="theme-toggle"') && js.includes("momm-setup-theme") && js.includes('setAttribute("data-theme"') && css.includes('[data-theme="dark"]') && css.includes("prefers-color-scheme: dark");
+      } catch { return false; }
+    })(),
+    new_panels_present_in_ui: (() => {
+      try {
+        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8");
+        return ['id="guidance-editor"', 'id="usage-table"', 'id="maintenance-grid"'].every((id) => html.includes(id));
+      } catch { return false; }
+    })(),
+    guidance_body_limit_fits_every_block: GUIDANCE_BODY_LIMIT >= (GUIDANCE_ROUTES.length + 2) * GUIDANCE_BUDGET.per_block * 4,
+    ...regression,
   };
   const passed = Object.values(tests).every(Boolean);
   process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
@@ -787,11 +1238,15 @@ if (options.help) { process.stdout.write(`${usage()}\n`); process.exit(0); }
 if (options.selfTest) { await selfTest(); }
 else {
   activeServer = createServer();
+  updateClock = createServerClock();
+  ledgerWatcher = createLedgerWatcher({ dir: path.join(process.cwd(), ".ensemble_reviews"), run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) });
+  ledgerWatcher.start();
   activeServer.listen(options.port, "127.0.0.1", () => {
     const address = activeServer.address();
     const url = `http://127.0.0.1:${address.port}/`;
     process.stdout.write(`MOMM Setup Center: ${url}\n`);
     process.stdout.write("Local-only. No source code or credential contents are read during setup.\n");
     if (options.browser) openBrowser(url);
+    triggerClock(updateClock, "setup.open"); // fire-and-forget; due sources only
   });
 }

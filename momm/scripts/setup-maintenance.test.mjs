@@ -83,7 +83,10 @@ function handler(body,token=true) {
   let launched=0;
   const context=vm.createContext({URL,process,governors:new Set(['codex']),http:{createServer:fn=>fn},isLoopback:()=>true,isAllowedHost:()=>true,authorized:()=>token,
     sendJson:(_,status,value)=>({status,value}),readBody:async()=>body,actionCommand:()=> 'codex update',launchTerminal:()=>{launched++;return true;},
-    actionNote:()=>'',readiness:async()=>({}),safeDetail:s=>s});
+    actionNote:()=>'',readiness:async()=>({routes:[]}),safeDetail:s=>s,
+    // 1.16: module-level singletons the server reads; absent under test so the routes must degrade, not throw.
+    ledgerWatcher:{status:()=>({watching:true,last_regenerated_at:'2026-09-13T00:00:00.000Z'})},updateClock:null,
+    guidanceSnapshot:()=>({project:null}),usageReport:()=>({rows:[]}),clockSnapshot:()=>({}),saveGuidance:()=>({status:200,value:{}}),handleUpdateClock:async()=>({status:503,value:{error:'no clock'}}),GUIDANCE_BODY_LIMIT:65536});
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
   return {serve,launches:()=>launched};
 }
@@ -98,6 +101,13 @@ await test('matching action confirmation launches and supplied mismatches never 
 await test('readiness endpoint requires local session before spawning probes',async()=>{
   const h=handler({},false);const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});assert.equal(r.status,403);
 });
+await test('status carries the ledger regeneration time; new GET routes need the session token too',async()=>{
+  const h=handler({});const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});
+  assert.equal(r.status,200);assert.equal(r.value.ledger.last_regenerated_at,'2026-09-13T00:00:00.000Z');assert.deepEqual(r.value.routes,[]);
+  for(const route of ['/api/guidance','/api/usage','/api/update-clock']){const denied=await handler({},false).serve({method:'GET',url:route,socket:{}},{});assert.equal(denied.status,403,route);}
+  const noClock=await h.serve({method:'GET',url:'/api/update-clock',socket:{}},{});assert.equal(noClock.status,503,'no clock under --self-test degrades to 503, never a crash');
+  const post=await handler({op:'set',patch:{}}).serve({method:'POST',url:'/api/update-clock',socket:{}},{});assert.equal(post.status,503);
+});
 await test('request body decodes split UTF-8 once and closes oversize streams',async()=>{
   const a=source.indexOf('function readBody('),b=source.indexOf('function authorized(',a);assert(a>=0&&b>a);
   const read=vm.runInNewContext(source.slice(a,b)+';readBody',{Buffer});
@@ -107,10 +117,16 @@ await test('request body decodes split UTF-8 once and closes oversize streams',a
   oversized.emit('data',Buffer.alloc(5000));await assert.rejects(pending);assert.equal(destroyed,true);
 });
 function ui() {
-  const nodes=new Map();const document={querySelector:s=>{if(!nodes.has(s))nodes.set(s,{value:'codex',textContent:'',innerHTML:'',style:{},classList:{add(){},remove(){}}});return nodes.get(s);}};
-  const context=vm.createContext({document,Map,console,setTimeout,clearTimeout,setInterval,clearInterval,window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');}});
+  // Minimal DOM double: every selector resolves to a node that accepts the
+  // properties and listeners the page touches (theme toggle included). Timers
+  // are inert so a declined update's background poll cannot outlive the test.
+  const nodes=new Map();
+  const node=()=>({value:'codex',textContent:'',innerHTML:'',title:'',hidden:false,disabled:false,style:{},dataset:{},options:[],classList:{add(){},remove(){},toggle(){}},addEventListener(){},querySelector:()=>null,querySelectorAll:()=>[]});
+  const document={querySelector:s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s);}};
+  const inert=()=>({unref(){}});
+  const context=vm.createContext({document,Map,Number,console,setTimeout:inert,clearTimeout(){},setInterval:inert,clearInterval(){},localStorage:{getItem:()=>null,setItem(){}},window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');}});
   const end=client.indexOf('grid.addEventListener(');assert(end>0);
-  vm.runInContext(client.slice(0,end)+`\nthis.core={cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState};this.init=(s,m)=>{session=s;maintenance=m};this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.setReport=r=>report=r;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,draftGuidance,routeTotal};this.init=(s,m)=>{session=s;maintenance=m};this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.setReport=r=>report=r;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -118,6 +134,39 @@ await test('six CLI rows include controller, unknown latest and explicit native 
   c.init({platform:'win32',providers:Object.fromEntries(names.map(n=>[n,{label:n,docs:'https://example.invalid'}]))},null);
   const html=names.map(agent=>c.core.cliRow({agent,current:'1.0.0',latest:null,source:'unavailable',status:'unknown',installed:true,update_command:'native update',installation:{kind:'native'}})).join('');
   assert.equal((html.match(/<tr>/g)||[]).length,6);assert.match(html,/Controller \(not a reviewer\)/);assert.match(html,/Check \/ update/);assert(!html.includes('null'));assert(!html.includes('undefined'));
+});
+await test('batch checkbox appears only for rows with a verified update command',()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'},grok:{label:'Grok',docs:'x'},gemini:{label:'Gemini',docs:'x'}}},null);
+  const ok=c.core.cliRow({agent:'codex',current:'1.0.0',latest:'1.1.0',source:'npm',status:'update_available',installed:true,update_command:'npm install -g --prefix p @openai/codex@latest',installation:{kind:'npm'}});
+  const managed=c.core.cliRow({agent:'grok',current:'1.0.0',latest:null,source:'x',status:'unknown',installed:true,update_command:null,installation:{kind:'unknown'}});
+  const missing=c.core.cliRow({agent:'gemini',current:null,latest:'1.0.0',source:'npm',status:'missing',installed:false,update_command:'npm install -g @google/gemini-cli@latest',installation:{kind:'unknown'}});
+  assert.match(ok,/data-batch="codex"/);assert(!managed.includes('data-batch'),'package-manager-owned rows are not batchable');assert(!missing.includes('data-batch'),'missing CLIs are not batchable');
+  assert.equal((ok+managed+missing).match(/<tr>/g).length,3);
+});
+await test('usage table says "0 of n reported", never a zero, for routes without CLI usage',()=>{
+  const c=ui();c.init({platform:'win32',providers:{antigravity:{label:'Antigravity'},grok:{label:'Grok'}}},null);
+  c.setUsage({rows:[{agent:'antigravity',reviews:3,tokens_reported:0,cost_reported:0,coverage:{tokens:'0 of 3',cost:'0 of 3'},median_total_tokens:null,total_cost_usd:null,cost_per_accepted_finding:null},
+    {agent:'grok',reviews:2,tokens_reported:2,cost_reported:2,coverage:{tokens:'2 of 2',cost:'2 of 2'},median_total_tokens:12000,total_cost_usd:0.03,cost_per_accepted_finding:'no accepted findings'}],coverage:{reviews:5,reports_scanned:4,reports_available:4,reports_with_usage:2,limit:200},note:null});
+  c.core.renderUsage();const html=c.node('#usage-table').innerHTML;
+  assert.match(html,/not reported<\/span><small>0 of 3 reported/);assert.match(html,/12,000<small>2 of 2 reported/);assert.match(html,/no accepted findings/);assert.match(html,/as reported/);
+  assert(!/<td>0<\/td>/.test(html),'absent data must never render as a zero');assert(!html.includes('null'));assert(!html.includes('NaN'));
+  c.setUsage({rows:[],coverage:{},note:'No report carries CLI-reported usage yet.'});c.core.renderUsage();assert.match(c.node('#usage-table').innerHTML,/No report carries/);
+});
+await test('automatic updates card renders off by default with the exact timer command and no apply button',()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},null);
+  c.setClock({auto_update:{enabled:false,skill:true,clis:true,models:true,accept_protocol:false},clock:{},sources:[{name:'skill',kind:'skill',installed:'1.16.0',latest:'1.16.0',update_available:false,interval_ms:3600000,last_checked_at:null,next_due_at:null,last_error:null},{name:'cli:codex',kind:'cli',installed:'1.0.0',latest:'1.1.0',update_available:true,interval_ms:1800000,last_error:'HTTP 503'}],overhead_estimate_per_day:6,timer:{platform:'win32',install:'schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "x"',remove:'schtasks /Delete /TN MOMM-UpdateClock /F'},activity:{running:false}});
+  c.core.renderUpdateClock();const html=c.node('#update-clock-card').innerHTML;
+  assert.match(html,/data-clock-setting="enabled"(?! checked)/);assert(!html.includes('data-clock-action="apply"'),'apply is offered only when enabled');
+  assert.match(html,/data-clock-setting="skill" checked disabled/,'sub-toggles are inert while the master is off');
+  assert(html.includes('schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR &quot;x&quot;'),'exact timer command shown, escaped');
+  assert.match(html,/Estimated 6 conditional requests per day/);assert.match(html,/HTTP 503/);assert.match(html,/Codex CLI/);assert(!html.includes('undefined'));
+});
+await test('guidance editor omits empty blocks and totals a route against user-level layers',()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},null);
+  c.setGuidance({routes:['codex'],effective:{codex:{layers:[{name:'persona',chars:999},{name:'user:*',chars:100},{name:'project:.reviewrules',chars:50},{name:'project:*',chars:7000}]}}});
+  assert.equal(c.core.routeTotal('codex',{'*':'abcd',codex:'   '}),100+50+4+2*2,'persona and stale project blocks excluded; blank draft blocks skipped');
+  const editor=c.node('#guidance-editor');editor.querySelectorAll=()=>[{dataset:{guidance:'governor'},value:'  '},{dataset:{guidance:'*'},value:'keep spacing  '},{dataset:{guidance:'codex'},value:''}];
+  assert.equal(JSON.stringify(c.core.draftGuidance()),JSON.stringify({reviewers:{'*':'keep spacing  '}}));
 });
 await test('declining update never calls mutation API',async()=>{
   const c=ui();let calls=0;c.setApi(async()=>{calls++;return {};});
