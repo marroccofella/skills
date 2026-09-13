@@ -16,6 +16,11 @@
   --glass: rgba(255, 253, 247, .86);
   --pill: rgba(255, 253, 247, .7);
   --hairline: rgba(23, 33, 27, .12);
+  /* Paired surfaces: each palette declares both halves so the pair is always readable (WCAG AA, checked in setup-maintenance.test.mjs). */
+  --toast-bg: #17211b;
+  --toast-ink: #ffffff;
+  --light-button-bg: #ffffff;
+  --light-button-ink: #174f3a;
 }
 /* Dark theme: follows the system unless the user toggled; the toggle wins in
    both directions. Every colour used on the page is a token above, so the two
@@ -27,6 +32,7 @@
     --green: #00c27a; --green-bright: #00ff99; --mint: #10281d; --amber: #ffd166; --amber-soft: #2b2410;
     --red: #ff7a7a; --red-soft: #2c1414; --shadow: 0 18px 50px rgba(0, 0, 0, .45);
     --glass: rgba(17, 19, 22, .86); --pill: rgba(17, 19, 22, .7); --hairline: rgba(230, 255, 230, .12);
+    --toast-bg: #e6ffe6; --toast-ink: #17211b; --light-button-bg: #ffffff; --light-button-ink: #174f3a;
   }
 }
 :root[data-theme="dark"] {
@@ -35,6 +41,7 @@
   --green: #00c27a; --green-bright: #00ff99; --mint: #10281d; --amber: #ffd166; --amber-soft: #2b2410;
   --red: #ff7a7a; --red-soft: #2c1414; --shadow: 0 18px 50px rgba(0, 0, 0, .45);
   --glass: rgba(17, 19, 22, .86); --pill: rgba(17, 19, 22, .7); --hairline: rgba(230, 255, 230, .12);
+  --toast-bg: #e6ffe6; --toast-ink: #17211b; --light-button-bg: #ffffff; --light-button-ink: #174f3a;
 }
 .theme-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--pill); color: var(--ink); cursor: pointer; font-size: 12px; }
 .theme-toggle:hover { border-color: var(--green-bright); }
@@ -110,7 +117,7 @@ h1 em { color: var(--green); font-weight: 500; }
 .status-copy .progress-track span { background: #bce6cd; }
 .status-actions { display: flex; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 .status-actions small { flex-basis: 100%; max-width: 290px; margin-left: auto; color: #bcd6c8; font-size: 10px; line-height: 1.4; text-align: right; }
-.button.primary.light { color: var(--green); background: white; border-color: white; box-shadow: none; }
+.button.primary.light { color: var(--light-button-ink); background: var(--light-button-bg); border-color: var(--light-button-bg); box-shadow: none; }
 .button.ghost.light { color: white; border-color: rgba(255,255,255,.42); }
 
 .control-panel { background: var(--glass); border: 1px solid var(--line); border-radius: 28px; padding: 30px; box-shadow: var(--shadow); backdrop-filter: blur(14px); }
@@ -222,7 +229,7 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: white; }
 
 footer { min-height: 90px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid rgba(23, 33, 27, .12); color: var(--muted); font-size: 12px; }
 .text-button { border: 0; background: none; color: var(--muted); padding: 8px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-.toast { position: fixed; right: 22px; bottom: 22px; max-width: min(410px, calc(100% - 44px)); padding: 14px 17px; color: white; background: var(--ink); border-radius: 13px; box-shadow: 0 16px 45px rgba(0,0,0,.2); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .2s ease; font-size: 13px; line-height: 1.45; }
+.toast { position: fixed; right: 22px; bottom: 22px; max-width: min(410px, calc(100% - 44px)); padding: 14px 17px; color: var(--toast-ink); background: var(--toast-bg); border-radius: 13px; box-shadow: 0 16px 45px rgba(0,0,0,.2); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .2s ease; font-size: 13px; line-height: 1.45; }
 .toast.show { opacity: 1; transform: translateY(0); }
 
 /* 1.16 panels: usage, standing guidance, automatic updates, batch update.
@@ -244,7 +251,7 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 .guidance-meter .over { color: var(--red); font-weight: 800; }
 .guidance-error { margin: 12px 0 0; padding: 11px 13px; border: 1px solid var(--red); border-radius: 11px; color: var(--red); background: var(--red-soft); font-size: 12px; line-height: 1.5; }
 .guidance-details { margin-top: 12px; background: var(--card); }
-.guidance-user { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.guidance-user { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .guidance-readonly, .prompt-preview { margin: 0; padding: 10px 12px; overflow: auto; max-height: 320px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .preview-body { display: grid; gap: 10px; padding: 0 14px 14px; }
 .preview-route { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; font-weight: 650; }

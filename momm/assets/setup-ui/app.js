@@ -53,6 +53,10 @@ let clockState = null;
 let clockError = null;
 let clockPoll = null;
 let batchRunning = false;
+// Batch ticks live here, not in the DOM: renderMaintenance replaces the table
+// on every refresh (and between batch steps), and the checkbox is re-emitted
+// from this Set so a selection survives the re-render.
+const batchSelected = new Set();
 const liveResults = new Map();
 const updateAttempts = new Map();
 
@@ -216,8 +220,8 @@ function cliRow(item) {
   const label = action === 'install' ? 'Install…' : item.agent === 'antigravity' ? 'Check / update…' : 'Update…';
   // Only rows with a verified command can join a batch; package-manager-owned
   // and missing installations get no checkbox, exactly as they get no Update button.
-  const batchable = item.installed && item.update_command;
-  return `<tr><td class="batch-cell">${batchable ? `<input type="checkbox" data-batch="${item.agent}" aria-label="Select ${escapeHtml(provider.label)} for batch update" ${batchRunning ? 'disabled' : ''}>` : ''}</td><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
+  const batchable = isBatchable(item);
+  return `<tr><td class="batch-cell">${batchable ? `<input type="checkbox" data-batch="${item.agent}" aria-label="Select ${escapeHtml(provider.label)} for batch update" ${batchSelected.has(item.agent) ? 'checked' : ''} ${batchRunning ? 'disabled' : ''}>` : ''}</td><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
     <td>${escapeHtml(item.current || 'Not detected')}<small>${escapeHtml(item.installation?.kind || 'unknown')} install</small></td>
     <td>${escapeHtml(item.latest || 'Unavailable')}<small>${escapeHtml(item.source)}</small></td>
     <td>${miniStatus(item.status)}${attempt ? `<small role="status">${escapeHtml(attempt.message)}</small>` : ''}</td>
@@ -226,6 +230,7 @@ function cliRow(item) {
 
 function renderMaintenance() {
   if (!maintenance) return;
+  pruneBatchSelection();
   const skillUpdates = maintenance.skills.versions.filter((item) => item.status === "update_available");
   const modifiedSkills = maintenance.skills.versions.filter((item) => item.status === "local_newer");
   const currentSkills = maintenance.skills.versions.filter((item) => item.status === 'current');
@@ -735,8 +740,27 @@ async function timerAction(action) {
 // run one after another with a version re-check between them. Rows without a
 // verified command (package-manager owned, not installed) offer no checkbox and
 // are refused by the server if they arrive anyway.
+function isBatchable(item) {
+  return Boolean(item && item.installed && item.update_command);
+}
+
+// Drop ticks for rows that are no longer batchable (uninstalled, or now owned
+// by a package manager) so a stale selection never reaches the confirm dialog.
+function pruneBatchSelection() {
+  for (const agent of [...batchSelected]) {
+    if (!isBatchable(maintenance?.cli_updates?.find?.((item) => item.agent === agent))) batchSelected.delete(agent);
+  }
+}
+
 function selectedBatch() {
-  return [...(maintenanceGrid.querySelectorAll?.("[data-batch]:checked") || [])].map((input) => input.dataset.batch);
+  pruneBatchSelection();
+  return [...batchSelected];
+}
+
+function toggleBatch(agent, checked) {
+  if (checked && isBatchable(maintenance?.cli_updates?.find?.((item) => item.agent === agent))) batchSelected.add(agent);
+  else batchSelected.delete(agent);
+  updateBatchButton();
 }
 
 function updateBatchButton() {
@@ -788,6 +812,7 @@ async function runBatchUpdate() {
     }
   } finally {
     batchRunning = false;
+    batchSelected.clear(); // the queue was consumed; a fresh selection starts the next batch
     renderMaintenance(); render();
   }
   showToast(`Batch update finished. ${outcomes.join(" · ")}`);
@@ -810,7 +835,7 @@ maintenanceGrid.addEventListener("click", (event) => {
 });
 maintenanceGrid.addEventListener("change", (event) => {
   if (event.target.matches("[data-clock-setting]")) setClockSetting(event.target.dataset.clockSetting, event.target.checked);
-  if (event.target.matches("[data-batch]")) updateBatchButton();
+  if (event.target.matches("[data-batch]")) toggleBatch(event.target.dataset.batch, event.target.checked);
 });
 guidanceEditor.addEventListener("input", (event) => { if (event.target.matches("[data-guidance]")) updateGuidanceCounters(); });
 guidanceSaveButton.addEventListener("click", saveGuidanceDraft);

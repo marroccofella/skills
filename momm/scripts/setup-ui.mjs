@@ -751,7 +751,7 @@ function triggerClock(clock, event) {
   clockActivity.running = true;
   clockActivity.last_event = event;
   clockActivity.last_started_at = new Date().toISOString();
-  return clock.trigger(event)
+  return Promise.resolve().then(() => clock.trigger(event))
     .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
     .catch((error) => { clockActivity.last_error = safeDetail(error.message); return null; })
     .finally(() => { clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
@@ -841,7 +841,7 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   function schedule() {
     if (debounce) clearTimer(debounce);
     const wait = Math.max(debounceMs, lastRunAt + minGapMs - now());
-    debounce = setTimer(() => { debounce = null; regenerate(); }, wait);
+    debounce = setTimer(() => { debounce = null; return regenerate(); }, wait);
     debounce?.unref?.();
   }
   function notify(filename) {
@@ -995,6 +995,7 @@ function createServer() {
           return sendJson(response, saved.status, saved.value);
         }
         if (requestUrl.pathname === "/api/update-clock") {
+          if (!updateClock) return sendJson(response, 503, { error: "The update clock is not running in this Setup Center." });
           const handled = await handleUpdateClock(body, updateClock);
           return sendJson(response, handled.status, handled.value);
         }
@@ -1022,7 +1023,8 @@ function createServer() {
           // explicit "Check everything" click is the setup.check event. Neither
           // is awaited: a slow registry must not delay the maintenance answer.
           if (updateClock) {
-            for (const item of value.cli_updates) if (item.current) updateClock.setInstalled(item.agent, item.current);
+            const rows = Array.isArray(value?.cli_updates) ? value.cli_updates : [];
+            for (const item of rows) if (item && typeof item === "object" && item.agent && item.current) updateClock.setInstalled(item.agent, item.current);
             if (body.force === true) triggerClock(updateClock, "setup.check");
           }
           return sendJson(response, 200, value);
@@ -1062,6 +1064,20 @@ function readDispatcherModalities() {
   } catch { return null; }
 }
 
+// A crash in the regression suite is reported as `dashboard_regression_threw:
+// true` (an honest statement) and summarizeChecks treats every `*_threw: true`
+// flag as a failure, so the JSON never shows a crash as "threw: false".
+function recordRegressionThrow(checks, error) {
+  checks.dashboard_regression_threw = true;
+  process.stderr.write(`dashboard regression: ${error?.stack || error?.message || error}\n`);
+  return checks;
+}
+
+function summarizeChecks(tests) {
+  const failing = Object.entries(tests).filter(([name, value]) => name.endsWith("_threw") ? value !== false : value !== true).map(([name]) => name);
+  return { passed: failing.length === 0, failing };
+}
+
 // 1.16 dashboard regression suite: temp project + temp home, injected fakes,
 // no network, no child processes. Each check is a boolean so a failure names
 // itself in the --self-test output.
@@ -1079,9 +1095,16 @@ async function dashboardRegression() {
     const g = fixture("guidance");
     const guidance = { governor: "Governor: prefer\tsmall diffs\nand quote lines — ünïcödé 😀", reviewers: { "*": "STAR block  with  spacing ", codex: "  codex block\nline two" } };
     const saved = saveGuidance({ expected_sha256: null, guidance }, g);
-    const onDisk = JSON.parse(fs.readFileSync(projectGuidanceFiles(g.cwd).guidance, "utf8"));
+    const onDiskBytes = fs.readFileSync(projectGuidanceFiles(g.cwd).guidance);
+    const expectedBytes = Buffer.from(`${JSON.stringify(guidance, null, 2)}\n`, "utf8");
+    // Buffers, not parse-then-stringify: whitespace, the trailing newline and
+    // raw-vs-escaped non-ASCII all count. The compact control proves the
+    // comparison is able to fail.
     checks.guidance_round_trip_byte_exact = saved.status === 200
-      && JSON.stringify(onDisk) === JSON.stringify(guidance)
+      && onDiskBytes.equals(expectedBytes)
+      && !onDiskBytes.equals(Buffer.from(JSON.stringify(guidance), "utf8"))
+      && onDiskBytes.toString("utf8").includes("😀")
+      && JSON.parse(onDiskBytes.toString("utf8")).governor === guidance.governor
       && JSON.stringify(saved.value.project) === JSON.stringify(guidance)
       && saved.value.trusted === true
       && saved.value.effective.codex.text === `${guidance.reviewers["*"]}\n\n${guidance.reviewers.codex}`
@@ -1146,21 +1169,29 @@ async function dashboardRegression() {
     // Ledger watcher: debounce collapses a burst, unrelated files are ignored, rebuilds stay 5 s apart.
     const timers = [];
     let runs = 0, clockNow = 100_000;
-    const watcher = createLedgerWatcher({ dir: root, run: async () => { runs += 1; return { code: 0, stdout: "", stderr: "" }; }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => { throw new Error("directory absent"); } });
+    const macrotask = () => new Promise((resolve) => setImmediate(resolve));
+    const watcher = createLedgerWatcher({ dir: root, run: async () => { runs += 1; await macrotask(); return { code: 0, stdout: "", stderr: "" }; }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => { throw new Error("directory absent"); } });
     watcher.start();
     const retryScheduled = timers.length === 1 && timers[0].ms === 30_000 && watcher.status().watching === false;
     watcher.notify("review-log.jsonl"); watcher.notify("dispositions.jsonl"); watcher.notify("ledger.html"); watcher.notify(null);
     const live = timers.filter((timer) => !timer.cleared && timer.ms !== 30_000);
     const burstCollapsed = live.length === 1 && live[0].ms === 1500 && timers.length === 3;
-    live[0].fn(); await Promise.resolve(); await Promise.resolve();
-    const ranOnce = runs === 1 && watcher.status().regenerations === 1 && watcher.status().last_regenerated_at !== null;
+    const fired = live[0].fn(); // the timer callback must hand back the regeneration so callers (and this test) can await it
+    const ranOnce = fired instanceof Promise && (await fired, runs === 1 && watcher.status().regenerations === 1 && watcher.status().last_regenerated_at !== null);
     clockNow += 1000; watcher.notify("dispositions.jsonl");
     const spaced = timers.at(-1).ms === 4000; // 5 s gap minus the 1 s elapsed, not the 1.5 s debounce
     watcher.stop();
     checks.ledger_watcher_debounces_and_rate_limits = retryScheduled && burstCollapsed && ranOnce && spaced && timers.every((timer) => timer.cleared || timer === live[0]);
+    // A rebuild that rejects is recorded as last_error; the timer callback's
+    // promise still resolves, so nothing reaches unhandledRejection.
+    const failing = [];
+    const failingWatcher = createLedgerWatcher({ dir: root, run: async () => { await macrotask(); throw new Error("ledger exploded"); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms }; failing.push(timer); return timer; }, clearTimer: () => {}, watch: () => ({ on() {}, close() {} }) });
+    failingWatcher.start(); failingWatcher.notify("review-log.jsonl");
+    const settled = await failing.at(-1).fn().then(() => "resolved", () => "rejected");
+    failingWatcher.stop();
+    checks.ledger_watcher_catches_rejected_rebuilds = settled === "resolved" && failingWatcher.status().last_error === "ledger exploded" && failingWatcher.status().regenerations === 0 && failingWatcher.status().running === false;
   } catch (error) {
-    checks.dashboard_regression_threw = false;
-    process.stderr.write(`dashboard regression: ${error.stack || error.message}\n`);
+    recordRegressionThrow(checks, error);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
   return checks;
 }
@@ -1226,9 +1257,29 @@ async function selfTest() {
     guidance_body_limit_fits_every_block: GUIDANCE_BODY_LIMIT >= (GUIDANCE_ROUTES.length + 2) * GUIDANCE_BUDGET.per_block * 4,
     ...regression,
   };
-  const passed = Object.values(tests).every(Boolean);
-  process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
+  const { passed, failing } = summarizeChecks(tests);
+  process.stdout.write(`${JSON.stringify({ passed, failing, tests }, null, 2)}\n`);
   process.exitCode = passed ? 0 : 1;
+}
+
+// Bind before anything with side effects: the ledger watcher starts only once
+// the socket is listening, and a failed bind stops it again so no watcher
+// outlives a server that never came up.
+function startSetupCenter({ server, watcher, clock, port, browser }) {
+  server.on("error", (error) => {
+    watcher?.stop();
+    process.stderr.write(`MOMM Setup Center could not start: ${safeDetail(error.message)}\n`);
+    process.exitCode = 1;
+  });
+  server.listen(port, "127.0.0.1", () => {
+    const address = server.address();
+    const url = `http://127.0.0.1:${address.port}/`;
+    process.stdout.write(`MOMM Setup Center: ${url}\n`);
+    process.stdout.write("Local-only. No source code or credential contents are read during setup.\n");
+    if (browser) openBrowser(url);
+    triggerClock(clock, "setup.open"); // fire-and-forget; due sources only; triggerClock never rejects
+    watcher?.start();
+  });
 }
 
 let options;
@@ -1240,13 +1291,5 @@ else {
   activeServer = createServer();
   updateClock = createServerClock();
   ledgerWatcher = createLedgerWatcher({ dir: path.join(process.cwd(), ".ensemble_reviews"), run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) });
-  ledgerWatcher.start();
-  activeServer.listen(options.port, "127.0.0.1", () => {
-    const address = activeServer.address();
-    const url = `http://127.0.0.1:${address.port}/`;
-    process.stdout.write(`MOMM Setup Center: ${url}\n`);
-    process.stdout.write("Local-only. No source code or credential contents are read during setup.\n");
-    if (options.browser) openBrowser(url);
-    triggerClock(updateClock, "setup.open"); // fire-and-forget; due sources only
-  });
+  startSetupCenter({ server: activeServer, watcher: ledgerWatcher, clock: updateClock, port: options.port, browser: options.browser });
 }
