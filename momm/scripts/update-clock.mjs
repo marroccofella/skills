@@ -208,7 +208,7 @@ function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20
 // Only constant commands from the tables above (plus a located CLI binary for
 // `--version`) reach this; the Windows shell is needed for npm's .cmd shims, so an
 // executable or argument that cmd.exe would read as syntax (C:\Program Files\...,
-// C:\Users\A&B\grok.exe) is quoted, the same rule as update.mjs captureExec. A
+// <profile>\A&B\grok.exe) is quoted, the same rule as update.mjs captureExec. A
 // caller's own shell line (shell: true) is passed through untouched. Never pass
 // user input through here.
 const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;

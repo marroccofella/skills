@@ -326,12 +326,16 @@ try {
     fs.mkdirSync(path.dirname(rootLog)); fs.writeFileSync(rootLog, JSON.stringify({ timestamp: "2026-09-05T00:00:00.000Z", run_id: "rev_root", reviewer_status: { codex: "success" } }) + "\n");
     try {
       const logs = [], fromRoot = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), cwd: checkFixture, log: s => logs.push(s) }));
-      assert.equal(fromRoot.reviews.present, true); assert.equal(fromRoot.reviews.file, rootLog); assert.equal(fromRoot.reviews.runs, 1);
+      const same = (a, b) => { try { return fs.realpathSync.native(a) === fs.realpathSync.native(b); } catch { return a === b; } };
+      assert.equal(fromRoot.reviews.present, true, JSON.stringify(fromRoot.reviews));
+      assert(same(fromRoot.reviews.file, rootLog), `file read=${fromRoot.reviews.file} expected=${rootLog} searched=${JSON.stringify(fromRoot.reviews.searched)}`);
+      assert.equal(fromRoot.reviews.runs, 1, JSON.stringify(fromRoot.reviews));
       assert.deepEqual(fromRoot.clis.find(c => c.cli === "codex").last_successful_review, { timestamp: "2026-09-05T00:00:00.000Z", run_id: "rev_root" });
       const table = []; await update(["--repo", installed, "--check-all"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), cwd: checkFixture, log: s => table.push(s) }));
       assert(table.join("\n").includes(rootLog), "the table names the file actually read");
       const fromCwd = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log() {} }));
-      assert.equal(fromCwd.reviews.file, path.join(project, ".ensemble_reviews", "review-log.jsonl"), "cwd wins when both exist"); assert.equal(fromCwd.reviews.runs, 3);
+      assert(same(fromCwd.reviews.file, path.join(project, ".ensemble_reviews", "review-log.jsonl")), `cwd wins when both exist: read=${fromCwd.reviews.file} searched=${JSON.stringify(fromCwd.reviews.searched)}`);
+      assert.equal(fromCwd.reviews.runs, 3, JSON.stringify(fromCwd.reviews));
     } finally { fs.rmSync(path.join(installed, ".ensemble_reviews"), { recursive: true, force: true }); }
   });
   await test("failed_version_probe_sets_row_error", async () => {

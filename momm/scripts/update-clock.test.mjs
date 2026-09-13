@@ -31,7 +31,7 @@ function env(overrides = {}) {
     if (r.throw) throw new Error(r.throw);
     return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: new Headers(r.headers || {}), text: async () => JSON.stringify(r.body || {}) };
   };
-  const clock = createUpdateClock({ home, stateFile, fetcher, now: () => time.t, random: overrides.random || (() => 0.5), installedVersions: overrides.installed || { skill: "1.15.1", codex: "0.154.0" }, sources: overrides.sources || [skillSource(), npmSource("codex")], exec: overrides.exec, listModels: overrides.listModels, routes: overrides.routes, isAlive: overrides.isAlive });
+  const clock = createUpdateClock({ home, stateFile, fetcher, env: overrides.env || {}, now: () => time.t, random: overrides.random || (() => 0.5), installedVersions: overrides.installed || { skill: "1.15.1", codex: "0.154.0" }, sources: overrides.sources || [skillSource(), npmSource("codex")], exec: overrides.exec, listModels: overrides.listModels, routes: overrides.routes, isAlive: overrides.isAlive });
   return { home, stateFile, time, calls, clock, responses };
 }
 const ok = (version, etag = '"v1"') => ({ status: 200, headers: { etag, "last-modified": "Sat, 12 Sep 2026 10:00:00 GMT" }, body: { momm: version, version } });
@@ -264,8 +264,8 @@ await test("timerCommand strings per platform; installTimer refuses without conf
   const win = timerCommand("win32", "C:\\node.exe", "D:\\skills\\momm\\scripts\\update-clock.mjs");
   assert.equal(win.install, 'schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "\\"C:\\node.exe\\" \\"D:\\skills\\momm\\scripts\\update-clock.mjs\\" trigger daily.tick"');
   assert.equal(win.remove, "schtasks /Delete /TN MOMM-UpdateClock /F");
-  const mac = timerCommand("darwin", "/usr/local/bin/node", "/s/update-clock.mjs", "/Users/x");
-  assert.equal(mac.plist_path, "/Users/x/Library/LaunchAgents/uk.42.momm.update-clock.plist".split("/").join(path.sep));
+  const mac = timerCommand("darwin", "/usr/local/bin/node", "/s/update-clock.mjs", "/opt/x");
+  assert.equal(mac.plist_path, "/opt/x/Library/LaunchAgents/uk.42.momm.update-clock.plist".split("/").join(path.sep));
   assert.equal(mac.install, `launchctl load '${mac.plist_path}'`); assert.match(mac.plist, /<integer>21600<\/integer>/); assert.match(mac.plist, /<string>daily.tick<\/string>/);
   const lin = timerCommand("linux", "/usr/bin/node", "/s/update-clock.mjs");
   assert.equal(lin.line, "0 */6 * * * '/usr/bin/node' '/s/update-clock.mjs' trigger daily.tick >/dev/null 2>&1 # MOMM-UpdateClock");
@@ -366,9 +366,9 @@ await test("grok: a successful update clears the stale hint; update_available co
   assert.deepEqual(execs, [["grok", "update"]], "no second `grok update` once the re-read version matches latest");
   assert.deepEqual(second.applied, []);
   assert.equal(readState(e.stateFile).sources["cli:grok"].update_available_hint, undefined, "hint cleared in the persisted state");
-  const fresh = createUpdateClock({ home: e.home, stateFile: e.stateFile, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: { grok: "1.0.31" } });
+  const fresh = createUpdateClock({ home: e.home, stateFile: e.stateFile, env: {}, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: { grok: "1.0.31" } });
   assert.equal(fresh.status().sources[0].update_available, false, "a new process over the same state does not re-update");
-  const unknown = createUpdateClock({ home: e.home, stateFile: e.stateFile, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: {} });
+  const unknown = createUpdateClock({ home: e.home, stateFile: e.stateFile, env: {}, sources: [grokSource()], exec, now: () => e.time.t, installedVersions: {} });
   assert.equal(unknown.status().sources[0].update_available, null, "unknown installed version and no hint -> unknown, not a loop");
 });
 
@@ -450,7 +450,7 @@ await test("default apply deps: signed updater, async exec, `<cli> --version`, p
   assert.match(path.basename(execs[1].cmd), /^agy/, "antigravity's binary is agy");
   assert.equal(typeof d.postUpdateProbe, "function", "probes.mjs is importable here, so post-update probes are wired");
   assert.equal(typeof d.isManaged("codex"), "boolean");
-  assert.equal(d.isManaged("codex", { path: "/home/u/.volta/bin/codex" }), true, "volta/scoop/... path fragments mean package-manager owned");
+  assert.equal(d.isManaged("codex", { path: "/opt/u/.volta/bin/codex" }), true, "volta/scoop/... path fragments mean package-manager owned");
   assert.equal(d.isManaged("codex", { path: "/opt/homebrew/Cellar/codex/1/bin/codex" }), true, "homebrew too");
   assert.equal(d.isManaged("codex", { path: "/usr/local/lib/node_modules/@openai/codex/bin/codex" }), false);
   const fallback = await defaultApplyDeps({ exec: async () => ({ code: 1, stdout: "", stderr: "not found" }) });
@@ -472,11 +472,11 @@ await test("timer-unescaped-paths: apostrophes, ampersands and $ in paths are es
     const argv = spawnSync("sh", ["-c", `printf '%s\\n' ${lin.line.split(" ").slice(5).join(" ").replace(/ trigger daily\.tick.*$/, "")}`], { encoding: "utf8" });
     assert.deepEqual(argv.stdout.split("\n").slice(0, 2), [node, script], "the shell hands node and the script path back intact");
   }
-  const mac = timerCommand("darwin", node, script, "/Users/x y");
+  const mac = timerCommand("darwin", node, script, "/opt/x y");
   assert.equal(mac.plist.includes(node), false); assert.equal(mac.plist.includes(script), false);
   assert.match(mac.plist, /<string>\/opt\/o&apos;reilly &amp; co\/node<\/string><string>\/tmp\/Alice&apos;s repo\/a&lt;b&gt;\$HOME\/update-clock\.mjs<\/string>/);
   assert.equal(mac.install, `launchctl load '${mac.plist_path}'`);
-  const quoted = timerCommand("darwin", "/n", "/s", "/Users/it's");
+  const quoted = timerCommand("darwin", "/n", "/s", "/opt/it's");
   assert.equal(quoted.install, `launchctl load '${quoted.plist_path.replaceAll("'", "'\\''")}'`);
   const win = timerCommand("win32", "C:\\Program Files\\nodejs\\node.exe", "D:\\1code projects\\Claude\\momm\\scripts\\update-clock.mjs");
   assert.equal(win.install, 'schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "\\"C:\\Program Files\\nodejs\\node.exe\\" \\"D:\\1code projects\\Claude\\momm\\scripts\\update-clock.mjs\\" trigger daily.tick"', "the verified Windows CRT quoting is unchanged");
@@ -596,7 +596,7 @@ await test("unavailable-model-list-erases-baseline: a null list keeps the route'
   assert.deepEqual(result.new_models, { codex: ["b"] }); assert.equal(result.changed, true);
   const e = env({ sources: [modelsSource()], routes: ["grok"], installed: { grok: "1.0.30" }, listModels: async () => ["grok-4"] });
   await e.clock.trigger("manual");
-  const e2 = createUpdateClock({ home: e.home, stateFile: e.stateFile, sources: [modelsSource()], routes: ["grok"], installedVersions: { grok: "1.0.30" }, listModels: async () => null, now: () => e.time.t + 1, fetcher: async () => { throw new Error("no network"); } });
+  const e2 = createUpdateClock({ home: e.home, stateFile: e.stateFile, env: {}, sources: [modelsSource()], routes: ["grok"], installedVersions: { grok: "1.0.30" }, listModels: async () => null, now: () => e.time.t + 1, fetcher: async () => { throw new Error("no network"); } });
   const st = readState(e.stateFile); st.sources.models.next_due_at = 0; writeState(e.stateFile, st);
   assert.equal((await e2.trigger("manual")).ran, true);
   assert.deepEqual(Object.keys(readState(e.stateFile).sources.models.models), ["grok"], "an unavailable list leaves the stored baseline in place");
@@ -692,7 +692,7 @@ await test("cliMain trigger never runs real executors under an injected clock, a
   const dir = path.join(fixture, "guard"); fs.mkdirSync(dir, { recursive: true });
   const home = path.join(dir, "home"), stateFile = path.join(dir, "clock.json");
   let execCalls = 0;
-  const mk = (extra = {}) => createUpdateClock({ home, stateFile, installedVersions: { codex: "1.0.0" }, sources: [npmSource("codex")],
+  const mk = (extra = {}) => createUpdateClock({ home, stateFile, env: {}, installedVersions: { codex: "1.0.0" }, sources: [npmSource("codex")],
     fetcher: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ version: "2.0.0" }), headers: { get: () => null } }),
     exec: async () => { execCalls++; return { code: 0, stdout: "", stderr: "" }; }, ...extra });
   writeSettings(home, { auto_update: { enabled: true, skill: false } });

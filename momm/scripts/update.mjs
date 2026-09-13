@@ -339,7 +339,7 @@ export function locateBinary(command, { env = process.env, platform = process.pl
 // Only constant arguments reach this (--version, update --check --stable --json).
 // The Windows shell is needed for npm's .cmd shims, so the executable path is
 // quoted whenever cmd.exe would otherwise read part of it as syntax: not only
-// whitespace but & | < > ^ ( ) and the other delimiters (C:\Users\A&B\grok.exe).
+// whitespace but & | < > ^ ( ) and the other delimiters (<profile>\A&B\grok.exe).
 // A path cannot contain a double quote on Windows; %VAR% expansion inside quotes
 // is a cmd.exe limitation this cannot neutralise.
 const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
