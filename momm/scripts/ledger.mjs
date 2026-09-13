@@ -213,7 +213,9 @@ function rollup(dispositions, runs, reports) {
   const get = (agent) => (agents[agent] ??= { agent, applied: 0, rejected: 0, deferred: 0, other: 0, utilityWeight: 0, dispatched: 0, completed: 0, timeouts: 0, failed: 0, findingsPerRun: [], weightedFindings: 0 });
   const unattributed = { agent: "unattributed", applied: 0, rejected: 0, deferred: 0, other: 0 };
   for (const d of dispositions) {
-    const agent = String(d.reviewer || "").toLowerCase();
+    // A decision attributed to several routes at once ("codex+grok") is a coalition
+    // ruling, not a route of its own — the public export folds these the same way.
+    const agent = String(d.reviewer || "").toLowerCase().includes("+") ? "coalition" : String(d.reviewer || "").toLowerCase();
     const bucket = classify(d.disposition);
     const row = agent ? get(agent) : unattributed;
     row[bucket] += 1;
@@ -406,6 +408,7 @@ function ledgerSelfTest() {
     stale_speech_event_cannot_reset_newer_run: speech.newerRunSurvivesStaleEvent,
     own_speech_end_resets_control: speech.ownEndResets,
     rollup_unattributed_only_history_has_rows: (() => { const r = rollup([{ reviewer: "", disposition: "deferred" }], [], {}); return r.totals.all === 1 && r.rows.length === 0 && r.unattributed.deferred === 1; })(),
+    rollup_folds_multi_route_rows_into_coalition: (() => { const r = rollup([{ reviewer: "codex+grok", disposition: "applied", run_id: "r1" }, { reviewer: "Grok+Antigravity", disposition: "rejected", run_id: "r1" }], [], {}); const c = r.rows.find((x) => x.agent === "coalition"); return !!c && c.applied === 1 && c.rejected === 1 && !r.rows.some((x) => x.agent.includes("+")); })(),
     rollup_totals_reconcile_with_row_count: rolled.reconciled && rolled.totals.all === 6 && rolled.totals.applied === 3 && rolled.totals.rejected === 1 && rolled.totals.deferred === 1 && rolled.totals.other === 1,
     rollup_keeps_unattributed_rows_visible: rolled.unattributed.applied === 1 && !("" in by),
     rollup_precision_ignores_deferred_and_other: Math.abs(by.codex.precision - 2 / 3) < 1e-9 && Math.abs(by.codex.falsePositiveRate - 1 / 3) < 1e-9 && by.grok.precision === null && by.grok.deferred === 1 && by.copilot.other === 1,
