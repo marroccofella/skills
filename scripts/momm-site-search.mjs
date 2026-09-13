@@ -32,7 +32,7 @@ export function evidenceBenefits(stats) {
 }
 
 export function addAttribution(output) {
-  const credit=`\n<!-- MOMM CREDIT START -->\n<p class="momm-credit">Optional F5 narration powered by <a href="${PROMPTUS}">Promptus</a> · A project by <a href="${SITE}momm/#project-background">Professor Dominic Marrocco</a>.</p>\n<!-- MOMM CREDIT END -->\n`;
+  const credit=`\n<!-- MOMM CREDIT START -->\n<p class="momm-credit">Optional F5 narration: <a href="${PROMPTUS}">Built with Promptus · promptus.ai ↗</a> · A project by <a href="${SITE}momm/#project-background">Professor Dominic Marrocco</a>.</p>\n<!-- MOMM CREDIT END -->\n`;
   for(const [file,original] of Object.entries(output)) {
     if(!file.endsWith('.html'))continue;
     const html=original.replace(/\n?<!-- MOMM CREDIT START -->[\s\S]*?<!-- MOMM CREDIT END -->\n?/g,'');

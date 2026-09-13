@@ -33,6 +33,7 @@ for(const file of files){
   assert(!/<meta[^>]*name="robots"[^>]*content="[^"]*(?:noindex|nosnippet)/i.test(html),file+': indexable metadata');
   assert.equal((html.match(/<!-- MOMM CREDIT START -->/g)||[]).length,1,file+': one visible attribution');
   assert(html.includes(`href="${PROMPTUS}"`),file+': Promptus backlink');
+  assert(html.includes(`<a href="${PROMPTUS}">Built with Promptus · promptus.ai ↗</a>`),file+': visible built-with credit and domain');
   if(meta.release)assert.equal(page.citation,meta.release.source_url);
 }
 const home=fs.readFileSync(path.join(root,'docs/momm/index.html'),'utf8');

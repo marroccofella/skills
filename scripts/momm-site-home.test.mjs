@@ -11,6 +11,7 @@ assert.equal((cinema.match(/class="chapter-frame"/g)||[]).length,4);
 for(const id of ['install','setup','ledger','quality'])assert(cinema.includes(`watch/overview.html?t=${tour.chapters.find(c=>c.id===id).start}`));
 assert(cinema.includes('same introduction, not four separate films'));
 assert(cinema.includes('synthetic Dom narration at 1.5×'));
+assert(cinema.includes('Video narration: <a href="https://www.promptus.ai/"><strong>Built with Promptus</strong> · promptus.ai ↗</a>'));
 assert(!cinema.includes('autoplay'));
 assert(!cinema.includes('replacement video will appear'));
 assert(!cinema.includes('127.0.0.1'));
