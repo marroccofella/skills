@@ -220,6 +220,73 @@ try {
     assert.equal(output.installation.updater_available, false);
     assert.equal(fs.realpathSync(path.join(destination, "momm")), fs.realpathSync(path.join(archive, "momm")));
   });
+  // ---- --check-all (fakes only: no CLI launched, no network) ----
+  const checkFixture = path.join(fixture, "check-all");
+  const voltaBin = path.join(checkFixture, ".volta", "bin"), plainBin = path.join(checkFixture, "bin"), project = path.join(checkFixture, "project");
+  fs.mkdirSync(voltaBin, { recursive: true }); fs.mkdirSync(plainBin); fs.mkdirSync(path.join(project, ".ensemble_reviews"), { recursive: true });
+  for (const [dir, name] of [[voltaBin, "codex"], [plainBin, "claude"], [plainBin, "copilot"]]) for (const file of [name, `${name}.cmd`]) { fs.writeFileSync(path.join(dir, file), "@echo fixture\n"); fs.chmodSync(path.join(dir, file), 0o755); }
+  fs.writeFileSync(path.join(project, ".ensemble_reviews", "review-log.jsonl"), [
+    JSON.stringify({ timestamp: "2026-09-10T10:00:00.000Z", run_id: "rev_a", reviewer_status: { claude: "success", codex: "timeout" } }),
+    JSON.stringify({ event: "split", timestamp: "2026-09-13T00:00:00.000Z", reviewer_status: { claude: "success" } }),
+    "not json at all",
+    JSON.stringify({ timestamp: "2026-09-12T22:45:30.000Z", run_id: "rev_b", reviewer_status: { claude: "success", codex: "error", grok: "success" } }),
+    JSON.stringify({ timestamp: "2026-09-11T09:00:00.000Z", run_id: "rev_c", reviewer_status: { claude: "invalid_output", grok: "success" } }),
+  ].join("\n") + "\n");
+  const versions = { codex: "codex-cli 0.154.0", claude: "2.1.270 (Claude Code)", copilot: "1.0.83", grok: "grok 1.0.30 (04b7ffed98c6)", agy: "1.2.2" };
+  const fakeExec = (log = []) => async (command, args) => {
+    const name = path.basename(command).replace(/\.exe$/i, ""); log.push([name, ...args]);
+    if (name === "gemini") return { code: -1, stdout: "", stderr: "spawnSync gemini ENOENT", error: { code: "ENOENT" } };
+    if (args[0] === "--version") return { code: 0, stdout: `${versions[name]}\n`, stderr: "" };
+    if (name === "grok" && args.join(" ") === "update --check --stable --json") return { code: 0, stdout: JSON.stringify({ currentVersion: "1.0.30", latestVersion: "1.0.31", updateAvailable: true }), stderr: "" };
+    return { code: 1, stdout: "", stderr: `unexpected fake call ${name} ${args.join(" ")}` };
+  };
+  const npmLatest = { "@openai%2fcodex": "0.155.0", "@anthropic-ai%2fclaude-code": "2.1.270", "@google%2fgemini-cli": "0.60.0", "@github%2fcopilot": "1.0.84" };
+  const fakeFetcher = (urls = []) => async url => { urls.push(url); const m = /^https:\/\/registry\.npmjs\.org\/([^/]+)\/latest$/.exec(url); return m && npmLatest[m[1]] ? { ok: true, status: 200, text: async () => JSON.stringify({ name: decodeURIComponent(m[1]), version: npmLatest[m[1]] }) } : { ok: false, status: 404, text: async () => "" }; };
+  const checkDeps = extra => ({ ...deps, env: { PATH: [voltaBin, plainBin].join(path.delimiter), LOCALAPPDATA: path.join(checkFixture, "localappdata") }, home: path.join(checkFixture, "home"), cwd: project, ...extra });
+  await test("check_all_json_reports_scopes_versions_ownership_and_last_reviews_with_fakes_only", async () => {
+    const calls = [], urls = [], logs = [];
+    const report = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(calls), fetcher: fakeFetcher(urls), log: s => logs.push(s) }));
+    assert.equal(logs.length, 1, "--json prints exactly one JSON document and no network notice");
+    assert.deepEqual(JSON.parse(logs[0]).clis.map(c => c.cli), [...report.clis.map(c => c.cli)]);
+    assert.equal(report.schema, "momm-check-all/1");
+    assert.equal(report.skill.installed, readLock(installed).current.version); assert.equal(report.skill.published, "1.1.0"); assert.equal(report.skill.update_available, true);
+    assert.deepEqual(report.installations.custom_dirs, readLock(installed).custom_dirs); assert.equal(report.installations.custom_dirs.length, 3);
+    assert.deepEqual(report.installations.targets, []); assert.equal(report.installations.scopes.filter(s => s.target === "custom").length, 3);
+    const by = Object.fromEntries(report.clis.map(c => [c.cli, c]));
+    assert.deepEqual(Object.keys(by).sort(), ["antigravity", "claude", "codex", "copilot", "gemini", "grok"]);
+    assert.equal(by.codex.installed, "0.154.0"); assert.equal(by.codex.latest, "0.155.0"); assert.equal(by.codex.update_available, true);
+    assert.equal(by.codex.package_manager_owned, true); assert.equal(by.codex.manager, "volta"); assert.match(by.codex.update_command, /volta/);
+    assert.equal(by.claude.installed, "2.1.270"); assert.equal(by.claude.latest, "2.1.270"); assert.equal(by.claude.update_available, false); assert.equal(by.claude.package_manager_owned, false); assert.equal(by.claude.update_command, "claude update");
+    assert.equal(by.gemini.installed, "not installed"); assert.equal(by.gemini.latest, "0.60.0"); assert.equal(by.gemini.update_available, null); assert.equal(by.gemini.path, null);
+    assert.equal(by.grok.installed, "1.0.30"); assert.equal(by.grok.latest, "1.0.31"); assert.equal(by.grok.update_available, true); assert.equal(by.grok.latest_source, "grok update --check --stable --json");
+    assert.equal(by.antigravity.installed, "1.2.2"); assert.equal(by.antigravity.latest, "unknown"); assert.equal(by.antigravity.binary, "agy");
+    assert.deepEqual(by.claude.last_successful_review, { timestamp: "2026-09-12T22:45:30.000Z", run_id: "rev_b" });
+    assert.deepEqual(by.grok.last_successful_review, { timestamp: "2026-09-12T22:45:30.000Z", run_id: "rev_b" });
+    assert.equal(by.codex.last_successful_review, null); assert.equal(report.reviews.runs, 3);
+    assert.deepEqual(urls.sort(), Object.keys(npmLatest).sort().map(p => `https://registry.npmjs.org/${p}/latest`), "only the four npm latest documents are fetched");
+    assert(calls.every(c => c[1] === "--version" || c.join(" ") === "grok update --check --stable --json"), "only version and check-only commands run");
+    assert.equal(report.pending_recovery, false);
+  });
+  await test("check_all_table_names_not_installed_routes_custom_dirs_and_managers", async () => {
+    const logs = [];
+    await update(["--repo", installed, "--check-all"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log: s => logs.push(s) }));
+    const text = logs.join("\n");
+    assert.match(logs[0], /^Network:/); assert(text.includes("not installed")); assert(text.includes("volta (package manager)"));
+    for (const d of readLock(installed).custom_dirs) assert(text.includes(d), `custom dir listed: ${d}`);
+    assert(text.includes("2026-09-12T22:45:30.000Z")); assert(text.includes("never")); assert(text.includes("0.154.0 *"));
+    assert(!/registry\.npmjs\.org.*Network/.test(text));
+  });
+  await test("check_all_tolerates_missing_review_log_and_unreachable_registry", async () => {
+    const report = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: async () => ({ ok: false, status: 503, text: async () => "" }), cwd: checkFixture, log() {} }));
+    assert.equal(report.reviews.present, false); assert.equal(report.reviews.runs, 0);
+    const codex = report.clis.find(c => c.cli === "codex");
+    assert.equal(codex.latest, "unknown"); assert.match(codex.error, /HTTP 503/); assert.equal(codex.installed, "0.154.0"); assert.equal(codex.update_available, null);
+  });
+  await test("check_all_is_read_only_and_json_needs_it", () => {
+    for (const args of [["--json"], ["--check-all", "--apply"], ["--check-all", "--dry-run"], ["--check-all", "--channel", "main"], ["--check-all", "--version", "1.1.0"]]) assert.throws(() => parse(args), /check-all|--json/);
+    assert.throws(() => parse(["--check-all", "--yes"]));
+    assert.deepEqual(parse(["--check-all", "--json"]), { check_all: true, json: true });
+  });
   process.stdout.write(JSON.stringify({ passed: true, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {
   if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true });

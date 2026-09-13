@@ -203,7 +203,7 @@ export function parse(argv) {
   const o = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--dry-run", "--apply", "--rollback", "--yes", "--accept-protocol", "--help"].includes(a)) o[a.slice(2).replaceAll("-", "_")] = true;
+    if (["--dry-run", "--apply", "--rollback", "--yes", "--accept-protocol", "--help", "--check-all", "--json"].includes(a)) o[a.slice(2).replaceAll("-", "_")] = true;
     else if (["--version", "--channel", "--repo"].includes(a)) {
       const value = argv[++i]; if (!value || value.startsWith("--")) throw new Error(`Missing value for ${a}`);
       o[a.slice(2)] = value;
@@ -214,6 +214,8 @@ export function parse(argv) {
   if ([o.dry_run, o.apply, o.rollback].filter(Boolean).length > 1) throw new Error("Choose only one of --dry-run, --apply or --rollback");
   if (o.rollback && (o.channel || o.version)) throw new Error("Rollback uses the locally retained receipt, not a channel or version");
   if (o.yes && !o.apply && !o.rollback) throw new Error("--yes requires --apply or --rollback");
+  if (o.json && !o.check_all) throw new Error("--json is only available with --check-all");
+  if (o.check_all && (o.dry_run || o.apply || o.rollback || o.version || o.channel || o.yes || o.accept_protocol)) throw new Error("--check-all is a read-only report; combine it only with --json");
   return o;
 }
 // Digest of every tracked blob, including mode and path, except the manifest
@@ -276,6 +278,128 @@ function reinstall(root, lock) {
     for (const skill of scope.skills) if (!rows.some(r => r.target === scope.target && (r.skill || "momm") === skill && okLink(r) && (scope.target !== "custom" || path.resolve(r.destination || "") === path.join(scope.custom_dir, skill)))) throw new Error(`Harness replay did not verify ${skill} for ${scope.target}`);
   }
 }
+// ---- --check-all: one read-only report over skill, reviewer CLIs and review history ----
+// Self-contained copies (this file must not import from the checkout): the
+// reviewer list, npm package names and fixed update commands match
+// update-clock.mjs / setup-ui.mjs; the package-manager path fragments are the
+// ones setup-ui.mjs detectInstallation refuses to update through npm.
+export const REVIEWER_CLIS = Object.freeze(["codex", "claude", "gemini", "copilot", "grok", "antigravity"]);
+export const NPM_PACKAGES = Object.freeze({ codex: "@openai/codex", claude: "@anthropic-ai/claude-code", gemini: "@google/gemini-cli", copilot: "@github/copilot" });
+export const UPDATE_COMMANDS = Object.freeze({ codex: "npm install -g @openai/codex@latest", claude: "claude update", gemini: "npm install -g @google/gemini-cli@latest", copilot: "copilot update", grok: "grok update", antigravity: "agy update" });
+export const MANAGED_PATH = /\/(\.volta|scoop|chocolatey|\.asdf|\.local\/share\/mise)\//i;
+const MANAGER_NAMES = { ".volta": "volta", scoop: "scoop", chocolatey: "chocolatey", ".asdf": "asdf", ".local/share/mise": "mise" };
+const NOT_INSTALLED = /is not recognized as an internal or external command|command not found|no such file or directory|enoent/i;
+const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+/)?.[0] || null;
+export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+  if (cli === "antigravity") {
+    const local = platform === "win32" && env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe") : path.join(home, ".local", "bin", "agy");
+    return fs.existsSync(local) ? local : "agy";
+  }
+  if (cli === "grok") { const local = path.join(home, ".grok", "bin", platform === "win32" ? "grok.exe" : "grok"); return fs.existsSync(local) ? local : "grok"; }
+  return cli;
+}
+// PATH walk mirroring setup-ui.mjs detectInstallation, reduced to what
+// --check-all reports: where the launcher is and whether a package manager owns it.
+export function locateBinary(command, { env = process.env, platform = process.platform } = {}) {
+  const candidates = [];
+  if (path.isAbsolute(command)) candidates.push(command);
+  else {
+    const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
+    for (const directory of pathValue.split(platform === "win32" ? ";" : ":").filter(Boolean)) {
+      for (const extension of platform === "win32" ? [".exe", ".cmd", ".bat"] : [""]) candidates.push(path.join(directory.replace(/^"|"$/g, ""), command + extension));
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      if (!fs.statSync(candidate).isFile()) continue;
+      if (platform !== "win32") { try { fs.accessSync(candidate, fs.constants.X_OK); } catch { continue; } }
+      let resolved = candidate; try { resolved = fs.realpathSync(candidate); } catch {}
+      const hit = [candidate, resolved].map(p => MANAGED_PATH.exec(p.replaceAll("\\", "/"))).find(Boolean);
+      return { path: candidate, package_manager_owned: Boolean(hit), manager: hit ? MANAGER_NAMES[hit[1].toLowerCase()] || hit[1] : null };
+    } catch {}
+  }
+  return { path: null, package_manager_owned: false, manager: null };
+}
+// Only constant arguments reach this (--version, update --check --stable --json).
+// The Windows shell is needed for npm's .cmd shims; the executable is quoted.
+export function captureExec(command, args, { timeout = 20_000, cwd } = {}) {
+  const win = process.platform === "win32";
+  const p = spawnSync(win && /\s/.test(command) ? `"${command}"` : command, args, { cwd, encoding: "utf8", shell: win, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
+  return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
+}
+const notInstalled = r => !r || r.error?.code === "ENOENT" || r.code === 127 || (r.code !== 0 && NOT_INSTALLED.test(`${r.stderr}\n${r.stdout}`));
+export function lastSuccessfulReviews(cwd) {
+  const file = path.join(cwd, ".ensemble_reviews", "review-log.jsonl"), latest = {};
+  let text, runs = 0;
+  try { text = fs.readFileSync(file, "utf8"); } catch { return { file, runs, routes: latest, present: false }; }
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    let entry; try { entry = JSON.parse(raw); } catch { continue; }
+    if (entry.event || !entry.timestamp || typeof entry.reviewer_status !== "object") continue;
+    runs++;
+    for (const [route, status] of Object.entries(entry.reviewer_status)) {
+      if (status !== "success") continue;
+      if (!latest[route] || Date.parse(entry.timestamp) > Date.parse(latest[route].timestamp)) latest[route] = { timestamp: entry.timestamp, run_id: entry.run_id || null };
+    }
+  }
+  return { file, runs, routes: latest, present: true };
+}
+export async function checkAll(root, lock, dependencies = {}) {
+  const exec = dependencies.exec || captureExec, fetcher = dependencies.fetcher || fetch, env = dependencies.env || process.env;
+  const platform = dependencies.platform || process.platform, home = dependencies.home || os.homedir(), cwd = dependencies.cwd || process.cwd();
+  const report = { schema: "momm-check-all/1", checked_at: new Date().toISOString(), repo_root: root,
+    skill: { installed: lock.current?.version || null, published: null, channel: lock.channel, update_available: null, release_verified: Boolean(lock.current?.verified), error: null },
+    installations: { targets: [...(lock.targets || [])], custom_dirs: [...(lock.custom_dirs || [])], scopes: (lock.installations || []).map(s => ({ target: s.target, custom_dir: s.custom_dir || null, skills: s.skills || ["momm"] })) },
+    reviews: lastSuccessfulReviews(cwd), clis: [] };
+  try { const m = await (dependencies.manifest || manifest)(fetcher); report.skill.published = m.momm; report.skill.update_available = newer(m.momm, report.skill.installed); }
+  catch (e) { report.skill.error = safeText(e.message).slice(0, 200); }
+  const npmLatest = async cli => {
+    const url = `https://registry.npmjs.org/${NPM_PACKAGES[cli].replace("/", "%2f")}/latest`;
+    const res = await fetcher(url, { signal: AbortSignal.timeout(5000), redirect: "error", headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.text();
+    if (Buffer.byteLength(body) > 1024 * 1024) throw new Error("registry response exceeds 1 MiB");
+    const v = semver(JSON.parse(body).version); if (!v) throw new Error("no version in registry reply"); return v;
+  };
+  for (const cli of REVIEWER_CLIS) {
+    const binary = cliBinary(cli, { env, platform, home }), location = locateBinary(binary, { env, platform });
+    const row = { cli, binary, installed: null, latest: null, latest_source: NPM_PACKAGES[cli] ? "npm registry" : cli === "grok" ? "grok update --check --stable --json" : "unknown (no check-only command)", update_available: null,
+      path: location.path, package_manager_owned: location.package_manager_owned, manager: location.manager,
+      update_command: location.package_manager_owned ? `update through ${location.manager}` : UPDATE_COMMANDS[cli], last_successful_review: report.reviews.routes[cli] || null, error: null };
+    const v = await exec(binary, ["--version"], { timeout: 20_000 });
+    if (notInstalled(v)) row.installed = "not installed";
+    else row.installed = v.code === 0 ? semver(v.stdout) || semver(v.stderr) || "unknown" : "unknown";
+    try {
+      if (NPM_PACKAGES[cli]) row.latest = await npmLatest(cli);
+      else if (cli === "grok" && row.installed !== "not installed") {
+        const p = await exec(binary, ["update", "--check", "--stable", "--json"], { timeout: 20_000 });
+        if (p.code !== 0) throw new Error(`grok update --check exited ${p.code}`);
+        const j = JSON.parse(p.stdout);
+        row.latest = semver(j.latestVersion) || "unknown"; if (typeof j.updateAvailable === "boolean") row.update_available = j.updateAvailable;
+      } else row.latest = "unknown";
+    } catch (e) { row.latest = "unknown"; row.error = safeText(e.message).slice(0, 200); }
+    if (row.update_available === null && VERSION.test(row.installed || "") && VERSION.test(row.latest || "")) row.update_available = newer(row.latest, row.installed);
+    report.clis.push(row);
+  }
+  return report;
+}
+export function checkAllTable(report) {
+  const pad = (s, n) => String(s ?? "").padEnd(n);
+  const s = report.skill, lines = [];
+  lines.push(`MOMM skill      installed ${s.installed || "unknown"}   published ${s.published || (s.error ? `unavailable (${s.error})` : "unknown")}   channel ${s.channel}   ${s.update_available === true ? "update available" : s.update_available === false ? "current" : "not compared"}`);
+  lines.push(`Install scopes  harness targets: ${report.installations.targets.join(", ") || "none"}   custom dirs: ${report.installations.custom_dirs.join(", ") || "none"}`);
+  lines.push(`Review log      ${report.reviews.present ? `${report.reviews.file} (${report.reviews.runs} run${report.reviews.runs === 1 ? "" : "s"})` : `${report.reviews.file} (not found)`}`);
+  lines.push("");
+  const widths = [12, 15, 12, 40, 20, 26];
+  lines.push([pad("CLI", widths[0]), pad("Installed", widths[1]), pad("Latest", widths[2]), pad("Latest source", widths[3]), pad("Owner", widths[4]), pad("Last successful review", widths[5]), "Update command"].join(" "));
+  for (const r of report.clis) {
+    const owner = r.path ? (r.package_manager_owned ? `${r.manager} (package manager)` : "self / npm") : "-";
+    const flag = r.update_available === true ? " *" : "";
+    lines.push([pad(r.cli, widths[0]), pad(`${r.installed}${flag}`, widths[1]), pad(r.latest, widths[2]), pad(r.latest_source + (r.error ? ` (${r.error})` : ""), widths[3]), pad(owner, widths[4]), pad(r.last_successful_review?.timestamp || "never", widths[5]), r.installed === "not installed" ? "-" : r.update_command].join(" "));
+  }
+  lines.push("", "* update available. Nothing was installed; every update needs its explicit command.");
+  return lines.join("\n");
+}
 async function consent(o, message) {
   if (o.yes) return;
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("No interactive terminal. Review --dry-run, then explicitly use --apply --yes (and --accept-protocol when required).");
@@ -302,12 +426,19 @@ function exclusive(dir, action) {
 }
 export async function update(argv, dependencies = {}) {
   const o = parse(argv), log = dependencies.log || (s => process.stdout.write(`${safeText(s)}\n`));
-  if (o.help) { log("MOMM update: [--dry-run | --apply | --rollback] [--version x.y.z] [--channel stable|pinned|main] [--accept-protocol] [--yes]\nDefault: manifest + changelog only. No automatic updates. Recovery: node <git-dir>/momm/update.mjs --rollback --yes"); return; }
+  if (o.help) { log("MOMM update: [--dry-run | --apply | --rollback] [--version x.y.z] [--channel stable|pinned|main] [--accept-protocol] [--yes]\n             --check-all [--json]   Report skill version, every reviewer CLI's installed/latest version, install scopes and last successful review per route (read-only; contacts the release manifest and npm registry).\nDefault: manifest + changelog only. No automatic updates. Recovery: node <git-dir>/momm/update.mjs --rollback --yes"); return; }
   const siblingLock = path.join(path.dirname(ENTRY), "momm.lock");
   const start = o.repo || (fs.existsSync(siblingLock) ? readJSON(siblingLock).repo_root : path.resolve(path.dirname(ENTRY), "../.."));
   const root = repoRoot(start), dir = stateDir(root), lock = readLock(root);
   const lockFile = path.join(dir, "momm.lock"), journalFile = path.join(dir, "transaction.json");
   const installer = dependencies.reinstall || reinstall;
+  if (o.check_all) {
+    if (!o.json) log(`Network: GET ${MANIFEST_URL} and the npm registry "latest" documents for codex/claude/gemini/copilot; grok update --check runs locally. Release information only; nothing is installed or changed.`);
+    const report = await checkAll(root, lock, dependencies);
+    report.pending_recovery = fs.existsSync(journalFile);
+    log(o.json ? JSON.stringify(report, null, 2) : checkAllTable(report) + (report.pending_recovery ? "\nAn interrupted update needs recovery: run the retained update.mjs --rollback --yes." : ""));
+    return report;
+  }
   if (o.rollback) return exclusive(dir, async () => {
     const lock = readLock(root);
     const journal = regular(journalFile, true) ? readJSON(journalFile) : null;
