@@ -21,6 +21,13 @@ test("CLI/model incompatibility is not a login failure even when diagnostics men
 });
 test("incidental browser terminology does not trigger login advice", () => assert.equal(classify({ code: 1, stdout: "", stderr: "invalid configuration: browser handler is unavailable" }).status, "error"));
 test("genuine sign-in request still carries authentication status", () => assert.equal(classify({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status, "authentication_required"));
+for(const installer of ['install.mjs','momm/scripts/install.mjs']) test(`${installer} recognizes a short-name alias without overwriting other links`,()=>{
+  const source=read(installer),a=source.indexOf('function sameTarget('),b=source.indexOf('\n}',a)+2;
+  const realpathSync=p=>path.win32.normalize(p);realpathSync.native=p=>realpathSync(p).replace('Q:\\SHORT~1','Q:\\long-installation');
+  const same=vm.runInNewContext(source.slice(a,b)+';sameTarget',{fs:{realpathSync},process:{platform:'win32'},canon:p=>path.win32.resolve(p).toLowerCase()});
+  assert.equal(same('Q:\\SHORT~1\\momm','Q:\\long-installation\\momm'),true);
+  assert.equal(same('Q:\\SHORT~1\\another-skill','Q:\\long-installation\\momm'),false);
+});
 test("skill list trims and deduplicates without accepting empty scope", () => {
   const parse = vm.runInNewContext(between(read("install.mjs"), "function parseArgs(", "function linkOne(") + ";parseArgs", { path });
   assert.equal(JSON.stringify(parse(["--skills", "momm, myrepo,momm"]).skills), JSON.stringify(["momm", "myrepo"]));

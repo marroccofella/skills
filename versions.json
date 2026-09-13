@@ -6,7 +6,7 @@
     {
       "version": "1.15.0",
       "tag": "momm-1.15.0",
-      "sha256": "4c41f2ec611d7837312d79cb8e7c7122eb08adf7f8ba72775bda8a7e45db4c98",
+      "sha256": "0c7e62716bc69e3c76603efab8e8be974b97aaca2b152d391afa21348dfbfb84",
       "hash_covers": "git-tree-blobs-excluding-versions/1",
       "changes": [
         "Explicit check, signed preview, apply and offline previous-installation recovery; no automatic updates.",

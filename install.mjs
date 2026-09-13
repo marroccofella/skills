@@ -51,7 +51,10 @@ function commandExists(command) {
   return !probe.error && probe.status === 0;
 }
 function sameTarget(linkPath, sourcePath) {
-  try { return canon(fs.realpathSync(linkPath)) === canon(fs.realpathSync(sourcePath)); }
+  try {
+    const realpath = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
+    return canon(realpath(linkPath)) === canon(realpath(sourcePath));
+  }
   catch { return false; }
 }
 
