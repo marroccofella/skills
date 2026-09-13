@@ -687,6 +687,27 @@ await test("async-api-uses-spawnsync: defaultExec/defaultRunUpdater return pendi
   const ur = await u; assert.equal(ur.code, 1); assert.match(ur.output, /Unknown update option/);
 });
 
+
+await test("cliMain trigger never runs real executors under an injected clock, and never applies after a check that did not run (audit safety)", async () => {
+  const dir = path.join(fixture, "guard"); fs.mkdirSync(dir, { recursive: true });
+  const home = path.join(dir, "home"), stateFile = path.join(dir, "clock.json");
+  let execCalls = 0;
+  const mk = (extra = {}) => createUpdateClock({ home, stateFile, installedVersions: { codex: "1.0.0" }, sources: [npmSource("codex")],
+    fetcher: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ version: "2.0.0" }), headers: { get: () => null } }),
+    exec: async () => { execCalls++; return { code: 0, stdout: "", stderr: "" }; }, ...extra });
+  writeSettings(home, { auto_update: { enabled: true, skill: false } });
+  const withClock = await cliMain(["trigger", "daily.tick"], { home, clock: mk() });
+  assert.equal(withClock.ran, true);
+  assert.equal(withClock.apply.skipped_reason, "no_apply_deps", JSON.stringify(withClock.apply));
+  assert.equal(execCalls, 0, "no injected apply deps: nothing may execute");
+  // Opt-out: the passive tick must not check, and therefore must not apply.
+  const optOut = await cliMain(["trigger", "daily.tick"], { home, clock: mk({ env: { NO_UPDATE_CHECK: "1" }, stateFile: path.join(dir, "optout.json") }) });
+  assert.equal(optOut.ran, false); assert.equal(optOut.skipped_reason, "opt_out"); assert.equal(optOut.apply.skipped_reason, "no_check");
+  // Forced manual check still runs even with the opt-out, by design (disclosed in the Setup Center).
+  const manual = await mk({ env: { NO_UPDATE_CHECK: "1" }, stateFile: path.join(dir, "manual.json") }).trigger("manual");
+  assert.equal(manual.ran, true);
+});
+
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length) process.exitCode = 1;

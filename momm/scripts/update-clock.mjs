@@ -20,13 +20,17 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary } from "./update.mjs";
+import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled } from "./update.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
 const HOUR = 3_600_000, DAY = 24 * HOUR, MAX_HISTORY = 200, MAX_BODY = 1024 * 1024, LOCK_GRACE_MS = 2_000;
 export const EVENTS = new Set(["review.start", "review.finish", "setup.open", "setup.check", "daily.tick", "manual", "startup"]);
 export const FORCED_EVENTS = new Set(["manual", "setup.check"]);
+// Passive events (review.*, setup.open, daily.tick, startup) respect the same
+// opt-out variables as the daily notice; only an explicit manual/setup.check
+// click overrides them, and the Setup Center discloses that.
+export function passiveOptOut(env = process.env) { return updateCheckDisabled(env); }
 export const CLIS = ["codex", "claude", "gemini", "copilot", "grok", "antigravity"];
 export const NPM_PACKAGES = Object.freeze({ codex: "@openai/codex", claude: "@anthropic-ai/claude-code", gemini: "@google/gemini-cli", copilot: "@github/copilot" });
 // Same fixed official commands as setup-ui.mjs `providers[*].update` (identical on every platform).
@@ -265,7 +269,7 @@ export const modelsSource = () => ({ name: "models", kind: "models", async check
 export const defaultSources = () => [skillSource(), ...Object.keys(NPM_PACKAGES).map(npmSource), grokSource(), antigravitySource(), modelsSource()];
 
 // ---- the clock -----------------------------------------------------------------
-export function createUpdateClock({ home, stateFile = defaultStateFile(), installedVersions = { skill: localSkillVersion() }, sources = defaultSources(), fetcher = defaultFetcher, exec = defaultExec, now = Date.now, random = Math.random, listModels = async () => null, routes = CLIS, isAlive = pidAlive } = {}) {
+export function createUpdateClock({ home, stateFile = defaultStateFile(), installedVersions = { skill: localSkillVersion() }, sources = defaultSources(), fetcher = defaultFetcher, exec = defaultExec, now = Date.now, random = Math.random, listModels = async () => null, routes = CLIS, isAlive = pidAlive, env = process.env } = {}) {
   const installedFor = s => installedVersions[s.cli || (s.kind === "skill" ? "skill" : "")] || null;
   const jitter = ms => Math.round(ms * (0.9 + 0.2 * random()));
   function schedule(entry, outcome, t, clock) {
@@ -334,7 +338,9 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
     },
     trigger: event => withLock(async lockNotices => {
       if (!EVENTS.has(event)) throw new Error(`Unknown update-clock event: ${event}`);
-      const t = now(), forced = FORCED_EVENTS.has(event), { state, settings, degraded } = open(lockNotices, t, event);
+      const t = now(), forced = FORCED_EVENTS.has(event);
+      if (!forced && passiveOptOut(env)) return { ran: false, skipped_reason: "opt_out", results: [] };
+      const { state, settings, degraded } = open(lockNotices, t, event);
       const skip = reason => { if (degraded) writeState(stateFile, state); return { ran: false, skipped_reason: reason, results: [] }; };
       if (event === "review.start" && state.last_review_start_check_at && t - state.last_review_start_check_at < settings.clock.min_interval_ms) return skip("rate_limited");
       for (const s of sources) state.sources[s.name] ||= freshEntry(settings.clock.min_interval_ms);
@@ -488,6 +494,12 @@ export async function cliMain(argv, deps = {}) {
       const result = await clock.trigger(a), flags = argv.slice(2);
       if (flags.includes("--no-apply")) result.apply = { skipped_reason: "no_apply", note: "check only (--no-apply); nothing applied" };
       else if (!clock.settings().auto_update.enabled) result.apply = { applied: [], skipped: [{ name: "*", reason: "auto_update.enabled is false" }], failed: [], notices: [], skipped_reason: "auto_update_disabled", note: "auto-update is off: checks only. Run `update-clock.mjs enable` to apply releases automatically." };
+      // Apply only after a check that actually ran (never after opt_out / rate_limited /
+      // nothing_due), and never with real executors when a caller injected a clock
+      // without injecting apply executors: a test or audit harness must not be able
+      // to trigger a real "npm install -g" by accident (observed 2026-09-13).
+      else if (result.ran !== true) result.apply = { applied: [], skipped: [], failed: [], notices: [], skipped_reason: "no_check", note: `nothing applied: the check did not run (${result.skipped_reason ?? "unknown"})` };
+      else if ((deps.clock || deps.clockOptions) && !deps.apply) result.apply = { skipped_reason: "no_apply_deps", note: "injected clock without apply executors; nothing run" };
       else result.apply = await applyUpdates(clock, deps.apply || await defaultApplyDeps());
       return result;
     }

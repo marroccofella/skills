@@ -65,6 +65,9 @@ jobs:
       - name: probes module (1.16)
         timeout-minutes: 2
         run: node momm/scripts/probes.test.mjs
+      - name: governor split/rating/direct rules (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/governor-split.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |

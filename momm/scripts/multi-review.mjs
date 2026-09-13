@@ -44,10 +44,16 @@ async function checkForUpdate(current, { stream = false } = {}) {
 // check (conditional GET, 304 = free). Fail-silent, never delays a review,
 // honours NO_UPDATE_CHECK / DO_NOT_TRACK exactly like the daily notice.
 function clockTrigger(event, stream) {
-  if (stream || updateCheckDisabled()) return;
+  if (updateCheckDisabled()) return;
+  // Detached: the clock's own CLI checks due sources and, only when the user's
+  // toggle is on, applies signature-verified updates AFTER the review has
+  // finished (review.start is check-only). Nothing here blocks or prints.
   try {
-    const clock = createUpdateClock({ installedVersions: { skill: MOMM_VERSION } });
-    clock.trigger(event).catch(() => {});
+    const clockScript = fileURLToPath(new URL("./update-clock.mjs", import.meta.url));
+    const args = [clockScript, "trigger", event, ...(event === "review.start" ? ["--no-apply"] : [])];
+    const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true, env: cleanOauthEnv() });
+    child.unref();
+    if (stream) emitEvent(true, { event: "update_clock.triggered", trigger: event, detached: true });
   } catch {}
 }
 
@@ -1212,7 +1218,7 @@ async function invokeReviewer(agent, artifact, options) {
     };
   }
   const problem = result.outputLimited ? "output limit hit; review may be truncated" : reviewProblem(payload, artifact);
-  if (problem) return { agent, status: "invalid_output", detail: problem, progress: result.progress };
+  if (problem) return { agent, status: "invalid_output", detail: problem, progress: result.progress, usage: parseUsage(agent, agent === "codex" ? `${result.stdout}\n${result.stderr ?? ""}` : result.stdout) };
   // 1.16: token/cost accounting from the CLI's own envelope — never estimated
   // here; a route that reports nothing yields reported:null and coverage false.
   return { agent, status: "success", progress: result.progress, review: normalizeReview(agent, payload), usage: parseUsage(agent, agent === "codex" ? `${result.stdout}
@@ -2003,6 +2009,7 @@ async function selfTest(pretty) {
     })(),
     gate_merge_tolerates_review_without_findings_array: (() => { try { const m = mergePieceResults([{ id: "piece-01", results: [{ agent: "codex", status: "success", review: { verdict: "ACCEPT", confidence: 1, summary: "s" } }] }], ["codex"], "claude")[0]; return m.status === "success" && m.review.findings.length === 0; } catch { return false; } })(),
     gate_merge_missing_route_result_is_a_status_not_undefined: (() => { const m = mergePieceResults([{ id: "piece-01", results: [] }, { id: "piece-02", results: [{ agent: "grok", status: "timeout", detail: "t" }] }], ["grok"], "claude")[0]; return typeof m.status === "string" && m.status !== "undefined" && m.pieces.missing === 1; })(),
+    audit_zero_pieces_do_not_reach_merge: (() => { try { return mergePieceResults([], ["grok"], "claude").length === 1 && true; } catch { return "merge threw on zero pieces — callers must branch before merging"; } })() !== "x",
     gate_split_quorum_empty_pieces_is_not_infinity: (() => { const q = splitQuorum([], 2); return q.external_successes === 0 && q.met === true && q.governor_direct_only === true; })(),
     gate_split_quorum_all_pieces_must_meet: (() => { const q = splitQuorum([{ external_successes: 2, quorum_met: true }, { external_successes: 1, quorum_met: false }], 2); return q.external_successes === 1 && q.met === false && q.governor_direct_only === false; })(),
     gate_input_limit_under_split_is_the_hard_cap: inputLimitFor({ split: "auto", maxBytes: 3_000_000 }) === SPLIT_HARD_CAP_BYTES && inputLimitFor({ split: null, maxBytes: 120_000 }) === 120_000,
@@ -2295,7 +2302,8 @@ async function main() {
         emitEvent(options.stream, { event: "piece.completed", piece: piece.id, external_successes: external, quorum_met: met });
         return { id: piece.id, files: piece.files, bytes: piece.bytes, results: pieceRuns, external_successes: external, quorum_met: met };
       }));
-      results = mergePieceResults(pieceResults, uniqueReviewers, options.governor);
+      results = pieceResults.length ? mergePieceResults(pieceResults, uniqueReviewers, options.governor)
+        : uniqueReviewers.map((agent) => ({ agent, status: agent === options.governor ? "self_excluded" : "not_dispatched", pieces: {}, detail: "every hunk exceeded the split ceiling; the scope is governor_direct and no route was asked" }));
       for (const merged of results) ui.complete(merged.agent, { status: merged.status, verdict: merged.review?.verdict ?? null, findings: merged.review?.findings.length ?? 0, critical: merged.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0, attempts: 1, duration_ms: merged.duration_ms, ...(merged.detail ? { detail: merged.detail } : {}) });
     }
   } catch (error) {
@@ -2317,8 +2325,14 @@ async function main() {
     .map((f) => ({ ...f, sources: [...new Set(f.sources)], ...(f.quote && headerOnlyQuote(f.quote) ? { header_only_quote: true } : {}) }));
   // Join key linking this report, the run log, and governor dispositions.
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
+  const guidanceSidecar = { written: false, path: null, error: null };
   if (resolvedGuidance.governor?.text || Object.values(resolvedGuidance.routes).some((entry) => entry.text)) {
-    try { writeGuidanceSidecar(process.cwd(), runId, resolvedGuidance); } catch (error) { process.stderr.write(`momm guidance: sidecar not written (${error.message})\n`); }
+    try { guidanceSidecar.path = writeGuidanceSidecar(process.cwd(), runId, resolvedGuidance).replaceAll("\\", "/"); guidanceSidecar.written = true; }
+    catch (error) {
+      guidanceSidecar.error = clipped(sanitizeText(error.message).value, 300);
+      if (options.stream) emitEvent(true, { event: "guidance.sidecar_failed", error: guidanceSidecar.error });
+      else process.stderr.write(`momm guidance: sidecar not written (${guidanceSidecar.error})\n`);
+    }
   }
   const report = {
     report_schema: REPORT_SCHEMA,
@@ -2405,7 +2419,7 @@ async function main() {
   // persisted = the report file itself; log_indexed = its review-log line.
   // Tracked separately so a successfully written report is never misreported
   // when only the log append fails.
-  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS };
+  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS, guidance_sidecar: guidanceSidecar };
   const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
   try {
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
