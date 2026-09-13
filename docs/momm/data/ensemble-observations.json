@@ -1,0 +1,711 @@
+{
+  "schema": "momm-ensemble-observations/1",
+  "generated": "2026-09-04T15:57:31.608Z",
+  "report_count": 139,
+  "successful_route_results": 343,
+  "distribution": {
+    "0": 10,
+    "1": 31,
+    "2": 23,
+    "3": 34,
+    "4": 41
+  },
+  "rows": [
+    {
+      "run_id": "rev_20260817193845_imso",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817200511_4g47",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260817200608_0d0l",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817200703_ibf9",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260817225857_fxre",
+      "successful_routes": 2,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817231004_2r2g",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817231651_d2xg",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260817231735_89dm",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817232122_8jvh",
+      "successful_routes": 2,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817232450_6ve7",
+      "successful_routes": 2,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817233742_47qr",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260817235809_61zx",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260818000555_ky8p",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260818000613_yfm2",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260818012311_bs4c",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818012547_ntjc",
+      "successful_routes": 2,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260818013858_qv88",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818013945_bvkn",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260818014036_4t6d",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818015345_2fb4",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818020734_e692",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818020804_zk7p",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818030741_aqv6",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818031654_fn32",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818032618_hga2",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818110559_16sj",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818111219_0rt1",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818121032_4gjz",
+      "successful_routes": 0,
+      "stored_external_results": 0
+    },
+    {
+      "run_id": "rev_20260818121057_bsha",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818121407_81jd",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818122634_i3ri",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818124012_0iym",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818130439_g5pn",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818131838_9tuq",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818132724_b8km",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818133314_mz15",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818134612_ue7w",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818143853_d4sa",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818144003_7sto",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260818144802_q3xi",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260818145908_8th0",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819004534_m0y6",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819012102_ssuf",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819012657_vxn7",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819013627_vqhv",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819014257_vwc5",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819014743_ls4v",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819015524_45vp",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819021407_jzw2",
+      "successful_routes": 0,
+      "stored_external_results": 0
+    },
+    {
+      "run_id": "rev_20260819021441_9m3k",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819022233_mpd5",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819022438_lsto",
+      "successful_routes": 0,
+      "stored_external_results": 0
+    },
+    {
+      "run_id": "rev_20260819022658_igeb",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819025206_cm6q",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819025658_1u37",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819115456_schd",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260819120415_dtnk",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823172334_jmap",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823173747_yowa",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823174401_xyp4",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823174835_cmbz",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823174849_v8ch",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823174903_fwqw",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823174919_8brn",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823175402_vte1",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823175726_0yp2",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823180057_s9vj",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823180105_hk8b",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823180121_vb7g",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823180743_akoq",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823181205_xyrg",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823181723_mwa5",
+      "successful_routes": 1,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823182100_qb6d",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824152752_urup",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824153125_zbzq",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824153743_8pam",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824154052_a3ba",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824154709_9uve",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824155203_677c",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824155507_sn4s",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260824192446_4t45",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827073928_fxgv",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827075423_tg1m",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904131435_mf6w",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904131705_l4z2",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904134630_bl2v",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904154021_uctu",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260823165122_8jkv",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823165133_n0mb",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823165144_sbmz",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823165201_cwat",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823170016_tq8y",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823170034_f501",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823170047_yc0q",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823170104_hofn",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823171316_z5p8",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823171329_ybim",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823171342_8gpy",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823171351_qgs3",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823175450_hdaj",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823175502_w3zc",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823175514_zts1",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260823175533_geiu",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260826183918_wyl3",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827072502_8k01",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827072819_v669",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827072838_p4i6",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827072858_i3r3",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827072903_29l3",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827072917_vnnz",
+      "successful_routes": 1,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827072936_431q",
+      "successful_routes": 0,
+      "stored_external_results": 1
+    },
+    {
+      "run_id": "rev_20260827073352_tdiz",
+      "successful_routes": 4,
+      "stored_external_results": 5
+    },
+    {
+      "run_id": "rev_20260827085739_rpd8",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827103424_fcfm",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260827103853_8wtf",
+      "successful_routes": 2,
+      "stored_external_results": 2
+    },
+    {
+      "run_id": "rev_20260827105641_orun",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260828060521_uyhh",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260828103536_91fi",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260829064947_g9bc",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260902165517_z4ze",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260902170622_iri3",
+      "successful_routes": 3,
+      "stored_external_results": 3
+    },
+    {
+      "run_id": "rev_20260902171100_ofys",
+      "successful_routes": 2,
+      "stored_external_results": 2
+    },
+    {
+      "run_id": "rev_20260903053054_lllk",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260903053824_rizz",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904122139_k5t0",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904123202_wtem",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904124105_fn4a",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904124819_wj01",
+      "successful_routes": 2,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904125430_ikxg",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904134441_i82j",
+      "successful_routes": 1,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904135239_z6w4",
+      "successful_routes": 1,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904140911_r33c",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904141902_p13y",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904143228_40ov",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904144812_gpdv",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904150042_x1r8",
+      "successful_routes": 4,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904131823_wvxh",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904152252_yvrw",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    },
+    {
+      "run_id": "rev_20260904153705_95x7",
+      "successful_routes": 3,
+      "stored_external_results": 4
+    }
+  ],
+  "limitations": "Stored historical reports only; omitted reports not inferred. Route counts are not distinct model identities, validated defects, customer outcomes or randomised treatment groups."
+}

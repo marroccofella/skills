@@ -1,0 +1,27 @@
+import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import{fileURLToPath}from'node:url';
+const root=process.argv[2]||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8');let failures=0;
+const test=(name,fn)=>{try{fn();console.log('PASS '+name);}catch(e){failures++;console.log('FAIL '+name+': '+e.message);}};
+test('cinema native keyboard access',()=>assert(!read('scripts/momm-site-home.mjs').includes('tabindex="-1"')));
+test('cinema live region remains exposed',()=>assert(!read('docs/momm/home.css').includes('#home-player-status:empty{display:none}')));
+test('cinema accepted schema gated',()=>assert(read('scripts/momm-site-videos.mjs').includes("tour.schema!=='momm-tour/2'")));
+test('cinema explicit overlay selection',()=>assert(read('docs/momm/home-player.mjs').includes('.film-start[data-play=')));
+test('cinema social poster metadata',()=>assert(read('scripts/momm-site-videos.mjs').includes('property="og:image"')));
+test('technical named scroll region',()=>assert(!/class="table-wrap" tabindex="0" aria-label/.test(read('scripts/momm-site-technical.mjs'))));
+test('technical all plotted values tabulated',()=>assert(read('scripts/momm-site-technical.mjs').includes('[1,2,3,4,5,6,7,8,9,10]')));
+test('technical blind spot wording',()=>assert(read('scripts/momm-site-technical.mjs').includes('shared-blind-spot subset')));
+test('discovery named scroll region',()=>assert(!/class="table-wrap" tabindex="0" aria-label/.test(read('scripts/momm-site-search.mjs'))));
+test('discovery all films documented',()=>{for(const id of ['overview','setup','trailer'])assert(read('momm/references/search-discovery.md').includes('watch/'+id+'.html'));});
+test('discovery all watch pages tested',()=>assert(read('scripts/momm-site-search.test.mjs').includes("['overview','setup','trailer']")));
+test('discovery all regressions execute',()=>assert(!read('scripts/momm-site-regression.test.mjs').includes('Object.keys(checks).filter')));
+test('integration dynamic replace is literal',()=>{const s=read('scripts/render-momm-site.mjs');for(const bad of [", releasePanel(",", projectStory()",", evidenceBenefits(",", answerSection()",", releaseEvidence +",", evidenceVisuals(data, s)"])assert(!s.includes(bad),bad);});
+test('integration new page sitemap checks',()=>assert(read('scripts/check-momm-site.mjs').includes("'watch/setup.html'")));
+// Investigation checks for allegations about seams implemented outside a review section.
+test('existing SVG fill is visible',()=>assert(/\.chart-label,\.chart-value\{[^}]*fill:#d8eee1/.test(read('docs/momm/site.css'))));
+test('existing exact renderer check',()=>assert(read('scripts/check-momm-site.mjs').includes('renderPublic({ root, check: true })')));
+test('existing three-film sitemap merge',()=>{for(const file of ['docs/sitemap.xml','docs/video-sitemap.xml'])assert.equal((read(file).match(/<video:video>/g)||[]).length,3);});
+test('no unnamespaced figure references',()=>{const html=read('docs/momm/index.html');for(const match of html.matchAll(/(?:url\(#|href="#|aria-describedby=")([^"\s)]+)/g))assert(html.includes('id="'+match[1]+'"'),'dangling '+match[1]);});
+test('version provenance intentionally pinned',()=>assert(read('scripts/momm-site-technical.mjs').includes('momm-1.15.1')));
+test('watch pages own metadata and attribution',()=>{for(const id of ['overview','setup','trailer']){const h=read('docs/momm/watch/'+id+'.html');assert(h.includes('VideoObject'));assert(h.includes('Promptus'));assert(h.includes('BreadcrumbList'));}});
+test('biography preserves dated source caveat',()=>assert(read('scripts/momm-site-search.mjs').includes('not confirmation of current university appointments')));
+test('public report/runs counts consistent',()=>{const s=JSON.parse(read('docs/momm/data/public-stats.json'));assert(s.runs>=s.stored_reports);});
+process.exitCode=failures?1:0;

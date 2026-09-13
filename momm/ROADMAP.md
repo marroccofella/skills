@@ -1,5 +1,59 @@
 # MOMM Roadmap — alignment record
 
+## Homepage cinema and diagram library — September 14
+
+The first page presents the approved introduction with real scene thumbnails and
+exact chapter links for installation, dashboard, benefits and ledger. Seven
+expandable technical diagrams reuse the paper's source rather than diverging
+copies. The voice owner explicitly accepted the setup and trailer cuts on
+September 14. Both join the introduction as inline homepage players, with real
+posters, explicit play controls, chapter/transcript pages and a three-film sitemap.
+Chapter thumbnails seek within the homepage; playing another film pauses the first.
+Unaccepted media never becomes a public player. The separate ledger film remains
+held for audio repair. This is a website update, not a new MOMM product release.
+
+## Technical paper and route branding — local page follow-up, September 13
+
+Adds seven diagrams covering responsibility layers, the governor loop, privacy,
+evidence linkage, historical successful-route counts, a hypothetical shared-error
+model and a toy latency comparison. The architecture is explicitly pinned to
+released 1.15.1, not the concurrent 1.16 candidate. Four original provider/product
+marks have public source links and hashes; unresolved logos use text, never guessed
+artwork. The teaching calculator makes zero model calls and states its assumptions;
+no customer uplift or orders-of-magnitude benefit is inferred from developer logs.
+Publication remains subject to the authorised MOMM review gate and privacy scans.
+
+## Approved practical film and discovery — September 13, 2026
+
+The owner-approved 1.15.1 introduction replaces the held preview. Its public
+watch page includes captions, the complete transcript, chapter links, explicit
+sharing controls and installation guidance. Media hashes bind the approved file;
+VideoObject/Clip metadata and the video sitemap describe that same film. Sharing
+is user-initiated, without tracking or automatic posts. Setup and trailer audio
+were separately accepted on September 14; the ledger film is still held.
+Discovery improvements do not promise ranking, virality or customer
+productivity gains. Runtime and narration pace come from the approved manifest;
+the earlier 15x screen-action note below describes a superseded cut.
+
+## Public search and answer clarity — page-only follow-up
+
+The public renderer now emits page-specific titles and descriptions, unique
+canonical URLs, source-linked WebPage/SoftwareSourceCode information and visible
+breadcrumbs. Direct answers cover reviewer support, costs, privacy, setup and
+evidence limits. A generated-page regression gate keeps canonical URLs aligned
+with the sitemap and tests structured-data escaping and visible answer content.
+These changes aid discovery and comprehension; they do not establish indexing,
+search rankings, AI citations or independent product accuracy. Root crawler
+policy and webmaster-account submissions are unchanged; approved video handling
+is described above.
+
+The same page update adds scoped Promptus voice-workflow credits, a source-linked
+Professor Dominic Marrocco background section with historic appointments labeled
+as historic, and a benefits table computed from the public decision snapshot.
+The public skill's release history and earlier Promptus MoMM work stay distinct;
+a two-year origin awaits dated provenance. Recorded decisions are not unique
+bugs, customer counts or a controlled AI-alone versus AI-plus-MOMM experiment.
+
 ## Public tour refresh — September 13, 2026
 
 Documentation-only follow-up to published 1.15.1: manifest-derived prominent
