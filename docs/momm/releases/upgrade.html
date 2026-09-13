@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upgrade prompt · MOMM</title><link rel="stylesheet" href="../site.css"><script src="../site.js" defer></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="../index.html"><span class="mark">◆</span> momm <span class="brand-note">by 42.uk</span></a><nav aria-label="Release navigation"><a href="index.html">All versions</a><a href="../updates.html">Update safely</a><a href="../start.html">Get started</a></nav><a class="repo" href="https://github.com/marroccofella/skills">GitHub ↗</a></header><main id="main"><section class="page-hero"><p class="eyebrow">EXISTING MOMM USERS</p><h1>One prompt.<br><span>A verified upgrade.</span></h1><p class="lead">Paste this into your coding agent. It discovers your installation, checks the latest public stable release and asks before changing anything.</p></section><div class="doc-body wide"><p><a href="../updates.html">Read the update and recovery procedure →</a></p><div class="code"><div class="code-label"><span>Existing-user upgrade prompt</span><button type="button" data-copy="upgrade-prompt" aria-label="Copy the upgrade prompt">Copy</button></div><pre id="upgrade-prompt" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>Help me upgrade my existing MOMM installation to the latest publicly released
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upgrade prompt · MOMM</title><link rel="stylesheet" href="../site.css"><script src="../site.js" defer></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="../index.html"><span class="mark">◆</span> momm <span class="brand-note">by 42.uk</span></a><nav aria-label="Release navigation"><a href="index.html">All versions</a><a href="../updates.html">Update safely</a><a href="../start.html">Get started</a></nav><a class="repo" href="https://github.com/marroccofella/skills">GitHub ↗</a></header><main id="main"><section class="page-hero"><p class="eyebrow">EXISTING MOMM USERS</p><h1>One prompt.<br><span>A verified upgrade.</span></h1><p class="lead">Paste this into your coding agent. It discovers your installation, checks the latest public stable release and asks before changing anything.</p></section><div class="doc-body wide"><p><a href="../updates.html">Read the update and recovery procedure →</a></p><div class="code"><div class="code-label"><span>Existing-user upgrade prompt</span><button type="button" data-copy="upgrade-prompt" aria-label="Copy the upgrade prompt">Copy</button></div><pre id="upgrade-prompt" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>Install MOMM if absent, or safely upgrade my existing installation to the latest publicly released
 stable version. Do not install a candidate, an unsigned development head or a
 version merely advertised by a page.
 
-First locate the actual installed MOMM skill (including the older
+First detect my operating system and locate any actual installed MOMM skill (including the older
 multi-llm-review name), its permanent repository clone, my current harness and
-version. Check the canonical marroccofella/skills release, manifest and release
+version. If absent, choose a permanent clone location outside my projects. Check the canonical marroccofella/skills release, manifest and release
 notes, and show what changed since my installed version. Do not assume this
 project directory is the skills clone or guess my harness installation targets.
 
@@ -26,17 +26,34 @@ signed tag, expected signing identity and package hash. Ask me before applying;
 ask separately for protocol acceptance if it changed. Never use --yes to bypass
 protocol consent or fall back to git pull when verification fails.
 
+For a new installation, read the verified release&#39;s installer help. Install only
+MOMM into this harness&#39;s documented user-level skill scope: preview with
+`node momm/scripts/install.mjs --target &lt;chosen-harness&gt; --dry-run`, then ask
+before applying the same command without `--dry-run`. Do not use the repository-wide
+installer&#39;s default to install unrelated skills. For an unnamed harness, verify
+its documented custom skill directory; never invent paths or claim universal support.
+
 If my old installation lacks the updater or receipt, explain that it needs a
 one-time bootstrap. Show the exact permanent clone/ref/link changes and preserved
 old installation before asking me to approve them. Do not invent a receipt,
 silently retarget links, trust an old unsigned tag retroactively or claim rollback
 is available before verifying it. Ask before installing a missing verifier.
 
-After an approved upgrade, verify the installed version and harness discovery.
+After an approved install or upgrade, verify the installed version and harness discovery.
 Read the newly installed MOMM skill, relaunch only the MOMM Setup Center process
 you started, and show its local URL. Explain how to check reviewer versions and
 explicit update actions. Distinguish login presence from a successful review;
 ask before sending a synthetic connectivity test or any project source.
+
+Make MOMM my default peer-review workflow across projects using this harness&#39;s
+documented user-level standing instructions. Preserve every existing rule and add
+a labelled section: use MOMM for requested peer reviews and before finalizing
+substantive coding changes, fixes, refactors and releases. The current agent stays
+governor and sole writer; reproduce material findings, verify fixes and adjudicate
+every suggestion. Respect project restrictions and provider-sharing permissions;
+never recursively dispatch or run reviews for every conversational message.
+Discovery links alone do not activate this rule. Verify it in a fresh context
+where possible, or explain the necessary restart and any unsupported global scope.
 
 From my chosen project, demonstrate a small approved review using the absolute
 installed dispatcher path. Reproduce findings, decide every suggestion, verify

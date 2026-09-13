@@ -64,7 +64,7 @@ function scan(label, value, at = "$") {
   if (Array.isArray(value)) return value.forEach((item, i) => scan(label, item, `${at}[${i}]`));
   if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) scan(label, v, `${at}.${k}`);
 }
-const diagnostics = { identical_duplicates: 0, missing_reports: 0, source_directories: from.length };
+const diagnostics = { identical_duplicates: 0, identical_dispositions: 0, missing_reports: 0, source_directories: from.length };
 const readJsonl = file => fs.existsSync(file)
   ? fs.readFileSync(file, "utf8").split(/\r?\n/).flatMap((line, index) => {
     if (!line.trim()) return [];
@@ -76,6 +76,7 @@ const runs = [];
 const reports = {};
 const dispositions = [];
 const seen = new Map();
+const seenDispositions = new Set();
 for (const { dir, label } of from) {
   const er = path.resolve(dir);
   for (const run of readJsonl(path.join(er, "review-log.jsonl"))) {
@@ -96,7 +97,13 @@ for (const { dir, label } of from) {
       } catch { throw new Error(`Invalid stored report for ${run.run_id}; export refused.`); }
     } else diagnostics.missing_reports++;
   }
-  for (const d of readJsonl(path.join(er, "dispositions.jsonl"))) dispositions.push(sanitize(d));
+  for (const d of readJsonl(path.join(er, "dispositions.jsonl"))) {
+    // Compare original records: redaction may make distinct private text equal.
+    const identity = JSON.stringify(canonical(d));
+    if (seenDispositions.has(identity)) { diagnostics.identical_dispositions++; continue; }
+    seenDispositions.add(identity);
+    dispositions.push(sanitize(d));
+  }
 }
 runs.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
 

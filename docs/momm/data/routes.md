@@ -1,10 +1,10 @@
-Completion/timing use stored reports; decisions use all recorded single-route dispositions; acceptance is the governor's recorded applied / (applied + rejected), not measured accuracy.
+Completion/timing use stored reports; decisions use all recorded single-route dispositions; acceptance is the governor's recorded applied / (applied + rejected), not measured accuracy. Confidence is self-reported, not calibrated accuracy.
 
-| route | completed | timeouts | other | median_s | p90_s | applied | rejected | deferred | historical_other | acceptance |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| codex | 70 | 17 | 0 | 114.4 | 341.2 | 94 | 41 | 2 | 0 | 0.6962962962962963 |
-| claude | 21 | 2 | 0 | 37 | 274.5 | 26 | 37 | 0 | 8 | 0.4126984126984127 |
-| antigravity | 83 | 1 | 20 | 32.3 | 128.4 | 46 | 36 | 0 | 1 | 0.5609756097560976 |
-| copilot | 101 | 2 | 3 | 32.2 | 213.3 | 76 | 101 | 1 | 0 | 0.4293785310734463 |
-| grok | 68 | 25 | 2 | 29.8 | 328 | 34 | 31 | 5 | 0 | 0.5230769230769231 |
-| gemini | 0 | 0 | 6 | — | — | 0 | 0 | 0 | 0 | — |
+| route | completed_reviews | timeouts | other_failures | median_seconds | p90_seconds | accept_verdicts | modify_verdicts | reject_verdicts | mean_confidence | suggestions_applied | suggestions_rejected | governor_acceptance_rate | deferred | historical_other |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| codex | 70 | 17 | 0 | 114.4 | 341.2 | 13 | 42 | 15 | 0.9585714285714281 | 94 | 41 | 0.6962962962962963 | 2 | 0 |
+| claude | 21 | 2 | 0 | 37 | 274.5 | 7 | 14 | 0 | 0.7847619047619048 | 26 | 37 | 0.4126984126984127 | 0 | 8 |
+| antigravity | 83 | 1 | 20 | 32.3 | 128.4 | 69 | 10 | 4 | 0.9831325301204825 | 46 | 36 | 0.5609756097560976 | 0 | 1 |
+| copilot | 101 | 2 | 3 | 32.2 | 213.3 | 65 | 29 | 7 | 0.8842574257425748 | 76 | 101 | 0.4293785310734463 | 1 | 0 |
+| grok | 68 | 25 | 2 | 29.8 | 328 | 14 | 48 | 6 | 0.5944117647058824 | 34 | 31 | 0.5230769230769231 | 5 | 0 |
+| gemini | 0 | 0 | 6 | — | — | 0 | 0 | 0 | — | 0 | 0 | — | 0 | 0 |

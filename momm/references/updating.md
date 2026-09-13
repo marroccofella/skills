@@ -80,14 +80,26 @@ the install/update result. In a normal clone:
 node .git/momm/update.mjs --rollback --yes
 ```
 
-Worktrees use the exact printed administrative path. A dead process lock can be
-reclaimed; a live process is never interrupted. Recovery refuses local changes
+Worktrees use the exact printed administrative path. Existing update claims are
+never automatically reclaimed, even when their PID appears dead: checking a PID
+then deleting a claim can race another updater. Independently confirm that no
+updater is running before manually removing only the reported `update.active`.
+Keep `transaction.json` and `momm.lock`, then retry the retained recovery command.
+A stale claim can therefore require this explicit recovery step. Recovery refuses local changes
 or an unrelated checkout rather than overwriting them. A missing harness CLI may
 need restoring before relinking succeeds. Deleted Git objects, a deleted clone or
 disk failure require a real backup. This is not a promise that rollback survives
 every possible loss. The original branch tip is not moved; checkout stays detached.
 
 ## Daily notices and agents
+
+Rollback preserves explicitly added harness scopes as well as the earlier code;
+replaying a scope still requires that the older release contains its selected skills.
+Installation receipt writes share the updater's exclusion claim. During a transaction,
+install output identifies deferred receipt handling separately from completed links.
+Stable updates refuse an implicit downgrade; selecting an older signed version
+requires an explicit `--version`. Release hashing currently bounds each blob to
+32 MiB and fails closed for larger files; it is not a large-media archive installer.
 
 `NO_UPDATE_CHECK=1`, `MOMM_NO_UPDATE_CHECK=1` and `DO_NOT_TRACK=1` suppress the daily
 manifest request. Streamed reviews do not wait for it. Notices are cached per

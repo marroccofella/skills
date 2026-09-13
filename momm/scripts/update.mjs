@@ -78,7 +78,7 @@ export function recordInstall(root, installer, results, { dryRun = false, skills
   catch { return { updater_available: false, reason: "Installation linked successfully, but this is not an accessible Git clone. Explicit updates require a Git clone; no harness receipt was guessed." }; }
   const dir = stateDir(root);
   // During replay only the parent transaction is allowed to commit the receipt.
-  if (fs.existsSync(path.join(dir, "transaction.json"))) return null;
+  if (fs.existsSync(path.join(dir, "transaction.json"))) return { updater_available:false, receipt_deferred:true, reason:"The active or interrupted update owns the receipt. Link results are separate; finish or recover that transaction before a new explicit installation can be recorded." };
   const targets = [], custom_dirs = [], installations = [];
   for (const row of results) {
     const links = row.links || [row];
@@ -95,6 +95,15 @@ export function recordInstall(root, installer, results, { dryRun = false, skills
   }
   if (!targets.length && !custom_dirs.length) return null;
   directory(dir);
+  // Synchronous installers share the updater's exclusive claim. Their link
+  // results remain visible if this receipt phase is refused or interrupted.
+  const claim = path.join(dir, 'update.active'), token = randomUUID();
+  let fd;
+  try { fd = fs.openSync(claim, 'wx', 0o600); }
+  catch { throw new Error('Another update claim is active; installation receipt was not changed. Finish or recover the update, then repeat this explicit install.'); }
+  try {
+  fs.writeFileSync(fd, JSON.stringify({pid:process.pid, token, started:new Date().toISOString()}));
+  if (fs.existsSync(path.join(dir, 'transaction.json'))) throw new Error('An update transaction appeared; installation receipt was not changed.');
   const previous = readLock(root, false);
   const scopes = [...(previous?.installations || [])];
   for (const operation of installations) {
@@ -103,16 +112,25 @@ export function recordInstall(root, installer, results, { dryRun = false, skills
     else scopes.push(operation);
   }
   // A later install adds explicitly successful harnesses, not newly detected ones.
+  const observed = current(root);
+  const retainVerified = previous?.current?.verified
+    && ['version', 'commit', 'dispatcher_sha256', 'updater_sha256', 'protocol_sha256'].every(k => previous.current[k] === observed[k])
+    && !git(root, 'status', '--porcelain', '--untracked-files=no');
   const lock = { ...previous, schema: "momm-lock/1", repo_root: root,
     channel: previous?.channel || "stable", installer: previous?.installer === "install.mjs" ? previous.installer : installer,
     skills: [...new Set([...(previous?.skills || []), ...skills])],
     installations: scopes,
     targets: [...new Set([...(previous?.targets || []), ...targets])],
     custom_dirs: [...new Set([...(previous?.custom_dirs || []), ...custom_dirs])],
-    current: current(root), installed_at: new Date().toISOString() };
+    current: { ...(retainVerified ? previous.current : {}), ...observed }, installed_at: new Date().toISOString() };
   writeJSON(path.join(dir, "momm.lock"), lock);
   atomic(path.join(dir, "update.mjs"), fs.readFileSync(ENTRY));
   return { lock: path.join(dir, "momm.lock"), recovery: path.join(dir, "update.mjs"), targets: lock.targets };
+  } finally {
+    fs.closeSync(fd);
+    try { if (regular(claim, true) && readJSON(claim).token === token) fs.unlinkSync(claim); }
+    catch (error) { process.stderr.write(`MOMM install claim needs inspection: ${safeText(error.message)}\n`); }
+  }
 }
 export function updateCheckDisabled(env = process.env) {
   return ["NO_UPDATE_CHECK", "MOMM_NO_UPDATE_CHECK", "DO_NOT_TRACK"].some(k => {
@@ -269,18 +287,18 @@ function exclusive(dir, action) {
   directory(dir);
   const file = path.join(dir, "update.active");
   let fd;
-  if (regular(file, true)) {
-    let active;
-    try { active = readJSON(file); }
-    catch { throw new Error(`Update claim is invalid or incomplete: ${file}. It was preserved. Confirm no updater is running before repairing this claim; do not remove the transaction journal or installation receipt.`); }
-    if (Number.isInteger(active.pid) && active.pid > 0) {
-      try { process.kill(active.pid, 0); }
-      catch (e) { if (e.code === "ESRCH") fs.unlinkSync(file); }
-    }
-  }
+  // Reading a dead PID and then unlinking is not atomic: two claimants can
+  // delete one another's newly acquired lock. Never automatically steal a claim.
+  if (regular(file, true)) throw new Error(`Existing update claim: ${file}. Preserved even if its PID appears dead. Independently confirm no updater is running before manually removing only this claim; preserve transaction.json and momm.lock, then retry recovery.`);
   try { fd = fs.openSync(file, "wx", 0o600); } catch { throw new Error(`Another update may be active. Inspect ${file}; do not remove it while its process is running.`); }
-  fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, started: new Date().toISOString() }));
-  return Promise.resolve().then(action).finally(() => { fs.closeSync(fd); fs.unlinkSync(file); });
+  const token = randomUUID();
+  try { fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, token, started: new Date().toISOString() })); }
+  catch (error) { fs.closeSync(fd); throw error; } // Preserve incomplete claims for explicit recovery.
+  return Promise.resolve().then(action).finally(() => {
+    fs.closeSync(fd);
+    try { if (regular(file, true) && readJSON(file).token === token) fs.unlinkSync(file); }
+    catch (error) { process.stderr.write(`MOMM update claim cleanup needs inspection: ${safeText(error.message)}\n`); }
+  });
 }
 export async function update(argv, dependencies = {}) {
   const o = parse(argv), log = dependencies.log || (s => process.stdout.write(`${safeText(s)}\n`));
@@ -291,8 +309,13 @@ export async function update(argv, dependencies = {}) {
   const lockFile = path.join(dir, "momm.lock"), journalFile = path.join(dir, "transaction.json");
   const installer = dependencies.reinstall || reinstall;
   if (o.rollback) return exclusive(dir, async () => {
+    const lock = readLock(root);
     const journal = regular(journalFile, true) ? readJSON(journalFile) : null;
-    const previous = journal?.before || lock.previous;
+    const savedPrevious = journal?.before || lock.previous;
+    // Explicit installations added since an update still belong to the user.
+    // Roll back code, not that recorded scope; replay must verify every scope.
+    const previous = savedPrevious ? { ...savedPrevious, installations:lock.installations,
+      targets:lock.targets, custom_dirs:lock.custom_dirs, skills:lock.skills, installer:lock.installer } : null;
     if (!previous?.current?.commit || !SHA.test(previous.current.tree_sha256 || "")) throw new Error("No retained, hashed previous installation exists. Nothing changed.");
     clean(root);
     const actualHead = git(root, "rev-parse", "HEAD");
@@ -310,10 +333,14 @@ export async function update(argv, dependencies = {}) {
   });
   if (fs.existsSync(journalFile)) throw new Error("An interrupted update needs recovery. Run the retained update.mjs --rollback --yes before another update.");
   if (o.channel && !o.apply && !o.dry_run && !o.version) {
-    await exclusive(dir, async () => writeJSON(lockFile, { ...lock, channel: o.channel }));
+    await exclusive(dir, async () => {
+      if (fs.existsSync(journalFile)) throw new Error('An interrupted update needs recovery before changing channels.');
+      writeJSON(lockFile, { ...readLock(root), channel: o.channel });
+    });
     log(`Channel saved: ${o.channel}. Installed code and protocol unchanged.`); return;
   }
   const channel = o.channel || lock.channel;
+  if (channel === 'main' && o.version) throw new Error('The main channel cannot be combined with an explicit release version. Choose stable or pinned.');
   log(`Network: GET ${MANIFEST_URL} (release information only).`);
   const m = await (dependencies.manifest || manifest)();
   const version = o.version || m.momm;
@@ -323,6 +350,7 @@ export async function update(argv, dependencies = {}) {
   }
   if (!o.apply && !o.dry_run) { log("No code fetched or installed. Next: update --dry-run, then explicitly update --apply. Agents must stop and ask; never self-apply."); return; }
   if (channel === "pinned" && !o.version) throw new Error("Pinned channel: specify --version x.y.z. No code fetched.");
+  if (channel === 'stable' && !o.version && newer(lock.current.version, version)) throw new Error('Published manifest names an older version. Downgrades require an explicit --version x.y.z; no code fetched.');
   const release = (m.momm_releases || []).find(r => r.version === version);
   if (channel !== "main" && (!release || release.tag !== `momm-${version}` || !SHA.test(release.sha256 || "") || release.hash_covers !== "git-tree-blobs-excluding-versions/1")) throw new Error("This release has no verifiable signed-package metadata. Legacy unsigned releases cannot be installed by the updater.");
   const ref = channel === "main" ? "refs/heads/main" : `refs/tags/${release.tag}`;
@@ -331,13 +359,13 @@ export async function update(argv, dependencies = {}) {
   try {
     git(temp, "init", "--bare");
     const candidateRef = channel === "main" ? "refs/momm/candidate" : `refs/tags/${release.tag}`;
-    git(temp, "fetch", "--no-tags", "--depth=1", dependencies.remote || REMOTE, `${ref}:${candidateRef}`);
+    git(temp, "fetch", "--no-tags", dependencies.remote || REMOTE, `${ref}:${candidateRef}`);
     const commit = git(temp, "rev-parse", `${candidateRef}^{commit}`);
     let signedTag = release?.tag;
     if (channel === "main") {
       signedTag = `momm-main-${commit}`;
       log(`Network: fetch ${REMOTE}, refs/tags/${signedTag}. An unsigned development head is not installable.`);
-      git(temp, "fetch", "--no-tags", "--depth=1", dependencies.remote || REMOTE, `refs/tags/${signedTag}:refs/tags/${signedTag}`);
+      git(temp, "fetch", "--no-tags", dependencies.remote || REMOTE, `refs/tags/${signedTag}:refs/tags/${signedTag}`);
       if (git(temp, "rev-parse", `${signedTag}^{commit}`) !== commit) throw new Error("Signed development checkpoint does not match main");
     }
     (dependencies.verifySignature || verifySignature)(temp, signedTag, channel);
@@ -355,6 +383,7 @@ export async function update(argv, dependencies = {}) {
     if (diff && !o.accept_protocol) throw new Error("Policy changed: inspect the diff and explicitly pass --accept-protocol. --yes never bypasses this gate.");
     await consent(o, `Install ${channel === "main" ? commit : version} and relink the saved harnesses?`);
     await exclusive(dir, async () => {
+      if (fs.existsSync(journalFile)) throw new Error('An interrupted update appeared during preview; recover before applying.');
       clean(root);
       const ignoreRulesChanged = run("git", ["diff", "--name-only", "-z", "refs/momm/installed", commit], temp).split("\0").some(name => name === ".gitignore" || name.endsWith("/.gitignore"));
       if (ignoreRulesChanged && run("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], root)) throw new Error("Ignore rules change while local ignored files exist. Move those files outside this skills clone yourself and retry. Nothing checked out; private files and recovery remain intact.");
@@ -367,6 +396,8 @@ export async function update(argv, dependencies = {}) {
       writeJSON(journalFile, { schema: "momm-transaction/1", before, candidate: commit, stage: "prepared" });
       try {
         git(root, "fetch", "--no-tags", temp, `${commit}:refs/momm/verified`);
+        if (git(root, 'rev-parse', 'refs/momm/verified') !== commit) throw new Error('Verified release reference was not promoted');
+        git(root, 'fsck', '--connectivity-only', commit);
         checkout(root, commit);
         installer(root, lock);
         assertInstalled(root, { commit, version: candidateManifest.momm });
@@ -380,7 +411,8 @@ export async function update(argv, dependencies = {}) {
         try {
           clean(root);
           if (![commit, before.current.commit].includes(git(root, "rev-parse", "HEAD"))) throw new Error("Concurrent unrelated checkout detected; recovery will not overwrite it.");
-          checkout(root, before.current.commit); installer(root, before); assertInstalled(root, before.current); writeJSON(lockFile, before); fs.unlinkSync(journalFile);
+          if (git(root, 'rev-parse', 'HEAD') !== before.current.commit) checkout(root, before.current.commit);
+          installer(root, before); assertInstalled(root, before.current); writeJSON(lockFile, before); fs.unlinkSync(journalFile);
         }
         catch (recovery) { throw new Error(`${e.message}\nAutomatic recovery incomplete: ${recovery.message}\nRetained recovery: node "${path.join(dir, "update.mjs")}" --rollback --yes`); }
         throw new Error(`${e.message}\nPrevious installation restored; update not applied.`);

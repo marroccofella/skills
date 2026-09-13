@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://marroccofella.github.io/skills/</loc><lastmod>2026-09-04</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://marroccofella.github.io/skills/momm/</loc><lastmod>2026-09-04</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://marroccofella.github.io/skills/evidence/</loc><lastmod>2026-09-04</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+  <url><loc>https://marroccofella.github.io/skills/</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/evidence/</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/data/</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/evidence.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/reference.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/0.1.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.0.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.1.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.10.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.10.1.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.10.2.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.13.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.14.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.14.1.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.15.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.2.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.3.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.3.1.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.4.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.5.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.9.0.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/1.9.1.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/releases/upgrade.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/start.html</loc></url>
+  <url><loc>https://marroccofella.github.io/skills/momm/updates.html</loc></url>
 </urlset>

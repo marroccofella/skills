@@ -87,6 +87,7 @@ jobs:
           checkpoint="momm-main-$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node -e 'if(require("./versions.json").momm!==process.env.MOMM_RELEASE_VERSION)process.exit(1)'
+          test -s "momm/references/release-$MOMM_RELEASE_VERSION.md"
           git config --local user.name "MOMM Release"
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           refs=("$checkpoint")

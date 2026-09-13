@@ -8,7 +8,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { inspectCompletion, recordCompletion, captureSourceSnapshot, digest } from "./governor.mjs";
+import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");
@@ -140,7 +140,7 @@ try {
   });
   test('documented completion command runs from the reviewed project',()=>{
     const skill=fs.readFileSync(path.join(scripts,'../SKILL.md'),'utf8');
-    const match=skill.match(/Run `node ([^`]+\/governor\.mjs) --run <run_id>` from the reviewed project/);
+    const match=skill.match(/Run `node "([^"`]+\/governor\.mjs)" --run <run_id>` from the reviewed project/);
     assert(match,'completion invocation missing');
     const command=match[1].replace('<installed-momm>',path.dirname(scripts));
     const result=run([command,'--run',report.run_id]);assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout).complete,true);
@@ -192,6 +192,11 @@ try {
   ]) test(name, () => { decisions(mutate(rows)); assert.equal(healthy().complete, false); decisions(rows); });
   test("malformed JSONL fails visibly", () => { write(".ensemble_reviews/dispositions.jsonl", "{bad\n"); assert.equal(healthy().complete, false); decisions(rows); });
   test("recorded completion does not mutate sealed report", () => { assert.equal(recordCompletion(fixture, report.run_id).complete, true); assert.equal(ref(reportPath).sha256, sealed.sha256); });
+  test('re-recording preserves the previous receipt by content hash',()=>{
+    const file=path.join(fixture,'.ensemble_reviews/completions',report.run_id+'.json'),before=fs.readFileSync(file);
+    recordCompletion(fixture,report.run_id);
+    assert.deepEqual(fs.readFileSync(path.join(fixture,'.ensemble_reviews/completions',report.run_id+'.'+digest(before)+'.json')),before);
+  });
   test("later source change invalidates completion", () => { write("mean.cjs", buggy); assert.equal(healthy().complete, false); write("mean.cjs", good); });
   test("later test change invalidates completion", () => { const original = fs.readFileSync(path.join(fixture, "mean.test.cjs"), "utf8"); write("mean.test.cjs", "process.exit(0)"); assert.equal(healthy().complete, false); write("mean.test.cjs", original); });
   test("changed report cannot be resealed by recalculating only its hash", () => { write(reportPath, { ...report, governor: "claude" }); assert.equal(healthy().complete, false); write(reportPath, report); });
@@ -215,17 +220,17 @@ try {
     const result = inspectCompletion(fixture, fail.run_id); assert.equal(result.complete, false); assert(result.errors.includes("external review quorum not met")); assert(result.errors.includes("strict reviewer policy not met"));
     write(".ensemble_reviews/review-log.jsonl", originalLog);
   });
-  test("direct source changed during capture refused", () => assert.equal(captureSourceSnapshot(fixture, buggy, "mean.cjs").complete, false));
+  test("stale direct source input refused", () => assert.equal(captureSourceSnapshot(fixture, buggy, "mean.cjs").complete, false));
   test("finding paths preserve actual a/b directories before removing diff prefixes", () => {
-    const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
-    const start = gov.indexOf("// A cited real project file"), end = gov.indexOf("if (target &&", start);
-    assert(start >= 0 && end > start);
-    const target = (name, paths) => vm.runInNewContext(gov.slice(start, end) + ";target", {
-      obligation: { kind: "finding", content: { target_file: name } }, report: { source_snapshot: { files: paths.map(path => ({ path })) } },
-    });
+    const target = (name, paths) => normalizeTarget(name, paths.map(path => ({path})), fixture);
     assert.equal(target("a/mean.cjs", ["a/mean.cjs", "mean.cjs"]), "a/mean.cjs");
     assert.equal(target("a/mean.cjs", ["mean.cjs"]), "mean.cjs");
     assert.equal(target("b/other.cjs", ["mean.cjs"]), "b/other.cjs");
+    assert.equal(target('mean.cjs:1', ['mean.cjs']), 'mean.cjs');
+    assert.equal(target('a/mean.cjs:1-2', ['mean.cjs']), 'mean.cjs');
+    assert.equal(target(path.join(fixture, 'mean.cjs')+':1', ['mean.cjs']), 'mean.cjs');
+    assert.equal(target('../outside.cjs:1', ['mean.cjs']), '../outside.cjs:1');
+    assert.equal(target('a/mean.cjs:1', ['a/mean.cjs','mean.cjs']), 'a/mean.cjs');
   });
   test("explicit source containing a sample diff is still file input", () => {
     const sample = 'const sample = `\ndiff --git a/x b/x\n`;\n'; write("sample.cjs", sample);
@@ -245,7 +250,7 @@ try {
     const legacy=p=>path.win32.normalize(p);legacy.native=p=>legacy(p).replace('Q:\\RUNNER~1','Q:\\runner.long');
     const artifact='diff --git a/x.txt b/x.txt\n';
     const fakeFs={realpathSync:legacy,statSync:()=>({isFile:()=>true,size:8}),readFileSync:()=>Buffer.from('fixture\n')};
-    const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function inspectCompletion')).replace('export function','function')+';captureSourceSnapshot',
+    const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replace('export function','function')+';captureSourceSnapshot',
       {fs:fakeFs,path:path.win32,process:{platform:'win32'},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>({status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
     const result=capture('Q:\\RUNNER~1\\repo',artifact);assert.equal(result.complete,true,result.reason);
     assert.match(capture('Q:\\RUNNER~1\\repo\\child',artifact).reason,/repository root/);
@@ -255,8 +260,10 @@ try {
     const git = args => { const r = spawnSync("git", ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
     git(["init", "-q"]); fs.writeFileSync(path.join(cwd, "x.txt"), "before\n"); fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2]));
     git(["add", "."]); git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture baseline"]);
-    fs.writeFileSync(path.join(cwd, "x.txt"), "after\n"); const diff = git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]);
+    fs.writeFileSync(path.join(cwd, "x.txt"), "after\n"); const diff = git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]);
     assert.equal(captureSourceSnapshot(cwd, diff).complete, true);
+    const actual=spawnSync(process.execPath,[path.join(scripts,'multi-review.mjs'),'--governor','codex','--reviewers','codex','--min-success','1','--no-ui'],{cwd,encoding:'utf8',timeout:30000,windowsHide:true,env:{...process.env,NO_UPDATE_CHECK:'1'}});
+    assert.equal(actual.status,3,actual.stderr);assert.equal(JSON.parse(actual.stdout).source_snapshot.complete,true);
     const subdir = path.join(cwd, "subdir"); fs.mkdirSync(subdir);
     assert.match(captureSourceSnapshot(subdir, diff).reason, /repository root/i);
     // Mutate after the initial diff comparison, at the first source read.
@@ -269,15 +276,15 @@ try {
       return (file, ...args) => { if (!changed && fs.realpathSync(file) === raceTarget) { changed = true; fs.writeFileSync(file, "concurrent\n"); } return fs.readFileSync(file, ...args); };
     } });
     const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
-    const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function inspectCompletion")).replace("export function", "function") + ";captureSourceSnapshot", {
+    const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function normalizeTarget")).replace("export function", "function") + ";captureSourceSnapshot", {
       fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); },
     });
     const raced=capture(raceCwd,diff);
     assert.equal(changed,true,'race fixture did not mutate the aliased source');
     assert.equal(raced.complete, false, "concurrent source must not bind to an older reviewed diff");
     fs.writeFileSync(path.join(cwd, "x.txt"), "stale\n"); assert.equal(captureSourceSnapshot(cwd, diff).complete, false);
-    fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,5,6])); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
-    fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2])); fs.unlinkSync(path.join(cwd, "blob.bin")); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
+    fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,5,6])); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
+    fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2])); fs.unlinkSync(path.join(cwd, "blob.bin")); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
   });
   test("junction evidence cannot escape project", () => {
     const link = path.join(fixture, "evidence-link"); fs.symlinkSync(path.join(fixture, "evidence"), link, process.platform === "win32" ? "junction" : "dir");
@@ -286,6 +293,11 @@ try {
   });
   test("peer-authored command never executed", () => assert(!fs.existsSync(path.join(fixture, "PEER_EXECUTED"))));
   test("real completion CLI and ledger rebuild", () => { const result = run([path.join(scripts, "governor.mjs"), "--run", report.run_id, "--record"]); assert.equal(result.status, 0, result.stdout + result.stderr); assert.equal(JSON.parse(result.stdout).ledger_rebuilt, true); assert.match(fs.readFileSync(path.join(fixture, ".ensemble_reviews/ledger.html"), "utf8"), /Local completion evidence validated/); });
+  test('receipt success cannot hide dashboard rebuild failure',()=>{
+    const copy=write('isolated/governor.mjs',fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8'));
+    const result=run([copy,'--run',report.run_id,'--record']),body=JSON.parse(result.stdout);
+    assert.equal(result.status,5,result.stdout+result.stderr);assert.equal(body.complete,true);assert.equal(body.ledger_rebuilt,false);assert.equal(body.ledger_url,null);assert(body.ledger_error);
+  });
   process.stdout.write(JSON.stringify({ passed: true, tests: passed, model_calls: 0, limitations: "Controlled reviewer replies and governor-authored execution; not live provider/harness certification" }, null, 2) + "\n");
 } finally {
   const resolved = path.resolve(fixture), temp = path.resolve(os.tmpdir());

@@ -70,6 +70,18 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
   } catch (error) { return { complete: false, files: [], reason: error.message }; }
 }
 
+export function normalizeTarget(value, files, root) {
+  if (typeof value !== 'string') return null;
+  const raw = value.replaceAll('\\', '/');
+  if (files.some(f => f.path === raw)) return raw;
+  let candidate = raw.replace(/:\d+(?:-\d+)?(?::\d+)?$/, '');
+  if (path.isAbsolute(candidate)) candidate = path.relative(root, candidate).replaceAll('\\', '/');
+  if (files.some(f => f.path === candidate)) return candidate;
+  if (/^[ab]\//.test(candidate) && files.some(f => f.path === candidate.slice(2))) return candidate.slice(2);
+  // Do not guess an external or unreviewed file into the original source scope.
+  return raw;
+}
+
 export function inspectCompletion(root, runId) {
   const state = { schema: "momm-completion/1", run_id: runId, complete: false,
     evidence_level: "local records and byte hashes validated; not independent proof of execution or correctness",
@@ -185,10 +197,8 @@ export function inspectCompletion(root, runId) {
         if (!current) demand(report.source_snapshot.files.some(f => f.path === a.path && f.sha256 === a.sha256), "reproduction baseline differs from reviewed source");
       }
       // A cited real project file must actually be covered by the check.
-      const rawTarget = obligation.kind === "finding" ? obligation.content.target_file?.replaceAll("\\", "/") : null;
-      const target = rawTarget && !report.source_snapshot.files.some(f => f.path === rawTarget)
-        && /^[ab]\//.test(rawTarget) && report.source_snapshot.files.some(f => f.path === rawTarget.slice(2))
-        ? rawTarget.slice(2) : rawTarget;
+      const target = obligation.kind === 'finding'
+        ? normalizeTarget(obligation.content.target_file, report.source_snapshot.files, root) : null;
       if (target && !names.has(target)) {
         demand(phase === "investigation" && c.absent_paths?.includes(target)
           && !path.isAbsolute(target) && !target.includes(":") && target.split("/").every(p => p && p !== "." && p !== "..")
@@ -264,6 +274,19 @@ export function recordCompletion(root, runId) {
     fs.writeFileSync(tmp, JSON.stringify(receipt, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     const again = inspectCompletion(root, runId);
     demand(again.complete && JSON.stringify(again.validated_files) === JSON.stringify(result.validated_files), "evidence changed before recording");
+    if (fs.existsSync(final)) {
+      const stat=fs.lstatSync(final);
+      demand(stat.isFile() && !stat.isSymbolicLink() && stat.size <= 8_000_000, 'unsafe previous completion receipt');
+      const previous=fs.readFileSync(final), archive=path.join(dir, `${runId}.${digest(previous)}.json`);
+      try { fs.writeFileSync(archive, previous, {flag:'wx',mode:0o600}); }
+      catch(error) {
+        if(error.code!=='EEXIST')throw error;
+        const saved=fs.lstatSync(archive);
+        demand(saved.isFile() && !saved.isSymbolicLink() && saved.size===previous.length
+          && digest(fs.readFileSync(archive))===digest(previous), 'previous receipt archive mismatch');
+      }
+      result.previous_receipt_path = `.ensemble_reviews/completions/${path.basename(archive)}`;
+    }
     fs.renameSync(tmp, final);
     result.receipt_path = `.ensemble_reviews/completions/${runId}.json`;
   } finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
@@ -283,8 +306,9 @@ if (isEntrypoint()) {
       const built = spawnSync(process.execPath, [fileURLToPath(new URL("ledger.mjs", import.meta.url))], { cwd: process.cwd(), encoding: "utf8", timeout: 15000, windowsHide: true });
       result.ledger_rebuilt = built.status === 0;
     }
-    result.ledger_url = pathToFileURL(path.resolve(".ensemble_reviews/ledger.html")).href;
+    result.ledger_url = result.ledger_rebuilt === true ? pathToFileURL(path.resolve(".ensemble_reviews/ledger.html")).href : null;
+    if (result.ledger_rebuilt === false) result.ledger_error = 'Completion receipt recorded, but the private dashboard rebuild failed. Rebuild it explicitly; no current ledger link is claimed.';
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-    process.exitCode = result.complete ? 0 : 4;
+    process.exitCode = !result.complete ? 4 : result.ledger_rebuilt === false ? 5 : 0;
   } catch (error) { process.stderr.write(JSON.stringify({ error: error.message }) + "\n"); process.exitCode = 4; }
 }

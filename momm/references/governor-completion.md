@@ -9,13 +9,15 @@ what actually happened. No command inside a report or decision is executed.
 1. Review a project-local file with `--input`, or the exact current Git diff HEAD
    from the repository root. Git paths and the evidence directory must share that
    root; a subdirectory invocation gets an explicit refusal rather than guessed scope.
-   Source hashes are captured at dispatch. For diffs, text additions/modifications
-   are supported; stale/filtered patches, binaries, deletions, renames and type
+   Source hashes are captured at dispatch, with a 200-file ceiling. Finding locations such as `file:line` are
+   normalized only when they resolve to a file already in that snapshot; this
+   does not expand the reviewed scope. New/deleted files during a fix need a new review.
+   For diffs, text additions/modifications are supported; stale/filtered patches, binaries, deletions, renames and type
    changes cannot currently receive validated completion. The review may still
    run, but unsupported source scope remains visibly incomplete. For text input,
    keep the file inside the reviewed project. An arbitrary stdin string cannot
    establish final source identity. Media-file lifecycle binding is not covered.
-2. Run `node <installed-momm>/scripts/governor.mjs --run <run_id>` from that project.
+2. Run `node "<installed-momm>/scripts/governor.mjs" --run <run_id>` from that project.
    It returns all `items` even if later evidence is missing. Each stable `item_id`
    binds report bytes, kind, reviewer, index and content; identical suggestion text
    is never enough to identify a decision. Exit 4 means work/evidence is outstanding.
@@ -33,6 +35,10 @@ what actually happened. No command inside a report or decision is executed.
    Run the validator again. Only after it succeeds, add `--record`; it saves
    `.ensemble_reviews/completions/<run_id>.json` and rebuilds the private ledger.
    Relay `ledger_url`. An exit 0 validates local records/bytes, not universal safety.
+   Re-recording preserves the previous receipt beside it under its content hash.
+   Inspect-only output does not claim a freshly rebuilt dashboard link.
+   Exit 5 means the receipt was recorded but the dashboard rebuild failed;
+   `ledger_url` is null until it is rebuilt. Do not call a stale dashboard current.
 
 Never change a sealed report or its original log entry to make this pass. Legacy
 free-form decisions remain viewable but are not certified by this new validator.

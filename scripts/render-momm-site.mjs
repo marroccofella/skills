@@ -139,13 +139,29 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const block = /<script id="data" type="application\/json">[\s\S]*?<\/script>/;
   if (!block.test(ledger)) throw new Error("Public ledger data marker is missing");
   output["docs/evidence/index.html"] = ledger.replace(block, () => `<script id="data" type="application/json">${json.replaceAll("<", "\\u003c")}</script>`);
-  const routeKeys = ["route", "completed", "timeouts", "other", "median_s", "p90_s", "applied", "rejected", "deferred", "historical_other", "acceptance"];
-  output["docs/momm/data/routes.csv"] = csv([routeKeys, ...s.routes.map(r => routeKeys.map(k => r[k]))]);
-  output["docs/momm/data/routes.md"] = ["Stored-report cohort; acceptance is the governor's recorded applied / (applied + rejected), not measured accuracy.", "", `| ${routeKeys.join(" | ")} |`, `| ${routeKeys.map(() => "---").join(" | ")} |`, ...s.routes.map(r => `| ${routeKeys.map(k => r[k] ?? "—").join(" | ")} |`)].join("\n") + "\n";
+  // Keep the public CSV's original columns at their existing URLs. New fields
+  // are additive; internal page-statistic names are not the download contract.
+  const routeKeys = ["route", "completed_reviews", "timeouts", "other_failures", "median_seconds", "p90_seconds", "accept_verdicts", "modify_verdicts", "reject_verdicts", "mean_confidence", "suggestions_applied", "suggestions_rejected", "governor_acceptance_rate", "deferred", "historical_other"];
+  const downloadRoutes = s.routes.map(r => {
+    const peers = Object.values(data.reports).flatMap(x => x.report.reviewers || []).filter(p => p.agent === r.route && p.status === 'success');
+    const confidence = peers.map(p => p.confidence).filter(Number.isFinite);
+    return { route:r.route, completed_reviews:r.completed, timeouts:r.timeouts, other_failures:r.other,
+      median_seconds:r.median_s, p90_seconds:r.p90_s, accept_verdicts:peers.filter(p=>p.verdict==='ACCEPT').length,
+      modify_verdicts:peers.filter(p=>p.verdict==='MODIFY').length, reject_verdicts:peers.filter(p=>p.verdict==='REJECT').length,
+      mean_confidence:confidence.length ? confidence.reduce((a,b)=>a+b,0)/confidence.length : null,
+      suggestions_applied:r.applied, suggestions_rejected:r.rejected, governor_acceptance_rate:r.acceptance,
+      deferred:r.deferred, historical_other:r.historical_other };
+  });
+  output["docs/momm/data/routes.csv"] = csv([routeKeys, ...downloadRoutes.map(r => routeKeys.map(k => r[k]))]);
+  output["docs/momm/data/routes.md"] = ["Stored-report cohort; acceptance is the governor's recorded applied / (applied + rejected), not measured accuracy. Confidence is self-reported, not calibrated accuracy.", "", `| ${routeKeys.join(" | ")} |`, `| ${routeKeys.map(() => "---").join(" | ")} |`, ...downloadRoutes.map(r => `| ${routeKeys.map(k => r[k] ?? "—").join(" | ")} |`)].join("\n") + "\n";
   output["docs/momm/data/routes.md"] = output["docs/momm/data/routes.md"].replace("Stored-report cohort;", "Completion/timing use stored reports; decisions use all recorded single-route dispositions;");
   output["docs/momm/data/decisions-by-attribution.csv"] = csv([["attribution", "applied", "rejected", "deferred", "historical_other"], ...[...s.routes.map(r => ({ attribution: r.route, ...r })), { attribution: "coalition_or_multiple", ...s.coalition }].map(r => [r.attribution, r.applied, r.rejected, r.deferred, r.historical_other])]);
-  const runKeys = ["run_id", "timestamp", "governor", "input_bytes", "findings_count", "corroborated_count", "subject"];
-  output["docs/momm/data/runs.csv"] = csv([runKeys, ...data.runs.map(r => runKeys.map(k => r[k]))]);
+  const runKeys = ["run_id", "timestamp", "governor", "input_bytes", "findings", "corroborated", "reviewer_status", "subject"];
+  output["docs/momm/data/runs.csv"] = csv([runKeys, ...data.runs.map(r => {
+    const row = {...r, findings:r.findings_count, corroborated:r.corroborated_count,
+      reviewer_status:Object.entries(r.reviewer_status || {}).map(([agent,status])=>`${agent}:${status}`).join(' ')};
+    return runKeys.map(k => row[k]);
+  })]);
   const decisionKeys = ["timestamp", "run_id", "reviewer", "disposition", "suggestion", "reason"];
   output["docs/momm/data/dispositions.csv"] = csv([decisionKeys, ...data.dispositions.map(d => decisionKeys.map(k => d[k]))]);
   output["docs/momm/data/findings-by-severity.csv"] = csv([["severity", "findings"], ...Object.entries(s.severity)]);
@@ -157,6 +173,16 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const downloads = [["routes.csv", "Route completion/timing from stored reports; all single-route decision counts and governor acceptance"], ["routes.md", "The same route table as Markdown"], ["decisions-by-attribution.csv", "Every decision bucket, including coalition/multiple attribution"], ["public-stats.json", "The generated page statistics and explicit denominators"], ["runs.csv", "Run ID, timestamp, governor, input size, finding counts and subject"], ["dispositions.csv", "Recorded decisions and reasons"], ["findings-by-severity.csv", "Findings in stored reports, grouped by severity"], ["runs-per-day.csv", "Recorded runs by date"], ["input-size-vs-time.csv", "Stored-report input sizes, dispatched routes, timeouts and successful durations"]];
   output["docs/momm/data/index.html"] = shell("evidence.html", "Evidence downloads", `${hero("PUBLIC DATA CATALOGUE", "The numbers,<br><span>in reusable form.</span>", "Generated from the same committed public snapshot as the information pages. Read the cohort definitions before comparing columns.")}<div class="doc-body wide"><p>Snapshot: ${esc(s.generated)}. This is project development evidence, not measured accuracy.</p><div class="table-wrap"><table><thead><tr><th>Download</th><th>Contents</th></tr></thead><tbody>${downloads.map(([f, d]) => `<tr><td><a href="${f}">${f}</a></td><td>${d}</td></tr>`).join("")}</tbody></table></div><p><a href="../evidence.html">Read the evidence definitions →</a></p></div>`, version).replace('href="site.css"', 'href="../site.css"').replace('src="site.js"', 'src="../site.js"').replace(/href="(index|start|updates|evidence|reference)\.html"/g, 'href="../$1.html"');
   output["docs/momm/data/index.html"] = output["docs/momm/data/index.html"].replace('href="releases/index.html"', 'href="../releases/index.html"');
+  const hub = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
+  const versionMarker = /<span data-momm-version>[^<]*<\/span>/g;
+  if ([...hub.matchAll(versionMarker)].length !== 1) throw new Error('Hub must contain exactly one MOMM version marker');
+  output['docs/index.html'] = hub.replace(versionMarker, () => `<span data-momm-version>${esc(version)}</span>`);
+  // lastmod is optional. Do not mislabel the evidence snapshot date, build time
+  // or a moving Git HEAD as the last meaningful edit of every generated page.
+  const urls = Object.keys(output).filter(f => f.endsWith('.html')).map(f =>
+    'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/index\.html$/, '')).sort();
+  output['docs/sitemap.xml'] = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + [...new Set(urls)].map(url => `  <url><loc>${esc(url)}</loc></url>`).join('\n') + '\n</urlset>\n';
   const stale = [];
   for (const [file, text] of Object.entries(output)) {
     const dest = path.join(root, file);

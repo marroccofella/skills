@@ -1,10 +1,25 @@
 # MOMM Roadmap — alignment record
 
+Candidate 1.15.0 stabilization also covers shared installer/updater receipt exclusion,
+scope-preserving rollback, explicit downgrade selection, compatible public CSV
+columns, overlapping-source decision deduplication and ledger navigation regressions.
+These are verified local repairs; publication still requires the release gates below.
+
 Purpose: keep parallel sessions and future releases pointed the same way.
 Before proposing or building a MOMM feature, read this file; after shipping or
 rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
 ## Candidate — not released
+
+Final September 13 repairs: updates fetch full ancestry and verify promotion and
+Git connectivity across intervening commits; repeated explicit harness installs
+preserve matching clean verified provenance. Existing update claims fail closed
+instead of racy dead-PID reclamation, and receipt/journal decisions are rechecked
+inside exclusivity. A stale claim may need manual inspection before recovery.
+The hub version is stamped from the manifest; sitemap generation omits unverified
+lastmod dates. The shared prompt covers new and legacy users without broadening
+skill/harness scope. Governor locations normalize only within reviewed paths;
+protocol commands use quoted absolute paths and failed ledger builds are visible.
 
 ### 1.15 release candidate — explicit updates and clearer public information
 

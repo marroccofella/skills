@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+await import('./update-safety.test.mjs');
+await import('./update-receipt.test.mjs');
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
 const remote = path.join(fixture, "remote"), installed = path.join(fixture, "installed");
 const results = {};
@@ -46,6 +48,8 @@ try {
   });
   const secondHarness = path.join(fixture, "second-harness");
   run(process.execPath, ["install.mjs", "--skills", "momm,sibling", "--custom-dir", secondHarness], installed);
+  write(remote, 'intermediate.txt', 'first intervening change\n'); commit(remote, 'intermediate one');
+  write(remote, 'intermediate.txt', 'second intervening change\n'); commit(remote, 'intermediate two');
   write(remote, "momm/SKILL.md", "Explicit new protocol\n");
   write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher two');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.1.0" }));
@@ -90,6 +94,18 @@ try {
     await assert.rejects(command(["--dry-run"]), /Pinned channel/);
     await command(["--channel", "stable"]);
   });
+  await test('main_channel_never_ignores_explicit_version', async () => {
+    await assert.rejects(command(['--channel', 'main', '--version', '1.1.0', '--dry-run']), /cannot be combined/);
+    await command(['--channel', 'main']);
+    await assert.rejects(command(['--version', '1.1.0', '--dry-run']), /cannot be combined/);
+    await command(['--channel', 'stable']);
+  });
+  await test('existing_update_claim_is_preserved_even_when_incomplete', async () => {
+    const claim = path.join(stateDir(installed), 'update.active');
+    fs.writeFileSync(claim, '');
+    try { await assert.rejects(command(['--channel', 'pinned']), /Existing update claim/); assert.equal(fs.readFileSync(claim, 'utf8'), ''); }
+    finally { fs.unlinkSync(claim); }
+  });
   await test("ignore_rule_change_cannot_strand_existing_private_files", async () => {
     write(installed, "user-cache/private.txt", "user-owned ignored bytes");
     await assert.rejects(command(["--apply", "--yes", "--accept-protocol"]), /Ignore rules change/);
@@ -97,6 +113,17 @@ try {
     assert.equal(fs.readFileSync(path.join(installed, "user-cache/private.txt"), "utf8"), "user-owned ignored bytes");
     assert.equal(fs.existsSync(path.join(stateDir(installed), "transaction.json")), false);
     fs.unlinkSync(path.join(installed, "user-cache/private.txt")); fs.rmdirSync(path.join(installed, "user-cache"));
+  });
+  await test("pre_checkout_failure_preserves_attached_branch", async () => {
+    const branch = git(installed, "symbolic-ref", "--short", "HEAD");
+    const refLock = path.resolve(installed, git(installed, "rev-parse", "--git-path", "refs/momm/verified.lock"));
+    fs.mkdirSync(path.dirname(refLock), { recursive: true });
+    fs.writeFileSync(refLock, "fixture-owned ref lock");
+    try {
+      await assert.rejects(command(["--apply", "--yes", "--accept-protocol"]), /Previous installation restored/);
+    } finally { fs.unlinkSync(refLock); }
+    assert.equal(git(installed, "rev-parse", "HEAD"), first);
+    assert.equal(git(installed, "symbolic-ref", "--short", "HEAD"), branch);
   });
   await test("relink_failure_restores_previous_installation", async () => {
     let attempts = 0;
@@ -114,6 +141,13 @@ try {
     assert.equal(git(installed, "rev-parse", "HEAD"), second); assert.equal(lock.current.verified, true);
     assert.equal(lock.previous.current.commit, first); assert.equal(lock.previous.current.tree_sha256, treeHash(installed, first));
     assert.equal(lock.current.dispatcher_sha256, hash(fs.readFileSync(path.join(installed, "momm/scripts/multi-review.mjs"))));
+    assert.equal(git(installed, 'rev-parse', 'refs/momm/verified'), second, 'promotion must create the verified ref');
+    git(installed, 'fsck', '--connectivity-only');
+  });
+  await test('adding_harness_preserves_matching_verified_release_provenance', () => {
+    const thirdHarness = path.join(fixture, 'third-harness');
+    run(process.execPath, ['momm/scripts/install.mjs', '--custom-dir', thirdHarness], installed);
+    assert.equal(provenance(installed).release_verified, true);
   });
   await test("mixed_harness_scopes_do_not_expand_on_update", () => {
     assert.equal(fs.existsSync(path.join(custom, "sibling")), false);

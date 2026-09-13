@@ -1,5 +1,14 @@
 # MOMM 1.15.0 — explicit updates and clearer evidence
 
+Final compatibility fixes preserve existing CSV download columns, deduplicate
+identical decisions imported from overlapping evidence stores, and retain keyboard
+focus and accurate report-derived titles in the public ledger. Malformed shared
+fragments and legacy orphan entries have explicit regression coverage.
+
+Updater receipt writes now share the update exclusion claim. Rollback retains
+harness scopes explicitly added after an update; an implicit stable-channel
+downgrade is refused and requires an explicit version choice instead.
+
 These notes were prepared for the release candidate. Publication is complete only
 after the safety matrix, privacy review and signed-tag verification. Check the
 [canonical release record](https://github.com/marroccofella/skills/releases/tag/momm-1.15.0)
@@ -20,9 +29,18 @@ and signature before installing; this file is not proof that the tag exists.
 - Five focused information pages; corrected project working-directory guidance;
   one deterministic renderer for public evidence, tables, downloads and hashes.
 - A source-linked version archive separates published releases, historical tags
-  and public code milestones. An existing-user upgrade prompt covers both saved
+  and public code milestones. A shared new/existing-user prompt covers installation, saved
   installation receipts and explicitly approved legacy bootstrap; it never
   instructs an agent to bypass signature or protocol-consent checks.
+- Full-ancestry update transfers and promoted-reference/integrity checks cover
+  releases with intervening commits. Adding a harness preserves matching verified
+  provenance. Receipt reads and journal checks occur under the update claim;
+  existing claims are never automatically stolen based on a dead PID.
+- The hub version comes from the manifest. The sitemap includes generated pages
+  without invented modification dates; historical evidence retains its real date.
+- Governor commands use quoted absolute installed paths. Reviewed file locations
+  accept line suffixes only within the captured scope. A failed dashboard rebuild
+  returns exit 5 and no current dashboard link even if its receipt was recorded.
 - Interrupted daily-check recovery, ignored-file transition protection, matching
   signed-tag reuse on publication retry, and a main-checkpoint-only signing mode.
 - Local-only public read-aloud refuses browser-default or remote voices. Review
@@ -71,6 +89,8 @@ the release workflow and final live verification must exercise the real signer.
 
 The updater does not claim recovery from deleted repositories, missing Git objects,
 damaged storage or missing harness prerequisites. It refuses local edits and an
+existing update claim; after a crash, independently confirm no updater is running
+before removing only that claim and retrying recovery. It also refuses an
 unrelated concurrent checkout. Legacy unsigned releases require an explicit
 bootstrap; they are not update targets or retroactively signed.
 

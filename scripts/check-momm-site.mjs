@@ -6,9 +6,18 @@ import assert from "node:assert/strict";
 import { renderPublic, canonical, stats } from "./render-momm-site.mjs";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
+await import("./ledger-ui.test.mjs");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 renderPublic({ root, check: true });
+const expectedVersion = JSON.parse(fs.readFileSync(path.join(root, 'versions.json'))).momm;
+const hub = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
+assert.equal([...hub.matchAll(/data-momm-version/g)].length, 1, 'hub needs one generated version marker');
+assert(hub.includes(`<span data-momm-version>${expectedVersion}</span>`), 'hub must show the exact manifest version');
+const sitemap = fs.readFileSync(path.join(root, 'docs/sitemap.xml'), 'utf8');
+assert(!sitemap.includes('<lastmod>2026-09-04</lastmod>'), 'do not reuse the historical evidence date as current page modification time');
+for (const page of ['start.html', 'updates.html', 'reference.html', `releases/${expectedVersion}.html`, 'releases/upgrade.html'])
+  assert(sitemap.includes(`https://marroccofella.github.io/skills/momm/${page}`), `sitemap omits ${page}`);
 const files = ["index.html", "start.html", "updates.html", "evidence.html", "reference.html", "data/index.html"];
 let localLinks = 0;
 for (const name of files) {
@@ -45,6 +54,15 @@ const runtime = vm.runInNewContext(bootstrap + "\nrenderDetail(allRuns.find(e =>
 assert.equal(runtime.logged, data.runs.length); assert.equal(runtime.reports, Object.keys(data.reports).length); assert.equal(runtime.decisions, data.dispositions.length);
 assert(elements.get("runs").innerHTML.includes("data-id="));
 assert(elements.get("detail").innerHTML.includes("Sanitized public report"));
+const sparseData=structuredClone(data),firstReport=Object.keys(sparseData.reports)[0];
+sparseData.reports[firstReport].report={input_bytes:10};
+const sparseElements=new Map(),sparseDocument={getElementById(id){if(!sparseElements.has(id))sparseElements.set(id,{textContent:id==='data'?JSON.stringify(sparseData):'',innerHTML:'',addEventListener(){},querySelector(){return null;},querySelectorAll(){return [];},insertAdjacentHTML(_where,text){this.innerHTML+=text;}});return sparseElements.get(id);}};
+vm.runInNewContext(bootstrap+`\nrenderDetail(allRuns.find(e=>e.run.run_id===${JSON.stringify(firstReport)}));`,{document:sparseDocument,CSS:{escape:s=>s}},{timeout:2000});
+assert.match(sparseElements.get('detail').innerHTML,/unavailable|partial/i);
+assert(!sparseElements.get('detail').innerHTML.includes('no reviewer raised a defect'));
+const preferences=ledger.slice(ledger.indexOf('  // Browser preferences are optional;'),ledger.indexOf('  const HARNESS ='));
+assert(preferences.includes('function loadStoredPreference'));
+vm.runInNewContext(preferences+`\nsaveStoredPreference('theme','dark');if(loadStoredPreference('theme')!=='dark')throw Error('memory preference fallback failed');`,{Map,localStorage:{getItem(){throw Error('SecurityError');},setItem(){throw Error('SecurityError');}}},{timeout:1000});
 const speechStart = ledger.indexOf("  function speakSequence(items)");
 const speechEnd = ledger.indexOf("  function registerSpeech(", speechStart);
 assert(speechStart >= 0 && speechEnd > speechStart);

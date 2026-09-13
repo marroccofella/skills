@@ -458,6 +458,14 @@
   const DATA = RAW_EXPORT.schema === "momm-evidence-export/1"
     ? { ...RAW_EXPORT, projects: [{ name: "Public development snapshot", root: "sanitized public evidence", runs: RAW_EXPORT.runs, reports: RAW_EXPORT.reports, dispositions: RAW_EXPORT.dispositions }] }
     : RAW_EXPORT;
+  function usableReport(entry) {
+    const report=entry.report?.report;
+    return report && Array.isArray(report.reviewers) && Array.isArray(report.findings) ? report : null;
+  }
+  // Browser preferences are optional; denied storage must not disable the UI.
+  const memoryPreferences = new Map();
+  function loadStoredPreference(key) { try { return localStorage.getItem(key) ?? memoryPreferences.get(key) ?? null; } catch { return memoryPreferences.get(key) ?? null; } }
+  function saveStoredPreference(key, value) { memoryPreferences.set(key, value); try { localStorage.setItem(key, value); } catch {} }
   const HARNESS = {
     codex: "Codex CLI · ChatGPT OAuth",
     claude: "Claude Code · Anthropic OAuth",
@@ -495,7 +503,7 @@
       allRuns.push({ project: p.name, run, report: p.reports?.[run.run_id] ?? null, dispositions: p.dispositions.filter((d) => d.run_id === run.run_id) });
     }
     for (const d of p.dispositions) {
-      if (!p.runs.some((r) => r.run_id === d.run_id) && !allRuns.some((e) => e.orphan && e.run.run_id === d.run_id)) {
+      if (!p.runs.some((r) => !r.event && r.run_id === d.run_id) && !allRuns.some((e) => e.orphan && e.project === p.name && e.run.run_id === d.run_id)) {
         allRuns.push({ project: p.name, orphan: true, run: { run_id: d.run_id, timestamp: d.timestamp, governor: "(run log not persisted)", reviewer_status: {}, findings_count: null }, report: null, dispositions: p.dispositions.filter((x) => x.run_id === d.run_id) });
       }
     }
@@ -563,7 +571,8 @@
     if (e.run.report_sha256) html += `<div class="sha">Original private report provenance · SHA-256 ${esc(e.run.report_sha256)}</div>`;
     if (e.report?.public_report_sha256) html += `<div class="sha">Sanitized public report · canonical JSON SHA-256 ${esc(e.report.public_report_sha256)}</div>`;
 
-    const rpt = e.report?.report;
+    const rpt = usableReport(e);
+    if (e.report && !rpt) html += '<p class="notice">Partial legacy report: reviewer messages and findings are unavailable. Missing fields are not evidence of no defects.</p>';
     if (rpt) {
       html += `<p class="honesty">Reviewer output (bounded, normalized excerpts) from the content-addressed report (digest above). Harness identity, not model identity.</p>`;
       html += `<h3 class="sect">Reviewer messages</h3>`;
@@ -700,7 +709,7 @@
     // Preserve deliberate user choices first. Defaults then avoid those voices and
     // one another whenever the device exposes enough voices for every participant.
     for (const agent of agents) {
-      const stored = localStorage.getItem(voiceKey(agent));
+      const stored = loadStoredPreference(voiceKey(agent));
       const found = stored && pool.find((voice) => voice.voiceURI === stored || voice.name === stored);
       if (found) {
         assignments.set(agent, found);
@@ -816,12 +825,12 @@
     return item;
   }
 
-  const storedTheme = localStorage.getItem("momm-ledger-theme");
+  const storedTheme = loadStoredPreference("momm-ledger-theme");
   if (storedTheme === "light" || storedTheme === "dark") document.documentElement.dataset.theme = storedTheme;
   document.getElementById("theme-toggle").addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = next;
-    localStorage.setItem("momm-ledger-theme", next);
+    saveStoredPreference("momm-ledger-theme", next);
   });
 
   const governorRoute = (DATA.preflight?.routes ?? []).find((route) => route.role === "governor");
@@ -866,11 +875,11 @@
   }
   function runOutcome(entry) {
     if (entry.orphan) return "Governor triage record";
-    const statuses = Object.values(entry.run.reviewer_status ?? {});
+    const rpt = usableReport(entry);
+    const statuses = rpt ? rpt.reviewers.map(r => r.status) : Object.values(entry.run.reviewer_status ?? {});
     const external = statuses.filter((s) => s !== "self_excluded");
     const ok = external.filter((s) => s === "success").length;
-    const findings = entry.run.findings_count ?? 0;
-    const rpt = entry.report?.report;
+    const findings = rpt ? rpt.findings.length : entry.run.findings_count ?? 0;
     if (rpt) {
       const verdicts = rpt.reviewers.filter((r) => r.status === "success" && r.verdict).map((r) => r.verdict);
       const unique = [...new Set(verdicts)];
@@ -888,7 +897,7 @@
   // Answers the reader's first question: what did this review actually
   // provide — caught defects, applied improvements, or independent assurance?
   function renderValue(entry) {
-    const rpt = entry.report?.report;
+    const rpt = usableReport(entry);
     if (!rpt) return "";
     const external = rpt.reviewers.filter((r) => r.status !== "self_excluded");
     const ok = external.filter((r) => r.status === "success").length;
@@ -913,7 +922,7 @@
   }
 
   function renderOutcome(entry) {
-    const rpt = entry.report?.report;
+    const rpt = usableReport(entry);
     if (!rpt) return "";
     const rows = rpt.reviewers.map((r) => {
       const m = model(r.agent);
@@ -924,6 +933,8 @@
   }
 
   function renderStudioList(filterValue) {
+    const focused = document.activeElement;
+    const restore = runHost.contains(focused) && focused?.dataset?.id ? {id:focused.dataset.id, project:focused.dataset.project} : null;
     const query = String(filterValue ?? searchInput.value ?? "").trim().toLowerCase();
     const projectValue = projectFilter.value;
     const evidenceValue = evidenceFilter.value;
@@ -951,6 +962,7 @@
       html += "</ul>";
     }
     runHost.innerHTML = html || '<div class="empty">No runs match these filters.</div>';
+    if (restore) runHost.querySelector(`button[data-id="${CSS.escape(restore.id)}"][data-project="${CSS.escape(restore.project)}"]`)?.focus();
     resultCount.textContent = `${visible} shown`;
   }
 
@@ -1002,7 +1014,8 @@
     if (entry.run.report_sha256) html += `<div class="sha">Original private report provenance · SHA-256 ${esc(entry.run.report_sha256)}</div>`;
     if (entry.report?.public_report_sha256) html += `<div class="sha">Sanitized public report · canonical JSON SHA-256 ${esc(entry.report.public_report_sha256)}</div>`;
 
-    const report = entry.report?.report;
+    const report = usableReport(entry);
+    if (entry.report && !report) html += '<p class="notice">Partial legacy report: reviewer messages and findings are unavailable. Missing fields are not evidence of no defects.</p>';
     const promptText = report?.input_text ?? report?.prompt ?? report?.input_excerpt ?? null;
     const promptSpeech = promptText
       ? registerSpeech("prompt", "narrator", "entered prompt", promptText)
@@ -1070,18 +1083,19 @@
   voicePanel.addEventListener("change", (event) => {
     const select = event.target.closest("select[data-voice-agent]");
     if (!select) return;
-    localStorage.setItem(voiceKey(select.dataset.voiceAgent), select.value);
+    saveStoredPreference(voiceKey(select.dataset.voiceAgent), select.value);
     setSpeechStatus(`${model(select.dataset.voiceAgent).label} voice set to ${select.options[select.selectedIndex]?.text ?? "browser default"}.`);
   });
   rateSelect.addEventListener("change", () => setSpeechStatus(`Read-aloud speed set to ${rateSelect.options[rateSelect.selectedIndex].text}.`));
 
   if (synth) {
-    synth.addEventListener?.("voiceschanged", refreshVoices);
-    window.speechSynthesis.onvoiceschanged = refreshVoices;
+    if (synth.addEventListener) synth.addEventListener("voiceschanged", refreshVoices);
+    else synth.onvoiceschanged = refreshVoices;
   }
   refreshVoices();
   renderStudioList();
-  const hashId = decodeURIComponent(location.hash.replace(/^#/, ""));
+  let hashId = "";
+  try { hashId = decodeURIComponent(location.hash.replace(/^#/, "")); } catch { /* Invalid shared fragment: use the normal initial run. */ }
   const initial = allRuns.find((entry) => entry.run.run_id === hashId) ?? allRuns.find((entry) => entry.report) ?? allRuns[0];
   if (initial) {
     renderStudioDetail(initial);
@@ -1118,6 +1132,10 @@
 <script>
 (() => {
   const TIPS = {
+    "recorded runs": "Review dispatch records in this historical export, including failures and diagnostic runs. They do not establish a live service or completed governor triage.",
+    "stored reports": "Runs with an available bounded normalized report. A digest links its stored bytes; it does not prove completeness, model identity or correctness.",
+    "claims in run logs": "Finding counts recorded in the run summaries. Individual reports supply their own detailed claims; neither count is independently proven defects.",
+    "dispositions-only entries": "Surviving governor decisions whose original review log was not preserved. These are not counted as fresh review dispatches.",
     "runs recorded": "Review dispatch records in this exported snapshot, including successful, failed, and diagnostic runs. Non-review evidence events are counted separately when present.",
     "review runs": "Actual MOMM review dispatches in this snapshot. Failed routes remain visible because the ledger favors evidence over curation.",
     "full transcripts": "Runs with a stored normalized MOMM report and a recorded SHA-256. Reviewer summaries and details are bounded fields emitted by MOMM, not guaranteed raw CLI transcripts.",
