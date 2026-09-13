@@ -7,6 +7,7 @@ import { renderPublic, canonical, stats } from "./render-momm-site.mjs";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
 await import("./ledger-ui.test.mjs");
+await import("./momm-site-visuals.test.mjs");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 renderPublic({ root, check: true });

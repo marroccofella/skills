@@ -1,0 +1,92 @@
+[
+  {
+    "route": "codex",
+    "external_results": 87,
+    "self_excluded": 14,
+    "completed": 70,
+    "failures": {
+      "timeout": 17
+    },
+    "verdicts": {
+      "ACCEPT": 13,
+      "MODIFY": 42,
+      "REJECT": 15
+    }
+  },
+  {
+    "route": "claude",
+    "external_results": 23,
+    "self_excluded": 81,
+    "completed": 21,
+    "failures": {
+      "timeout": 2
+    },
+    "verdicts": {
+      "ACCEPT": 7,
+      "MODIFY": 14,
+      "REJECT": 0
+    }
+  },
+  {
+    "route": "antigravity",
+    "external_results": 104,
+    "self_excluded": 0,
+    "completed": 83,
+    "failures": {
+      "error": 6,
+      "timeout": 1,
+      "invalid_output": 14
+    },
+    "verdicts": {
+      "ACCEPT": 69,
+      "MODIFY": 10,
+      "REJECT": 4
+    }
+  },
+  {
+    "route": "copilot",
+    "external_results": 106,
+    "self_excluded": 0,
+    "completed": 101,
+    "failures": {
+      "authentication_required": 3,
+      "timeout": 2
+    },
+    "verdicts": {
+      "ACCEPT": 65,
+      "MODIFY": 29,
+      "REJECT": 7
+    }
+  },
+  {
+    "route": "grok",
+    "external_results": 95,
+    "self_excluded": 0,
+    "completed": 68,
+    "failures": {
+      "authentication_required": 1,
+      "invalid_output": 1,
+      "timeout": 25
+    },
+    "verdicts": {
+      "ACCEPT": 14,
+      "MODIFY": 48,
+      "REJECT": 6
+    }
+  },
+  {
+    "route": "gemini",
+    "external_results": 6,
+    "self_excluded": 0,
+    "completed": 0,
+    "failures": {
+      "error": 2,
+      "ineligible_tier": 4
+    },
+    "verdicts": {
+      "ACCEPT": 0,
+      "MODIFY": 0,
+      "REJECT": 0
+    }
+  }
+]

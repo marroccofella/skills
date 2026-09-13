@@ -1,5 +1,17 @@
 # MOMM Roadmap — alignment record
 
+## Public tour refresh — September 13, 2026
+
+Documentation-only follow-up to published 1.15.1: manifest-derived prominent
+release identity and patch changes; a version-bound narrated-tour slot; verified
+public CI links separate from the unchanged September 4 telemetry; five offline
+charts, explicit route-result denominators and failure categories; restored prose
+and attachment guidance, and a release-verifying new-user installation prompt.
+The new Dom narration must pass signal/word checks and the owner's listening
+verdict before public video acceptance. Screen actions are accelerated 15x;
+narration and readable holds are not. No automatic update or new dispatcher
+feature is introduced. Existing historical notes below are not current blockers.
+
 1.15.0 was published on September 13. The subsequent fresh-install check exposed
 gitsign's inability to open the updater's bare staging repository. The 1.15.1
 patch uses normal empty staging and adds real signed preview/apply to the release

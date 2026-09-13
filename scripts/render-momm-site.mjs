@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { releasePages } from "./momm-release-pages.mjs";
+import { evidenceVisuals, releasePanel, releaseChecks, tourSection, chartSeries } from "./momm-site-visuals.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = v => createHash("sha256").update(v).digest("hex");
@@ -128,13 +129,36 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   }
   data.note = "stored_report_sha256 identifies private source bytes before sanitization; public_report_sha256 verifies the sanitized report using its declared canonical serialization. The export sidecar verifies the whole public file.";
   data.sanitization = "User home/workspace paths normalized and private ledger links removed. Reviewer prose may quote source. Input text is absent by default but can be stored with explicit --store-input; this historical public snapshot contains some such inputs. Private-to-public export requires separate authorization and inspection.";
-  const json = JSON.stringify(data), s = stats(data), version = JSON.parse(fs.readFileSync(path.join(root, "versions.json"))).momm;
+  const json = JSON.stringify(data), s = stats(data), manifest = JSON.parse(fs.readFileSync(path.join(root, "versions.json"))), version = manifest.momm;
+  const tour = JSON.parse(fs.readFileSync(path.join(root, "docs/momm/tour.json"), "utf8"));
+  const catalogue = JSON.parse(fs.readFileSync(path.join(root, 'momm/references/release-history.json'), 'utf8'));
+  const published = catalogue.some(r => r.version === version && r.kind === 'release' && r.tag && r.published_date);
   if (Object.values(s.decisions).reduce((a, b) => a + b, 0) !== s.dispositions) throw new Error("Disposition buckets do not reconcile");
   for (const key of Object.keys(s.decisions)) if (s.routes.reduce((n, r) => n + r[key], 0) + s.coalition[key] !== s.decisions[key]) throw new Error(`Attribution buckets do not reconcile: ${key}`);
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
   const output = { ...pages(data, s, version), ...releasePages(root), "docs/evidence/momm-evidence.json": json,
     "docs/evidence/momm-evidence.json.sha256": `${sha(json)}  momm-evidence.json\n`,
     "docs/momm/data/public-stats.json": JSON.stringify(s, null, 2) + "\n" };
+  // A recorded video never silently inherits a newer version. The banner uses
+  // the publication manifest, while historical notes retain their own identity.
+  const banner = prefix => `<aside class="stable-banner" aria-label="${published?'Current stable release':'Checkout version; publication not recorded'}"><a href="${prefix}releases/${esc(version)}.html"><span class="dot"></span> ${published?'CURRENT STABLE':'CHECKOUT VERSION · CHECK PUBLICATION'} <strong>MOMM ${esc(version)}</strong></a><a href="${prefix}releases/upgrade.html">Install / upgrade guide →</a></aside>`;
+  for (const file of Object.keys(output).filter(f => f.startsWith('docs/momm/') && f.endsWith('.html'))) {
+    const prefix = file.includes('/releases/') ? '../' : '';
+    output[file] = output[file].replace('</header>', '</header>' + banner(prefix))
+      .replace('</head>', `<link rel="icon" type="image/svg+xml" href="${prefix}favicon.svg"></head>`);
+  }
+  output['docs/momm/index.html'] = output['docs/momm/index.html']
+    .replace('<section class="principles">', releasePanel(manifest, published) + '<section class="principles">')
+    .replace('<section class="boundary">', tourSection(tour, version) + '<section class="boundary">')
+    .replace('See a real review</a>', 'See a real review</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
+  output['docs/momm/start.html'] = output['docs/momm/start.html'].replace('<section id="install">', `<section class="notice"><h2>Recommended: let your agent verify the release first</h2><p><a class="button primary" href="releases/upgrade.html">Copy the new-user / upgrade prompt →</a></p><p>A clone starts on the default branch, which can contain unreleased work. Before executing the manual installer below, select the published signed release, verify its expected signing identity and package hash, and read its installer help. The copyable prompt covers those steps and asks before installing missing prerequisites.</p></section><section id="install">`);
+  const releaseEvidence = releaseChecks(catalogue, version);
+  output['docs/momm/evidence.html'] = output['docs/momm/evidence.html']
+    .replace('<h2>Why the totals differ', releaseEvidence + '<h2>Why the totals differ')
+    .replace('<section id="real-review">', evidenceVisuals(data, s) + '<section id="real-review">')
+    .replace('Read the release’s verification record →', 'Read the historical 1.13.0 fix record →');
+  output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('<section id="privacy">', `<section id="modalities"><h2>Not just code: prose and supported attachments</h2><p>Use MOMM for manuscripts, specifications and other text when sharing with the selected providers is permitted. The same rule applies: reviewers make claims; the governor verifies and records decisions.</p><p>Text routes include Codex, Claude Code, Antigravity, Copilot and Grok. Verified attachment adapters differ: Codex supports images; Claude supports images and PDFs; Gemini supports images, PDFs, audio and video where the account is eligible. Other routes stay text-only until verified. Run preflight for the installed adapter’s actual capability; a provider logo is not evidence of multimedia support.</p><p>The historical public ledger contains the manuscript specimen <code>rev_20260904131823_wvxh</code>. <a href="../evidence/index.html">Inspect the sanitized specimen →</a> · <a href="https://github.com/marroccofella/skills/blob/main/momm/SKILL.md">Read the current protocol ↗</a></p><p>Strict review-contract rejection and input/source size ceilings remain possible. The source completion validator covers local text and supported Git text additions/modifications, not every binary, rename, deletion or media lifecycle.</p></section><section id="privacy">`);
+  output['docs/momm/data/route-outcomes.json'] = JSON.stringify(chartSeries(data).routes, null, 2) + '\n';
   const ledger = fs.readFileSync(path.join(root, "docs/evidence/index.html"), "utf8");
   const block = /<script id="data" type="application\/json">[\s\S]*?<\/script>/;
   if (!block.test(ledger)) throw new Error("Public ledger data marker is missing");
@@ -168,11 +192,13 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   output["docs/momm/data/runs-per-day.csv"] = csv([["day", "runs"], ...Object.entries(s.by_day).sort()]);
   output["docs/momm/data/input-size-vs-time.csv"] = csv([["input_kb", "routes_dispatched", "routes_timed_out", "slowest_completed_seconds"], ...Object.values(data.reports).map(r => r.report).filter(r => r.input_bytes).map(r => {
     const peers = r.reviewers || [];
-    return [+(r.input_bytes / 1024).toFixed(1), peers.filter(p => p.status !== "self_excluded").length, peers.filter(p => p.status === "timeout").length, +(Math.max(0, ...peers.filter(p => p.status === "success").map(p => p.duration_ms || 0)) / 1000).toFixed(1)];
+    const measured = peers.filter(p => p.status === 'success' && Number.isFinite(p.duration_ms) && p.duration_ms >= 0).map(p => p.duration_ms);
+    return [+(r.input_bytes / 1024).toFixed(1), peers.filter(p => p.status !== "self_excluded").length, peers.filter(p => p.status === "timeout").length, measured.length ? +(Math.max(...measured) / 1000).toFixed(1) : null];
   })]);
-  const downloads = [["routes.csv", "Route completion/timing from stored reports; all single-route decision counts and governor acceptance"], ["routes.md", "The same route table as Markdown"], ["decisions-by-attribution.csv", "Every decision bucket, including coalition/multiple attribution"], ["public-stats.json", "The generated page statistics and explicit denominators"], ["runs.csv", "Run ID, timestamp, governor, input size, finding counts and subject"], ["dispositions.csv", "Recorded decisions and reasons"], ["findings-by-severity.csv", "Findings in stored reports, grouped by severity"], ["runs-per-day.csv", "Recorded runs by date"], ["input-size-vs-time.csv", "Stored-report input sizes, dispatched routes, timeouts and successful durations"]];
+  const downloads = [["routes.csv", "Route completion/timing from stored reports; all single-route decision counts and governor acceptance"], ["routes.md", "The same route table as Markdown"], ["route-outcomes.json", "Stored external-result denominators, self-exclusions and actual failure categories"], ["decisions-by-attribution.csv", "Every decision bucket, including coalition/multiple attribution"], ["public-stats.json", "The generated page statistics and explicit denominators"], ["runs.csv", "Run ID, timestamp, governor, input size, finding counts and subject"], ["dispositions.csv", "Recorded decisions and reasons"], ["findings-by-severity.csv", "Findings in stored reports, grouped by severity"], ["runs-per-day.csv", "Recorded runs by date"], ["input-size-vs-time.csv", "Stored-report input sizes, non-self-excluded route results, timeouts and successful durations. Blank slowest_completed_seconds means no successful timed response; never zero seconds."]];
   output["docs/momm/data/index.html"] = shell("evidence.html", "Evidence downloads", `${hero("PUBLIC DATA CATALOGUE", "The numbers,<br><span>in reusable form.</span>", "Generated from the same committed public snapshot as the information pages. Read the cohort definitions before comparing columns.")}<div class="doc-body wide"><p>Snapshot: ${esc(s.generated)}. This is project development evidence, not measured accuracy.</p><div class="table-wrap"><table><thead><tr><th>Download</th><th>Contents</th></tr></thead><tbody>${downloads.map(([f, d]) => `<tr><td><a href="${f}">${f}</a></td><td>${d}</td></tr>`).join("")}</tbody></table></div><p><a href="../evidence.html">Read the evidence definitions →</a></p></div>`, version).replace('href="site.css"', 'href="../site.css"').replace('src="site.js"', 'src="../site.js"').replace(/href="(index|start|updates|evidence|reference)\.html"/g, 'href="../$1.html"');
   output["docs/momm/data/index.html"] = output["docs/momm/data/index.html"].replace('href="releases/index.html"', 'href="../releases/index.html"');
+  output['docs/momm/data/index.html'] = output['docs/momm/data/index.html'].replace('</header>', '</header>' + banner('../')).replace('</head>', '<link rel="icon" type="image/svg+xml" href="../favicon.svg"></head>');
   const hub = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
   const versionMarker = /<span data-momm-version>[^<]*<\/span>/g;
   if ([...hub.matchAll(versionMarker)].length !== 1) throw new Error('Hub must contain exactly one MOMM version marker');
