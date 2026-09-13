@@ -7,13 +7,21 @@
 //   node momm/scripts/ledger.mjs            # build from ./.ensemble_reviews
 //   node momm/scripts/ledger.mjs --open     # build and open in your browser
 //   node momm/scripts/ledger.mjs --rate <run_id> <reviewer> <1-5> [--tags a,b] [--note "..."]
-//                                            # record how a review READ (1.16); latest per run wins
+//                                            # record how a review READ (1.16); latest per run wins;
+//                                            # then rebuilds the page in the same run
 //
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { inspectCompletion } from "./governor.mjs";
+
+// The page quotes this script by its installed path, so every command it
+// shows (rebuild, --rate) is copy-pasteable from any project directory.
+const LEDGER_CMD = `node "${fileURLToPath(import.meta.url)}"`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // Read-aloud narration: composed ONLY from structured, closed-vocabulary
 // fields (statuses, verdicts, severity counts, disposition tallies) plus the
@@ -127,8 +135,11 @@ function median(xs) {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
+// Every per-agent accumulator below is prototype-free: agent names come from
+// log and disposition rows, and a name such as "__proto__" or "constructor"
+// must land in its own row rather than resolve to Object.prototype.
 function rollup(dispositions, runs, reports) {
-  const agents = {};
+  const agents = Object.create(null);
   const get = (agent) => (agents[agent] ??= { agent, applied: 0, rejected: 0, deferred: 0, other: 0, utilityWeight: 0, dispatched: 0, completed: 0, timeouts: 0, failed: 0, findingsPerRun: [], weightedFindings: 0 });
   const unattributed = { agent: "unattributed", applied: 0, rejected: 0, deferred: 0, other: 0 };
   for (const d of dispositions) {
@@ -199,7 +210,7 @@ function ratingsRollup(ratingRows) {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) continue;
     latest.set(`${r.run_id}:${agent}`, { agent, rating, tags: Array.isArray(r.tags) ? r.tags.map(String) : [] });
   }
-  const by = {};
+  const by = Object.create(null);
   for (const { agent, rating, tags } of latest.values()) {
     const row = (by[agent] ??= { agent, n: 0, sum: 0, tags: {}, custom_tags: {} });
     row.n += 1; row.sum += rating;
@@ -220,10 +231,10 @@ function sizeBucket(bytes) {
 // route look unreliable.
 function windowedReliability(runs, { days = 30, now = Date.now() } = {}) {
   const since = now - days * 864e5;
-  const by = {};
+  const by = Object.create(null);
   for (const run of runs) {
     const t = Date.parse(run.timestamp);
-    if (!Number.isFinite(t) || t < since) continue;
+    if (!Number.isFinite(t) || t < since || t > now) continue; // trailing window only, as runsPerDay counts it
     const bucket = sizeBucket(run.input_bytes);
     for (const [rawAgent, status] of Object.entries(run.reviewer_status ?? {})) {
       if (NON_DISPATCH.has(status)) continue;
@@ -248,11 +259,13 @@ function windowedReliability(runs, { days = 30, now = Date.now() } = {}) {
 // Usage (1.16 reports carry reviewers[].usage from the dispatcher). Rollup by
 // route with explicit coverage: reported counts only, never estimates.
 function usageRollup(reports) {
-  const by = {};
+  const by = Object.create(null);
   for (const { report } of Object.values(reports)) {
     for (const r of report?.reviewers ?? []) {
       if (r.status !== "success") continue;
-      const row = (by[r.agent] ??= { agent: r.agent, reviews: 0, tokens_reported: 0, cost_reported: 0, totals: [], cost: 0 });
+      const agent = String(r.agent ?? "").toLowerCase(); // one row per route, like the other rollups
+      if (!agent) continue;
+      const row = (by[agent] ??= { agent, reviews: 0, tokens_reported: 0, cost_reported: 0, totals: [], cost: 0 });
       row.reviews += 1;
       const u = r.usage?.reported;
       if (u && Number.isFinite(u.total_tokens)) { row.tokens_reported += 1; row.totals.push(u.total_tokens); }
@@ -277,17 +290,18 @@ function sparkline(counts, width = 180, height = 28) {
   const pts = counts.map((c, i) => `${(i * step).toFixed(1)},${(height - 2 - (c / max) * (height - 4)).toFixed(1)}`).join(" ");
   return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="runs per day, last ${counts.length} days, max ${max}"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>`;
 }
+const REVIEWER_NAME = /^[a-z0-9_+-]{1,40}$/; // a route name, after lowercasing
 function appendRating(er, args) {
-  const [runId, reviewer, ratingRaw] = args;
-  const rating = Number(ratingRaw);
-  if (!/^rev_[A-Za-z0-9_]+$/.test(String(runId)) || !reviewer || !Number.isInteger(rating) || rating < 1 || rating > 5) {
-    throw new Error("usage: --rate <run_id> <reviewer> <1-5> [--tags specific,reproducible,...] [--note \"...\"]");
+  const [runId, reviewerRaw, ratingRaw] = args;
+  const rating = Number(ratingRaw), reviewer = String(reviewerRaw ?? "").toLowerCase();
+  if (!/^rev_[A-Za-z0-9_]+$/.test(String(runId)) || !REVIEWER_NAME.test(reviewer) || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error("usage: --rate <run_id> <reviewer> <1-5> [--tags specific,reproducible,...] [--note \"...\"] (reviewer: 1-40 of a-z 0-9 _ + -)");
   }
   const tagsAt = args.indexOf("--tags"), noteAt = args.indexOf("--note");
   const tags = tagsAt > -1 ? String(args[tagsAt + 1] ?? "").split(",").map((t) => t.trim()).filter(Boolean) : [];
   for (const t of tags) if (!CORE_TAGS.has(t) && !/^x-[a-z0-9-]{1,40}$/.test(t)) throw new Error(`unknown tag "${t}" (core: ${[...CORE_TAGS].join(", ")}; custom tags start with x-)`);
   const note = noteAt > -1 ? String(args[noteAt + 1] ?? "").slice(0, 500) : "";
-  const row = { kind: "review_rating", timestamp: new Date().toISOString(), run_id: runId, reviewer: String(reviewer).toLowerCase(), rating, tags, note };
+  const row = { kind: "review_rating", timestamp: new Date().toISOString(), run_id: runId, reviewer, rating, tags, note };
   fs.appendFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify(row)}\n`);
   return row;
 }
@@ -356,6 +370,73 @@ function ledgerSelfTest() {
     })(),
     sparkline_is_svg_with_one_point_per_day: sparkline(runsPerDay([{ timestamp: new Date().toISOString() }], { days: 7 })).includes("<svg") && runsPerDay([{ timestamp: new Date().toISOString() }], { days: 7 }).reduce((a, c) => a + c, 0) === 1,
     rating_row_kind_is_separated_from_dispositions: isRatingRow({ kind: "review_rating" }) && !isRatingRow({ disposition: "applied" }),
+    // The loader splits dispositions.jsonl by kind before rollup(); prove the totals exclude rating rows once that filter is applied.
+    rollup_totals_exclude_rating_rows_after_loader_filter: (() => {
+      const all = [{ reviewer: "codex", disposition: "applied", run_id: "r1" }, { kind: "review_rating", run_id: "rev_1", reviewer: "codex", rating: 5, tags: [] }, { reviewer: "grok", disposition: "rejected", run_id: "r1" }];
+      const r = rollup(all.filter((row) => !isRatingRow(row)), [], {});
+      return r.totals.all === 2 && r.reconciled && r.rows.find((x) => x.agent === "codex").applied === 1 && r.rows.every((x) => x.applied + x.rejected + x.deferred + x.other === 1);
+    })(),
+    ratings_rollup_survives_prototype_named_reviewer: (() => {
+      try {
+        const r = ratingsRollup([{ kind: "review_rating", run_id: "rev_1", reviewer: "__proto__", rating: 5, tags: ["specific"] }, { kind: "review_rating", run_id: "rev_1", reviewer: "constructor", rating: 4, tags: [] }]);
+        return ({}).n === undefined && ({}).sum === undefined && Object.n === undefined && Object.prototype.hasOwnProperty.call(r, "__proto__") && r["__proto__"].n === 1 && r["__proto__"].tags.specific === 1 && r.constructor.n === 1;
+      } catch { return false; } finally { for (const k of ["n", "sum", "tags", "custom_tags"]) { delete Object.prototype[k]; delete Object[k]; } }
+    })(),
+    reliability_rollup_survives_prototype_named_route_and_lowercases: (() => {
+      try {
+        const now = Date.now();
+        const w = windowedReliability([{ run_id: "p", timestamp: new Date(now - 3600e3).toISOString(), input_bytes: 10, reviewer_status: JSON.parse('{"__proto__":"success","Grok":"timeout"}') }], { now });
+        return ({}).dispatched === undefined && w["__proto__"]?.completed === 1 && w.grok?.dispatched === 1 && !("Grok" in w);
+      } catch { return false; } finally { for (const k of ["dispatched", "completed", "excluded", "buckets", "completionRate", "recommendation"]) delete Object.prototype[k]; }
+    })(),
+    usage_rollup_lowercases_agents_and_survives_prototype_names: (() => {
+      try {
+        const u = usageRollup({ a: { report: { reviewers: [{ agent: "Grok", status: "success", usage: { reported: { total_tokens: 10 } } }, { agent: "grok", status: "success" }, { agent: "__proto__", status: "success" }, { agent: "", status: "success" }] } } });
+        return u.grok.reviews === 2 && u.grok.tokens_reported === 1 && !("Grok" in u) && ({}).reviews === undefined && u["__proto__"].reviews === 1 && !("" in u);
+      } catch { return false; } finally { for (const k of ["reviews", "tokens_reported", "cost_reported", "totals", "cost"]) delete Object.prototype[k]; }
+    })(),
+    rollup_survives_prototype_named_reviewer: (() => {
+      try {
+        const r = rollup([{ reviewer: "__proto__", disposition: "applied", run_id: "r1" }], [{ run_id: "r1", reviewer_status: JSON.parse('{"__proto__":"success"}') }], {});
+        return ({}).applied === undefined && ({}).dispatched === undefined && r.rows.length === 1 && r.rows[0].agent === "__proto__" && r.rows[0].applied === 1 && r.reconciled;
+      } catch { return false; } finally { for (const k of ["applied", "rejected", "deferred", "other", "utilityWeight", "dispatched", "completed", "timeouts", "failed", "findingsPerRun", "weightedFindings"]) delete Object.prototype[k]; }
+    })(),
+    reliability_window_excludes_future_runs_like_runs_per_day: (() => {
+      const now = Date.parse("2026-09-13T00:00:00Z");
+      const mk = (daysAgo) => ({ run_id: "f", timestamp: new Date(now - daysAgo * 864e5).toISOString(), input_bytes: 10, reviewer_status: { grok: "success" } });
+      const w = windowedReliability([mk(-1), mk(1)], { now });
+      return w.grok.dispatched === 1 && w.grok.completed === 1 && runsPerDay([mk(-1), mk(1)], { now }).reduce((a, c) => a + c, 0) === 1;
+    })(),
+    append_rating_lowercases_and_rejects_unsafe_reviewer_names: (() => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-selftest-"));
+      try {
+        const rejects = (args) => { try { appendRating(dir, args); return false; } catch (e) { return /usage: --rate/.test(e.message); } };
+        const ok = appendRating(dir, ["rev_1", "Grok", "5", "--tags", "specific"]);
+        const written = fs.readFileSync(path.join(dir, "dispositions.jsonl"), "utf8").trim().split("\n");
+        return ok.reviewer === "grok" && written.length === 1 && JSON.parse(written[0]).reviewer === "grok"
+          && ["Grok!", "a b", "x".repeat(41), "grok/../x", "<b>", "grok\n", "gr.ok"].every((name) => rejects(["rev_1", name, "5"]));
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    })(),
+    // End to end: --rate prints the row, then rebuilds the page in the same invocation; the page's commands quote this script's installed path.
+    rate_prints_row_then_rebuilds_ledger_with_installed_path_commands: (() => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-rate-"));
+      try {
+        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er);
+        fs.writeFileSync(path.join(er, "review-log.jsonl"), `${JSON.stringify({ run_id: "rev_1", timestamp: new Date().toISOString(), governor: "claude", reviewer_status: { grok: "success" }, findings_count: 1 })}\n`);
+        fs.writeFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_1", reviewer: "grok", suggestion: "s", disposition: "applied", reason: "r" })}\n`);
+        const script = fileURLToPath(import.meta.url);
+        const runLedger = (args) => spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: "utf8", windowsHide: true, timeout: 60_000 });
+        const html = () => fs.readFileSync(path.join(er, "ledger.html"), "utf8");
+        const plain = runLedger([]); const before = plain.status === 0 ? html() : "";
+        const emptyStateUsesInstalledPath = before.includes(`<code>${esc(LEDGER_CMD)} --rate`) && before.includes(`<code>${esc(LEDGER_CMD)}</code>`) && !/node (momm\/)?scripts\/ledger\.mjs/.test(before) && !before.includes("insufficient ratings");
+        fs.rmSync(path.join(er, "ledger.html"), { force: true });
+        const rated = runLedger(["--rate", "rev_1", "grok", "4", "--tags", "specific"]);
+        const lines = rated.stdout.trim().split(/\r?\n/);
+        const after = rated.status === 0 && fs.existsSync(path.join(er, "ledger.html")) ? html() : "";
+        return plain.status === 0 && emptyStateUsesInstalledPath && rated.status === 0 && JSON.parse(lines[0]).rating === 4 && /Your private ledger/.test(rated.stdout)
+          && after.includes("insufficient ratings (n=1") && after.includes("1 triaged suggestions") && after.includes("specific ×1");
+      } catch { return false; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    })(),
   };
   const passed = Object.values(tests).every(Boolean);
   process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
@@ -364,16 +445,15 @@ function ledgerSelfTest() {
 if (process.argv.includes("--self-test")) ledgerSelfTest();
 
 const er = path.resolve(".ensemble_reviews");
-if (process.argv.includes("--rate")) {
-  try {
-    const row = appendRating(er, process.argv.slice(process.argv.indexOf("--rate") + 1));
-    process.stdout.write(`${JSON.stringify(row)}\n`);
-    process.exit(0);
-  } catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2); }
-}
 if (!fs.existsSync(er)) {
   process.stderr.write("No .ensemble_reviews here — run a momm review first, then rebuild your ledger.\n");
   process.exit(1);
+}
+if (process.argv.includes("--rate")) {
+  // Print the row, then fall through: the same invocation rebuilds the page so
+  // the rating shows under "How the reviews read" straight away.
+  try { process.stdout.write(`${JSON.stringify(appendRating(er, process.argv.slice(process.argv.indexOf("--rate") + 1)))}\n`); }
+  catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2); }
 }
 
 const readJsonl = (file) => {
@@ -412,7 +492,6 @@ const data = {
   versions: { dispatcher: "momm ledger", repo: "github.com/marroccofella/skills" },
 };
 
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const HARNESS = { codex: "Codex CLI · ChatGPT OAuth", claude: "Claude Code · Anthropic OAuth", antigravity: "Antigravity CLI · Google OAuth", copilot: "GitHub Copilot CLI · GitHub OAuth", grok: "Grok CLI · xAI OAuth", gemini: "Gemini CLI · Google OAuth" };
 
 const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).map((run) => {
@@ -468,7 +547,7 @@ ${tr.rows.map((s) => `<tr><td>${esc(s.agent)}</td><td>${s.completed} / ${s.dispa
 <h4>How the reviews read — your ratings (1-5) and tags, latest per run</h4>
 ${(() => { const rr = ratingsRollup(ratingRows); const agents = tr.rows.map((r) => r.agent).filter((a) => rr[a]).concat(Object.keys(rr).filter((a) => !tr.rows.some((r) => r.agent === a)));
   return agents.length ? `<table><tr><th>reviewer</th><th>rated reviews</th><th>mean rating</th><th>tags</th></tr>${agents.map((a) => { const r = rr[a]; const tags = Object.entries({ ...r.tags, ...r.custom_tags }).sort((x, y) => y[1] - x[1]).map(([t, n]) => `${esc(t)} ×${n}`).join(", "); return `<tr><td>${esc(a)}</td><td>${r.n}</td><td>${r.mean === null ? `insufficient ratings (n=${r.n}, need ${RATING_MIN_N})` : (Math.round(r.mean * 10) / 10).toFixed(1)}</td><td>${tags || "—"}</td></tr>`; }).join("")}</table>`
-  : `<p class="dim">No ratings yet. After triage, record one per reviewer: <code>node momm/scripts/ledger.mjs --rate &lt;run_id&gt; &lt;reviewer&gt; &lt;1-5&gt; --tags specific,reproducible</code></p>`; })()}
+  : `<p class="dim">No ratings yet. After triage, record one per reviewer: <code>${esc(LEDGER_CMD)} --rate &lt;run_id&gt; &lt;reviewer&gt; &lt;1-5&gt; --tags specific,reproducible</code> (run from this project; it rebuilds this page too)</p>`; })()}
 <h4>Last 30 days — completion by route and input size (early exits and governor-direct pieces excluded)</h4>
 ${(() => { const w = windowedReliability(runs); const agents = Object.keys(w); const buckets = ["<8KB", "8-16KB", "16-40KB", "40-100KB", ">=100KB"];
   return agents.length ? `<table><tr><th>reviewer</th><th>completed / dispatched</th>${buckets.map((b) => `<th>${esc(b)}</th>`).join("")}<th>excluded</th><th>recommendation</th></tr>${agents.map((a) => { const r = w[a]; return `<tr><td>${esc(a)}</td><td>${r.completed} / ${r.dispatched}${r.completionRate === null ? "" : ` (${pct(r.completionRate)})`}</td>${buckets.map((b) => { const x = r.buckets[b]; return `<td>${x ? `${x.completed}/${x.dispatched}` : "—"}</td>`; }).join("")}<td>${r.excluded}</td><td>${esc(r.recommendation)}</td></tr>`; }).join("")}</table>`
@@ -515,7 +594,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
 </style>
 <button class="theme" id="theme" type="button" aria-label="toggle light or dark theme">◐ theme</button>
 <h1><span>◆</span> My momm ledger <span class="dim">· ${runs.length} runs · ${Object.keys(reports).length} sealed reports · ${dispositions.length} dispositions</span></h1>
-<p class="note">${esc(data.private_note)} Generated ${esc(data.generated)}. This ledger covers ONLY this workspace (${esc(data.projects[0].root)}); other projects keep their own — rebuild any with <code>node scripts/ledger.mjs</code> from that project.</p>
+<p class="note">${esc(data.private_note)} Generated ${esc(data.generated)}. This ledger covers ONLY this workspace (${esc(data.projects[0].root)}); other projects keep their own — rebuild any with <code>${esc(LEDGER_CMD)}</code> from that project.</p>
 ${trackPanel}
 ${rows || '<p class="dim">No runs recorded yet.</p>'}
 <p class="dim">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>

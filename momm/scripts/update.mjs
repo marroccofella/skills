@@ -137,10 +137,25 @@ export function updateCheckDisabled(env = process.env) {
     const v = String(env[k] || "").toLowerCase(); return v !== "" && v !== "0" && v !== "false";
   });
 }
+// Release versions stay strict x.y.z (VERSION); installed CLIs may report a
+// prerelease, which ranks below its own stable and otherwise compares identifier
+// by identifier (semver 11.4). Anything else is not comparable: never "newer".
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 export function newer(a, b) {
-  if (!VERSION.test(a) || !VERSION.test(b)) return false;
-  const aa = a.split(".").map(Number), bb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (aa[i] !== bb[i]) return aa[i] > bb[i];
+  const ma = SEMVER.exec(String(a ?? "")), mb = SEMVER.exec(String(b ?? ""));
+  if (!ma || !mb) return false;
+  for (let i = 1; i <= 3; i++) if (ma[i] !== mb[i]) return Number(ma[i]) > Number(mb[i]);
+  if (!ma[4] || !mb[4]) return Boolean(mb[4]) && !ma[4];
+  const pa = ma[4].split("."), pb = mb[4].split(".");
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if (pa[i] === undefined) return false;
+    if (pb[i] === undefined) return true;
+    if (pa[i] === pb[i]) continue;
+    const na = /^\d+$/.test(pa[i]), nb = /^\d+$/.test(pb[i]);
+    if (na && nb) return Number(pa[i]) > Number(pb[i]);
+    if (na !== nb) return nb; // numeric identifiers rank below alphanumeric ones
+    return pa[i] > pb[i];
+  }
   return false;
 }
 export async function manifest(fetcher = fetch) {
@@ -215,7 +230,7 @@ export function parse(argv) {
   if (o.rollback && (o.channel || o.version)) throw new Error("Rollback uses the locally retained receipt, not a channel or version");
   if (o.yes && !o.apply && !o.rollback) throw new Error("--yes requires --apply or --rollback");
   if (o.json && !o.check_all) throw new Error("--json is only available with --check-all");
-  if (o.check_all && (o.dry_run || o.apply || o.rollback || o.version || o.channel || o.yes || o.accept_protocol)) throw new Error("--check-all is a read-only report; combine it only with --json");
+  if (o.check_all && (o.dry_run || o.apply || o.rollback || o.version || o.channel || o.yes || o.accept_protocol)) throw new Error("--check-all is a read-only report; combine it only with --json and --repo");
   return o;
 }
 // Digest of every tracked blob, including mode and path, except the manifest
@@ -289,7 +304,8 @@ export const UPDATE_COMMANDS = Object.freeze({ codex: "npm install -g @openai/co
 export const MANAGED_PATH = /\/(\.volta|scoop|chocolatey|\.asdf|\.local\/share\/mise)\//i;
 const MANAGER_NAMES = { ".volta": "volta", scoop: "scoop", chocolatey: "chocolatey", ".asdf": "asdf", ".local/share/mise": "mise" };
 const NOT_INSTALLED = /is not recognized as an internal or external command|command not found|no such file or directory|enoent/i;
-const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+/)?.[0] || null;
+// Keeps a prerelease suffix (1.2.3-beta.1) so an installed prerelease is never mistaken for its stable.
+const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/)?.[0] || null;
 export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir() } = {}) {
   if (cli === "antigravity") {
     const local = platform === "win32" && env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe") : path.join(home, ".local", "bin", "agy");
@@ -321,28 +337,40 @@ export function locateBinary(command, { env = process.env, platform = process.pl
   return { path: null, package_manager_owned: false, manager: null };
 }
 // Only constant arguments reach this (--version, update --check --stable --json).
-// The Windows shell is needed for npm's .cmd shims; the executable is quoted.
+// The Windows shell is needed for npm's .cmd shims, so the executable path is
+// quoted whenever cmd.exe would otherwise read part of it as syntax: not only
+// whitespace but & | < > ^ ( ) and the other delimiters (C:\Users\A&B\grok.exe).
+// A path cannot contain a double quote on Windows; %VAR% expansion inside quotes
+// is a cmd.exe limitation this cannot neutralise.
+const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
 export function captureExec(command, args, { timeout = 20_000, cwd } = {}) {
   const win = process.platform === "win32";
-  const p = spawnSync(win && /\s/.test(command) ? `"${command}"` : command, args, { cwd, encoding: "utf8", shell: win, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
+  const p = spawnSync(win && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, encoding: "utf8", shell: win, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
 }
 const notInstalled = r => !r || r.error?.code === "ENOENT" || r.code === 127 || (r.code !== 0 && NOT_INSTALLED.test(`${r.stderr}\n${r.stdout}`));
-export function lastSuccessfulReviews(cwd) {
-  const file = path.join(cwd, ".ensemble_reviews", "review-log.jsonl"), latest = {};
-  let text, runs = 0;
-  try { text = fs.readFileSync(file, "utf8"); } catch { return { file, runs, routes: latest, present: false }; }
+// Reads the first review log found among `dirs` (a string or list; the report
+// says which file was used). Records that are not objects, carry no object
+// reviewer_status, or have an unparseable timestamp are skipped, never fatal.
+export function lastSuccessfulReviews(dirs) {
+  const searched = [].concat(dirs).map(d => path.join(d, ".ensemble_reviews", "review-log.jsonl")), latest = Object.create(null);
+  let file = searched[0], text, runs = 0;
+  for (const candidate of searched) { try { text = fs.readFileSync(candidate, "utf8"); file = candidate; break; } catch {} }
+  if (text === undefined) return { file, searched, runs, routes: latest, present: false };
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim()) continue;
     let entry; try { entry = JSON.parse(raw); } catch { continue; }
-    if (entry.event || !entry.timestamp || typeof entry.reviewer_status !== "object") continue;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry) || entry.event || !entry.timestamp) continue;
+    if (!entry.reviewer_status || typeof entry.reviewer_status !== "object" || Array.isArray(entry.reviewer_status)) continue;
+    const at = Date.parse(entry.timestamp);
+    if (!Number.isFinite(at)) continue;
     runs++;
     for (const [route, status] of Object.entries(entry.reviewer_status)) {
       if (status !== "success") continue;
-      if (!latest[route] || Date.parse(entry.timestamp) > Date.parse(latest[route].timestamp)) latest[route] = { timestamp: entry.timestamp, run_id: entry.run_id || null };
+      if (!latest[route] || at > Date.parse(latest[route].timestamp)) latest[route] = { timestamp: entry.timestamp, run_id: entry.run_id || null };
     }
   }
-  return { file, runs, routes: latest, present: true };
+  return { file, searched, runs, routes: latest, present: true };
 }
 export async function checkAll(root, lock, dependencies = {}) {
   const exec = dependencies.exec || captureExec, fetcher = dependencies.fetcher || fetch, env = dependencies.env || process.env;
@@ -350,7 +378,7 @@ export async function checkAll(root, lock, dependencies = {}) {
   const report = { schema: "momm-check-all/1", checked_at: new Date().toISOString(), repo_root: root,
     skill: { installed: lock.current?.version || null, published: null, channel: lock.channel, update_available: null, release_verified: Boolean(lock.current?.verified), error: null },
     installations: { targets: [...(lock.targets || [])], custom_dirs: [...(lock.custom_dirs || [])], scopes: (lock.installations || []).map(s => ({ target: s.target, custom_dir: s.custom_dir || null, skills: s.skills || ["momm"] })) },
-    reviews: lastSuccessfulReviews(cwd), clis: [] };
+    reviews: lastSuccessfulReviews([...new Set([cwd, root].map(d => path.resolve(d)))]), clis: [] };
   try { const m = await (dependencies.manifest || manifest)(fetcher); report.skill.published = m.momm; report.skill.update_available = newer(m.momm, report.skill.installed); }
   catch (e) { report.skill.error = safeText(e.message).slice(0, 200); }
   const npmLatest = async cli => {
@@ -366,9 +394,14 @@ export async function checkAll(root, lock, dependencies = {}) {
     const row = { cli, binary, installed: null, latest: null, latest_source: NPM_PACKAGES[cli] ? "npm registry" : cli === "grok" ? "grok update --check --stable --json" : "unknown (no check-only command)", update_available: null,
       path: location.path, package_manager_owned: location.package_manager_owned, manager: location.manager,
       update_command: location.package_manager_owned ? `update through ${location.manager}` : UPDATE_COMMANDS[cli], last_successful_review: report.reviews.routes[cli] || null, error: null };
+    const fail = message => { const m = safeText(message).replace(/\s+/g, " ").trim().slice(0, 200); row.error = row.error ? `${row.error}; ${m}` : m; };
     const v = await exec(binary, ["--version"], { timeout: 20_000 });
     if (notInstalled(v)) row.installed = "not installed";
-    else row.installed = v.code === 0 ? semver(v.stdout) || semver(v.stderr) || "unknown" : "unknown";
+    else {
+      row.installed = (v.code === 0 && (semver(v.stdout) || semver(v.stderr))) || "unknown";
+      // "unknown" is never silent: a timeout, spawn failure or non-zero exit is reported beside it.
+      if (row.installed === "unknown") fail(v.code === 0 ? "--version printed no version" : v.error ? `--version failed: ${v.error.message || v.error.code || "spawn error"}` : `--version exited ${v.code}: ${v.stderr || v.stdout}`);
+    }
     try {
       if (NPM_PACKAGES[cli]) row.latest = await npmLatest(cli);
       else if (cli === "grok" && row.installed !== "not installed") {
@@ -377,8 +410,8 @@ export async function checkAll(root, lock, dependencies = {}) {
         const j = JSON.parse(p.stdout);
         row.latest = semver(j.latestVersion) || "unknown"; if (typeof j.updateAvailable === "boolean") row.update_available = j.updateAvailable;
       } else row.latest = "unknown";
-    } catch (e) { row.latest = "unknown"; row.error = safeText(e.message).slice(0, 200); }
-    if (row.update_available === null && VERSION.test(row.installed || "") && VERSION.test(row.latest || "")) row.update_available = newer(row.latest, row.installed);
+    } catch (e) { row.latest = "unknown"; fail(e.message); }
+    if (row.update_available === null && SEMVER.test(row.installed || "") && SEMVER.test(row.latest || "")) row.update_available = newer(row.latest, row.installed);
     report.clis.push(row);
   }
   return report;
@@ -435,7 +468,7 @@ export async function update(argv, dependencies = {}) {
   if (o.check_all) {
     if (!o.json) log(`Network: GET ${MANIFEST_URL} and the npm registry "latest" documents for codex/claude/gemini/copilot; grok update --check runs locally. Release information only; nothing is installed or changed.`);
     const report = await checkAll(root, lock, dependencies);
-    report.pending_recovery = fs.existsSync(journalFile);
+    report.pending_recovery = regular(journalFile, true); // the same check rollback applies to the journal
     log(o.json ? JSON.stringify(report, null, 2) : checkAllTable(report) + (report.pending_recovery ? "\nAn interrupted update needs recovery: run the retained update.mjs --rollback --yes." : ""));
     return report;
   }

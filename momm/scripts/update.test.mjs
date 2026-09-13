@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance } from "./update.mjs";
+import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 await import('./update-safety.test.mjs');
@@ -14,7 +14,9 @@ await import('./update-receipt.test.mjs');
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
 const remote = path.join(fixture, "remote"), installed = path.join(fixture, "installed");
 const results = {};
-async function test(name, fn) { await fn(); results[name] = true; }
+let failures = 0;
+// Record every failure rather than aborting at the first, so one run shows the whole picture; the exit code still fails.
+async function test(name, fn) { try { await fn(); results[name] = true; } catch (e) { failures++; results[name] = `FAILED: ${e.message.split("\n")[0].slice(0, 300)}`; } }
 function write(root, file, text) { const p = path.join(root, file); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 function commit(root, message) { git(root, "add", "."); git(root, "-c", "user.name=MOMM test", "-c", "user.email=momm-test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", message); return git(root, "rev-parse", "HEAD"); }
 const log = () => {};
@@ -287,7 +289,69 @@ try {
     assert.throws(() => parse(["--check-all", "--yes"]));
     assert.deepEqual(parse(["--check-all", "--json"]), { check_all: true, json: true });
   });
-  process.stdout.write(JSON.stringify({ passed: true, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
+  // ---- 1.16 release-gate findings against --check-all (fakes only) ----
+  const only = (cli, reply) => async (command, args) => path.basename(command).replace(/\.exe$/i, "") === cli && args[0] === "--version" ? reply : fakeExec()(command, args);
+  await test("check_all_accepts_repo_and_names_it_in_the_exclusive_mode_error", () => {
+    assert.deepEqual(parse(["--check-all", "--json", "--repo", installed]), { check_all: true, json: true, repo: installed });
+    assert.throws(() => parse(["--check-all", "--apply"]), /--json and --repo/);
+  });
+  const historyDir = path.join(checkFixture, "history");
+  const history = lines => { fs.mkdirSync(path.join(historyDir, ".ensemble_reviews"), { recursive: true }); fs.writeFileSync(path.join(historyDir, ".ensemble_reviews", "review-log.jsonl"), lines.join("\n") + "\n"); return lastSuccessfulReviews(historyDir); };
+  const good = { timestamp: "2026-09-02T00:00:00.000Z", run_id: "rev_ok", reviewer_status: { grok: "success" } };
+  await test("null_and_non_object_history_records_are_skipped_not_fatal", () => {
+    const r = history(["null", "42", "\"text\"", "[1,2]", JSON.stringify({ timestamp: "2026-09-01T00:00:00.000Z", reviewer_status: null }), JSON.stringify({ timestamp: "2026-09-01T00:00:00.000Z", reviewer_status: ["grok"] }), JSON.stringify(good)]);
+    assert.equal(r.runs, 1); assert.deepEqual(r.routes.grok, { timestamp: good.timestamp, run_id: "rev_ok" });
+  });
+  await test("unparseable_timestamp_never_locks_a_route", () => {
+    const r = history([JSON.stringify({ ...good, timestamp: "not a date", run_id: "rev_bad" }), JSON.stringify(good), JSON.stringify({ ...good, timestamp: "garbage", run_id: "rev_bad2" })]);
+    assert.deepEqual(r.routes.grok, { timestamp: good.timestamp, run_id: "rev_ok" }); assert.equal(r.runs, 1);
+  });
+  await test("shell_metacharacter_paths_are_quoted_for_the_windows_shell", () => {
+    const dir = path.join(checkFixture, "meta&chars(1)"); fs.mkdirSync(dir, { recursive: true });
+    const win = process.platform === "win32", probe = path.join(dir, win ? "probe.cmd" : "probe");
+    fs.writeFileSync(probe, win ? "@echo probe 9.9.9\r\n" : "#!/bin/sh\necho probe 9.9.9\n"); fs.chmodSync(probe, 0o755);
+    const r = captureExec(probe, ["--version"]);
+    assert.equal(r.code, 0, `a launcher under a metacharacter path must run: ${r.stderr}`); assert.match(r.stdout, /probe 9\.9\.9/);
+  });
+  await test("prerelease_installed_version_is_kept_and_compares_below_its_stable", async () => {
+    assert.equal(newer("1.2.3", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.1", "1.2.3"), false); assert.equal(newer("1.2.3-beta.1", "1.2.3-beta.1"), false);
+    assert.equal(newer("1.2.3-beta.2", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.11", "1.2.3-beta.2"), true); assert.equal(newer("1.2.3-rc.1", "1.2.3-beta.11"), true);
+    assert.equal(newer("1.2.3-beta.1.x", "1.2.3-beta.1"), true); assert.equal(newer("1.2.4-alpha", "1.2.3"), true); assert.equal(newer("1.1.0", "1.0.0"), true); assert.equal(newer("1.0.0", "1.1.0"), false);
+    const report = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: only("claude", { code: 0, stdout: "2.1.270-beta.1 (Claude Code)\n", stderr: "" }), fetcher: fakeFetcher(), log() {} }));
+    const claude = report.clis.find(c => c.cli === "claude");
+    assert.equal(claude.installed, "2.1.270-beta.1"); assert.equal(claude.latest, "2.1.270"); assert.equal(claude.update_available, true);
+  });
+  await test("review_log_falls_back_from_cwd_to_repo_root_and_names_the_file_used", async () => {
+    const rootLog = path.join(installed, ".ensemble_reviews", "review-log.jsonl");
+    fs.mkdirSync(path.dirname(rootLog)); fs.writeFileSync(rootLog, JSON.stringify({ timestamp: "2026-09-05T00:00:00.000Z", run_id: "rev_root", reviewer_status: { codex: "success" } }) + "\n");
+    try {
+      const logs = [], fromRoot = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), cwd: checkFixture, log: s => logs.push(s) }));
+      assert.equal(fromRoot.reviews.present, true); assert.equal(fromRoot.reviews.file, rootLog); assert.equal(fromRoot.reviews.runs, 1);
+      assert.deepEqual(fromRoot.clis.find(c => c.cli === "codex").last_successful_review, { timestamp: "2026-09-05T00:00:00.000Z", run_id: "rev_root" });
+      const table = []; await update(["--repo", installed, "--check-all"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), cwd: checkFixture, log: s => table.push(s) }));
+      assert(table.join("\n").includes(rootLog), "the table names the file actually read");
+      const fromCwd = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log() {} }));
+      assert.equal(fromCwd.reviews.file, path.join(project, ".ensemble_reviews", "review-log.jsonl"), "cwd wins when both exist"); assert.equal(fromCwd.reviews.runs, 3);
+    } finally { fs.rmSync(path.join(installed, ".ensemble_reviews"), { recursive: true, force: true }); }
+  });
+  await test("failed_version_probe_sets_row_error", async () => {
+    const timedOut = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: only("copilot", { code: -1, stdout: "", stderr: "", error: { code: "ETIMEDOUT", message: "spawnSync copilot ETIMEDOUT" } }), fetcher: fakeFetcher(), log() {} }));
+    const copilot = timedOut.clis.find(c => c.cli === "copilot");
+    assert.equal(copilot.installed, "unknown"); assert.match(copilot.error || "", /ETIMEDOUT/); assert.equal(copilot.update_available, null);
+    const crashed = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: only("codex", { code: 3, stdout: "", stderr: "codex: config parse failure\n", error: null }), fetcher: fakeFetcher(), log() {} }));
+    const codex = crashed.clis.find(c => c.cli === "codex");
+    assert.equal(codex.installed, "unknown"); assert.match(codex.error || "", /exited 3/); assert.match(codex.error || "", /config parse failure/);
+    const unreachable = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: only("codex", { code: 3, stdout: "", stderr: "boom", error: null }), fetcher: async () => ({ ok: false, status: 503, text: async () => "" }), log() {} }));
+    assert.match(unreachable.clis.find(c => c.cli === "codex").error, /exited 3.*HTTP 503/s, "probe and registry failures are both kept");
+  });
+  await test("pending_recovery_uses_the_same_regular_file_check_as_rollback", async () => {
+    const journal = path.join(stateDir(installed), "transaction.json");
+    fs.mkdirSync(journal);
+    try { await assert.rejects(update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log() {} })), /Unsafe local state file/); }
+    finally { fs.rmdirSync(journal); }
+  });
+  if (failures) process.exitCode = 1;
+  process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {
   if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true });
 }
