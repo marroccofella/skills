@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, PROBE_CLIS, PROBES_FILE, sha256, findFindings, unavailableReason, SYNTHETIC_DIFF, defaultExec, windowsLauncher, parseTimeoutArg, isolateReply, classifyReply, canaryPrompt, AUTH_PATTERN,
-  runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent } from "./probes.mjs";
+  runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent, relativeProbeRef } from "./probes.mjs";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
@@ -575,7 +575,13 @@ try {
     const v = inputProbeVector("codex", { filePath: "F", projectDir: "D", prompt: "P" });
     assert.deepEqual(v.args, ["exec", "-i", "F", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"]); assert.equal(v.input, "P");
     assert.ok(inputProbeVector("claude", { filePath: "F", projectDir: "D", prompt: "P" }).args.includes("--add-dir"));
-    assert.ok(inputProbeVector("gemini", { filePath: "C:\\x y\\probe.png", projectDir: "C:\\x y", prompt: "P" }).args.at(-1).startsWith("@probe.png "), "gemini @refs split on whitespace, so the reference is relative to the probe cwd");
+    // gemini @refs split on whitespace, so the reference is relative to the probe cwd: compared
+    // against the same realpath-based computation, on real paths, never a literal (CI run 34785555601).
+    const gdir = path.join(fixture, "gemini dir"); fs.mkdirSync(gdir, { recursive: true }); const gfile = path.join(gdir, "probe.png"); fs.writeFileSync(gfile, "x");
+    const gref = inputProbeVector("gemini", { filePath: gfile, projectDir: gdir, prompt: "P" }).args.at(-1);
+    assert.equal(gref, `@${relativeProbeRef(gfile, gdir)} P`); assert.equal(relativeProbeRef(gfile, gdir), "probe.png"); assert.ok(!/\s/.test(gref.slice(1).split(" ")[0]), "the reference carries no whitespace");
+    assert.equal(relativeProbeRef(path.join(gdir, "sub", "probe.png"), gdir), "sub/probe.png", "forward slashes, whatever the platform");
+    assert.equal(relativeProbeRef("F", "D"), "F", "fake paths fall back to the basename");
     assert.deepEqual(inputProbeVector("antigravity", { filePath: "F", projectDir: "D", prompt: "P" }).args, ["-p", "P", "--new-project", "--output-format", "json", "--mode=plan"]);
     const cp = inputProbeVector("copilot", { filePath: "F", projectDir: "D", prompt: "P" }).args; assert.equal(cp[cp.indexOf("--attachment") + 1], "F"); assert.equal(cp[cp.indexOf("--add-dir") + 1], "D");
     const gk = inputProbeVector("grok", { filePath: "F", projectDir: "D", prompt: "P" }).args; assert.equal(gk[gk.indexOf("--cwd") + 1], "D"); assert.ok(gk.includes("--disable-web-search"));
@@ -645,8 +651,11 @@ try {
     assert.equal(cellOf(r1, "image_gen").status, "probe_failed", "a file from one second before the request is not this request's output");
     const fresh = path.join(home, ".codex", "generated_images", "new", "exec-new.png");
     const writes = modalityExec({ generate: () => { fs.mkdirSync(path.dirname(fresh), { recursive: true }); fs.writeFileSync(fresh, "png"); return ok("written"); } });
-    // Hashing streams through openSync/readSync: an EACCES at open is a file that cannot be hashed.
-    const realOpen = fs.openSync; fs.openSync = (...a) => { if (String(a[0]) === fresh) throw Object.assign(new Error("EACCES: denied"), { code: "EACCES" }); return realOpen(...a); };
+    // hashFile opens with fs.openSync(file, "r") and reads synchronously, so an EACCES at open is
+    // a file that cannot be hashed on every Node line. The stub refuses READ opens of `fresh`
+    // only: on Node 18 writeFileSync also routes through the public fs.openSync (flag "w"), and
+    // a path-only stub would make the fake generator's own write throw (CI run 34785555601).
+    const realOpen = fs.openSync; fs.openSync = (...a) => { if (String(a[0]) === fresh && /^r/.test(String(a[1] ?? "r"))) throw Object.assign(new Error("EACCES: denied"), { code: "EACCES" }); return realOpen(...a); };
     let r2; try { r2 = await runModalityProbes("codex", gen({ exec: writes.exec })); } finally { fs.openSync = realOpen; }
     assert.equal(cellOf(r2, "image_gen").status, "probe_failed", "an unhashable file is not evidence"); assert.equal((cellOf(r2, "image_gen").harvested ?? []).length, 0);
     const refuses = modalityExec({ generate: () => { fs.writeFileSync(fresh, syntheticPng("blue")); return ok("I cannot generate images in this session."); } });
@@ -682,6 +691,50 @@ try {
     assert.equal(registryAbsent(notFound(`Cannot find package 'left-pad' imported from ${file}`), file), false, "a missing dependency inside an existing registry is a failure, not absence");
     assert.equal(registryAbsent(notFound(`Cannot find module '${file}'`), file), false, "the file exists: whatever failed, it is not absence");
     assert.equal(registryAbsent(new SyntaxError("Unexpected token"), file), false);
+  });
+
+  // auth_tier and quota are ACCOUNT-level: one probe that hits them blocks every non-`no` cell of
+  // the route (reason route_level:<blocker>); the first successful probe of a later run clears
+  // exactly those; a cell-level blocker elsewhere is touched by neither step.
+  await test("account_level_blockers_cover_every_non_no_cell_of_the_route_and_clear_together", async () => {
+    let registry;
+    const registryFile = fileURLToPath(new URL("./capabilities.mjs", import.meta.url));
+    try { registry = await import("./capabilities.mjs"); } catch (e) { if (registryAbsent(e, registryFile)) { results.account_level_blockers_cover_every_non_no_cell_of_the_route_and_clear_together = "unchecked: capabilities.mjs absent"; return; } throw e; }
+    const home = path.join(fixture, "route-level-home"); fs.mkdirSync(home, { recursive: true });
+    const view = cli => registry.effective({ home, installedVersions: { [cli]: "9.9.9" } }).routes[cli];
+    registry.writeOverlayEntry(home, { route: "gemini", direction: "output", modality: "web", blocker: "probe_failed", reason: "generic reply", cli_version: "9.9.9" });
+    const tier = () => ({ code: 1, stdout: "", stderr: "IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals" });
+    const refused = modalityExec({ replies: { png: tier, pdf: tier, wav: tier } });
+    const r1 = await runModalityProbes("gemini", mopts({ home, registry, exec: refused.exec, command: "gemini" }));
+    assert.equal(cellOf(r1, "image").blocker, "auth_tier");
+    const v1 = view("gemini");
+    const covered = [["input", "text"], ["input", "pdf"], ["input", "audio"], ["input", "video"], ["output", "text"], ["output", "code_exec"]];
+    for (const [dir, mod] of covered) { assert.equal(v1[dir][mod].blocker, "auth_tier", `${dir}.${mod} carries the account-level blocker`); assert.equal(v1[dir][mod].source, "overlay"); assert.equal(typeof v1[dir][mod].overlay?.expires_at, "string", `${dir}.${mod} expires with the auth_tier class`); }
+    assert.match(v1.input.video.reason, /^route_level:auth_tier/, "the propagated entry says where it came from"); assert.match(v1.input.video.reason, /input\.image/);
+    assert.match(v1.input.image.reason, /reply named the auth_tier gate/, "the probed cell keeps its own reason");
+    assert.equal(v1.input.speech.level, "no"); assert.equal(v1.input.speech.blocker, null, "a baseline no cell is untouched"); assert.equal(v1.output.image_gen.blocker, null);
+    assert.equal(v1.output.web.blocker, "probe_failed"); assert.equal(v1.output.web.reason, "generic reply", "a cell-level blocker is not overwritten by propagation");
+    assert.equal(r1.route_level?.[0]?.blocker, "auth_tier"); assert.ok(r1.route_level[0].applied_to.includes("input.video"));
+    // The account is fixed: the first probed cell succeeds, so every route_level entry clears;
+    // cells probed in this run get their own evidence; the cell-level probe_failed stays.
+    const fixed = modalityExec({ replies: { png: () => ok(envelope("gemini", "Red")), pdf: () => ok(envelope("gemini", `The page reads: ${SENT}`)), wav: () => ok(envelope("gemini", "A 440 Hz sine tone.")) } });
+    const r2 = await runModalityProbes("gemini", mopts({ home, registry, exec: fixed.exec, command: "gemini", colour: "red", sentence: SENT }));
+    assert.equal(cellOf(r2, "image").status, "verified", cellOf(r2, "image").reason);
+    const v2 = view("gemini");
+    for (const [dir, mod] of [["input", "text"], ["input", "video"], ["output", "text"], ["output", "code_exec"]]) { assert.equal(v2[dir][mod].blocker, null, `${dir}.${mod} cleared with the route-level blocker`); assert.match(v2[dir][mod].reason ?? "", /^cleared: route_level:auth_tier/); assert.equal(v2[dir][mod].level, v1[dir][mod].level, "clearing changes no level"); }
+    for (const mod of ["image", "pdf", "audio"]) { assert.equal(v2.input[mod].blocker, null, mod); assert.equal(v2.input[mod].level, "verified", `${mod} has its own evidence`); }
+    assert.equal(v2.output.web.blocker, "probe_failed", "a cell-level probe_failed elsewhere is not cleared by the route-level clearing");
+    assert.ok(r2.route_level?.some(x => x.cleared?.includes("input.video")), "the run records what it cleared");
+    // Quota, same shape; and a later run whose first probed cell FAILS clears nothing.
+    const quota = () => ({ code: 1, stdout: "You have exceeded your monthly quota.", stderr: "" });
+    await runModalityProbes("copilot", mopts({ home, registry, exec: modalityExec({ replies: { png: quota, pdf: quota } }).exec, command: "copilot" }));
+    const c1 = view("copilot");
+    for (const [dir, mod] of [["input", "text"], ["input", "pdf"], ["input", "speech"], ["output", "text"], ["output", "code_exec"], ["output", "web"]]) assert.equal(c1[dir][mod].blocker, "quota", `copilot ${dir}.${mod}`);
+    assert.equal(c1.input.audio.blocker, null, "copilot audio is a no cell");
+    const generic = modalityExec({ replies: { png: () => ok("a small square"), pdf: () => ok("a short document") } });
+    await runModalityProbes("copilot", mopts({ home, registry, exec: generic.exec, command: "copilot" }));
+    const c2 = view("copilot");
+    assert.equal(c2.input.image.blocker, "probe_failed"); assert.equal(c2.input.speech.blocker, "quota", "a failed first probe clears no route-level entry"); assert.equal(c2.output.web.blocker, "quota");
   });
 
   await test("real_registry_round_trip_probe_failed_then_verified", async () => {

@@ -480,6 +480,8 @@ export const clearingAction = blocker => CLEARING_ACTIONS[blocker] ?? null;
 export const routableCell = cell => !!cell && PROBEABLE_LEVELS.has(cell.level) && !cell.blocker;
 // Blockers whose clearing action IS the next probe.
 export const REPROBE_BLOCKERS = new Set(["probe_failed", "reprobe"]);
+// Blockers that describe the ACCOUNT: one hit covers every non-`no` cell of the route.
+export const ROUTE_LEVEL_BLOCKERS = new Set(["auth_tier", "quota"]);
 
 // ---- synthetic material (never project content) --------------------------------------
 const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -568,10 +570,19 @@ export function inputProbePrompt(modality, filePath) {
 }
 // Exact per-route argument vectors for reading one file (references/cli/modalities.md §2.5).
 // codex: -i is variadic, so it comes FIRST and a later flag closes it; the prompt rides on stdin.
-// gemini: the @reference splits on whitespace, so it names the file RELATIVE to the probe
-// directory (the cwd); an absolute temp path with a space would be torn in two.
+// gemini's @reference splits on whitespace, so it names the file RELATIVE to the probe
+// directory (the CLI's cwd) — an absolute temp path with a space would be torn in two.
+// Both sides are resolved through realpathSync.native first (macOS /var vs /private/var,
+// Windows short names), the result always uses forward slashes; a file that is not under
+// the directory (or fake paths in tests) falls back to its basename.
+export function relativeProbeRef(filePath, projectDir) {
+  const real = p => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  const rel = path.relative(real(projectDir), real(filePath)).replaceAll("\\", "/");
+  if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) return rel;
+  return String(filePath).split(/[\\/]/).pop();
+}
 export function inputProbeVector(cli, { filePath, projectDir, prompt }) {
-  const slash = path.basename(filePath);
+  const slash = relativeProbeRef(filePath, projectDir);
   switch (cli) {
     case "codex": return { args: ["exec", "-i", filePath, "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"], input: prompt, cwd: projectDir };
     case "claude": return { args: ["-p", prompt, "--tools", "Read", "--permission-mode", "plan", "--permission-prompts", "none", "--safe-mode", "--output-format", "json", "--add-dir", projectDir], input: "", cwd: projectDir };
@@ -701,7 +712,10 @@ export function globFiles(pattern, { home = os.homedir(), since = 0, maxDepth = 
   walk(start, index, 0);
   return found.sort((a, b) => a.path.localeCompare(b.path));
 }
-// sha256 of a file streamed in 1 MiB chunks (video artefacts are never read whole into memory).
+// sha256 of a file read in 1 MiB chunks (video artefacts are never read whole into memory).
+// Deliberately SYNCHRONOUS — openSync/readSync/closeSync, no stream: an open or read failure
+// (EACCES, ENOENT, a directory) is thrown here and caught here on every Node line (18/20/22),
+// so the result is null, never an 'error' event or a rejection that escapes the caller.
 export function hashFile(file) {
   const hash = createHash("sha256"), chunk = Buffer.alloc(1 << 20);
   let fd = null;
@@ -734,6 +748,7 @@ export function overlayEntryFor(cli, cliVersion, at, cell, { machineId = null, l
   const entry = { route: cli, cli, direction: cell.direction, modality: cell.modality, machine_id: machineId, cli_version: cliVersion, login_identity_sha256: loginIdentitySha256, at, probe_schema: MODALITY_PROBE_SCHEMA };
   entry.evidence = { probe: MODALITY_PROBE_SCHEMA, at, seconds: cell.seconds ?? null, material_sha256: cell.material?.sha256 ?? null, reply_sample: cell.reply_sample ?? null, harvested_sha256: (cell.harvested ?? []).map(f => f.sha256).filter(Boolean) };
   if (cell.status === "verified") { entry.level = "verified"; entry.blocker = null; entry.expires_at = null; }
+  else if (cell.status === "cleared") { entry.blocker = null; entry.expires_at = null; entry.reason = cell.reason ?? null; } // clears a route-level blocker; the level is untouched
   else {
     const blocker = cell.blocker ?? "probe_failed";
     if (cell.level_before && cell.level_before !== "no") entry.level = cell.level_before;
@@ -807,6 +822,47 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       return r;
     };
 
+    // Account-level gates. auth_tier and quota refuse the whole account, not one cell: a probe
+    // that hits one writes it (same expiry class) to every non-`no` cell of the route that has
+    // no cell-level blocker of its own and was not written in this run, with the reason
+    // `route_level:<blocker> — <cli> <from>: <detail>` so it can be told apart. The FIRST probed
+    // cell of a later run that succeeds clears exactly the cells carrying such a reason; every
+    // other cell still needs its own evidence (its own probe clears only itself).
+    const writtenThisRun = new Set();
+    const cellsOf = () => ["input", "output"].flatMap(direction => Object.entries(route[direction] ?? {}).map(([modality, cell]) => ({ direction, modality, key: `${direction}.${modality}`, cell })));
+    const routeLevelGate = cell => /route_level:(auth_tier|quota)\b/.exec(String(cell?.reason ?? ""))?.[1] ?? null;
+    result.route_level = [];
+    const propagate = from => {
+      const applied = [];
+      for (const { direction, modality, key, cell } of cellsOf()) {
+        if (!cell || cell.level === "no" || writtenThisRun.has(key)) continue;
+        if (cell.blocker && !routeLevelGate(cell)) continue; // a cell-level blocker stands on its own evidence
+        const pseudo = { direction, modality, level_before: cell.level, status: "blocked", blocker: from.blocker, reason: `route_level:${from.blocker} — ${cli} ${from.direction}.${from.modality}: ${from.reason}` };
+        writeOverlay(pseudo);
+        if (pseudo.overlay_written) { applied.push(key); writtenThisRun.add(key); } // a later hit in this run does not rewrite it
+      }
+      result.route_level.push({ blocker: from.blocker, from: `${from.direction}.${from.modality}`, applied_to: applied });
+    };
+    const clearRouteLevel = by => {
+      const cleared = [];
+      for (const { direction, modality, key, cell } of cellsOf()) {
+        if (key === `${by.direction}.${by.modality}` || !cell?.blocker) continue;
+        const gate = routeLevelGate(cell);
+        if (!gate) continue;
+        const pseudo = { direction, modality, level_before: cell.level, status: "cleared", reason: `cleared: route_level:${gate} disproved by ${by.direction}.${by.modality} probe` };
+        writeOverlay(pseudo);
+        if (pseudo.overlay_written) cleared.push(key);
+      }
+      if (cleared.length) result.route_level.push({ blocker: null, from: `${by.direction}.${by.modality}`, cleared });
+    };
+    let firstProbed = false;
+    const afterProbe = cell => {
+      if (["skipped", "unavailable"].includes(cell.status)) return;
+      writtenThisRun.add(`${cell.direction}.${cell.modality}`);
+      if (!firstProbed) { firstProbed = true; if (cell.status === "verified") clearRouteLevel(cell); }
+      if (cell.status === "blocked" && ROUTE_LEVEL_BLOCKERS.has(cell.blocker)) propagate(cell);
+    };
+
     // 1. Input cells: only those the registry rates documented or verified.
     for (const modality of INPUT_MODALITIES) {
       const entry = route.input?.[modality];
@@ -824,6 +880,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       const vector = inputProbeVector(cli, { filePath, projectDir, prompt });
       await runCell(cell, vector, prompt, reply => confirmContent(modality, reply, material, prompt));
       if (cell.status !== "unavailable") writeOverlay(cell);
+      afterProbe(cell);
     }
 
     // 2. Generative cells: listed with their disclosure; sent only with consent.
@@ -854,6 +911,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
         return { confirmed: false, reason: g.harvest ? `no hashed file matched ${g.harvest} after the request started — reply: ${clip(reply, 120) || "(empty)"}` : "the registry has no harvest glob for this cell" };
       });
       if (cell.status !== "unavailable") writeOverlay(cell);
+      afterProbe(cell);
     }
     return result;
   } finally {
