@@ -1303,14 +1303,24 @@ function quotationKey(grouped, finding, agent, prose = false, corpus = null) {
 // therefore ignored and a shared quotation is the location.
 const SPLIT_AUTO_CEILING_BYTES = 40 * 1024;
 const SPLIT_HARD_CAP_BYTES = 2_000_000;
+// Per-piece quorum for the parent. No pieces at all means every hunk exceeded
+// the ceiling: the parent completes as governor_direct scope (never a vacuous
+// Infinity), and says so.
+function splitQuorum(pieceResults, minSuccess) {
+  if (!pieceResults.length) return { external_successes: 0, met: true, governor_direct_only: true };
+  return { external_successes: Math.min(...pieceResults.map((piece) => piece.external_successes)), met: pieceResults.every((piece) => piece.quorum_met), governor_direct_only: false };
+}
+// --split reviews pieces under the ceiling, so the whole-input limit is the
+// splitter's hard cap — never raised by --max-bytes.
+function inputLimitFor(options) { return options.split ? SPLIT_HARD_CAP_BYTES : options.maxBytes; }
 const VERDICT_RANK = { REJECT: 3, MODIFY: 2, ACCEPT: 1 };
-const STATUS_RANK = { success: 0, invalid_output: 1, timeout: 2, error: 3, provider_unavailable: 4, authentication_required: 5, unsupported: 6, self_excluded: 7 };
+const STATUS_RANK = { success: 0, invalid_output: 1, timeout: 2, missing: 3, error: 4, provider_unavailable: 5, authentication_required: 6, unsupported: 7, self_excluded: 8 };
 // One parent row per route from its piece results: success when at least one
 // piece reviewed, with per-piece outcomes kept; findings, scope and suggestions
 // concatenated; the worst verdict wins; usage summed only where reported.
 function mergePieceResults(pieceResults, agents, governor) {
   return agents.map((agent) => {
-    const runs = pieceResults.map((piece) => ({ piece: piece.id, ...piece.results.find((r) => r.agent === agent) }));
+    const runs = pieceResults.map((piece) => ({ piece: piece.id, ...(piece.results.find((r) => r.agent === agent) ?? { agent, status: "missing", detail: "no result recorded for this route on this piece" }) }));
     if (agent === governor) return { agent, status: "self_excluded", pieces: {} };
     const pieces = {};
     for (const r of runs) pieces[r.status] = (pieces[r.status] ?? 0) + 1;
@@ -1330,12 +1340,12 @@ function mergePieceResults(pieceResults, agents, governor) {
         verdict: ok.map((r) => r.review.verdict).sort((a, b) => (VERDICT_RANK[b] ?? 0) - (VERDICT_RANK[a] ?? 0))[0],
         confidence: Math.min(...ok.map((r) => r.review.confidence ?? 1)),
         summary: ok.map((r) => `${r.piece}: ${r.review.summary ?? ""}`).join(" "),
-        findings: ok.flatMap((r) => r.review.findings.map((f) => ({ ...f, piece: r.piece }))),
+        findings: ok.flatMap((r) => (r.review.findings ?? []).map((f) => ({ ...f, piece: r.piece }))),
         improvements: ok.flatMap((r) => (r.review.improvements ?? []).map((i) => (typeof i === "object" && i ? { ...i, piece: r.piece } : i))),
         reviewed_scope: ok.flatMap((r) => r.review.reviewed_scope ?? []),
         review_contract: ok[0].review.review_contract ?? null,
       } } : {}),
-      usage: usageRows.length ? { reported: { input_tokens: sum("input_tokens"), output_tokens: sum("output_tokens"), reasoning_tokens: sum("reasoning_tokens"), cached_tokens: sum("cached_tokens"), total_tokens: sum("total_tokens"), cost_usd: sum("cost_usd"), model: usageRows[0].model ?? null, cli_version: usageRows[0].cli_version ?? null }, coverage: { tokens: usageRows.length === ok.length, cost: usageRows.every((u) => Number.isFinite(u.cost_usd)) }, field_map: ok.find((r) => r.usage)?.usage.field_map ?? null, pieces_reported: usageRows.length } : null,
+      usage: usageRows.length ? { reported: { input_tokens: sum("input_tokens"), output_tokens: sum("output_tokens"), reasoning_tokens: sum("reasoning_tokens"), cached_tokens: sum("cached_tokens"), total_tokens: sum("total_tokens"), cost_usd: sum("cost_usd"), model: usageRows[0].model ?? null, cli_version: usageRows[0].cli_version ?? null }, coverage: { tokens: usageRows.length === ok.length, cost: usageRows.length === ok.length && usageRows.every((u) => Number.isFinite(u.cost_usd)) }, field_map: ok.find((r) => r.usage)?.usage.field_map ?? null, pieces_reported: usageRows.length } : null,
     };
   });
 }
@@ -1986,6 +1996,16 @@ async function selfTest(pretty) {
       return true;
     })(),
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
+    gate_merge_cost_coverage_false_when_a_piece_lacks_usage: (() => {
+      const ok = (piece, usage) => ({ agent: "grok", status: "success", attempts: 1, duration_ms: 1, review: { verdict: "ACCEPT", confidence: 1, summary: "s", findings: [], improvements: [], reviewed_scope: [] }, ...(usage ? { usage: { reported: { total_tokens: 10, cost_usd: 0.5 } } } : {}) });
+      const m = mergePieceResults([{ id: "piece-01", results: [ok("piece-01", true)] }, { id: "piece-02", results: [ok("piece-02", false)] }], ["grok"], "claude")[0];
+      return m.usage.coverage.cost === false && m.usage.coverage.tokens === false && m.usage.pieces_reported === 1;
+    })(),
+    gate_merge_tolerates_review_without_findings_array: (() => { try { const m = mergePieceResults([{ id: "piece-01", results: [{ agent: "codex", status: "success", review: { verdict: "ACCEPT", confidence: 1, summary: "s" } }] }], ["codex"], "claude")[0]; return m.status === "success" && m.review.findings.length === 0; } catch { return false; } })(),
+    gate_merge_missing_route_result_is_a_status_not_undefined: (() => { const m = mergePieceResults([{ id: "piece-01", results: [] }, { id: "piece-02", results: [{ agent: "grok", status: "timeout", detail: "t" }] }], ["grok"], "claude")[0]; return typeof m.status === "string" && m.status !== "undefined" && m.pieces.missing === 1; })(),
+    gate_split_quorum_empty_pieces_is_not_infinity: (() => { const q = splitQuorum([], 2); return q.external_successes === 0 && q.met === true && q.governor_direct_only === true; })(),
+    gate_split_quorum_all_pieces_must_meet: (() => { const q = splitQuorum([{ external_successes: 2, quorum_met: true }, { external_successes: 1, quorum_met: false }], 2); return q.external_successes === 1 && q.met === false && q.governor_direct_only === false; })(),
+    gate_input_limit_under_split_is_the_hard_cap: inputLimitFor({ split: "auto", maxBytes: 3_000_000 }) === SPLIT_HARD_CAP_BYTES && inputLimitFor({ split: null, maxBytes: 120_000 }) === 120_000,
     split_args_parse_auto_and_kb_and_reject_small: (() => { const a = parseArgs(["--split", "auto"]); const b = parseArgs(["--split", "12"]); let rejected = false; try { parseArgs(["--split", "2"]); } catch { rejected = true; } return a.split === "auto" && b.split === 12 * 1024 && rejected; })(),
     merge_pieces_worst_verdict_and_per_piece_outcomes: (() => {
       const mk = (agent, status, verdict, id) => ({ agent, status, attempts: 1, duration_ms: 10, ...(status === "success" ? { review: { verdict, confidence: 0.9, summary: "s", findings: id ? [{ id, severity: "WARNING", target_file: "a", line_range: null, issue: "i", rationale: "r", test_suggestion: "t", sources: [agent] }] : [], improvements: [], reviewed_scope: [] }, usage: { reported: { total_tokens: 100, cost_usd: 0.01 } } } : { detail: "timed out" }) });
@@ -2167,7 +2187,7 @@ async function main() {
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.
-  const inputLimit = options.split ? Math.max(options.maxBytes, SPLIT_HARD_CAP_BYTES) : options.maxBytes;
+  const inputLimit = inputLimitFor(options);
   if (byteLength > inputLimit) throw new Error(`Input is ${byteLength} bytes; limit is ${inputLimit}${options.split ? " (split hard cap)" : ""}`);
   const sanitized = sanitizeText(rawArtifact);
   applyTier(options);
@@ -2286,8 +2306,10 @@ async function main() {
     if (options.staging.directory) { try { fs.rmSync(options.staging.directory, { recursive: true, force: true }); } catch {} }
   }
   const preflightEntries = await preflightPromise;
-  const externalSuccesses = pieceResults ? Math.min(...pieceResults.map((piece) => piece.external_successes)) : results.filter((result) => result.agent !== options.governor && result.status === "success").length;
-  const quorumMet = options.minSuccess ? (pieceResults ? pieceResults.every((piece) => piece.quorum_met) : externalSuccesses >= options.minSuccess) : true;
+  const pieceQuorum = pieceResults ? splitQuorum(pieceResults, options.minSuccess ?? 1) : null;
+  const externalSuccesses = pieceQuorum ? pieceQuorum.external_successes : results.filter((result) => result.agent !== options.governor && result.status === "success").length;
+  // No --min-success means no gate, as in 1.15; with a gate, every piece must meet it.
+  const quorumMet = options.minSuccess ? (pieceQuorum ? pieceQuorum.met : externalSuccesses >= options.minSuccess) : true;
   const prose = !looksLikeDiff(sanitized.value);
   // With pieces, corroboration runs over every piece result (same route may
   // appear once per piece); header-only quotes never corroborate.
@@ -2315,7 +2337,7 @@ async function main() {
     source_snapshot: sourceSnapshot,
     ...(options.inputMtime ? { input_modified: options.inputMtime } : {}),
     // The gate configuration rides in the evidence, not just the exit code.
-    ...(options.minSuccess ? { quorum: { required: options.minSuccess, achieved: externalSuccesses, met: quorumMet, ...(pieceResults ? { pieces: pieceResults.length, pieces_met: pieceResults.filter((piece) => piece.quorum_met).length, failing_pieces: pieceResults.filter((piece) => !piece.quorum_met).map((piece) => piece.id) } : {}) } } : {}),
+    ...(options.minSuccess ? { quorum: { required: options.minSuccess, achieved: externalSuccesses, met: quorumMet, ...(pieceResults ? { pieces: pieceResults.length, pieces_met: pieceResults.filter((piece) => piece.quorum_met).length, failing_pieces: pieceResults.filter((piece) => !piece.quorum_met).map((piece) => piece.id), governor_direct_only: pieceQuorum.governor_direct_only } : {}) } } : {}),
     ...(split ? { split: {
       ceiling_bytes: split.ceiling_bytes,
       pieces: pieceResults.map((piece) => ({ id: piece.id, files: piece.files, bytes: piece.bytes, external_successes: piece.external_successes, quorum_met: piece.quorum_met, reviewers: Object.fromEntries(piece.results.map((r) => [r.agent, r.status])) })),
