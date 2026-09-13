@@ -1,5 +1,11 @@
 # Explicit updates and recovery
 
+MOMM 1.15.0's updater has a verified staging-discovery defect with gitsign 0.17.1.
+It fails closed before installation. Bootstrap with a separately signature/hash-
+verified 1.15.1-or-newer clone and invoke its updater with `--repo <existing-clone>`;
+preview and obtain explicit apply/protocol consent, retaining the saved scopes.
+See [release-1.15.1.md](release-1.15.1.md). Do not bypass verification or retag 1.15.0.
+
 Run commands from the permanent skills clone. `multi-review.mjs update` is a
 separate command, not a review: it does not collect source or contact reviewers.
 

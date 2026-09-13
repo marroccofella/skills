@@ -67,6 +67,17 @@ try {
     await command([]);
     assert.equal(fs.readFileSync(lockPath, "utf8"), before); assert.equal(git(installed, "show-ref"), refs); assert.equal(verified, 0);
   });
+  await test("signed_preview_uses_discoverable_nonbare_staging_without_checkout", async () => {
+    let inspected = false;
+    await update(["--repo", installed, "--dry-run"], { ...deps, verifySignature: (root, ref, channel) => {
+      assert.equal(git(root, "rev-parse", "--is-bare-repository"), "false", "gitsign requires discoverable non-bare staging");
+      assert(fs.statSync(path.join(root, ".git")).isDirectory());
+      assert.deepEqual(fs.readdirSync(root), [".git"], "candidate files must not be checked out before verification");
+      deps.verifySignature(root, ref, channel);
+      inspected = true;
+    } });
+    assert(inspected, "preview must reach its signature verifier");
+  });
   await test("dry_run_shows_policy_without_installed_ref_or_lock_changes", async () => {
     const before = fs.readFileSync(lockPath, "utf8"), refs = git(installed, "show-ref"), logs = [];
     await update(["--repo", installed, "--dry-run"], { ...deps, log: s => logs.push(s) });

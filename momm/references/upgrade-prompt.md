@@ -27,6 +27,14 @@ signed tag, expected signing identity and package hash. Ask me before applying;
 ask separately for protocol acceptance if it changed. Never use --yes to bypass
 protocol consent or fall back to git pull when verification fails.
 
+Exception requiring an approved bootstrap, not a verification bypass: 1.15.0's
+updater cannot open its bare signature-staging repository. Obtain a separate
+normal clone at a published signed 1.15.1-or-newer tag; independently verify its
+signer and package hash before executing its updater. Use that verified updater's
+`--repo <existing-skills-clone>` option for the preview and explicitly approved
+apply, preserving the existing receipt and exact scopes. Do not change the old
+tag or claim that ordinary 1.15.0 self-update works.
+
 For a new installation, read the verified release's installer help. Install only
 MOMM into this harness's documented user-level skill scope: preview with
 `node momm/scripts/install.mjs --target <chosen-harness> --dry-run`, then ask

@@ -108,6 +108,9 @@ jobs:
               --certificate-github-workflow-sha "$GITHUB_SHA"
             pushes+=("refs/tags/$ref:refs/tags/$ref")
           done
+          if [[ "$MOMM_RELEASE_MODE" == stable ]]; then
+            node scripts/momm-update-smoke.mjs "$tag"
+          fi
           git push --atomic origin "${pushes[@]}"
           if [[ "$MOMM_RELEASE_MODE" == stable ]]; then
             if gh release view "$tag" --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/momm-existing-release.json"; then

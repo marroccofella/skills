@@ -1,5 +1,11 @@
 # MOMM Roadmap — alignment record
 
+1.15.0 was published on September 13. The subsequent fresh-install check exposed
+gitsign's inability to open the updater's bare staging repository. The 1.15.1
+patch uses normal empty staging and adds real signed preview/apply to the release
+gate before stable tags are pushed. The earlier candidate notes below remain
+historical; the 1.15.0 tag is immutable. No new feature scope is introduced.
+
 Candidate 1.15.0 stabilization also covers shared installer/updater receipt exclusion,
 scope-preserving rollback, explicit downgrade selection, compatible public CSV
 columns, overlapping-source decision deduplication and ledger navigation regressions.

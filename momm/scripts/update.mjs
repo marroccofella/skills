@@ -357,7 +357,10 @@ export async function update(argv, dependencies = {}) {
   log(`Network: fetch ${REMOTE}, ${ref}, into temporary staging only. Signature check contacts Sigstore trust/log services. No provider credentials or project source are sent.`);
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-"));
   try {
-    git(temp, "init", "--bare");
+    // gitsign discovers a normal .git directory; a bare staging repo is not
+    // supported by its repository opener. Fetch objects only: do not check out
+    // or execute candidate files before signature and package verification.
+    git(temp, "init");
     const candidateRef = channel === "main" ? "refs/momm/candidate" : `refs/tags/${release.tag}`;
     git(temp, "fetch", "--no-tags", dependencies.remote || REMOTE, `${ref}:${candidateRef}`);
     const commit = git(temp, "rev-parse", `${candidateRef}^{commit}`);
