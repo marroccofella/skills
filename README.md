@@ -4,7 +4,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.14.1-00cc88)
+![momm](https://img.shields.io/badge/momm-1.15.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -14,7 +14,9 @@ A collection of portable, cross-harness [Agent Skills](https://agentskills.io) �
 git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target claude --dry-run   # then again without --dry-run
 ```
 
-Links every skill in this repo into the harness you name (`claude`, `codex`, `gemini`, `antigravity`, or a comma list) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. The installer writes into an agent harness, so `--target` is required and `--dry-run` previews; `--target all` still exists but has to be typed. Update anytime with `git pull` (no reinstall). Per-skill installs still work via each skill's own path.
+Links every skill in this repo into the harness you name (`claude`, `codex`, `gemini`, `antigravity`, or a comma list) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. `--target` is required; `--dry-run` previews and `--target all` is an explicit choice. For MOMM alone use `node momm/scripts/install.mjs --target codex`. The installer records successful per-harness scopes for [explicit signed updates](momm/references/updating.md); it never updates itself in the background.
+
+**MOMM information:** [Overview](https://marroccofella.github.io/skills/momm/) · [Get started](https://marroccofella.github.io/skills/momm/start.html) · [Update safely](https://marroccofella.github.io/skills/momm/updates.html) · [Evidence](https://marroccofella.github.io/skills/momm/evidence.html) · [Reference](https://marroccofella.github.io/skills/momm/reference.html)
 
 | Skill | What it does |
 |-------|--------------|
@@ -44,9 +46,9 @@ The root installer discovers every top-level skill directory containing `SKILL.m
 
 > **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. A deprecated alias remains at [`multi-llm-review/`](multi-llm-review/) whose scripts forward to `momm/scripts/`, so existing commands and skill links keep working with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The alias will be removed in a future release.
 
-Have the other AI CLIs on your machine review your code, over the logins you already have. What leaves the machine: each route you run receives the redacted input — that is the review; nothing else is sent. It runs with whatever is logged in; one route is enough (`--tier quick` for staged commits, `--tier deep` for release gates).
+Have the other AI CLIs on your machine review your code, over the logins you already have. Each selected provider receives sanitized review input; redaction is not a guarantee that confidential material is gone. Separately, the daily notice requests a public version manifest, and explicit maintenance checks may query package metadata. Set `NO_UPDATE_CHECK=1` or `DO_NOT_TRACK=1` to suppress the daily check. One ready external reviewer is enough to begin; a release gate should set an explicit quorum.
 
-One reviewed manifest defines all six provider surfaces — Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini — including their official install, sign-in, model, and help routes. The harness named as governor is removed from that pool everywhere, so it can never review its own work.
+The dispatcher and Setup Center cover Codex, Claude Code, Antigravity, GitHub Copilot, Grok, and optional Gemini. Drift tests compare their declared routes and capabilities; they do not share a single provider manifest. The governor is excluded from the reviewer pool. A CLI route identifies a harness, not a guaranteed inner model ID.
 
 ```
               ┌────────────────────────────┐
@@ -121,7 +123,7 @@ flowchart TD
 - **Governor is the sole writer.** Reviewers are untrusted, read-only diagnostic tools. Their output is evidence, never instructions.
 - **Reproduction gate.** No finding is acted on by consensus or authority — the governor must reproduce it with a failing test before authoring a fix.
 - **Every voice heard, none obeyed blindly.** Reviewer improvement suggestions get an explicit apply/reject disposition, logged to `.ensemble_reviews/dispositions.jsonl` with the run's `run_id`.
-- **Termination-proof dispatcher.** Layered Windows/Unix process-tree cleanup (tree kill → child-kill backstop → hard deadline → explicit exit) guarantees the dispatcher always returns a structured report, even in kill-restricted sandboxes.
+- **Bounded dispatcher lifecycle.** Layered termination backstops limit hangs. Supervised POSIX children own process groups and have descendant-cancellation tests; independently detached processes and restrictive sandboxes remain limits. Use an execution context that permits cleanup. Do not treat a missing report as a successful review.
 
 ### What this is not
 
@@ -144,7 +146,7 @@ node momm/scripts/setup-ui.mjs
 node momm/scripts/multi-review.mjs --governor codex --min-success 1
 ```
 
-The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It reads no credential contents, launches only fixed allowlisted install/login/update/model actions after a click, and sends no repository source during setup — its optional connectivity check speaks one disclosed synthetic sentence. Every non-success outcome keeps its real status (`authentication_required`, `provider_unavailable`, `ineligible_tier`, `timeout`, …) instead of collapsing into “needs login”. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. Release history lives in [momm/references/](momm/references/) — latest: [MOMM 1.14.0](momm/references/release-1.14.0.md), written in response to an external critique of the 1.13.0 page.
+The Setup Center runs only on `127.0.0.1`; it is not a hosted web service. It reads no credential contents, launches fixed allowlisted provider actions after a click, and sends no repository source during setup—its optional connectivity check sends a disclosed synthetic sentence. The MOMM update action opens a verified preview, not an installation. Every non-success outcome keeps its actual status. Headless fallback: `node momm/scripts/onboard.mjs --governor codex`. [MOMM 1.15 release record](momm/references/release-1.15.0.md) describes the updater and information-page changes; [release history](momm/references/) preserves earlier evidence.
 
 Every user gets a **private local dashboard** over their own review history — unique per workspace, generated from telemetry that never leaves the machine (`.ensemble_reviews/` is gitignored by protocol, so publishing is always an explicit act, never a default):
 

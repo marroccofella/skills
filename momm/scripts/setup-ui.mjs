@@ -7,6 +7,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createProcessScope } from "./process-scope.mjs";
+
+const processScope = createProcessScope();
+processScope.installSignalHandlers(undefined, {graceful:true});
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const assetDir = path.join(scriptDir, "..", "assets", "setup-ui");
@@ -151,13 +155,62 @@ function platformKey() {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 }
 
+const npmPackages = Object.freeze({ codex: '@openai/codex', claude: '@anthropic-ai/claude-code', copilot: '@github/copilot', gemini: '@google/gemini-cli' });
+function detectInstallation(agent, env = process.env, platform = process.platform) {
+  const name = agent === 'antigravity' ? 'agy' : agent;
+  const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
+  for (const directory of pathValue.split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
+    for (const extension of platform === 'win32' ? ['.exe', '.cmd', '.bat'] : ['']) {
+      const candidate = path.join(directory.replace(/^"|"$/g, ''), name + extension);
+      try {
+        if (!fs.statSync(candidate).isFile()) continue;
+        if (platform !== 'win32') { try { fs.accessSync(candidate, fs.constants.X_OK); } catch { continue; } }
+        const resolved = fs.realpathSync(candidate);
+        // Executable magic is not installation ownership: these managers ship
+        // native shims too. Let their own updater maintain the selected install.
+        const managedPath = /\/(?:\.volta|scoop|chocolatey|\.asdf|\.local\/share\/mise)\//i;
+        if ([candidate,resolved].some(p=>managedPath.test(p.replaceAll('\\','/')))) return {kind:'unknown',path:candidate,note:'Package-manager installation; update through its package manager.'};
+        const packageName = npmPackages[agent];
+        if (packageName) {
+          const marker = `/node_modules/${packageName}/`;
+          const normalized = resolved.replaceAll('\\', '/');
+          const packageRoot = normalized.includes(marker)
+            ? normalized.slice(0, normalized.indexOf(marker) + marker.length - 1)
+            : path.join(path.dirname(candidate), 'node_modules', packageName);
+          try {
+            if (JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')).name === packageName
+              && (normalized.includes(marker) || /\.(cmd|bat)$/i.test(candidate))) {
+              if (candidate.replaceAll('\\','/').includes('/node_modules/.bin/')) return {kind:'project_npm',path:candidate};
+              const globalMarker = '/lib/node_modules/';
+              const prefix = platform === 'win32' ? path.dirname(candidate)
+                : normalized.includes(globalMarker) ? normalized.slice(0,normalized.indexOf(globalMarker)) : null;
+              return {kind:prefix ? 'npm' : 'unknown', path:candidate, prefix};
+            }
+          } catch {}
+        }
+        // Homebrew and unknown wrappers need their own package manager; do not create a shadow npm install.
+        if (/\/(?:Cellar|Caskroom)\//.test(resolved.replaceAll('\\','/'))) return {kind:'homebrew',path:candidate};
+        // Only known executable file formats qualify for native self-update. Shell wrappers may route elsewhere.
+        let native = false, fd;
+        try { fd=fs.openSync(resolved,'r'); const header=Buffer.alloc(4); fs.readSync(fd,header,0,4,0);
+          native=header.subarray(0,2).toString()==='MZ' || ['7f454c46','feedface','feedfacf','cefaedfe','cffaedfe','cafebabe','bebafeca'].includes(header.toString('hex'));
+        } finally { if(fd !== undefined) fs.closeSync(fd); }
+        return {kind:native ? 'native' : 'unknown',path:candidate};
+      } catch {}
+    }
+  }
+  return {kind:'unknown',path:null};
+}
+
 function actionCommand(provider, action) {
   if (provider === "skills" && ["update", "diff", "commit"].includes(action)) {
     const windows = platformKey() === "win32";
     const quoted = windows
       ? `'${skillsRoot.replaceAll("'", "''")}'`
       : `'${skillsRoot.replaceAll("'", `'\\''`)}'`;
-    if (action === "update") return `git -C ${quoted} pull --ff-only`;
+    if (action === "update") return windows
+      ? `Set-Location ${quoted}; node momm/scripts/multi-review.mjs update --dry-run`
+      : `cd ${quoted} && node momm/scripts/multi-review.mjs update --dry-run`;
     if (action === "diff") return windows
       ? `Set-Location ${quoted}; git status --short; git diff --stat; git diff`
       : `cd ${quoted} && git status --short && git diff --stat && git diff`;
@@ -167,15 +220,27 @@ function actionCommand(provider, action) {
   }
   const record = providers[provider];
   if (!record || !["login", "install", "update", "models"].includes(action)) return null;
+  if (action === 'update') {
+    const installation = detectInstallation(provider);
+    if (installation.kind === 'npm' && npmPackages[provider]) {
+      const prefix = platformKey() === 'win32' ? `'${installation.prefix.replaceAll("'", "''")}'` : `'${installation.prefix.replaceAll("'", `'\\''`)}'`;
+      return `npm install -g --prefix ${prefix} ${npmPackages[provider]}@latest`;
+    }
+    if (installation.kind !== 'native') return null;
+    const args = ({codex:'update',claude:'update',copilot:'update',antigravity:'update',grok:'update --stable'})[provider];
+    if (!args) return null;
+    const executable = platformKey() === 'win32' ? `& '${installation.path.replaceAll("'", "''")}'` : `'${installation.path.replaceAll("'", `'\\''`)}'`;
+    return `${executable} ${args}`;
+  }
   return record[action][platformKey()] || null;
 }
 
 function actionNote(provider, action) {
-  if (provider === "skills" && action === "update") return "The terminal will fast-forward the skills repository only if Git can do so safely.";
+  if (provider === "skills" && action === "update") return "The terminal previews a signed update and its protocol diff. It does not install. Applying requires your explicit update --apply command and protocol acceptance when changed.";
   if (provider === "skills" && action === "diff") return "The terminal shows the current skill changes without modifying them.";
   if (provider === "skills" && action === "commit") return "The terminal shows Git status and leaves staging and the commit message under your control.";
   if (action === "models") return providers[provider]?.modelsNote;
-  if (action === "update") return `The terminal will show ${providers[provider]?.label || provider}'s official updater.`;
+  if (action === "update") return `The terminal runs ${providers[provider]?.label || provider}'s updater. Opening it is not proof of success. Finish there, then check versions again.`;
   return providers[provider]?.loginNote;
 }
 
@@ -185,15 +250,7 @@ function actionNote(provider, action) {
 // taskkill is unavailable, and a hard settle so the server never hangs on a
 // process nothing could kill.
 function killProcessTree(child, isSettled) {
-  if (process.platform === "win32" && child.pid) {
-    const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-    killer.on("error", () => child.kill());
-    if (typeof killer.unref === "function") killer.unref();
-    const backstop = setTimeout(() => { if (!isSettled()) child.kill(); }, 2000);
-    if (typeof backstop.unref === "function") backstop.unref();
-  } else {
-    child.kill("SIGKILL");
-  }
+  processScope.terminate(child, {graceful:true});
 }
 
 function supervise(child, { timeoutMs, stdoutLimit, stderrLimit, resolve }) {
@@ -207,6 +264,9 @@ function supervise(child, { timeoutMs, stdoutLimit, stderrLimit, resolve }) {
     settled = true;
     clearTimeout(timer);
     if (hardSettle) clearTimeout(hardSettle);
+    processScope.release(child);
+    child.stdin?.destroy(); child.stdout?.destroy(); child.stderr?.destroy();
+    child.unref?.();
     resolve({ ...result, stdout, stderr });
   };
   const timer = setTimeout(() => {
@@ -221,17 +281,21 @@ function supervise(child, { timeoutMs, stdoutLimit, stderrLimit, resolve }) {
     // The close event drains remaining output; the hard settle only fires
     // when nothing could kill the tree.
     hardSettle = setTimeout(() => finish({ code: null, timedOut: true }), 5000);
-    hardSettle.unref?.();
+    // Referenced: blocked killing must not strand a pending server request.
   }, timeoutMs);
   child.stdout?.on("data", (chunk) => { if (stdout.length < stdoutLimit) stdout += chunk.toString("utf8"); });
   child.stderr?.on("data", (chunk) => { if (stderr.length < stderrLimit) stderr += chunk.toString("utf8"); });
   child.on("error", (error) => finish({ code: null, error }));
   child.on("close", (code) => finish({ code: timedOut ? null : code, timedOut }));
+  child.on("exit", code => {
+    const fallback = setTimeout(() => finish({code:timedOut ? null : code,timedOut}),1500);
+    fallback.unref?.();
+  });
 }
 
 function runNode(script, args, { input = "", timeoutMs = 45_000 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, ...args], {
+    const child = processScope.spawn(process.execPath, [script, ...args], {
       cwd: process.cwd(),
       env: { ...process.env, NO_UPDATE_CHECK: "1" },
       shell: false,
@@ -246,7 +310,7 @@ function runNode(script, args, { input = "", timeoutMs = 45_000 } = {}) {
 
 function runCommand(command, args = [], { timeoutMs = 15_000 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = processScope.spawn(process.platform === 'win32' && command === 'git' ? 'git.exe' : command, args, {
       cwd: process.cwd(),
       env: { ...process.env, NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
       shell: false,
@@ -271,12 +335,25 @@ function parseVersion(value) {
 }
 
 function compareVersions(left, right) {
-  const parse = (value) => String(value || "").split("-")[0].split(".").map((part) => Number.parseInt(part, 10));
-  const a = parse(left);
-  const b = parse(right);
-  if (a.length !== 3 || b.length !== 3 || [...a, ...b].some((part) => !Number.isInteger(part))) return null;
+  const pattern = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+  const x = String(left || '').match(pattern), y = String(right || '').match(pattern);
+  if (!x || !y) return null;
+  const a = x.slice(1,4).map(Number), b = y.slice(1,4).map(Number);
   for (let index = 0; index < 3; index += 1) {
     if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+  }
+  if (x[4] === y[4]) return 0;
+  if (!x[4]) return 1;
+  if (!y[4]) return -1;
+  const ap = x[4].split('.'), bp = y[4].split('.');
+  for (let i=0; i<Math.max(ap.length,bp.length); i++) {
+    if (ap[i] === bp[i]) continue;
+    if (ap[i] === undefined) return -1;
+    if (bp[i] === undefined) return 1;
+    const an = /^\d+$/.test(ap[i]), bn = /^\d+$/.test(bp[i]);
+    if (an && bn) return BigInt(ap[i]) > BigInt(bp[i]) ? 1 : -1;
+    if (an !== bn) return an ? -1 : 1;
+    return ap[i] > bp[i] ? 1 : -1;
   }
   return 0;
 }
@@ -340,13 +417,15 @@ async function modelStatus(routes) {
     const command = agent === "antigravity" ? "agy" : "grok";
     const result = await runCommand(command, ["models"], { timeoutMs: 20_000 });
     const models = extractModelNames(`${result.stdout}\n${result.stderr}`);
-    return { agent, status: result.code === 0 && models.length ? "available" : result.timedOut ? "timeout" : "login_required", models };
+    return { agent, status: result.code === 0 && models.length ? "available" : result.timedOut ? "timeout" : "unknown", models };
   }));
 }
 
 async function maintenanceReport(governor) {
   if (maintenanceCache && Date.now() - maintenanceCache.cachedAt < 10 * 60_000) return maintenanceCache.value;
-  const routesReport = await readiness(governor);
+  // Installation inventory has no review eligibility: include the active controller too.
+  // This makes zero model calls and does not bypass dispatch-time self-exclusion.
+  const routesReport = await readiness('other');
   let localVersions = {};
   try { localVersions = JSON.parse(fs.readFileSync(localVersionsFile, "utf8")); } catch {}
   const [publishedResult, codexLatestResult, claudeLatestResult, geminiLatestResult, copilotLatestResult, grokUpdate, gitVersion, gitStatus, shellVersion, models] = await Promise.all([
@@ -355,7 +434,7 @@ async function maintenanceReport(governor) {
     fetchJson("https://registry.npmjs.org/@anthropic-ai%2fclaude-code/latest").catch(() => null),
     fetchJson("https://registry.npmjs.org/@google%2fgemini-cli/latest").catch(() => null),
     fetchJson("https://registry.npmjs.org/@github%2fcopilot/latest").catch(() => null),
-    runCommand("grok", ["update", "--check", "--json"], { timeoutMs: 20_000 }),
+    runCommand("grok", ["update", "--check", "--stable", "--json"], { timeoutMs: 20_000 }),
     runCommand("git", ["--version"]),
     runCommand("git", ["-C", skillsRoot, "status", "--porcelain"], { timeoutMs: 10_000 }),
     // Check the SAME shell the actions launch (Windows PowerShell 5, always
@@ -369,16 +448,19 @@ async function maintenanceReport(governor) {
   let grokUpdateAvailable = null;
   try {
     const parsed = JSON.parse(grokUpdate.stdout);
-    grokLatest = parseVersion(parsed.latestVersion);
-    grokUpdateAvailable = parsed.updateAvailable === true;
+    if (grokUpdate.code === 0 && !grokUpdate.timedOut && !parsed.error
+      && typeof parsed.updateAvailable === 'boolean' && parseVersion(parsed.latestVersion)) {
+      grokLatest = parseVersion(parsed.latestVersion);
+      grokUpdateAvailable = parsed.updateAvailable;
+    }
   } catch {}
   const cliUpdates = [
     { agent: "codex", latest: parseVersion(codexLatestResult?.version), source: "npm registry" },
     { agent: "claude", latest: parseVersion(claudeLatestResult?.version), source: "npm registry" },
     { agent: "gemini", latest: parseVersion(geminiLatestResult?.version), source: "npm registry" },
-    { agent: "antigravity", latest: null, source: "built-in self-updater", auto_managed: true },
+    { agent: "antigravity", latest: null, source: "No verified check-only command; native updater requires your approval" },
     { agent: "copilot", latest: parseVersion(copilotLatestResult?.version), source: "npm registry" },
-    { agent: "grok", latest: grokLatest, source: "grok update --check", update_available: grokUpdateAvailable },
+    { agent: "grok", latest: grokLatest, source: "grok update --check --stable (stable channel)", update_available: grokUpdateAvailable },
   ].map((item) => {
     const route = routeMap.get(item.agent);
     const current = parseVersion(route?.version);
@@ -386,8 +468,11 @@ async function maintenanceReport(governor) {
     return {
       ...item,
       current,
+      installation: detectInstallation(item.agent),
+      update_command: actionCommand(item.agent, 'update'),
+      install_command: actionCommand(item.agent, 'install'),
       installed: route?.installed !== false && Boolean(route),
-      status: route?.installed === false || !route ? "missing" : item.auto_managed ? "auto_managed" : item.update_available === true || comparison === -1 ? "update_available" : comparison === 0 || item.update_available === false ? "current" : "unknown",
+      status: route?.installed === false || !route ? "missing" : item.update_available === true ? "update_available" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
     };
   });
   const value = {
@@ -403,7 +488,8 @@ async function maintenanceReport(governor) {
     runtime: {
       platform: `${os.platform()} ${os.release()} ${os.arch()}`,
       node: process.versions.node,
-      node_ready: Number.parseInt(process.versions.node.split(".")[0], 10) >= 22,
+      node_ready: Number.parseInt(process.versions.node.split(".")[0], 10) >= 18,
+      node_recommended: Number.parseInt(process.versions.node.split(".")[0], 10) >= 22,
       git: gitVersion.code === 0 ? safeDetail(gitVersion.stdout) : null,
       powershell: shellVersion.code === 0 ? safeDetail(shellVersion.stdout) : null,
     },
@@ -460,6 +546,7 @@ function startConnectivityJob(provider, governor) {
     "--governor", governor,
     "--reviewers", provider,
     "--min-success", "1",
+    "--timeout", "120",
     "--label", "setup-center connectivity validation",
   ], { input, timeoutMs: CONNECTIVITY_TIMEOUT_MS }).then((result) => {
     let report = null;
@@ -530,12 +617,17 @@ function sendJson(response, status, value) {
 
 function readBody(request) {
   return new Promise((resolve, reject) => {
-    let body = "";
+    const chunks = [];
+    let bytes = 0, failed = false;
     request.on("data", (chunk) => {
-      body += chunk.toString("utf8");
-      if (body.length > 4096) reject(new Error("Request body too large"));
+      if (failed) return;
+      const buffer = Buffer.from(chunk); bytes += buffer.length;
+      if (bytes > 4096) { failed=true; chunks.length=0; reject(new Error("Request body too large")); request.destroy(); return; }
+      chunks.push(buffer);
     });
     request.on("end", () => {
+      if (failed) return;
+      const body = Buffer.concat(chunks).toString('utf8');
       try { resolve(body ? JSON.parse(body) : {}); }
       catch { reject(new Error("Request body must be JSON")); }
     });
@@ -570,6 +662,7 @@ function createServer() {
         return sendJson(response, 200, { token: sessionToken, platform: platformKey(), providers });
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/status") {
+        if (!authorized(request)) return sendJson(response, 403, {error:'Invalid local session'});
         const governor = String(requestUrl.searchParams.get("governor") || "codex").toLowerCase();
         if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
         return sendJson(response, 200, await readiness(governor));
@@ -586,6 +679,7 @@ function createServer() {
           const action = String(body.action || "").toLowerCase();
           const command = actionCommand(provider, action);
           if (!command) return sendJson(response, 400, { error: "Unsupported provider action" });
+          if ((provider !== 'skills' && ['update','install'].includes(action) || body.expected_command) && body.expected_command !== command) return sendJson(response, 409, {error:'Confirm the exact command first. Refresh versions if the installation changed.'});
           if (provider === "skills" && action === "update") {
             if (!fs.existsSync(path.join(skillsRoot, ".git"))) return sendJson(response, 409, { error: "The skills source is not a Git checkout." });
             const status = await runCommand("git", ["-C", skillsRoot, "status", "--porcelain"], { timeoutMs: 10_000 });
@@ -611,7 +705,9 @@ function createServer() {
         }
         if (requestUrl.pathname === "/api/shutdown") {
           sendJson(response, 202, { closing: true });
-          setTimeout(() => activeServer?.close(() => process.exit(0)), 150);
+          processScope.stop({graceful:true});
+          activeServer?.close();
+          setTimeout(() => { processScope.force(); activeServer?.closeAllConnections?.(); process.exit(0); }, 1200);
           return;
         }
       }
@@ -654,8 +750,8 @@ async function selfTest() {
     timeout_reports_timed_out: timedOutProbe.timedOut === true && timedOutProbe.code === null,
     unknown_provider_rejected: actionCommand("unknown", "login") === null,
     unknown_action_rejected: actionCommand("claude", "delete") === null,
-    commands_are_fixed: Object.keys(providers).every((name) => ["login", "install", "update", "models"].every((action) => actionCommand(name, action))),
-    skill_actions_are_fixed: actionCommand("skills", "update")?.includes("pull --ff-only") === true
+    commands_are_fixed: Object.keys(providers).every((name) => ["login", "install", "models"].every((action) => actionCommand(name, action))),
+    skill_actions_are_fixed: actionCommand("skills", "update")?.includes("update --dry-run") === true
       && actionCommand("skills", "diff")?.includes("git diff") === true
       && actionCommand("skills", "commit")?.includes("git status") === true,
     loopback_only: isLoopback("127.0.0.1") && isLoopback("::1") && !isLoopback("192.168.1.5"),

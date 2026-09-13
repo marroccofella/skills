@@ -1,29 +1,175 @@
 # MOMM Roadmap — alignment record
 
+Candidate 1.15.0 stabilization also covers shared installer/updater receipt exclusion,
+scope-preserving rollback, explicit downgrade selection, compatible public CSV
+columns, overlapping-source decision deduplication and ledger navigation regressions.
+These are verified local repairs; publication still requires the release gates below.
+
 Purpose: keep parallel sessions and future releases pointed the same way.
 Before proposing or building a MOMM feature, read this file; after shipping or
 rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
-## Planned — next release
+## Candidate — not released
 
-### POSIX process-group termination
+Final September 13 repairs: updates fetch full ancestry and verify promotion and
+Git connectivity across intervening commits; repeated explicit harness installs
+preserve matching clean verified provenance. Existing update claims fail closed
+instead of racy dead-PID reclamation, and receipt/journal decisions are rechecked
+inside exclusivity. A stale claim may need manual inspection before recovery.
+The hub version is stamped from the manifest; sitemap generation omits unverified
+lastmod dates. The shared prompt covers new and legacy users without broadening
+skill/harness scope. Governor locations normalize only within reviewed paths;
+protocol commands use quoted absolute paths and failed ledger builds are visible.
 
-The kill chain on POSIX sends SIGKILL to the direct child only; a reviewer
-CLI that forks helpers can leave orphans holding the pipes (Windows already
-uses taskkill /T). Spawn reviewers in their own process group (detached) and
-kill the group, with the same layered backstops. Needs a POSIX machine to
-verify; the Actions matrix covers ubuntu/macos, so ship with a forced-timeout
-drill there. Raised 2026-09-04 by the external kill-chain review.
+### 1.15 release candidate — explicit updates and clearer public information
+
+Implemented in the candidate: installation receipts with per-harness scopes;
+manifest-only check, signed staged preview, explicit apply, protocol acceptance,
+stable/pinned/main channels, retained offline rollback, daily opt-outs, executable
+hashes, five focused information pages, and deterministic public-data rendering.
+Publication remains gated by the OS/Node matrix, MOMM dispositions, privacy scans
+and a verified Sigstore-signed tag. Do not call this candidate released until those
+gates pass. Main-channel updates require a signed development checkpoint; an
+ordinary unsigned branch head is not eligible. Legacy unsigned tags stay intact.
+
+The candidate adds a source-linked version-history archive and an existing-user
+upgrade prompt. Published releases, tags without Release records and untagged code
+milestones are distinguished; gaps are not invented. Legacy installs must approve
+a bootstrap, preserve their prior installation and establish an actual receipt.
+Growing governor logs are streamed with full-byte hash rechecks, bounded individual
+records and selected-run memory; corruption or concurrent mutation fails closed.
+The completion command uses the absolute installed skill path from the project.
+Public export regression tests now cover validation-before-write, sparse legacy
+reports, canonical duplicate comparison and aliased preview roots. Filesystem I/O
+failure is not a multi-file atomic transaction. Current documentation distinguishes
+supervised POSIX groups from independently detached processes. CLI maintenance
+refuses known Volta/Scoop/Chocolatey/asdf/mise-managed executable paths; executable
+magic alone is not ownership proof, and unrecognized package managers remain a
+discovery limitation. Declined-update assertions include an actual API call counter
+and a positive control; exact-command endpoint checks cover successful launches.
+
+Candidate release testing also found interrupted notice claims, changed ignore
+rules stranding rollback, and browser default speech bypassing local-only voice
+selection. Each now has a regression fixture. The signing workflow can reuse
+matching verified tags on retry, and has an explicit main-checkpoint-only mode.
+Claude's text review disables customizations and tools while retaining OAuth and
+plan permissions (verified flag surface: 2.1.233); Grok preserves the supplied
+prompt with --verbatim and disables subagents (1.0.5). Live re-verification is
+still required; unsupported flags fail closed on older installations.
+Output parsing now prefers the final review and refuses explicitly non-final
+Grok envelopes; regression fixtures cover intermediate/final ordering. Copilot
+requests non-streamed final text while preserving its viewer-only tool allowlist.
+An unmet external-review quorum can no longer coexist with outstanding.complete.
+Executable hashes are captured at dispatcher startup, not retroactively from
+files changed during review; a changed installation clears verified-release status.
+
+Candidate lifecycle hardening: peer-review/2 requires explicit completion and
+artifact quotations; malformed/over-limit/error-wrapped replies fail closed before
+normalization. A governor validator checks original report/log linkage, unique
+item decisions, required before/after or refutation records, and current source,
+test and output hashes. It records completion separately and keeps stale/deferred
+work visibly open. The controlled zero-model-call regression runs real authored
+tests before/after a seeded fix and tests conflicting/missing/forged decisions.
+This validates consistency, not an agent's honesty, test adequacy or all harnesses.
+Current source capture supports local text input and exact current Git text A/M
+diffs; binary/deleted/renamed source and media lifecycle binding remain open.
+
+Candidate reviewer reliability: real source probes completed after the former
+120/180-second windows. The default base is now 180 seconds (deep: 240), with
+existing Grok 1.5x headroom and explicit timeout overrides retained. Scope prose
+is concise and useful novelty is optional; all material findings remain required.
+--stream sends content-free elapsed/deadline/byte-count progress, never reasoning.
+An explicit --effort medium is supported for locally verified Claude/Grok flags;
+default leaves account settings alone. Output is decoded across UTF-8 chunks and
+bounded in bytes, malformed JSON scans linearly, and Windows uses native/verified
+npm bin launchers instead of shell argument interpretation. Transport fixtures
+run in the OS/Node matrix; local success is not a cross-machine certification.
+Grok's text adapter uses ordinary final JSON, explicit deny rules for read/search,
+shell/edit, MCP and web tool classes, and a four-turn ceiling within the unchanged
+wall-clock deadline. An empty --tools value did not disable reads in a local
+1.0.5 canary; explicit deny rules withheld its marker. This is CLI policy, not an
+OS filesystem sandbox or certification of every future binary. A 38 KB synthetic
+control completed after an earlier quotation-invalid reply; real-source quorum
+is still required. The local peer contract remains mandatory. Failed/non-final
+probes are not successful reviews.
+
+Stabilisation regressions now cover CLI/model errors versus real login failures,
+partial installation receipts, comma-separated skill names, torn update claims,
+strict-policy shape diagnostics, source text containing sample diffs, repository
+root guidance, concurrent Git-source changes, and genuine a/b source directories.
+The release seal refuses a dirty checkout; prepare requires the intended files
+staged first. The signing job pins setup-node and queries successful exact-commit
+push runs explicitly. Preview stream failures, slash redirects, copy feedback and
+restored harness snippets have offline regressions. None of this marks the
+candidate released or turns legacy decision counts into validated completion.
+
+Candidate CLI maintenance now inventories all six installations independently of
+governor self-exclusion. The dashboard shows installed/latest versions, source,
+installation type and explicit update actions. Failed checks stay unknown; AGY
+has no verified read-only latest query and needs an explicit native update.
+Native updater commands bind to the detected path; npm commands bind to the
+detected global prefix. Homebrew, project-local and unknown wrappers receive
+guidance rather than a guessed global install. A launched terminal is not an
+update success; changed versions invalidate prior live checks. Offline fixtures
+cover inventory, failed native checks, prereleases, origins and declined consent.
+Local Windows binaries were updated and re-probed on 2026-09-12; account quotas,
+tier eligibility and real-source review quorum remain separate gates.
+
+Quotation validation treats CRLF/LF as equivalent while retaining all other
+literal characters and the original input byte hashes. This repairs a reproduced
+cross-platform false rejection; it does not certify the cause of every earlier
+invalid reply. Setup update endpoints require the displayed command, readiness
+probes require the local token, and request bodies are byte-bounded and decoded
+once. Supervised POSIX children now own groups; deadlines and normal leader exit
+kill residual members. Handled shutdown signals allow nested dispatchers to
+cancel their reviewer groups before bounded escalation. Windows retains taskkill
+tree termination and a direct-child backstop. After a Windows leader exits
+normally, ordinary helpers may no longer be addressable through that leader;
+guaranteed residual cleanup needs OS job ownership, which is not implemented.
+Cross-platform policy fixtures pass
+locally; real POSIX descendant drills must pass in CI before release. This is not
+OS sandboxing: an uncatchable crash, blocked event loop or independently detached
+helper can defeat signal forwarding. Hard settlement still prevents hung pipes
+from stranding the dispatcher or Setup Center.
+
+The attached broader proposals are not silently bundled: API-key support conflicts
+with OAuth-only policy; a repository split, automatic execution of peer-authored
+tests, independent benchmarking and marketing outreach remain separate decisions.
+
+## Planned — later work
+
+### Stronger process containment
+
+The candidate owns ordinary POSIX descendant groups and tests nested cancellation.
+Independent OS job/cgroup containment remains separate future work; do not claim
+group signalling contains arbitrary detached processes or survives every crash.
 
 ### Route failures are product bugs, not vocabulary
 
-Diagnosed 2026-09-04 with the 1.14.0 invalid_output detail: on inputs of
-about 30 KB and up antigravity returns `{"status":"SUCCESS","response":""}`
-— an empty reply with the schema echoed back — while a 300-byte diff
-succeeds. Likely a prompt-length cap in the CLI's structured-output mode.
-Next: probe the size threshold, then either chunk the artifact for that route
-or fail it closed as `unsupported` above the threshold instead of spending
-20–60 s on an empty reply.
+The initial September 4 prompt-size hypothesis is unproven. The September 13
+maintainer knowledge base reports headless tool-permission denials and a small,
+single-artifact A/B trial: 3/4 replies with the old prompt and 4/4 with explicit
+instructions that the prompt file is the entire input. Those counts are attributed
+to the maintainer's table; it does not link the raw eight-run evidence.
+A candidate probe also reproduced an empty response on just 714 bytes of synthetic
+input, so size alone is not an adequate explanation. The candidate now tells the
+route not to search other files or run commands, while retaining plan/sandbox
+controls. Prompt instructions are not filesystem isolation. Repeated probes and
+representative real-source reviews remain required before claiming reliability;
+empty, invalid or timed-out replies still fail closed.
+
+The candidate's follow-up on that same 714-byte source produced two valid clean
+reviews with the amended prompt; a 736-byte negative control produced a valid
+defect report identifying the seeded exclusive-bound error. These local synthetic
+controls exercise the real dispatcher and account route, not every provider/model
+or representative large source. No permission flag was relaxed.
+
+Release-fix regressions also cover color-forced Git diffs, realpath entrypoints
+through directory aliases, failed alias cleanup, repeated child errors, Windows
+tree-kill failure/budget policy, literal CRLF excerpt boundaries, saved diagnostic
+redaction, native update flags and malformed dashboard maintenance responses.
+An account card retains failed evidence while offering an explicit retry after
+login. Public source and Pages remain unchanged until the release gates pass.
 
 31 of 120 sealed runs lost at least one route to a timeout, and antigravity
 returned invalid_output on every 2026-09-04 run. The status vocabulary keeps
@@ -160,15 +306,15 @@ dispositions belong beside the review log the dispatcher wrote.
 
 ## Open items
 
-- **Source-bearing peer review of the momm release diff** — pending the
-  owner's explicit approval sentence; do not dispatch without it.
+- **Fresh source-bearing release review** — the user approved the final dispatcher,
+  dashboard, public website and documentation scopes for Claude and Antigravity,
+  in addition to the previously approved updater/installer/protocol scopes.
+  Approval is not a review result; each final scope still needs source-bound
+  quorum, governor decisions and verification before publication.
 - The running Setup Center instance must be relaunched after upgrades; old
   processes serve stale UI (observed live on 1.9.x → 1.10.0).
-- **Agent timeout hard cap defeats --timeout on dense inputs** (observed
-  2026-08-23): agentTimeoutMs clamps to 360s even when the user passes
-  `--timeout 420`, so codex cannot finish a 63KB dense patch. Either honor an
-  explicit --timeout above the cap, or surface the clamp in the report so a
-  timeout is distinguishable from an impossible budget.
+- Explicit timeout overrides are already honored (see 1.12.0 above); provider
+  completion reliability remains a separate open item, not an unimplemented cap fix.
 
 ## Parked ideas (small, fun, or unproven)
 

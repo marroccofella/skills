@@ -142,6 +142,12 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: white; }
 .maintenance-panel .button.secondary { border-color: var(--line); color: var(--ink); background: white; }
 .maintenance-privacy { margin: 23px 0; padding: 13px 15px; color: var(--muted); background: rgba(255,255,255,.62); border: 1px solid var(--line); border-radius: 13px; font-size: 12px; line-height: 1.5; }
 .maintenance-grid { display: grid; gap: 14px; }
+.cli-table-scroll { overflow-x: auto; }
+.cli-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+.cli-table th, .cli-table td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cli-table small { display: block; max-width: 260px; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.5; }
+.cli-table th:first-child { min-width: 150px; }
+.cli-table td:last-child { white-space: nowrap; }
 .health-card { min-width: 0; padding: 20px; color: var(--ink); background: #f7f4eb; border-radius: 18px; }
 .health-card.wide { grid-column: 1 / -1; }
 .health-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }

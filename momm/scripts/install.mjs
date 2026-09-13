@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { recordInstall } from "./update.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
@@ -31,7 +32,7 @@ function runCommand(command, args, options = {}) {
 }
 
 function parseArgs(argv) {
-  const options = { targets: ["auto"], customDirs: [], dryRun: false, pretty: false };
+  const options = { targets: [], customDirs: [], dryRun: false, pretty: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => {
@@ -56,16 +57,19 @@ function commandExists(command) {
 
 function sameTarget(linkPath, sourcePath) {
   try {
-    return path.resolve(fs.realpathSync(linkPath)).toLowerCase() === path.resolve(fs.realpathSync(sourcePath)).toLowerCase();
+    const realpath = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
+    return canon(realpath(linkPath)) === canon(realpath(sourcePath));
   } catch {
     return false;
   }
 }
+const canon = p => process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p);
 
 function linkSkill(parentDir, options) {
   const destination = path.join(parentDir, skillName);
-  if (path.resolve(destination).toLowerCase() === path.resolve(skillRoot).toLowerCase()) return { destination, status: "canonical" };
-  if (fs.existsSync(destination)) {
+  if (canon(destination) === canon(skillRoot)) return { destination, status: "canonical" };
+  let present = false; try { present = !!fs.lstatSync(destination); } catch {}
+  if (present) {
     return sameTarget(destination, skillRoot)
       ? { destination, status: "already_linked" }
       : { destination, status: "conflict", detail: "existing path was not changed" };
@@ -92,6 +96,7 @@ function main() {
     return;
   }
   let targets = options.targets;
+  if (!targets.length && !options.customDirs.length) throw new Error("--target is required. Choose codex, claude, gemini or antigravity; use --dry-run to preview. No harness is selected automatically.");
   if (targets.includes("auto")) {
     targets = ["codex"];
     if (commandExists("gemini")) targets.push("gemini");
@@ -123,8 +128,15 @@ function main() {
   }
   for (const customDir of options.customDirs) results.push({ target: "custom", ...linkSkill(customDir, options) });
   const output = { source: skillRoot, results, note: "Existing paths are never overwritten. No credentials are copied." };
+  try { output.installation = recordInstall(path.resolve(skillRoot, ".."), "momm/scripts/install.mjs", results, { dryRun: options.dryRun }); }
+  catch (error) {
+    output.installation = { updater_available: false, error: error.message,
+      reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
+    process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
+    process.exitCode = 1;
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
-  if (results.some((result) => result.status === "error" || result.status === "conflict")) process.exitCode = 1;
+  if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;
 }
 
 try { main(); }

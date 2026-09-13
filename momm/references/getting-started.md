@@ -1,5 +1,13 @@
 # Getting started without surprises
 
+## CLI versions and explicit updates
+
+In the local Setup Center, open **CLI versions, skills & diagnostics**. The six-CLI table includes the active controller even though it cannot review itself. It shows the installed version, latest checked version, source and installation type. **Check everything** refreshes these observations without installing anything. An unknown latest version is not a current version; Antigravity has no verified check-only updater, so its **Check / update…** action needs explicit consent.
+
+Each update previews the exact command, then asks before opening its terminal. npm updates target the detected prefix; native updates target the detected executable. Homebrew, project-local and unknown wrappers use their update guide rather than a guessed global install. Finish in the terminal, then check versions again. A changed version invalidates the old connectivity result; verify the connection separately. An update does not repair exhausted quota or an ineligible account tier.
+
+This panel runs locally; the public GitHub Pages information site cannot inspect or update software on your computer.
+
 MOMM lets the coding agent you are already using ask other locally installed agent CLIs for read-only peer reviews. Your current agent remains the governor: it is the only writer, and it must reproduce a finding before changing code.
 
 ## The easiest first command
@@ -33,7 +41,7 @@ The **Skills & diagnostics** panel groups skills as **Update available**, **Modi
 - distinguishes provider login from account-specific model availability; and
 - reports only the names of API-key, update-control, model, endpoint, and proxy variables that may alter behavior.
 
-It never returns environment values. An update is applied only after the user clicks **Update**, confirms the action, and sees the provider's official updater in a visible terminal. Skill updates use `git pull --ff-only` and are withheld when local repository changes are present.
+It never returns environment values. Provider CLI updates open their official updater only after an explicit user action. The MOMM update action opens `update --dry-run`: a staged signed preview, never an installation. Applying requires the user's own `update --apply` command and `--accept-protocol` when policy changes. It does not bypass the updater with `git pull`. See [updating.md](updating.md).
 
 For headless machines or people who prefer the terminal, replace `codex` with the harness currently driving the work:
 

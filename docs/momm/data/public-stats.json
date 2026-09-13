@@ -1,0 +1,121 @@
+{
+  "generated": "2026-09-04T15:57:31.608Z",
+  "runs": 153,
+  "stored_reports": 139,
+  "log_successes": 366,
+  "stored_successes": 343,
+  "summary_only_successes": 23,
+  "dispositions": 570,
+  "decisions": {
+    "applied": 302,
+    "rejected": 251,
+    "deferred": 8,
+    "historical_other": 9
+  },
+  "coalition": {
+    "total": 31,
+    "applied": 26,
+    "rejected": 5,
+    "deferred": 0,
+    "historical_other": 0
+  },
+  "routes": [
+    {
+      "route": "codex",
+      "completed": 70,
+      "timeouts": 17,
+      "other": 0,
+      "median_s": 114.4,
+      "p90_s": 341.2,
+      "applied": 94,
+      "rejected": 41,
+      "deferred": 2,
+      "historical_other": 0,
+      "acceptance": 0.6962962962962963
+    },
+    {
+      "route": "claude",
+      "completed": 21,
+      "timeouts": 2,
+      "other": 0,
+      "median_s": 37,
+      "p90_s": 274.5,
+      "applied": 26,
+      "rejected": 37,
+      "deferred": 0,
+      "historical_other": 8,
+      "acceptance": 0.4126984126984127
+    },
+    {
+      "route": "antigravity",
+      "completed": 83,
+      "timeouts": 1,
+      "other": 20,
+      "median_s": 32.3,
+      "p90_s": 128.4,
+      "applied": 46,
+      "rejected": 36,
+      "deferred": 0,
+      "historical_other": 1,
+      "acceptance": 0.5609756097560976
+    },
+    {
+      "route": "copilot",
+      "completed": 101,
+      "timeouts": 2,
+      "other": 3,
+      "median_s": 32.2,
+      "p90_s": 213.3,
+      "applied": 76,
+      "rejected": 101,
+      "deferred": 1,
+      "historical_other": 0,
+      "acceptance": 0.4293785310734463
+    },
+    {
+      "route": "grok",
+      "completed": 68,
+      "timeouts": 25,
+      "other": 2,
+      "median_s": 29.8,
+      "p90_s": 328,
+      "applied": 34,
+      "rejected": 31,
+      "deferred": 5,
+      "historical_other": 0,
+      "acceptance": 0.5230769230769231
+    },
+    {
+      "route": "gemini",
+      "completed": 0,
+      "timeouts": 0,
+      "other": 6,
+      "median_s": null,
+      "p90_s": null,
+      "applied": 0,
+      "rejected": 0,
+      "deferred": 0,
+      "historical_other": 0,
+      "acceptance": null
+    }
+  ],
+  "severity": {
+    "CRITICAL": 89,
+    "WARNING": 367,
+    "NITPICK": 127
+  },
+  "by_day": {
+    "2026-08-17": 26,
+    "2026-08-18": 29,
+    "2026-08-19": 16,
+    "2026-08-23": 32,
+    "2026-08-24": 8,
+    "2026-08-26": 1,
+    "2026-08-27": 14,
+    "2026-08-28": 2,
+    "2026-08-29": 1,
+    "2026-09-02": 3,
+    "2026-09-03": 2,
+    "2026-09-04": 19
+  }
+}

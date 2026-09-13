@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { recordInstall } from "./momm/scripts/update.mjs";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 // Deprecated aliases are not freshly installed by the bulk installer.
@@ -50,7 +51,10 @@ function commandExists(command) {
   return !probe.error && probe.status === 0;
 }
 function sameTarget(linkPath, sourcePath) {
-  try { return canon(fs.realpathSync(linkPath)) === canon(fs.realpathSync(sourcePath)); }
+  try {
+    const realpath = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
+    return canon(realpath(linkPath)) === canon(realpath(sourcePath));
+  }
   catch { return false; }
 }
 
@@ -63,6 +67,7 @@ function parseArgs(argv) {
     else if (a === "--custom-dir") o.customDirs.push(path.resolve(next()));
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--pretty") o.pretty = true;
+    else if (a === "--skills") o.skills = [...new Set(next().split(",").map(s => s.trim()).filter(Boolean))];
     else if (a === "--help" || a === "-h") o.help = true;
     else throw new Error(`Unknown argument: ${a}`);
   }
@@ -103,7 +108,9 @@ function main() {
     process.stdout.write("Usage: node install.mjs --target <codex|gemini|claude|antigravity|all|auto>[,…] [--custom-dir <skill-parent>] [--dry-run] [--pretty]\n\nLinks every skill (dir with a SKILL.md) in this repo into the harness skill directories you name.\n--target is required: this writes into an agent harness, so choose it explicitly. `--dry-run` previews.\n");
     return;
   }
-  const skills = discoverSkills();
+  const available = discoverSkills();
+  const skills = options.skills || available;
+  if (skills.some(s => !available.includes(s))) throw new Error("Requested installed skill is absent from this release; refusing to change installation scope.");
   if (!skills.length) { process.stderr.write("No skills found (no top-level directory contains a SKILL.md).\n"); process.exitCode = 1; return; }
 
   let targets = options.targets;
@@ -142,6 +149,13 @@ function main() {
   for (const dir of options.customDirs) results.push({ target: "custom", links: linkAll(dir, skills, options) });
 
   const output = { source: repoRoot, skills, results, note: "Existing paths are never overwritten. No credentials are copied." };
+  try { output.installation = recordInstall(repoRoot, "install.mjs", results, { dryRun: options.dryRun, skills }); }
+  catch (error) {
+    output.installation = { updater_available: false, error: error.message,
+      reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
+    process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
+    process.exitCode = 1;
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   const flat = results.flatMap((r) => r.links || []);
   // Non-zero exit on any failure OR an unsupported target, so a typo'd

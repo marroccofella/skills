@@ -1,6 +1,146 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.14.1",
+  "momm": "1.15.0",
+  "momm_release_schema": "momm-releases/1",
+  "momm_releases": [
+    {
+      "version": "1.15.0",
+      "tag": "momm-1.15.0",
+      "sha256": "a032915e07ae1b80c55677656d78550f3120ad2800969c7f4479b7a41082e750",
+      "hash_covers": "git-tree-blobs-excluding-versions/1",
+      "changes": [
+        "Explicit check, signed preview, apply and offline previous-installation recovery; no automatic updates.",
+        "Per-harness installation receipts, stable/pinned/main channels and separate protocol acceptance.",
+        "DO_NOT_TRACK and once-daily notice handling; actual dispatcher, updater and protocol hashes in reports.",
+        "Focused information pages, attributed version archive, safe existing-user upgrade prompt and reconciled public evidence tables.",
+        "Source-bound governor completion with streamed append-only logs, explicit reviewer contract and cross-platform stability checks."
+      ]
+    },
+    {
+      "version": "1.14.1",
+      "tag": "momm-1.14.1",
+      "legacy_unsigned": true,
+      "changes": [
+        "Visible FAQ, bounded review-output parsing and copyable evidence tables. Legacy unsigned release; not installable through the signature-enforcing updater."
+      ]
+    },
+    {
+      "version": "1.14.0",
+      "tag": "momm-1.14.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Corrected public claims; evidence tables, prose corroboration, quick/deep tiers, invalid-output diagnostics and broader redaction."
+      ]
+    },
+    {
+      "version": "1.13.0",
+      "tag": "momm-1.13.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Reconciled 1.10.x and installed 1.11/1.12 development; corrected supervisor timeouts and ledger speech."
+      ]
+    },
+    {
+      "version": "1.10.2",
+      "tag": "momm-1.10.2",
+      "legacy_unsigned": true,
+      "changes": [
+        "Fixed narrow hydrated provider-card layouts and maintenance actions."
+      ]
+    },
+    {
+      "version": "1.10.1",
+      "tag": "momm-1.10.1",
+      "legacy_unsigned": true,
+      "changes": [
+        "Corrective 1.10 packaging, responsive layout and stable terminal-exit fixture."
+      ]
+    },
+    {
+      "version": "1.10.0",
+      "tag": "momm-1.10.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Provider authority, isolated setup probes, explicit connection states and OAuth environment policy."
+      ]
+    },
+    {
+      "version": "1.9.1",
+      "tag": "momm-1.9.1",
+      "legacy_unsigned": true,
+      "changes": [
+        "Historical tag: Setup Center Host checks, stale verification, terminal errors and Windows timeout hardening."
+      ]
+    },
+    {
+      "version": "1.9.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Public code-history milestone, not a tagged release: loopback Setup Center and terminal onboarding."
+      ]
+    },
+    {
+      "version": "1.5.0",
+      "tag": "momm-1.5.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Historical tag: cached daily version notices, opt-out and cache-path safeguards."
+      ]
+    },
+    {
+      "version": "1.4.0",
+      "tag": "momm-1.4.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Historical tag: owner-only POSIX evidence permissions and surfaced ledger links."
+      ]
+    },
+    {
+      "version": "1.3.1",
+      "tag": "momm-1.3.1",
+      "legacy_unsigned": true,
+      "changes": [
+        "Historical tag: prompt-file transport, redaction offsets and severity-merge fixes."
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Public code-history milestone, not a tagged release: automatic private dashboard rebuild and ledger URL."
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "tag": "momm-1.2.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Public evidence Pages site and private per-workspace dashboards."
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "tag": "momm-1.1.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Five routes, personas, scaled timeouts, labels, quorum gates and stale-input detection."
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "Public code-history milestone, not a tagged release: setup hints, version/schema identity and Node guard."
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "legacy_unsigned": true,
+      "changes": [
+        "multi-llm-review predecessor: OAuth peer reviews, governor self-exclusion and reproduction/disposition protocol. Original tag v0.1.0."
+      ]
+    }
+  ],
   "myautoness": "1.2.0",
   "myrepo": "1.3.2",
   "myvoice": "1.0.0",
