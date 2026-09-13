@@ -47,6 +47,24 @@ jobs:
       - name: Governor review-to-decision lifecycle (offline)
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs
+      - name: usage module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/usage.test.mjs
+      - name: guidance module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/guidance.test.mjs
+      - name: split module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/split.test.mjs
+      - name: scheduler module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/scheduler.test.mjs
+      - name: update-clock module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/update-clock.test.mjs
+      - name: probes module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/probes.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |
