@@ -92,7 +92,10 @@ probes require the local token, and request bodies are byte-bounded and decoded
 once. Supervised POSIX children now own groups; deadlines and normal leader exit
 kill residual members. Handled shutdown signals allow nested dispatchers to
 cancel their reviewer groups before bounded escalation. Windows retains taskkill
-tree termination and a direct-child backstop. Cross-platform policy fixtures pass
+tree termination and a direct-child backstop. After a Windows leader exits
+normally, ordinary helpers may no longer be addressable through that leader;
+guaranteed residual cleanup needs OS job ownership, which is not implemented.
+Cross-platform policy fixtures pass
 locally; real POSIX descendant drills must pass in CI before release. This is not
 OS sandboxing: an uncatchable crash, blocked event loop or independently detached
 helper can defeat signal forwarding. Hard settlement still prevents hung pipes
@@ -112,13 +115,30 @@ group signalling contains arbitrary detached processes or survives every crash.
 
 ### Route failures are product bugs, not vocabulary
 
-Diagnosed 2026-09-04 with the 1.14.0 invalid_output detail: on inputs of
-about 30 KB and up antigravity returns `{"status":"SUCCESS","response":""}`
-— an empty reply with the schema echoed back — while a 300-byte diff
-succeeds. Likely a prompt-length cap in the CLI's structured-output mode.
-Next: probe the size threshold, then either chunk the artifact for that route
-or fail it closed as `unsupported` above the threshold instead of spending
-20–60 s on an empty reply.
+The initial September 4 prompt-size hypothesis is unproven. The September 13
+maintainer knowledge base reports headless tool-permission denials and a small,
+single-artifact A/B trial: 3/4 replies with the old prompt and 4/4 with explicit
+instructions that the prompt file is the entire input. Those counts are attributed
+to the maintainer's table; it does not link the raw eight-run evidence.
+A candidate probe also reproduced an empty response on just 714 bytes of synthetic
+input, so size alone is not an adequate explanation. The candidate now tells the
+route not to search other files or run commands, while retaining plan/sandbox
+controls. Prompt instructions are not filesystem isolation. Repeated probes and
+representative real-source reviews remain required before claiming reliability;
+empty, invalid or timed-out replies still fail closed.
+
+The candidate's follow-up on that same 714-byte source produced two valid clean
+reviews with the amended prompt; a 736-byte negative control produced a valid
+defect report identifying the seeded exclusive-bound error. These local synthetic
+controls exercise the real dispatcher and account route, not every provider/model
+or representative large source. No permission flag was relaxed.
+
+Release-fix regressions also cover color-forced Git diffs, realpath entrypoints
+through directory aliases, failed alias cleanup, repeated child errors, Windows
+tree-kill failure/budget policy, literal CRLF excerpt boundaries, saved diagnostic
+redaction, native update flags and malformed dashboard maintenance responses.
+An account card retains failed evidence while offering an explicit retry after
+login. Public source and Pages remain unchanged until the release gates pass.
 
 31 of 120 sealed runs lost at least one route to a timeout, and antigravity
 returned invalid_output on every 2026-09-04 run. The status vocabulary keeps

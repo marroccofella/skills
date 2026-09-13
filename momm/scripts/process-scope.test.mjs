@@ -20,7 +20,8 @@ function fixture(platform) {
     children.push(c);return c;
   }
   const clock={setTimeout:(fn,ms)=>{const t={fn,ms,unref(){}};timers.add(t);return t;},clearTimeout:t=>timers.delete(t)};
-  const scope=scopeModule?.createProcessScope({process:proc,spawn,...clock});
+  const spawnSync=(command,args,options)=>{events.push({sync:command,args,timeout:options.timeout});return {status:0};};
+  const scope=scopeModule?.createProcessScope({process:proc,spawn,spawnSync,...clock});
   return {proc,spawn,events,timers,children,clock,scope};
 }
 for(const [file,start,end,call] of [
@@ -50,6 +51,35 @@ if(scopeModule) {
   await test('Windows retains taskkill tree policy without POSIX groups',()=>{
     const f=fixture('win32'),c=f.scope.spawn('fixture',[],{});f.scope.terminate(c);
     assert.equal(c.options.detached,false);assert.equal(f.children.length,2);assert(!f.events.some(e=>e.pid<0));
+  });
+  await test('Windows final cleanup waits for tree kill before direct fallback or exit',()=>{
+    const f=fixture('win32'),c=f.scope.spawn('fixture',[],{});f.scope.force();
+    assert.equal(f.events[0]?.sync,'taskkill','final cleanup must not race tree enumeration with a direct leader kill');
+    assert.deepEqual(f.events[0].args,['/pid',String(c.pid),'/T','/F']);
+    assert(f.events[0].timeout>0&&f.events[0].timeout<=2000);
+  });
+  await test('Windows failed or timed-out tree kill retains direct-child fallback',()=>{
+    for(const result of [{status:1},{status:null,error:Error('timeout')}]) {
+      const f=fixture('win32');
+      const scope=scopeModule.createProcessScope({process:f.proc,spawn:f.spawn,spawnSync:()=>result,...f.clock});
+      const child=scope.spawn('fixture',[]);scope.force();
+      assert(f.events.some(e=>e.direct===child.pid&&e.signal==='SIGKILL'));
+    }
+  });
+  await test('Windows final cleanup shares a fresh two-second budget across children',()=>{
+    const f=fixture('win32'),budgets=[];let now=9000;
+    const source=fs.readFileSync(moduleUrl,'utf8');
+    const create=vm.runInNewContext(source.slice(source.indexOf('export function')).replace('export function','function')+'\ncreateProcessScope',
+      {Date:{now:()=>now},setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout});
+    const scope=create({process:f.proc,spawn:f.spawn,spawnSync:(_c,_a,options)=>{budgets.push(options.timeout);now+=1500;return {status:0};}});
+    scope.spawn('one',[]);scope.spawn('two',[]);const third=scope.spawn('three',[]);
+    now=50000;scope.force();assert.deepEqual(budgets,[2000,500]);
+    assert(f.events.some(e=>e.direct===third.pid),'exhausted budget must still use the direct backstop');
+  });
+  await test('an error on a live child retains ownership for shutdown retry',()=>{
+    const f=fixture('darwin'),c=f.scope.spawn('fixture',[],{});c.emit('error',Error('kill failed'));
+    assert.doesNotThrow(()=>c.emit('error',Error('kill failed again')));
+    const n=f.events.length;f.scope.stop();assert(f.events.length>n,'error is not a terminal child event');
   });
   await test('shutdown is idempotent, rejects retries, and exit cleanup is synchronous',()=>{
     const f=fixture('darwin'),c=f.scope.spawn('fixture',[],{});

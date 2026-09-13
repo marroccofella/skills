@@ -38,6 +38,12 @@ try {
     assert(reviewProblem(p,sample.replace('x = 1','x = 9')));
     assert(reviewProblem(p,sample.replace('x = 1','x  = 1')));
   });
+  test('a literal excerpt ending between CR and LF still matches', () => {
+    const quote='const x = 1;\r';
+    const p=peer({reviewed_scope:[{quote,assessment:'Literal source excerpt ending at CR.'}]});
+    assert.equal(reviewProblem(p,'const x = 1;\r\nconst y = 2;'),null);
+    assert(reviewProblem(p,'const x = 1;\nconst y = 2;'),'lone CR must not become an invented LF');
+  });
   test("validator rejects absent or non-string artifact without coercion", () => {
     for (const a of [undefined, null, {}, 42, Buffer.from("a.length")]) {
       const payload = peer({ reviewed_scope: [{ quote: String(a), assessment: "Fabricated coercion corpus" }] });

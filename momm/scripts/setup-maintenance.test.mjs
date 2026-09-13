@@ -32,6 +32,7 @@ for (const [name,result] of Object.entries({empty:{code:0,stdout:'{}'},exit_fail
 await test('Antigravity latest is unknown, not assumed managed',async()=>{const r=await report();assert.equal(r.value.cli_updates.find(x=>x.agent==='antigravity').status,'unknown');});
 await test('prerelease sorts before stable',async()=>{const r=await report();assert.equal(r.compare('1.0.0-beta.1','1.0.0'),-1);assert.equal(r.compare('1.0.0-beta.2','1.0.0-beta.10'),-1);});
 await test('valid native latest result is current',async()=>{const r=await report({code:0,stdout:'{"latestVersion":"1.0.0","updateAvailable":false}'});assert.equal(r.value.cli_updates.find(x=>x.agent==='grok').status,'current');});
+await test('explicit native update availability survives equal semantic versions',async()=>{const r=await report({code:0,stdout:'{"latestVersion":"1.0.0","updateAvailable":true}'});assert.equal(r.value.cli_updates.find(x=>x.agent==='grok').status,'update_available');});
 await test('installation discovery preserves npm and refuses unknown shims',()=>{
   const begin=source.indexOf('const npmPackages ='), finish=source.indexOf('function actionNote(');
   assert(begin>=0 && finish>begin);
@@ -97,7 +98,7 @@ function ui() {
   const nodes=new Map();const document={querySelector:s=>{if(!nodes.has(s))nodes.set(s,{value:'codex',textContent:'',innerHTML:'',style:{},classList:{add(){},remove(){}}});return nodes.get(s);}};
   const context=vm.createContext({document,Map,console,setTimeout,clearTimeout,setInterval,clearInterval,window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');}});
   const end=client.indexOf('grid.addEventListener(');assert(end>0);
-  vm.runInContext(client.slice(0,end)+`\nthis.core={cliRow,launchAction,routeCopy,modelFact,renderMaintenance};this.init=(s,m)=>{session=s;maintenance=m};this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState};this.init=(s,m)=>{session=s;maintenance=m};this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.setReport=r=>report=r;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -113,6 +114,19 @@ await test('quota failure is not turned into authentication advice',()=>{
   const c=ui();c.fail('copilot',{route_status:'error',detail:'Monthly quota exceeded'});
   assert.equal(c.core.routeCopy({agent:'copilot'},'failed'),'Monthly quota exceeded');
   assert.equal(c.core.modelFact({agent:'copilot'},'failed',{}),'Check failed');
+});
+await test('malformed maintenance never replaces last good state',async()=>{
+  const good={cli_updates:[],models:[],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:new Date().toISOString()};
+  for(const bad of [{},{...good,models:undefined},{...good,cli_updates:''},{...good,environment:{api_key_names_present:null}},{...good,runtime:{platform:null}}]) {
+    const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},good);c.setReport({routes:[{agent:'codex',installed:true,ready:true}]});c.setApi(async()=>bad);
+    await c.core.loadMaintenance();assert.equal(c.getMaintenance(),good,'invalid payload poisoned cached display');assert.doesNotThrow(()=>c.core.render());
+  }
+});
+await test('failed login can be verified again without erasing the failed check',()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'},copilot:{label:'Copilot'}}},null);
+  const route={agent:'codex',installed:true,ready:true};c.fail('codex',{route_status:'authentication_required',detail:'Expired login'});
+  const html=c.core.providerCard(route);assert.match(html,/data-action="login"/);assert.match(html,/data-test="codex"/);assert.equal(c.core.routeState(route),'failed');
+  c.fail('copilot',{route_status:'error',detail:'Monthly quota exceeded'});const quota=c.core.providerCard({...route,agent:'copilot'});assert.match(quota,/data-test="copilot"/);assert(!quota.includes('data-action="login"'));
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

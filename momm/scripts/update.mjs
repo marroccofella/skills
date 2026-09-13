@@ -391,6 +391,10 @@ export async function update(argv, dependencies = {}) {
     if (path.dirname(temp) === os.tmpdir() && path.basename(temp).startsWith("momm-update-")) fs.rmSync(temp, { recursive: true, force: true });
   }
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === ENTRY) {
+function isEntrypoint() {
+  try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(ENTRY); }
+  catch { return false; } // An import may have an unrelated/non-file argv[1].
+}
+if (isEntrypoint()) {
   update(process.argv.slice(2)).catch(e => { process.stderr.write(`MOMM update stopped: ${safeText(e.message)}\n`); process.exitCode = 1; });
 }

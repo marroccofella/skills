@@ -468,7 +468,7 @@ async function maintenanceReport(governor) {
       update_command: actionCommand(item.agent, 'update'),
       install_command: actionCommand(item.agent, 'install'),
       installed: route?.installed !== false && Boolean(route),
-      status: route?.installed === false || !route ? "missing" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
+      status: route?.installed === false || !route ? "missing" : item.update_available === true ? "update_available" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
     };
   });
   const value = {

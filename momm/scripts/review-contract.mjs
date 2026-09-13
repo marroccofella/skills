@@ -18,7 +18,8 @@ export function reviewProblem(p, artifact) {
   // remain over the original sanitized bytes and are never recomputed here.
   const quotedArtifact = artifact.replaceAll('\r\n', '\n');
   for (const s of p.reviewed_scope) {
-    if (!text(s?.quote, 500) || !text(s?.assessment, 1000) || !quotedArtifact.includes(s.quote.replaceAll('\r\n', '\n'))) return "reviewed_scope must quote the supplied artifact exactly (CRLF/LF equivalent) and assess it";
+    if (!text(s?.quote, 500) || !text(s?.assessment, 1000)
+      || !(artifact.includes(s.quote) || quotedArtifact.includes(s.quote.replaceAll('\r\n', '\n')))) return "reviewed_scope must quote the supplied artifact exactly (CRLF/LF equivalent) and assess it";
   }
   if (!Array.isArray(p.suggested_improvements) || p.suggested_improvements.length > 20 || !p.suggested_improvements.every(s => text(s, 500))) return "invalid or over-limit suggestions; nothing may be silently dropped";
   if (!Array.isArray(p.findings) || p.findings.length > 50) return "invalid or over-limit findings";

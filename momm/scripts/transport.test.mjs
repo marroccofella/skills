@@ -25,12 +25,14 @@ try {
     const repo = path.join(fixture, "git-repo"); fs.mkdirSync(repo);
     const git = (...args) => { const r=spawnSync("git", args, {cwd:repo,encoding:"utf8",windowsHide:true,timeout:10000}); assert.equal(r.status,0,r.stderr); };
     git("init"); fs.writeFileSync(path.join(repo,"code.cjs"),"module.exports = 1;\n"); git("add","code.cjs");
+    // A user's explicit color setting must not inject ANSI into machine input.
+    git("config","color.ui","always");
     git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","core.hooksPath=.git/no-hooks","commit","-m","fixture");
     fs.writeFileSync(path.join(repo,"code.cjs"),"module.exports = 2;\n");
     const r=spawnSync(process.execPath,[fileURLToPath(new URL("./multi-review.mjs",import.meta.url)),"--governor","codex","--reviewers","codex","--min-success","1","--stream"],
       {cwd:repo,encoding:"utf8",windowsHide:true,timeout:30000,env:{...process.env,NO_UPDATE_CHECK:"1"}});
     assert.equal(r.status,3,r.stderr);
-    const report=JSON.parse(r.stdout); assert.equal(report.source_snapshot.complete,true); assert.equal(report.source_snapshot.files[0].path,"code.cjs");
+    const report=JSON.parse(r.stdout); assert.equal(report.source_snapshot.complete,true,report.source_snapshot.reason); assert.equal(report.source_snapshot.files[0].path,"code.cjs");
     assert(!report.outstanding.completion_check.includes("<installed-momm>"), "completion command must resolve the installed script");
     assert(report.outstanding.completion_check.includes("governor.mjs"));
   });
@@ -39,8 +41,26 @@ try {
     const result = spawnSync(process.execPath, [fileURLToPath(new URL("./multi-review.mjs", import.meta.url)), "--governor", "codex", "--reviewers", "codex", "--input", input, "--stream", "--min-success", "1"],
       { cwd: fixture, encoding: "utf8", timeout: 30000, windowsHide: true, env: { ...process.env, NO_UPDATE_CHECK: "1" } });
     assert.equal(result.status, 3);
-    for (const line of result.stderr.trim().split(/\r?\n/)) JSON.parse(line);
+    const events=result.stderr.trim().split(/\r?\n/).map(line=>JSON.parse(line));
+    assert.equal(events.filter(e=>e.event==='quorum_failed').length,1);
+    assert.deepEqual(JSON.parse(JSON.stringify(events.find(e=>e.event==='quorum_failed'),['event','achieved','required'])),{event:'quorum_failed',achieved:0,required:1});
     assert.equal(JSON.parse(result.stdout).quorum.met, false);
+  });
+  await test('completion event and saved report share redacted diagnostic detail', () => {
+    const secret='ghp_'+'z'.repeat(32), events=[];
+    const result={agent:'claude',status:'error',attempts:1,detail:'Provider diagnostic '+secret};
+    const a=source.indexOf('      const info = {',source.indexOf('results = await Promise.all'));
+    const b=source.indexOf('    }));',a);
+    const c=source.indexOf('results.map((result) => ({',source.indexOf('source_snapshot: sourceSnapshot'));
+    const d=source.indexOf('    })),',c);
+    assert(a>0&&b>a&&c>0&&d>c);
+    const clean=source.slice(source.indexOf('function sanitizeText('),source.indexOf('function platformCommand('));
+    const normalized=vm.runInNewContext(clean+'\n(()=>{'+source.slice(a,b)+'})()',
+      {result,agent:'claude',startedAt:0,Date,options:{stream:true},ui:{complete(){}},emitEvent:(_stream,e)=>events.push(e),clipped:(s,n)=>s.slice(0,n)});
+    const rows=vm.runInNewContext(clean+'\n'+source.slice(c,d+7),{results:[normalized],options:{governor:'codex'},personaFor:()=>null,clipped:(s,n)=>s.slice(0,n)});
+    assert(!JSON.stringify(events).includes(secret));
+    assert(!JSON.stringify(rows).includes(secret),'saved report/stdout must not retain a token removed from progress');
+    assert.equal(rows[0].detail,events[0].detail);
   });
   await test("split UTF-8 survives real stdout and stderr pipes", async () => {
     const expected = JSON.stringify({ quote: "é😀", text: "ab" });
@@ -69,6 +89,7 @@ try {
     assert.equal(core.unwrapReviewPayload(JSON.stringify(p) + '\n{"is_error":true}'), null);
     assert.equal(core.unwrapReviewPayload(JSON.stringify(p) + '\n{"unfinished":'), null);
     assert.equal(core.extractJsonObjects('{bad}\n{"fine":1}')[0].fine, 1);
+    assert.equal(core.unwrapReviewPayload('{unfinished prefix\n'+JSON.stringify(p)),null,'ambiguous nested review must not rescue an unfinished envelope');
   });
   await test("preflight preserves unsupported installed launcher instead of inventing missing CLI", async () => {
     const probe = vm.runInNewContext(source.slice(source.indexOf("async function commandVersion("), source.indexOf("const ANSI =")) + "\n({commandVersion,preflightCheck})", {

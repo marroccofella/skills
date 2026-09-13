@@ -58,6 +58,7 @@ jobs:
           node momm/scripts/multi-review.mjs --self-test
           node momm/scripts/transport.test.mjs
           node momm/scripts/process-scope.test.mjs
+          node momm/scripts/entrypoint.test.mjs
           node momm/scripts/stabilisation.test.mjs
           node momm/scripts/setup-ui.mjs --self-test
           node momm/scripts/setup-maintenance.test.mjs

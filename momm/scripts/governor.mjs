@@ -22,10 +22,10 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
       const git = args => { const r = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
       demand(path.relative(fs.realpathSync(git(["rev-parse", "--show-toplevel"]).trim()), fs.realpathSync(root)) === "",
         "Run the review from the repository root; Git source paths and the private evidence directory must share that root");
-      demand(git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "supplied diff differs from current Git diff HEAD");
-      verifyDiff = () => demand(git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "source changed while collecting the reviewed Git snapshot");
+      demand(git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "supplied diff differs from current Git diff HEAD");
+      verifyDiff = () => demand(git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "source changed while collecting the reviewed Git snapshot");
       demand(!/^GIT binary patch|^Binary files /m.test(artifact), "binary diff needs separate verified source scope");
-      const fields = git(["diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "HEAD"]).split("\0");
+      const fields = git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "HEAD"]).split("\0");
       fields.pop(); names = [];
       for (let i = 0; i < fields.length; i += 2) {
         demand(["A", "M"].includes(fields[i]) && fields[i + 1], "deletion/rename/type-change scope needs explicit verification; not silently omitted");
@@ -220,7 +220,11 @@ export function recordCompletion(root, runId) {
   return result;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+function isEntrypoint() {
+  try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+}
+if (isEntrypoint()) {
   try {
     const args = process.argv.slice(2);
     demand(args[0] === "--run" && args[1] && (args.length === 2 || (args.length === 3 && args[2] === "--record")), "Usage: node governor.mjs --run <run_id> [--record]");

@@ -18,6 +18,16 @@ function commit(root, message) { git(root, "add", "."); git(root, "-c", "user.na
 const log = () => {};
 try {
   fs.mkdirSync(remote);
+  await test("aliased_cli_entry_runs_instead_of_silent_success", () => {
+    const alias = path.join(fixture, "scripts-alias");
+    fs.symlinkSync(path.join(source, "momm/scripts"), alias, process.platform === "win32" ? "junction" : "dir");
+    try {
+      const canonical = run(process.execPath, [path.join(source, "momm/scripts/update.mjs"), "--help"], fixture);
+      const aliased = run(process.execPath, [path.join(alias, "update.mjs"), "--help"], fixture);
+      assert(canonical.trim().length > 0);
+      assert.equal(aliased, canonical, "The same real entrypoint must execute through a directory alias");
+    } finally { fs.unlinkSync(alias); }
+  });
   git(remote, "init");
   for (const file of ["momm/scripts/install.mjs", "momm/scripts/update.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
   write(remote, "momm/SKILL.md", "Original protocol\n");
@@ -121,8 +131,12 @@ try {
   });
   await test("offline_rollback_uses_retained_runner_and_original_links", () => {
     // The recovery runner reads no manifest and needs no signature service.
-    run(process.execPath, [path.join(stateDir(installed), "update.mjs"), "--rollback", "--yes"], installed);
+    const alias = path.join(fixture,"recovery-alias");
+    fs.symlinkSync(stateDir(installed),alias,process.platform==='win32'?'junction':'dir');
+    try { assert.match(run(process.execPath, [path.join(alias, "update.mjs"), "--rollback", "--yes"], installed), /Rollback verified/); }
+    finally { fs.unlinkSync(alias); }
     assert.equal(git(installed, "rev-parse", "HEAD"), first); assert.equal(readLock(installed).previous, null);
+    assert.equal(fs.existsSync(path.join(stateDir(installed),"transaction.json")),false);
     assert.equal(fs.realpathSync(path.join(custom, "momm")), fs.realpathSync(path.join(installed, "momm")));
   });
   await test("daily_check_once_and_optouts_make_zero_requests", async () => {

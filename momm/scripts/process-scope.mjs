@@ -1,10 +1,11 @@
 // Own only supervised children; deliberately excludes user terminals/browsers.
 // POSIX groups contain ordinary descendants, not helpers that detach themselves.
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 export function createProcessScope(deps = {}) {
   const proc = deps.process ?? process, launch = deps.spawn ?? spawn;
+  const launchSync = deps.spawnSync ?? spawnSync;
   const later = deps.setTimeout ?? setTimeout, cancel = deps.clearTimeout ?? clearTimeout;
   const owned = new Map();
   let stopping = false, signalInstalled = false;
@@ -46,8 +47,18 @@ export function createProcessScope(deps = {}) {
   }
   function force() {
     stopping = true;
+    const deadline = Date.now() + 2000;
     for (const child of [...owned.keys()]) {
-      if (proc.platform === 'win32') { terminate(child); direct(child); }
+      if (proc.platform === 'win32' && Number.isInteger(child.pid) && child.pid > 1 && child.pid !== proc.pid) {
+        // Exit callbacks cannot await an unref'd taskkill. Finish tree enumeration
+        // before killing its leader; share a two-second budget across this scope.
+        let result;
+        try {
+          if (Date.now() < deadline) result = launchSync('taskkill', ['/pid',String(child.pid),'/T','/F'],
+            {windowsHide:true,stdio:'ignore',timeout:Math.max(1,deadline-Date.now())});
+        } catch { /* Permission/OS failure keeps the direct-child backstop. */ }
+        if (!result || result.error || result.status !== 0) direct(child);
+      }
       release(child);
     }
   }
@@ -71,7 +82,8 @@ export function createProcessScope(deps = {}) {
       const child = launch(command, args, {...options,detached:proc.platform !== 'win32'});
       owned.set(child, {timer:null,terminating:false});
       child.once('exit', () => release(child));
-      child.once('error', () => release(child));
+      // An error with a PID can mean failed kill/IPC, not a terminated process.
+      child.on('error', () => { if (!child.pid) release(child); });
       return child;
     }, terminate, release, stop, force, installSignalHandlers,
   };

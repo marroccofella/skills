@@ -106,7 +106,7 @@ function providerCard(route) {
   const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : route.installed === false ? "Unavailable" : "Not connected";
   let mainAction = "";
   if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button>`;
-  else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}">Sign in</button>`;
+  else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}">Sign in</button>${state === 'failed' && route.ready ? `<button class="button ghost" data-test="${route.agent}">Verify again</button>` : ''}`;
   else if (state === 'failed') mainAction = `<button class="button ghost" data-test="${route.agent}">Retry check</button>`;
   else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">Verify connection</button>`;
   else if (state === "ready") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify again</button>`;
@@ -252,6 +252,13 @@ async function loadMaintenance(force = false) {
   maintenanceSummary.textContent = "Checking published skills, reviewer CLIs, models, runtimes, and environment names…";
   try {
     const fresh = await api("/api/maintenance", { method: "POST", body: JSON.stringify({ governor: governorSelect.value, force }) });
+    // Refuse incomplete server responses before touching the last good display
+    // or invalidating live checks. Presence evidence never clears failed checks.
+    const records = value => Array.isArray(value) && value.every(item => item && typeof item === 'object' && !Array.isArray(item));
+    if (!records(fresh?.cli_updates) || !records(fresh?.models) || !records(fresh?.skills?.versions)
+      || !fresh.environment || typeof fresh.environment !== 'object' || Array.isArray(fresh.environment)
+      || !Object.values(fresh.environment).every(names => Array.isArray(names) && names.every(name => typeof name === 'string'))
+      || typeof fresh.runtime?.platform !== 'string') throw new Error('Invalid maintenance response; previous results retained.');
     for (const item of fresh.cli_updates) {
       const previous = maintenance?.cli_updates.find(x => x.agent === item.agent)?.current;
       if (previous && previous !== item.current) liveResults.delete(item.agent);

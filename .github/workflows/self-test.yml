@@ -35,6 +35,9 @@ jobs:
       - name: Process ownership and real POSIX cancellation drills
         timeout-minutes: 2
         run: node momm/scripts/process-scope.test.mjs
+      - name: Real command entrypoints through symlinks and junctions
+        timeout-minutes: 2
+        run: node momm/scripts/entrypoint.test.mjs
       - name: Release stabilisation regressions (offline)
         timeout-minutes: 2
         run: node momm/scripts/stabilisation.test.mjs
