@@ -13,8 +13,8 @@ docs/evidence/** text eol=lf
 *.sha256 text eol=lf
 *.yml text eol=lf
 *.xml text eol=lf
-# Preserve caption and source-logo hashes after Windows checkouts too.
-*.vtt text eol=lf
+# Captions are byte-hashed delivery assets, including their original line endings.
+*.vtt -text
 docs/momm/brands/*.svg text eol=lf
 *.png binary
 *.jpg binary
