@@ -332,7 +332,8 @@ try {
       assert.equal(fromRoot.reviews.runs, 1, JSON.stringify(fromRoot.reviews));
       assert.deepEqual(fromRoot.clis.find(c => c.cli === "codex").last_successful_review, { timestamp: "2026-09-05T00:00:00.000Z", run_id: "rev_root" });
       const table = []; await update(["--repo", installed, "--check-all"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), cwd: checkFixture, log: s => table.push(s) }));
-      assert(table.join("\n").includes(rootLog), "the table names the file actually read");
+      const rootReal = (() => { try { return fs.realpathSync.native(rootLog); } catch { return rootLog; } })();
+      assert(table.join("\n").includes(rootLog) || table.join("\n").includes(rootReal), `the table names the file actually read: expected ${rootLog} or ${rootReal}`);
       const fromCwd = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log() {} }));
       assert(same(fromCwd.reviews.file, path.join(project, ".ensemble_reviews", "review-log.jsonl")), `cwd wins when both exist: read=${fromCwd.reviews.file} searched=${JSON.stringify(fromCwd.reviews.searched)}`);
       assert.equal(fromCwd.reviews.runs, 3, JSON.stringify(fromCwd.reviews));
