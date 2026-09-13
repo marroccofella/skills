@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {chartSeries,evidenceVisuals,releasePanel,releaseChecks,tourSection} from './momm-site-visuals.mjs';
+const fixture={generated:'2026-01-01T00:00:00Z',reports:{a:{report:{input_bytes:1024,reviewers:[{agent:'codex',status:'self_excluded'},{agent:'claude',status:'success',verdict:'MODIFY',duration_ms:1500},{agent:'grok',status:'timeout'}]}},b:{report:{input_bytes:2048,reviewers:[{agent:'claude',status:'invalid_output'}]}},c:{report:{input_bytes:2048,reviewers:[]}}}};
+const series=chartSeries(fixture),claude=series.routes.find(r=>r.route==='claude');
+assert.equal(claude.external_results,2);assert.equal(claude.completed,1);assert.deepEqual(claude.failures,{invalid_output:1});assert.equal(claude.verdicts.MODIFY,1);
+assert.equal(series.routes[0].external_results,0);assert.equal(series.routes[0].self_excluded,1);
+assert.deepEqual(series.sizes,[{kb:1,seconds:1.5}],'failed/sparse reports must not invent zero-second successful measurements');
+const html=evidenceVisuals(fixture,{routes:[{route:'claude',median_s:1.5}],severity:{CRITICAL:1,WARNING:2,NITPICK:0},by_day:{'2026-01-01':3}});
+assert.equal((html.match(/<svg /g)||[]).length,5);assert(!html.includes('NaN'));assert(html.includes('50.0%'));assert(html.includes('invalid_output: 1'));
+assert.equal((html.match(/<desc /g)||[]).length,5,'each chart needs an accessible textual description');
+assert(html.includes('zero-second reviews. claude'), 'description punctuation must preserve word endings');
+assert.throws(()=>releasePanel({momm:'9.0.0',momm_releases:[]}),/changelog missing/);
+const release=releasePanel({momm:'9.0.0',momm_releases:[{version:'9.0.0',tag:'momm-9.0.0',changes:['<script>not markup</script>']}]});
+assert(release.includes('MOMM <span>9.0.0'));assert(!release.includes('<script>'));
+const tour=JSON.parse(fs.readFileSync(new URL('../docs/momm/tour.json',import.meta.url),'utf8'));
+assert(!tourSection({...tour,status:'pending_voice_acceptance'},tour.version).includes('<video'),'pending narration must not become a public video');
+assert(tourSection(tour,'99.0.0').includes('current release is 99.0.0'),'old recording must visibly disclose version mismatch');
+const home=fs.readFileSync(new URL('../docs/momm/index.html',import.meta.url),'utf8');
+// The banner state must follow the attributed catalogue: a published release says
+// CURRENT STABLE; a candidate (version-notes) must say so and never claim stability.
+const manifestNow=JSON.parse(fs.readFileSync(new URL('../versions.json',import.meta.url),'utf8'));
+const catalogueNow=JSON.parse(fs.readFileSync(new URL('../momm/references/release-history.json',import.meta.url),'utf8'));
+const publishedNow=catalogueNow.some(r=>r.version===manifestNow.momm&&r.kind==='release'&&r.tag&&r.published_date);
+assert.equal(home.includes('CURRENT STABLE'),publishedNow,'home banner must match the catalogue publication state');
+if(!publishedNow)assert(home.includes('CHECK PUBLICATION'),'an unpublished checkout must say so on the home page');
+assert(home.includes('id="walkthrough"'));
+const acceptedTour=tourSection({...tour,status:'accepted'},tour.version);
+assert(acceptedTour.includes('<video controls'));
+assert(acceptedTour.includes('screen actions 15×; narration 1×'));
+assert(acceptedTour.includes('consented synthetic Dom narration'));
+const pendingTour=tourSection({...tour,status:'pending_voice_acceptance'},tour.version);
+assert(pendingTour.includes('<strong>New narrated video is in production.</strong>'));
+assert(!pendingTour.includes('<video'));
+assert(releaseChecks([], '9.9.9').includes('No public release-check record for MOMM 9.9.9'));
+assert(!releasePanel({momm:'9.9.9',momm_releases:[{version:'9.9.9',tag:'momm-9.9.9',changes:[]}]},false).includes('CURRENT STABLE'));
+console.log(JSON.stringify({passed:true,method:'synthetic deterministic chart and disclosure tests; not a browser test'}));

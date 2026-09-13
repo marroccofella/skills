@@ -20,3 +20,12 @@ function syncHarness() {
 harness?.addEventListener("change", syncHarness);
 window.addEventListener("pageshow", syncHarness);
 syncHarness();
+function revealChapter() {
+  let id;
+  try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+  if (!id.startsWith('tour-')) return;
+  const chapter = document.getElementById(id), details = chapter?.closest('details');
+  if (details) { details.open = true; chapter.scrollIntoView({behavior:'instant',block:'start'}); }
+}
+window.addEventListener('hashchange', revealChapter);
+revealChapter();
