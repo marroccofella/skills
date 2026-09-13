@@ -1613,7 +1613,7 @@ async function dashboardRegression() {
     // Update clock: settings default off, `set` round-trips, apply is a no-op while disabled, timer needs confirm.
     const c = fixture("clock");
     let updaterRuns = 0, execs = 0;
-    const clock = createUpdateClock({ home: c.home, stateFile: path.join(c.cwd, "state", "update-clock.json"), sources: [], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => { execs += 1; return { code: 0, stdout: "", stderr: "" }; }, installedVersions: { skill: "1.16.0" } });
+    const clock = createUpdateClock({ home: c.home, env: {}, stateFile: path.join(c.cwd, "state", "update-clock.json"), sources: [], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => { execs += 1; return { code: 0, stdout: "", stderr: "" }; }, installedVersions: { skill: "1.16.0" } });
     const defaults = clock.settings();
     const set = await handleUpdateClock({ op: "set", patch: { auto_update: { skill: false, models: false } } }, clock, { home: c.home });
     const after = clock.settings();
@@ -1670,7 +1670,7 @@ async function dashboardRegression() {
     // never ready; setup.check applies after its check once enabled.
     const p = fixture("probe");
     let latest = "1.1.0";
-    const probeClock = createUpdateClock({ home: p.home, stateFile: path.join(p.cwd, "state", "update-clock.json"), sources: [{ name: "cli:codex", kind: "cli", cli: "codex", check: async () => ({ latest }) }], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => ({ code: 0, stdout: "", stderr: "" }), installedVersions: { skill: "1.16.0", codex: "1.0.0" } });
+    const probeClock = createUpdateClock({ home: p.home, env: {}, stateFile: path.join(p.cwd, "state", "update-clock.json"), sources: [{ name: "cli:codex", kind: "cli", cli: "codex", check: async () => ({ latest }) }], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => ({ code: 0, stdout: "", stderr: "" }), installedVersions: { skill: "1.16.0", codex: "1.0.0" } });
     const counts = { updater: 0, exec: [], version: [], probe: [] };
     const probeDeps = {
       home: p.home,

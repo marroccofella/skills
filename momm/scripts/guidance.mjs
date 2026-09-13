@@ -149,16 +149,30 @@ function withTrustLock(home, timeoutMs, fn) {
   const lock = `${trustStorePath(home)}.lock`;
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + timeoutMs;
+  // Transient EPERM/EBUSY/EACCES on Windows mean another process is creating or
+  // removing the lock this instant: treat them like EEXIST and retry.
+  const TRANSIENT = new Set(["EEXIST", "EPERM", "EBUSY", "EACCES"]);
   for (;;) {
     try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); break; } catch (e) {
-      if (e?.code !== "EEXIST") throw e;
-      let stale = false;
+      if (!TRANSIENT.has(e?.code)) throw e;
+      // Judge staleness from one consistent snapshot, then re-check that the very
+      // same lock file (same inode and mtime) is still there before removing it:
+      // a lock that changed hands in between belongs to a live writer.
+      let snapshot = null;
       try {
+        const st = fs.statSync(lock);
         const owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10);
-        const age = Date.now() - fs.statSync(lock).mtimeMs;
-        stale = age > LOCK_STALE_MS || !Number.isInteger(owner) || !pidAlive(owner);
-      } catch (probe) { if (probe?.code === "ENOENT") continue; stale = true; }
-      if (stale) { try { fs.unlinkSync(lock); } catch { /* another writer removed it first */ } continue; }
+        snapshot = { owner, ino: st.ino, mtimeMs: st.mtimeMs, age: Date.now() - st.mtimeMs };
+      } catch (probe) { if (probe?.code === "ENOENT") continue; snapshot = { owner: NaN, ino: -1, mtimeMs: -1, age: Infinity }; }
+      const dead = !Number.isInteger(snapshot.owner) || !pidAlive(snapshot.owner);
+      const stale = snapshot.age > LOCK_STALE_MS || (dead && (sleepMs(50), !Number.isInteger(snapshot.owner) || !pidAlive(snapshot.owner)));
+      if (stale) {
+        try {
+          const again = fs.statSync(lock);
+          if (again.ino === snapshot.ino && again.mtimeMs === snapshot.mtimeMs) fs.unlinkSync(lock);
+        } catch { /* already gone or replaced by a live writer */ }
+        continue;
+      }
       if (Date.now() >= deadline) throw new Error(`Trust store lock ${lock} is held by another momm process; retry, or delete the lock if that process is gone`);
       sleepMs(20);
     }
