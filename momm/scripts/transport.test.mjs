@@ -49,14 +49,15 @@ try {
   await test('completion event and saved report share redacted diagnostic detail', () => {
     const secret='ghp_'+'z'.repeat(32), events=[];
     const result={agent:'claude',status:'error',attempts:1,detail:'Provider diagnostic '+secret};
-    const a=source.indexOf('      const info = {',source.indexOf('results = await Promise.all'));
-    const b=source.indexOf('    }));',a);
+    // 1.16: the completion block lives in the per-piece runner reviewOne; slice from its info object through its return.
+    const a=source.indexOf('    const info = {',source.indexOf('const reviewOne = async'));
+    const b=source.indexOf('\n  };\n  let results, pieceResults',a);
     const c=source.indexOf('results.map((result) => ({',source.indexOf('source_snapshot: sourceSnapshot'));
     const d=source.indexOf('    })),',c);
     assert(a>0&&b>a&&c>0&&d>c);
     const clean=source.slice(source.indexOf('function sanitizeText('),source.indexOf('function platformCommand('));
     const normalized=vm.runInNewContext(clean+'\n(()=>{'+source.slice(a,b)+'})()',
-      {result,agent:'claude',startedAt:0,Date,options:{stream:true},ui:{complete(){}},emitEvent:(_stream,e)=>events.push(e),clipped:(s,n)=>s.slice(0,n)});
+      {result,agent:'claude',startedAt:0,Date,options:{stream:true},ui:{complete(){}},emitEvent:(_stream,e)=>events.push(e),clipped:(s,n)=>s.slice(0,n),tag:{},pieceId:null});
     const rows=vm.runInNewContext(clean+'\n'+source.slice(c,d+7),{results:[normalized],options:{governor:'codex'},personaFor:()=>null,clipped:(s,n)=>s.slice(0,n)});
     assert(!JSON.stringify(events).includes(secret));
     assert(!JSON.stringify(rows).includes(secret),'saved report/stdout must not retain a token removed from progress');
