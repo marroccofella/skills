@@ -633,16 +633,53 @@ function guidanceBudgetProblem(candidate, effective) {
 }
 
 const GUIDANCE_STALE = "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.";
+const GUIDANCE_BUSY = "Another momm process is saving the guidance file right now. Wait a moment, reload, then save again.";
+const GUIDANCE_LOCK_STALE_MS = 30_000;
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error?.code === "EPERM"; } };
 
-// `beforeCommit` is a test seam only: it stands in for a second process writing
-// the file after the pre-check and before the rename, so the final check can
-// be proven to catch that window.
-function saveGuidance(body, { cwd = process.cwd(), home, beforeCommit } = {}) {
+// Serialises guidance writers across processes the way guidance.mjs serialises
+// the trust store: `.momm/guidance.json.lock` is created with O_EXCL and holds
+// the owner's pid. A lock whose owner is gone, or older than
+// GUIDANCE_LOCK_STALE_MS, is removed and taken over; a live one is NOT waited
+// on — the caller answers 409, so a server never parks its event loop behind a
+// peer. Returns the release function, or null while a live lock is held.
+function acquireGuidanceLock(file) {
+  const lock = `${file}.lock`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
+      return () => { try { fs.unlinkSync(lock); } catch { /* already gone */ } };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      let stale = false;
+      try {
+        const owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10);
+        stale = Date.now() - fs.statSync(lock).mtimeMs > GUIDANCE_LOCK_STALE_MS || !Number.isInteger(owner) || !pidAlive(owner);
+      } catch (probe) { if (probe?.code === "ENOENT") continue; stale = true; }
+      if (!stale) return null;
+      try { fs.unlinkSync(lock); } catch { /* the owner released it first */ }
+    }
+  }
+  return null;
+}
+
+// `beforeCommit` and `beforeRename` are test seams only. `beforeCommit` stands
+// in for a second process writing the file after the pre-check and before the
+// lock is taken; `beforeRename` runs inside the lock, after the final hash
+// check, where a cooperating second saver must find the lock and be refused.
+function saveGuidance(body, { cwd = process.cwd(), home, beforeCommit, beforeRename } = {}) {
   const file = projectGuidanceFiles(cwd).guidance;
   let guidance;
   try { guidance = validateGuidance(body?.guidance, ".momm/guidance.json"); } catch (error) { return { status: 400, value: { error: safeDetail(error.message) } }; }
   const expected = body?.expected_sha256 ?? null;
   if (expected !== null && !/^[0-9a-f]{64}$/.test(String(expected))) return { status: 400, value: { error: "expected_sha256 must be the sha256 the editor loaded, or null for a new file" } };
+  const text = `${JSON.stringify(guidance, null, 2)}\n`;
+  // The request listener bounds the HTTP body; this bounds the FILE the save
+  // would produce, whoever assembled the body (route keys are open-ended, so
+  // per-block caps alone do not bound it). Past the cap the dispatcher's own
+  // bounded reader would refuse the file, so nothing that large may reach disk.
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > GUIDANCE_BODY_LIMIT) return { status: 413, value: { error: `The guidance file would be ${bytes} bytes; the cap is ${GUIDANCE_BODY_LIMIT}. Shorten or remove blocks, then save again.` } };
   const before = guidanceSnapshot({ cwd, home });
   const budget = guidanceBudgetProblem(guidance, before.effective);
   if (budget) return { status: 400, value: { error: budget } };
@@ -650,21 +687,30 @@ function saveGuidance(body, { cwd = process.cwd(), home, beforeCommit } = {}) {
   // refuse instead of letting the rename fail against it.
   if (before.project_sha256 === null && fs.existsSync(file)) return { status: 409, value: { error: `The guidance file exists but could not be read (${before.project_error || "unreadable"}). Repair or remove it, then reload.`, project_sha256: null } };
   if (before.project_sha256 !== expected) return { status: 409, value: { error: GUIDANCE_STALE, project_sha256: before.project_sha256 } };
-  const text = `${JSON.stringify(guidance, null, 2)}\n`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, text, { encoding: "utf8", mode: 0o600 });
   beforeCommit?.();
-  // Re-hash the bytes on disk in the same synchronous section as the rename.
-  // Nothing in this process can interleave between the two statements, so a
-  // foreign write that landed after the pre-check above is caught here instead
-  // of being replaced; the temp file is withdrawn so no stray copy remains.
-  const current = guidanceFileState(file);
-  if (current.error || current.sha !== expected) {
-    try { fs.unlinkSync(temp); } catch {}
-    return { status: 409, value: { error: current.error ? `The guidance file became unreadable during the save (${current.error}). Reload and try again.` : GUIDANCE_STALE, project_sha256: current.sha } };
+  // Hash check and rename happen under the lock. A cooperating writer (another
+  // Setup Center, or any momm process honouring the lock) cannot enter between
+  // the two, and a write that landed before the lock was taken is caught by the
+  // re-hash rather than replaced. A writer that ignores the lock (an editor, a
+  // git checkout) is still narrowed to this window and, failing that, is
+  // refused trust by `expect` below rather than trusted.
+  const release = acquireGuidanceLock(file);
+  if (!release) return { status: 409, value: { error: GUIDANCE_BUSY, project_sha256: guidanceFileState(file).sha } };
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temp, text, { encoding: "utf8", mode: 0o600 });
+    const current = guidanceFileState(file);
+    if (current.error || current.sha !== expected) {
+      return { status: 409, value: { error: current.error ? `The guidance file became unreadable during the save (${current.error}). Reload and try again.` : GUIDANCE_STALE, project_sha256: current.sha } };
+    }
+    beforeRename?.();
+    fs.renameSync(temp, file);
+  } finally {
+    // A refused save, or a rename that threw, leaves no stray copy behind.
+    try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* nothing to withdraw */ }
+    release();
   }
-  fs.renameSync(temp, file);
   // `expect` pins the trust entry to the bytes just written; a race with
   // another writer between rename and trust is refused rather than trusted.
   trustProject(cwd, { home, expect: sha256(text) });
@@ -677,21 +723,46 @@ function saveGuidance(body, { cwd = process.cwd(), home, beforeCommit } = {}) {
 // shows "0 of n reported", never a zero. Accepted findings come from the
 // governor's own disposition rows for the same run and reviewer.
 const USAGE_REPORT_LIMIT = 200;
-const DISPOSITIONS_READ_LIMIT = 8 * 1024 * 1024;
+const REPORT_READ_LIMIT = 2 * 1024 * 1024;    // one sealed report; a larger file is skipped and counted, never parsed
+const DISPOSITIONS_CHUNK = 64 * 1024;          // the ledger is streamed through a buffer of this size
+const DISPOSITIONS_LINE_LIMIT = 1024 * 1024;   // one ledger row; a longer line is dropped, the rows after it still count
 
+// Streams the append-only ledger row by row through a fixed buffer, so its
+// size never decides whether accepted findings are counted. Lines are split on
+// the newline byte before decoding, so a multi-byte character straddling two
+// chunks is never torn. The only way to lose the counts is a read failure,
+// which comes back as `error` so the page can say they are unavailable — never
+// that nothing was accepted.
 function acceptedFindingsIndex(file) {
   const index = new Map();
+  if (!fs.existsSync(file)) return { index, error: null };
+  let fd = null;
   try {
-    if (fs.statSync(file).size > DISPOSITIONS_READ_LIMIT) return index;
-    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let row; try { row = JSON.parse(line); } catch { continue; }
-      if (!row || typeof row !== "object" || !String(row.disposition || "").startsWith("applied")) continue;
+    fd = fs.openSync(file, "r");
+    const chunk = Buffer.alloc(DISPOSITIONS_CHUNK);
+    let carry = Buffer.alloc(0), overlong = false;
+    const consume = (bytes) => {
+      if (overlong) { overlong = false; return; } // the tail of a line already dropped
+      const line = bytes.toString("utf8").trim();
+      if (!line) return;
+      let row; try { row = JSON.parse(line); } catch { return; }
+      if (!row || typeof row !== "object" || !String(row.disposition || "").startsWith("applied")) return;
       const key = `${row.run_id}\u0000${row.reviewer}`;
       index.set(key, (index.get(key) || 0) + 1);
+    };
+    for (;;) {
+      const read = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (read === 0) break;
+      const buffer = carry.length ? Buffer.concat([carry, chunk.subarray(0, read)]) : chunk.subarray(0, read);
+      let start = 0;
+      for (let newline = buffer.indexOf(10, start); newline !== -1; newline = buffer.indexOf(10, start)) { consume(buffer.subarray(start, newline)); start = newline + 1; }
+      carry = Buffer.from(buffer.subarray(start)); // a copy: `chunk` is reused by the next read
+      if (carry.length > DISPOSITIONS_LINE_LIMIT) { carry = Buffer.alloc(0); overlong = true; }
     }
-  } catch {}
-  return index;
+    if (carry.length) consume(carry);
+    return { index, error: null };
+  } catch (error) { return { index: null, error: safeDetail(error.message) || "unreadable" }; }
+  finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } } }
 }
 
 function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
@@ -699,13 +770,14 @@ function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
   let files = [];
   try {
     files = fs.readdirSync(dir).filter((name) => /^rev_[A-Za-z0-9_]+\.json$/.test(name))
-      .map((name) => { try { return { name, mtime: fs.statSync(path.join(dir, name)).mtimeMs }; } catch { return null; } })
+      .map((name) => { try { const stat = fs.statSync(path.join(dir, name)); return { name, mtime: stat.mtimeMs, size: stat.size }; } catch { return null; } })
       .filter(Boolean).sort((a, b) => b.mtime - a.mtime);
   } catch {}
-  const accepted = acceptedFindingsIndex(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"));
+  const ledger = acceptedFindingsIndex(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"));
   const rows = [];
-  let scanned = 0, withUsage = 0;
-  for (const { name } of files.slice(0, limit)) {
+  let scanned = 0, withUsage = 0, skipped = 0;
+  for (const { name, size } of files.slice(0, limit)) {
+    if (size > REPORT_READ_LIMIT) { skipped += 1; continue; } // never slurped: one oversized report must not stall the server
     let report;
     try { report = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
     if (!Array.isArray(report?.reviewers)) continue;
@@ -715,14 +787,23 @@ function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
       if (reviewer?.status !== "success") continue; // self-excluded, failed and timed-out routes are not reviews
       const usage = reviewer.usage && typeof reviewer.usage === "object" ? reviewer.usage : null;
       if (usage?.reported) carries = true;
-      rows.push({ agent: reviewer.agent, status: reviewer.status, reported: usage?.reported ?? null, coverage: usage?.coverage ?? { tokens: false, cost: false }, accepted_findings: accepted.get(`${report.run_id}\u0000${reviewer.agent}`) ?? 0 });
+      // null, not 0, when the ledger could not be read: unknown is not "none".
+      const acceptedFindings = ledger.index ? ledger.index.get(`${report.run_id}\u0000${reviewer.agent}`) ?? 0 : null;
+      rows.push({ agent: reviewer.agent, status: reviewer.status, reported: usage?.reported ?? null, coverage: usage?.coverage ?? { tokens: false, cost: false }, accepted_findings: acceptedFindings });
     }
     if (carries) withUsage += 1;
   }
+  const rolled = rollupUsage(rows);
+  // With the ledger unavailable every count is unknown, so every ratio is too:
+  // null renders as "not reported", never as "no accepted findings".
+  if (ledger.error) for (const row of rolled) row.cost_per_accepted_finding = null;
+  const notes = [withUsage ? null : scanned ? "No report carries CLI-reported usage yet. Counts appear after a review on a route whose CLI reports its own token usage; nothing here is estimated." : "No sealed reports in this project yet. Verify a connection or run a review to populate usage."];
+  if (ledger.error) notes.push(`accepted-finding counts unavailable: dispositions.jsonl could not be read (${ledger.error}).`);
+  if (skipped) notes.push(`${skipped} report${skipped === 1 ? "" : "s"} over ${REPORT_READ_LIMIT / 1024 / 1024} MiB skipped, not parsed.`);
   return {
-    rows: rollupUsage(rows),
-    coverage: { reports_available: files.length, reports_scanned: scanned, reports_with_usage: withUsage, reviews: rows.length, limit },
-    note: withUsage ? null : scanned ? "No report carries CLI-reported usage yet. Counts appear after a review on a route whose CLI reports its own token usage; nothing here is estimated." : "No sealed reports in this project yet. Verify a connection or run a review to populate usage.",
+    rows: rolled,
+    coverage: { reports_available: files.length, reports_scanned: scanned, reports_skipped_oversize: skipped, reports_with_usage: withUsage, reviews: rows.length, limit, accepted_findings_available: !ledger.error },
+    note: notes.filter(Boolean).join(" ") || null,
   };
 }
 
@@ -732,6 +813,24 @@ function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
 // or a `grok update --check` behind, and never blocks the event loop the way the
 // module's synchronous defaults would inside a server.
 const clockActivity = { running: false, last_event: null, last_started_at: null, last_finished_at: null, last_result: null, last_error: null };
+
+// The re-entry guard every clock operation shares — trigger, apply and timer:
+// one runs at a time. A trigger arriving while one is in flight is not
+// restarted, and apply/timer answer 409 through handleUpdateClock, so the page
+// never sees an idle clock while an operation is live. The promise is kept
+// outside clockActivity so the snapshot stays plain JSON.
+let clockInflight = null;
+function runClockActivity(event, work) {
+  if (clockInflight) return null;
+  clockActivity.running = true;
+  clockActivity.last_event = event;
+  clockActivity.last_started_at = new Date().toISOString();
+  clockInflight = Promise.resolve().then(work)
+    .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
+    .catch((error) => { clockActivity.last_error = safeDetail(error.message); throw error; })
+    .finally(() => { clockInflight = null; clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
+  return clockInflight;
+}
 
 // Only constant command tables reach this (UPDATE_COMMANDS, timerCommand, the
 // grok check-only command). Windows needs a shell for npm's .cmd shims; the
@@ -769,15 +868,12 @@ function createServerClock() {
   catch (error) { process.stderr.write(`Update clock unavailable: ${safeDetail(error.message)}\n`); return null; }
 }
 
+// Fire-and-forget entry (server start, the maintenance "check everything"
+// click): never rejects, and never restarts an operation already in flight.
 function triggerClock(clock, event) {
   if (!clock) return Promise.resolve(null);
-  clockActivity.running = true;
-  clockActivity.last_event = event;
-  clockActivity.last_started_at = new Date().toISOString();
-  return Promise.resolve().then(() => clock.trigger(event))
-    .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
-    .catch((error) => { clockActivity.last_error = safeDetail(error.message); return null; })
-    .finally(() => { clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
+  const run = runClockActivity(event, () => clock.trigger(event));
+  return run ? run.catch(() => null) : Promise.resolve(null);
 }
 
 function clockTimer(platform = platformKey()) {
@@ -792,6 +888,7 @@ function clockSnapshot(clock) {
 async function handleUpdateClock(body, clock, deps = {}) {
   if (!clock) return { status: 503, value: { error: "The update clock is not running in this Setup Center." } };
   const op = String(body?.op || "");
+  const busy = () => ({ status: 409, value: { error: `The update clock is busy (${clockActivity.last_event} started at ${clockActivity.last_started_at}). Wait for it to finish, then try again.`, ...clockSnapshot(clock) } });
   if (op === "set") {
     const patch = body.patch;
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { status: 400, value: { error: "patch must be an object with auto_update and/or clock keys" } };
@@ -803,19 +900,26 @@ async function handleUpdateClock(body, clock, deps = {}) {
   if (op === "trigger") {
     const event = String(body.event || "");
     if (!["setup.check", "manual"].includes(event)) return { status: 400, value: { error: "Only setup.check or manual can be triggered from the Setup Center" } };
-    const result = await triggerClock(clock, event);
+    const run = runClockActivity(event, () => clock.trigger(event));
+    if (!run) return busy();
+    const result = await run.catch(() => null); // the failure is already in activity.last_error
     return { status: 200, value: { result, ...clockSnapshot(clock) } };
   }
   if (op === "apply") {
+    // The guard comes before the disabled short-cut: a page must never be told
+    // "nothing to do" while a check or an earlier apply is still running.
+    if (clockInflight) return busy();
     // Never call the applier while disabled: the no-op answer below is the
     // module's own shape, so the page renders both paths identically.
     if (!clock.settings().auto_update.enabled) return { status: 200, value: { applied: [], skipped: [{ name: "*", reason: "auto_update.enabled is false" }], failed: [], notices: [], ...clockSnapshot(clock) } };
-    const result = await applyUpdates(clock, {
+    const run = runClockActivity("apply", () => applyUpdates(clock, {
       runUpdater: deps.runUpdater || clockRunUpdater,
       exec: deps.exec || clockExec,
       versionOf: deps.versionOf || cliVersion,
       isManaged: deps.isManaged || cliIsManaged,
-    });
+    }));
+    if (!run) return busy();
+    const result = await run;
     maintenanceCache = null; // installed versions may have changed
     return { status: 200, value: { ...result, ...clockSnapshot(clock) } };
   }
@@ -828,8 +932,11 @@ async function handleUpdateClock(body, clock, deps = {}) {
     // omitted expected_command is a missing confirmation, not an implicit one;
     // otherwise a stale page could register a command it never displayed.
     if (body.expected_command !== command || body.confirm !== true) return { status: 409, value: { error: "Confirm the exact command first.", command } };
-    const run = action === "install" ? installTimer : removeTimer;
-    const result = await run({ platform: platformKey(), nodePath: process.execPath, scriptPath: updateClockScript, exec: deps.exec || clockExec, confirm: true });
+    if (clockInflight) return busy();
+    const install = action === "install" ? installTimer : removeTimer;
+    const run = runClockActivity(`timer.${action}`, () => install({ platform: platformKey(), nodePath: process.execPath, scriptPath: updateClockScript, exec: deps.exec || clockExec, confirm: true }));
+    if (!run) return busy();
+    const result = await run;
     return { status: result.done ? 200 : 500, value: { ...result, ...clockSnapshot(clock) } };
   }
   return { status: 400, value: { error: "Unsupported update-clock op" } };
@@ -844,9 +951,14 @@ async function handleUpdateClock(body, clock, deps = {}) {
 const LEDGER_FILES = new Set(["review-log.jsonl", "dispositions.jsonl"]);
 const LEDGER_MIN_GAP_MS = 5000;
 
-function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MIN_GAP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, watch = fs.watch, exists = fs.existsSync } = {}) {
-  const state = { watching: false, running: false, pending: false, regenerations: 0, last_regenerated_at: null, last_exit_code: null, last_error: null };
-  let debounce = null, retry = null, watcher = null, lastRunAt = -Infinity, stopped = true;
+function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MIN_GAP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, watch = fs.watch, exists = fs.existsSync, stat = fs.statSync } = {}) {
+  const state = { watching: false, running: false, pending: false, regenerations: 0, reattachments: 0, last_regenerated_at: null, last_exit_code: null, last_error: null };
+  let debounce = null, retry = null, watcher = null, lastRunAt = -Infinity, stopped = true, identity = null;
+  // dev:ino of the directory the handle was attached to. fs.watch follows the
+  // inode, not the path: a directory renamed away and recreated (or removed and
+  // restored) keeps the old handle alive and silent, so identity is compared
+  // whenever a rename event names anything other than a telemetry file.
+  const identityOf = () => { try { const entry = stat(dir); return `${entry.dev}:${entry.ino}`; } catch { return null; } };
   async function regenerate() {
     if (state.running) { state.pending = true; return; }
     state.running = true;
@@ -872,8 +984,12 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
     debounce = setTimer(() => { debounce = null; return regenerate(); }, wait);
     debounce?.unref?.();
   }
-  function notify(filename) {
-    if (LEDGER_FILES.has(String(filename ?? ""))) schedule();
+  function notify(filename, event) {
+    if (LEDGER_FILES.has(String(filename ?? ""))) { schedule(); return; }
+    // A rename of the directory itself arrives with its own basename (Linux
+    // IN_MOVE_SELF / IN_DELETE_SELF) or no name at all; any other rename is
+    // checked the same way, since the stat is cheap and the miss is permanent.
+    if (event === "rename" && !stopped && watcher && identityOf() !== identity) reattach();
   }
   // `catchUp` is set when this attach follows a gap (the directory was absent,
   // or the previous watcher errored): telemetry written meanwhile had no watcher
@@ -881,11 +997,25 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   function start({ catchUp = false } = {}) {
     stopped = false;
     try {
-      watcher = watch(dir, { persistent: false }, (_event, filename) => notify(filename));
+      watcher = watch(dir, { persistent: false }, (event, filename) => notify(filename, event));
       watcher.on?.("error", () => { state.watching = false; watcher = null; retryLater(); });
+      identity = identityOf();
       state.watching = true;
       if (catchUp && [...LEDGER_FILES].some((name) => { try { return exists(path.join(dir, name)); } catch { return false; } })) schedule();
     } catch { state.watching = false; retryLater(); } // directory absent until the first review
+  }
+  // The handle points at a directory that is no longer at `dir`: close it and
+  // attach by path again. A replacement directory attaches at once and catches
+  // up on the telemetry it already holds; an absent one falls back to the
+  // 30 s retry, with `watching` false in the meantime rather than a dead
+  // handle reported as live.
+  function reattach() {
+    if (stopped) return;
+    try { watcher?.close?.(); } catch {}
+    watcher = null;
+    state.watching = false;
+    state.reattachments += 1;
+    start({ catchUp: true });
   }
   function retryLater() {
     if (retry || stopped) return;
@@ -1185,6 +1315,47 @@ async function dashboardRegression() {
     checks.guidance_intervening_write_refused_409 = first.status === 200 && raced.status === 409 && fs.readFileSync(raceFile).equals(revisionB)
       && !fs.readdirSync(path.dirname(raceFile)).some((name) => name.endsWith(".tmp"))
       && saveGuidance({ expected_sha256: sha256(revisionB), guidance: { governor: "C" } }, r).status === 200; // control: B's own hash lets C land
+    // guidance-final-check-still-races / cas-gap-between-hash-and-rename: the
+    // hash check and the rename run under .momm/guidance.json.lock, so a
+    // cooperating saver that arrives in that window finds a live lock and is
+    // refused, instead of landing bytes the rename then silently replaces.
+    const l = fixture("guidance-lock");
+    const lockedFile = projectGuidanceFiles(l.cwd).guidance, lockPath = `${lockedFile}.lock`;
+    const lockedFirst = saveGuidance({ expected_sha256: null, guidance: { governor: "A" } }, l);
+    let nested = null, lockOwner = null;
+    const outer = saveGuidance({ expected_sha256: lockedFirst.value.project_sha256, guidance: { governor: "C" } }, { ...l, beforeRename: () => {
+      lockOwner = fs.existsSync(lockPath) ? fs.readFileSync(lockPath, "utf8").trim() : null;
+      nested = saveGuidance({ expected_sha256: lockedFirst.value.project_sha256, guidance: { governor: "B" } }, l);
+    } });
+    const lockDirAfter = fs.readdirSync(path.dirname(lockedFile));
+    checks.guidance_lock_serialises_concurrent_savers = lockedFirst.status === 200 && lockOwner === String(process.pid)
+      && nested?.status === 409 && /another momm process/i.test(nested.value.error) && nested.value.project_sha256 === lockedFirst.value.project_sha256
+      && outer.status === 200 && outer.value.trusted === true && JSON.parse(fs.readFileSync(lockedFile, "utf8")).governor === "C"
+      && !lockDirAfter.some((name) => name.endsWith(".lock") || name.endsWith(".tmp"));
+    // A live lock left by a running peer answers 409 and leaves the file alone;
+    // a lock whose owner is gone (stale by age, or unreadable) is reclaimed.
+    fs.writeFileSync(lockPath, `${process.pid}\n`);
+    const busySave = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
+    const bytesWhileBusy = fs.readFileSync(lockedFile);
+    const aged = (Date.now() - 2 * 60_000) / 1000;
+    fs.utimesSync(lockPath, aged, aged);
+    const reclaimedByAge = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
+    fs.writeFileSync(lockPath, "not-a-pid\n");
+    const reclaimedByOwner = saveGuidance({ expected_sha256: reclaimedByAge.value?.project_sha256 ?? null, guidance: { governor: "E" } }, l);
+    checks.guidance_live_lock_refused_stale_lock_reclaimed = busySave.status === 409 && /another momm process/i.test(busySave.value.error) && busySave.value.project_sha256 === outer.value.project_sha256
+      && JSON.parse(bytesWhileBusy.toString("utf8")).governor === "C"
+      && reclaimedByAge.status === 200 && reclaimedByOwner.status === 200 && JSON.parse(fs.readFileSync(lockedFile, "utf8")).governor === "E" && !fs.existsSync(lockPath);
+    // guidance-body-limit-unenforced: the cap applies to the file a save would
+    // write, whoever assembled the body (route keys are open-ended, so the
+    // per-block caps alone do not bound it); nothing reaches disk, nothing is trusted.
+    const o = fixture("guidance-oversize");
+    const wide = { reviewers: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`route${i}`, "x".repeat(2000)])) };
+    const oversize = saveGuidance({ expected_sha256: null, guidance: wide }, o);
+    const oversizeDir = path.dirname(projectGuidanceFiles(o.cwd).guidance);
+    const untouched = !fs.existsSync(oversizeDir) || fs.readdirSync(oversizeDir).length === 0;
+    const fits = saveGuidance({ expected_sha256: null, guidance: { reviewers: { codex: "x".repeat(2000) } } }, o); // control: a full-size block still saves
+    checks.guidance_oversize_file_refused_413 = oversize.status === 413 && new RegExp(`cap is ${GUIDANCE_BODY_LIMIT}`).test(oversize.value.error) && untouched
+      && fits.status === 200 && fits.value.trusted === true;
 
     // Usage: routes without reported usage read "0 of n", never zero.
     const usage = fixture("usage");
@@ -1200,6 +1371,34 @@ async function dashboardRegression() {
     fs.writeFileSync(path.join(usage.cwd, ".ensemble_reviews", "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_3_c", reviewer: "codex", disposition: "applied" })}\n{"broken"\n`);
     const withUsage = usageReport({ cwd: usage.cwd }).rows[0];
     checks.usage_counts_reported_rows_and_accepted_findings = withUsage.coverage.tokens === "1 of 3" && withUsage.median_total_tokens === 900 && withUsage.cost_per_accepted_finding === 0.02;
+    // disposition-limit-silently-erases-counts / dispositions-oversize-returns-empty:
+    // the ledger is streamed row by row, so a ledger past the old 8 MiB cutoff
+    // still counts every applied row — including one whose multi-byte text
+    // straddles a 64 KiB read boundary, and one that follows an overlong line.
+    const ledgerFile = path.join(usage.cwd, ".ensemble_reviews", "dispositions.jsonl");
+    const appliedRow = (extra) => JSON.stringify({ run_id: "rev_3_c", reviewer: "codex", disposition: "applied", ...extra });
+    const emojiRow = appliedRow({ note: "😀😀😀😀" });
+    const emojiOffset = Buffer.byteLength(emojiRow.slice(0, emojiRow.indexOf("😀")));
+    const firstRow = appliedRow({ pad: "a".repeat(DISPOSITIONS_CHUNK - 3 - emojiOffset - appliedRow({ pad: "" }).length) });
+    const emojiStraddlesChunk = Buffer.byteLength(firstRow) + 1 + emojiOffset === DISPOSITIONS_CHUNK - 2; // first emoji spans bytes 65534..65537
+    fs.writeFileSync(ledgerFile, `${firstRow}\n${emojiRow}\n${"\n".repeat(8 * 1024 * 1024 + 64)}${"x".repeat(DISPOSITIONS_LINE_LIMIT + 10)}\n${appliedRow({})}\n`);
+    const streamed = usageReport({ cwd: usage.cwd });
+    checks.usage_oversize_ledger_still_counts_accepted_findings = emojiStraddlesChunk && fs.statSync(ledgerFile).size > 9 * 1024 * 1024
+      && Math.abs(streamed.rows[0].cost_per_accepted_finding - 0.02 / 3) < 1e-6 && streamed.coverage.accepted_findings_available === true && streamed.note === null;
+    // An unreadable ledger (here a directory at its path) reads as "counts
+    // unavailable" with null ratios — never as zero accepted findings.
+    const ul = fixture("usage-ledger-unreadable");
+    writeJson(path.join(ul.cwd, ".ensemble_reviews", "reports", "rev_9_z.json"), { run_id: "rev_9_z", reviewers: [{ agent: "codex", status: "success", usage: { reported: { total_tokens: 100, cost_usd: 0.05 }, coverage: { tokens: true, cost: true } } }] });
+    fs.mkdirSync(path.join(ul.cwd, ".ensemble_reviews", "dispositions.jsonl"));
+    const unavailable = usageReport({ cwd: ul.cwd });
+    checks.usage_unreadable_ledger_reports_unavailable_not_zero = unavailable.rows.length === 1 && unavailable.rows[0].cost_per_accepted_finding === null && unavailable.rows[0].total_cost_usd === 0.05
+      && unavailable.coverage.accepted_findings_available === false && /accepted-finding counts unavailable/.test(unavailable.note) && !JSON.stringify(unavailable).includes("no accepted findings");
+    // unbounded-report-json-slurp: a sealed report over REPORT_READ_LIMIT is
+    // skipped and counted, never parsed; the other reports still roll up.
+    writeJson(path.join(reports, "rev_4_d.json"), { run_id: "rev_4_d", pad: "p".repeat(REPORT_READ_LIMIT), reviewers: [{ agent: "grok", status: "success", usage: { reported: { total_tokens: 5, cost_usd: 1 }, coverage: { tokens: true, cost: true } } }] });
+    const capped = usageReport({ cwd: usage.cwd });
+    checks.usage_oversize_report_skipped_with_note = capped.coverage.reports_available === 4 && capped.coverage.reports_scanned === 3 && capped.coverage.reports_skipped_oversize === 1
+      && !capped.rows.some((row) => row.agent === "grok") && /1 report over 2 MiB skipped/.test(capped.note) && capped.rows.find((row) => row.agent === "codex").coverage.tokens === "1 of 3";
 
     // Update clock: settings default off, `set` round-trips, apply is a no-op while disabled, timer needs confirm.
     const c = fixture("clock");
@@ -1231,6 +1430,27 @@ async function dashboardRegression() {
       && timerExact.status === 200 && execs === 1; // control: the echoed command reaches the (stubbed) OS once
     const badEvent = await handleUpdateClock({ op: "trigger", event: "daily.tick" }, clock, {});
     checks.update_clock_rejects_unknown_ops = badEvent.status === 400 && (await handleUpdateClock({ op: "nuke" }, clock, {})).status === 400 && (await handleUpdateClock({ op: "set" }, null, {})).status === 503;
+    // clock-activity-reentrant: trigger, apply and timer share one guard. While
+    // a check is in flight a second trigger is not restarted, apply and timer
+    // answer 409 (even on the disabled no-op path), the fire-and-forget entry
+    // does nothing, and activity.running stays true until the live run finishes.
+    let hangRelease = null, hangCalls = 0, hangExecs = 0;
+    const hanging = { trigger: () => { hangCalls += 1; return new Promise((resolve) => { hangRelease = resolve; }); }, status: () => ({ hung: true }), settings: () => ({ auto_update: { enabled: false } }) };
+    const inFlightTrigger = handleUpdateClock({ op: "trigger", event: "manual" }, hanging, {});
+    await new Promise((resolve) => setImmediate(resolve));
+    const runningWhileLive = clockActivity.running === true && clockActivity.last_event === "manual" && hangCalls === 1;
+    const secondTrigger = await handleUpdateClock({ op: "trigger", event: "setup.check" }, hanging, {});
+    const applyWhileBusy = await handleUpdateClock({ op: "apply" }, hanging, { runUpdater: async () => { hangExecs += 1; return { code: 0, output: "" }; } });
+    const timerWhileBusy = await handleUpdateClock({ op: "timer", action: "remove", confirm: true, expected_command: clockTimer().remove }, hanging, { exec: async () => { hangExecs += 1; return { code: 0 }; } });
+    const fireAndForget = await triggerClock(hanging, "setup.open");
+    const refusedWhileBusy = [secondTrigger, applyWhileBusy, timerWhileBusy].every((answer) => answer.status === 409 && /busy/.test(answer.value.error) && answer.value.activity.running === true)
+      && fireAndForget === null && hangCalls === 1 && hangExecs === 0;
+    hangRelease({ checked: true });
+    const finished = await inFlightTrigger;
+    let runningDuringTimer = null, eventDuringTimer = null;
+    const timerAfter = await handleUpdateClock({ op: "timer", action: "remove", confirm: true, expected_command: clockTimer().remove }, hanging, { exec: async () => { runningDuringTimer = clockActivity.running; eventDuringTimer = clockActivity.last_event; return { code: 0 }; } });
+    checks.update_clock_ops_never_overlap = runningWhileLive && refusedWhileBusy && finished.status === 200 && finished.value.result?.checked === true && clockActivity.running === false
+      && timerAfter.status === 200 && runningDuringTimer === true && eventDuringTimer === "timer.remove" && clockActivity.running === false;
 
     // Ledger watcher: debounce collapses a burst, unrelated files are ignored, rebuilds stay 5 s apart.
     const timers = [];
@@ -1294,6 +1514,35 @@ async function dashboardRegression() {
     release(); await inFlight;
     checks.ledger_watcher_never_reschedules_after_stop = pendingWhileRunning && stopRuns === 1
       && stopTimers.slice(timersBeforeRelease).filter((timer) => !timer.cleared).length === 0 && stopWatcher.status().pending === false && stopWatcher.status().running === false;
+    // ledger-watcher-loses-replaced-directory: fs.watch follows the inode. A
+    // rename event for the directory itself (Linux IN_MOVE_SELF/IN_DELETE_SELF
+    // arrive with the directory's basename), or any rename after which the
+    // path's dev:ino differs, closes the stale handle and re-attaches by path,
+    // catching up on telemetry the replacement already holds; a vanished
+    // directory falls back to the 30 s retry with watching=false. The Linux
+    // event sequence is modelled with fakes here; real inotify needs a Linux host.
+    const rp = { attempts: 0, closed: 0, callback: null, identity: 1, timers: [], exists: false, gone: false };
+    const replacedDir = path.join(root, "ledger-replaced", ".ensemble_reviews");
+    const missing = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    const replacedWatcher = createLedgerWatcher({ dir: replacedDir, run: async () => ({ code: 0, stdout: "", stderr: "" }), now: () => clockNow,
+      setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; rp.timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; },
+      watch: (_dir, _options, callback) => { if (rp.gone) throw missing(); rp.attempts += 1; rp.callback = callback; return { on() {}, close() { rp.closed += 1; } }; },
+      exists: () => rp.exists, stat: () => { if (rp.gone) throw missing(); return { dev: 7, ino: rp.identity }; } });
+    replacedWatcher.start();
+    rp.callback("rename", "reports"); rp.callback("change", path.basename(replacedDir)); // same directory: a child renamed, the directory touched
+    const unrelatedIgnored = rp.attempts === 1 && rp.closed === 0 && replacedWatcher.status().watching === true && rp.timers.length === 0;
+    rp.identity = 2; rp.exists = true; // moved away and recreated, telemetry already inside
+    rp.callback("rename", path.basename(replacedDir));
+    const catchUpTimers = rp.timers.filter((timer) => !timer.cleared && timer.ms !== 30_000);
+    const reattached = rp.attempts === 2 && rp.closed === 1 && replacedWatcher.status().watching === true && replacedWatcher.status().reattachments === 1
+      && catchUpTimers.length === 1 && catchUpTimers[0].ms === 1500;
+    rp.gone = true; // removed for good
+    rp.callback("rename", path.basename(replacedDir));
+    const vanished = rp.closed === 2 && replacedWatcher.status().watching === false && rp.timers.at(-1).ms === 30_000;
+    replacedWatcher.stop();
+    rp.gone = false; rp.identity = 3; rp.callback("rename", path.basename(replacedDir)); // a straggling event after stop
+    const stayedStopped = rp.attempts === 2 && replacedWatcher.status().watching === false && rp.timers.every((timer) => timer.cleared);
+    checks.ledger_watcher_reattaches_when_directory_replaced = unrelatedIgnored && reattached && vanished && stayedStopped;
   } catch (error) {
     recordRegressionThrow(checks, error);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }

@@ -135,7 +135,7 @@ await test('maintenance report with non-array cli_updates still returns 200 when
 // clock-unhandled-rejection: triggerClock must never let a trigger failure escape,
 // whether the clock throws synchronously or returns a rejected promise.
 await test('triggerClock records every trigger failure as last_error and never throws or rejects',async()=>{
-  const a=source.indexOf('function triggerClock('),b=source.indexOf('function clockTimer(',a);assert(a>=0&&b>a);
+  const a=source.indexOf('let clockInflight = null;'),b=source.indexOf('function clockTimer(',a);assert(a>=0&&b>a,'the re-entry guard must sit between clockActivity and clockTimer');
   const activity={};
   const c=vm.createContext({clockActivity:activity,safeDetail:s=>String(s),Promise,Date});
   vm.runInContext(source.slice(a,b)+';this.trigger=triggerClock;',c);
@@ -144,6 +144,45 @@ await test('triggerClock records every trigger failure as last_error and never t
   assert.equal(await result,null);assert.equal(activity.last_error,'sync boom');assert.equal(activity.running,false);
   assert.equal(await c.trigger({trigger:()=>Promise.reject(new Error('async boom'))},'setup.open'),null);assert.equal(activity.last_error,'async boom');
   assert.deepEqual(await c.trigger({trigger:async()=>({ran:true})},'setup.check'),{ran:true});assert.equal(activity.last_error,null,'positive control clears the error');
+});
+// clock-activity-reentrant: trigger, apply and timer run under one guard. A second
+// trigger while one is in flight is a 409 (never a restart), apply and timer are
+// 409 too, and activity.running stays true until the live run finishes.
+await test('update-clock operations share one re-entry guard and never overlap',async()=>{
+  const a=source.indexOf('const clockActivity ='),b=source.indexOf('// --- Ledger auto-regeneration',a);assert(a>=0&&b>a);
+  let timerExecs=0;
+  const c=vm.createContext({process,Promise,Date,safeDetail:s=>String(s),writeSettings(){},applyUpdates:async()=>{throw new Error('apply must not run while disabled or busy');},installTimer:async()=>({done:true}),removeTimer:async({exec})=>{await exec();return {done:true};},timerCommand:()=>({platform:'test',install:'install-cmd',remove:'remove-cmd'}),platformKey:()=>'test',updateClockScript:'clock.mjs',maintenanceCache:null,processScope:{},supervise(){},runNode(){},updaterScript:'',runCommand(){},detectInstallation:()=>({kind:'npm'}),createUpdateClock(){},localSkillVersion:()=>'1.16.0'});
+  vm.runInContext(source.slice(a,b)+';this.handle=handleUpdateClock;this.trigger=triggerClock;this.activity=clockActivity;',c);
+  // Every trigger's resolver is kept, and every busy call is raced against a
+  // tick: a handler that joins or restarts the in-flight run would otherwise
+  // hang this test instead of failing it.
+  let calls=0;const releases=[];const releaseAll=(value)=>{for(const r of releases.splice(0)) r(value);};
+  const clock={trigger(){calls++;return new Promise(r=>{releases.push(r);});},status:()=>({}),settings:()=>({auto_update:{enabled:false}})};
+  const tick=()=>new Promise(r=>setImmediate(r));
+  const settled=(p)=>Promise.race([p,tick().then(()=>'unsettled')]);
+  const inFlight=c.handle({op:'trigger',event:'manual'},clock,{});await tick();
+  assert.equal(c.activity.running,true);assert.equal(calls,1);
+  for(const body of [{op:'trigger',event:'manual'},{op:'apply'},{op:'timer',action:'remove',confirm:true,expected_command:'remove-cmd'}]){
+    const r=await settled(c.handle(body,clock,{exec:async()=>{timerExecs++;}}));
+    assert.notEqual(r,'unsettled',`${JSON.stringify(body)} must be refused at once, not joined to the in-flight run`);
+    assert.equal(r.status,409,JSON.stringify(body));assert.match(r.value.error,/busy/);
+  }
+  assert.equal(await settled(c.trigger(clock,'setup.open')),null,'fire-and-forget joins nothing and restarts nothing');
+  assert.equal(calls,1,'the in-flight check was never restarted');assert.equal(timerExecs,0);assert.equal(c.activity.running,true);
+  releaseAll({checked:true});const done=await inFlight;
+  assert.equal(done.status,200);assert.equal(done.value.result.checked,true);assert.equal(c.activity.running,false);
+  let runningDuringTimer=null;
+  const timer=await c.handle({op:'timer',action:'remove',confirm:true,expected_command:'remove-cmd'},clock,{exec:async()=>{runningDuringTimer=c.activity.running;timerExecs++;}});
+  assert.equal(timer.status,200);assert.equal(runningDuringTimer,true,'timer actions run under the same guard');assert.equal(c.activity.last_event,'timer.remove');assert.equal(c.activity.running,false);
+  const again=c.handle({op:'trigger',event:'manual'},clock,{});await tick();releaseAll({second:true});
+  assert.equal((await again).status,200);assert.equal(calls,2,'control: an idle clock triggers again');
+});
+// guidance-body-limit-unenforced: saveGuidance answers 413 for a file over the cap,
+// and the route hands that status to the page untouched.
+await test('the guidance route passes a 413 from saveGuidance through untouched',async()=>{
+  const h=handler({expected_sha256:null,guidance:{}},true,{saveGuidance:()=>({status:413,value:{error:'The guidance file would be 80774 bytes; the cap is 65536.'}})});
+  const r=await h.serve({method:'POST',url:'/api/guidance',socket:{}},{});
+  assert.equal(r.status,413);assert.match(r.value.error,/cap is 65536/);
 });
 // throw-flag-reads-as-did-not-throw: a crashed regression suite must read as a
 // failure that says it threw, and the pass summary must treat that flag as failing.
