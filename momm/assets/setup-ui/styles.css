@@ -319,3 +319,48 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* ---- Motion layer (1.16): 42.uk pacing — short, eased, never decorative for its own sake.
+   Every animation here is disabled under prefers-reduced-motion. */
+:root { --ease: cubic-bezier(.2, .8, .2, 1); --dur: .32s; --dur-fast: .16s; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+/* Theme cross-fade: the toggle adds .theme-switching for one beat so colours ease instead of snapping. */
+html.theme-switching, html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), fill var(--dur) var(--ease) !important;
+}
+/* Toggle: a small orbit icon that rotates on switch; the label says what you will get. */
+.theme-toggle { transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
+.theme-toggle:active { transform: scale(.97); }
+.theme-toggle .orbit { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; transition: transform var(--dur) var(--ease); }
+:root[data-theme="dark"] .theme-toggle .orbit { transform: rotate(180deg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .theme-toggle .orbit { transform: rotate(180deg); } }
+/* Entrance: panels and cards rise in, staggered by --i set from the render order. */
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.hero, .status-banner, .control-panel, .provider-card, .trust-card, .maintenance-panel { animation: rise var(--dur) var(--ease) both; animation-delay: calc(var(--i, 0) * 55ms); }
+/* Hover: lift plus the accent ring; in the dark palette the ring glows. */
+.provider-card { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.provider-card:hover { transform: translateY(-3px); border-color: var(--green-bright); box-shadow: 0 16px 40px rgba(0, 0, 0, .12), 0 0 0 1px var(--green-bright); }
+:root[data-theme="dark"] .provider-card:hover, :root[data-theme="dark"] .button.primary:hover { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px var(--green-bright), 0 0 24px rgba(0, 255, 153, .18); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .provider-card:hover { box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px var(--green-bright), 0 0 24px rgba(0, 255, 153, .18); } }
+.button { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.button:active:not(:disabled) { transform: scale(.98); }
+/* Status meter: a conic ring that sweeps to the completion percentage (--pct set by the page). */
+@property --pct { syntax: "<number>"; inherits: false; initial-value: 0; }
+.status-meter { --pct: 0; position: relative; isolation: isolate; transition: --pct .9s var(--ease); }
+.status-meter::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; z-index: -1;
+  background: conic-gradient(var(--green-bright) calc(var(--pct) * 1%), rgba(255, 255, 255, .14) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); }
+/* Progress bar: width eases; while work is running a light sweeps across it. */
+.progress-track span { transition: width .6s var(--ease); position: relative; overflow: hidden; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.progress-track.running span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent); animation: sweep 1.4s var(--ease) infinite; }
+/* A card being verified pulses its icon ring. */
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 153, .0); } 50% { box-shadow: 0 0 0 6px rgba(0, 255, 153, .22); } }
+.provider-card.testing .provider-icon { animation: pulse 1.4s var(--ease) infinite; }
+/* Toasts slide up and fade. */
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+.toast.show { animation: toast-in var(--dur) var(--ease) both; }
+/* Brand mark breathes very slightly in the dark palette, the 42.uk accent. */
+@keyframes breathe { 0%, 100% { box-shadow: 0 7px 20px rgba(23, 79, 58, .2); } 50% { box-shadow: 0 7px 24px rgba(0, 255, 153, .35); } }
+:root[data-theme="dark"] .brand-mark { animation: breathe 3.2s var(--ease) infinite; }

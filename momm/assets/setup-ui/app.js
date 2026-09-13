@@ -5,13 +5,18 @@
   let saved = null; try { saved = localStorage.getItem(key); } catch {}
   if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
   const button = document.querySelector("#theme-toggle");
-  if (!button) return;
+  if (!button || !root || typeof root.getAttribute !== "function") return;
+  const isDark = () => { const explicit = root.getAttribute("data-theme"); return explicit ? explicit === "dark" : (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches); };
+  const label = () => { const el = document.querySelector("#theme-label"); if (el) el.textContent = isDark() ? "Light" : "Dark"; button.setAttribute("aria-pressed", isDark() ? "true" : "false"); };
+  label();
   button.addEventListener("click", () => {
-    const explicit = root.getAttribute("data-theme");
-    const dark = explicit ? explicit === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-    const next = dark ? "light" : "dark";
+    const next = isDark() ? "light" : "dark";
+    // One beat of eased colour transitions, then the class goes so hover/focus stay snappy.
+    root.classList?.add?.("theme-switching");
     root.setAttribute("data-theme", next);
     try { localStorage.setItem(key, next); } catch {}
+    label();
+    setTimeout(() => root.classList?.remove?.("theme-switching"), 450);
   });
 })();
 const grid = document.querySelector("#provider-grid");
@@ -206,11 +211,16 @@ function render() {
   if (updates) remaining.push(`${updates} provider CLI update${updates === 1 ? "" : "s"}`);
   setupPercent.textContent = `${percent}%`;
   progress.style.width = `${percent}%`;
+  document.querySelector(".status-meter")?.style?.setProperty?.("--pct", String(percent));
+  const anyTesting = routes.some((route) => routeState(route) === "testing");
+  Array.from(document.querySelectorAll?.(".progress-track") ?? []).forEach((track) => track.classList?.toggle?.("running", anyTesting));
   statusTitle.textContent = percent === 100 ? "Setup complete" : `Setup ${percent}% complete`;
   summary.textContent = remaining.length ? remaining.join(" · ") : "Every reviewer is installed, connected, and verified.";
   quickSetupButton.textContent = quickSetupRunning ? "Running checks…" : verifications ? `Verify ${verifications} detected session${verifications === 1 ? "" : "s"}` : "Run Quick Setup";
   quickSetupNote.textContent = signIns ? "Verifies detected sessions automatically. Provider sign-in opens visibly and still needs you." : "Uses harmless synthetic text only—never project content.";
   grid.innerHTML = routes.map(providerCard).join("");
+  // Stagger the entrance animation in render order (motion layer reads --i).
+  Array.from(grid.children ?? []).forEach((card, index) => card.style?.setProperty?.("--i", String(index)));
 }
 
 function statusPresentation(status) {

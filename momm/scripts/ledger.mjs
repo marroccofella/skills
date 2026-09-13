@@ -566,6 +566,13 @@ const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
   :root[data-theme="dark"]{--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a;color-scheme:dark}
   .theme{float:right;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:1px 8px}
   .spark{vertical-align:middle;color:var(--accent)}
+  :root{--ease:cubic-bezier(.2,.8,.2,1);--dur:.32s}
+  @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+  html.theme-switching,html.theme-switching *{transition:background-color var(--dur) var(--ease),color var(--dur) var(--ease),border-color var(--dur) var(--ease)!important}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .track,.run{animation:rise var(--dur) var(--ease) both}
+  .run{transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}.run:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .theme{transition:color var(--dur) var(--ease),border-color var(--dur) var(--ease)}
   body{background:var(--bg);color:var(--text);font:13px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:0 auto;padding:20px}
   h1{font-size:19px}h1 span{color:var(--accent)}
   .note{color:var(--dim);font-size:11px;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin:10px 0}
@@ -609,8 +616,10 @@ ${SPEECH_SCRIPT}
   button.addEventListener("click", () => {
     const dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
     const next = dark ? "light" : "dark";
+    root.classList.add("theme-switching");
     root.setAttribute("data-theme", next);
     try { localStorage.setItem(key, next); } catch {}
+    setTimeout(() => root.classList.remove("theme-switching"), 450);
   });
 })();
 </script>`;
