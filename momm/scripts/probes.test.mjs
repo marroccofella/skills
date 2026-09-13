@@ -250,10 +250,12 @@ try {
   });
   // timeout-leaves-descendants-running
   await test("timeout_kills_the_whole_process_tree", async () => {
-    // The grandchild breaks away (detached) the way a non-Node reviewer worker would: on Windows it is not
-    // in libuv's kill-on-close job object, on POSIX it simply outlives a SIGTERM to its parent. It exits on
+    // On Windows the grandchild breaks away (detached) so it is outside libuv's kill-on-close job object and
+    // only a tree kill reaches it. On POSIX a reviewer's worker stays in the probe's process group (a setsid'd
+    // descendant is outside any group kill by definition), so the grandchild is spawned attached and must die
+    // with the group SIGKILL. It exits on
     // its own after 20s as a safety net should the tree kill fail.
-    const script = "const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setTimeout(()=>process.exit(0),20000); setInterval(()=>{},1000)'],{stdio:'ignore',detached:true}); child.unref(); process.stdout.write(String(child.pid)+'\\n'); setInterval(()=>{},1000);";
+    const script = "const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setTimeout(()=>process.exit(0),20000); setInterval(()=>{},1000)'],{stdio:'ignore',detached: process.platform === 'win32'}); child.unref(); process.stdout.write(String(child.pid)+'\\n'); setInterval(()=>{},1000);";
     const result = await defaultExec(process.execPath, ["-e", script], { timeout: 2500, cwd: fixture, env: process.env });
     const pid = Number(String(result.stdout).trim());
     try {
