@@ -70,6 +70,14 @@ await test('POSIX discovery excludes Homebrew casks and skips non-executable PAT
   const result=c.detect('grok',{PATH:'/blocked:/opt/homebrew/bin'},'darwin');
   assert.equal(result.kind,'homebrew');assert.equal(result.path,'/opt/homebrew/bin/grok');assert.equal(seen.length,2);
 });
+await test('known package-manager native shims are not self-updating installations',()=>{
+  const begin=source.indexOf('const npmPackages ='),finish=source.indexOf('function actionCommand(');
+  for(const resolved of ['/fixture/.volta/bin/volta-shim','/fixture/scoop/shims/codex.exe','/fixture/chocolatey/bin/codex.exe']){
+    const fakeFs={...fs,statSync:()=>({isFile:()=>true}),accessSync(){},realpathSync:()=>resolved,readFileSync(){throw Error('no npm metadata');},openSync:()=>7,readSync:(_fd,b)=>{Buffer.from('MZxx').copy(b);return 4;},closeSync(){}};
+    const c=vm.createContext({fs:fakeFs,path:path.posix,process,Buffer});vm.runInContext(source.slice(begin,finish)+';this.detect=detectInstallation;',c);
+    assert.notEqual(c.detect('codex',{PATH:'/fixture/bin'},'linux').kind,'native',resolved);
+  }
+});
 function handler(body,token=true) {
   const a=source.indexOf('function createServer('),b=source.indexOf('// The dispatcher',a);assert(a>=0&&b>a);
   let launched=0;
@@ -82,6 +90,10 @@ function handler(body,token=true) {
 await test('update endpoint requires the exact confirmed command',async()=>{
   const h=handler({provider:'codex',action:'update'});
   const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,409);assert.equal(h.launches(),0);
+});
+await test('matching action confirmation launches and supplied mismatches never launch',async()=>{
+  for(const action of ['update','install','login']){const h=handler({provider:'codex',action,expected_command:'codex update'});const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,202);assert.equal(h.launches(),1);}
+  for(const provider of ['codex','skills']){const h=handler({provider,action:provider==='skills'?'update':'login',expected_command:'different command'});const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,409);assert.equal(h.launches(),0);}
 });
 await test('readiness endpoint requires local session before spawning probes',async()=>{
   const h=handler({},false);const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});assert.equal(r.status,403);
@@ -108,7 +120,9 @@ await test('six CLI rows include controller, unknown latest and explicit native 
   assert.equal((html.match(/<tr>/g)||[]).length,6);assert.match(html,/Controller \(not a reviewer\)/);assert.match(html,/Check \/ update/);assert(!html.includes('null'));assert(!html.includes('undefined'));
 });
 await test('declining update never calls mutation API',async()=>{
-  const c=ui();c.init({platform:'win32',providers:{codex:{}}},{cli_updates:[{agent:'codex',update_command:'codex update'}]});await c.core.launchAction('codex','update');
+  const c=ui();let calls=0;c.setApi(async()=>{calls++;return {};});
+  c.init({platform:'win32',providers:{codex:{}}},{cli_updates:[{agent:'codex',update_command:'codex update'}]});await c.core.launchAction('codex','update');assert.equal(calls,0);
+  c.window.confirm=()=>true;await c.core.launchAction('codex','update');assert.equal(calls,1,'positive control must reach the same instrumented API');
 });
 await test('quota failure is not turned into authentication advice',()=>{
   const c=ui();c.fail('copilot',{route_status:'error',detail:'Monthly quota exceeded'});

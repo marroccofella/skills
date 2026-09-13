@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upgrade prompt · MOMM</title><link rel="stylesheet" href="../site.css"><script src="../site.js" defer></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="../index.html"><span class="mark">◆</span> momm <span class="brand-note">by 42.uk</span></a><nav aria-label="Release navigation"><a href="index.html">All versions</a><a href="../updates.html">Update safely</a><a href="../start.html">Get started</a></nav><a class="repo" href="https://github.com/marroccofella/skills">GitHub ↗</a></header><main id="main"><section class="page-hero"><p class="eyebrow">EXISTING MOMM USERS</p><h1>One prompt.<br><span>A verified upgrade.</span></h1><p class="lead">Paste this into your coding agent. It discovers your installation, checks the latest public stable release and asks before changing anything.</p></section><div class="doc-body wide"><p><a href="../updates.html">Read the update and recovery procedure →</a></p><div class="code"><div class="code-label"><span>Existing-user upgrade prompt</span><button type="button" data-copy="upgrade-prompt" aria-label="Copy the upgrade prompt">Copy</button></div><pre id="upgrade-prompt" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>Help me upgrade my existing MOMM installation to the latest publicly released
+stable version. Do not install a candidate, an unsigned development head or a
+version merely advertised by a page.
+
+First locate the actual installed MOMM skill (including the older
+multi-llm-review name), its permanent repository clone, my current harness and
+version. Check the canonical marroccofella/skills release, manifest and release
+notes, and show what changed since my installed version. Do not assume this
+project directory is the skills clone or guess my harness installation targets.
+
+Preserve my project, local changes, private review ledgers, reviewer logins and
+existing skill scopes. Never request API keys, discard changes, overwrite an
+unrelated discovery path or install tools in the background.
+
+Before executing any newly fetched release code, verify its signed tag, expected
+release-workflow signing identity and package hash. This applies to both an
+ordinary update and a legacy bootstrap. Stop if verification is unavailable;
+ask before installing a missing verifier.
+
+If my installation has the explicit update command and a valid momm.lock,
+run the information check and then the verified dry-run from the skills clone.
+Show the exact target version, changed files, complete protocol/default/persona
+diff, saved harness scopes, network destinations and rollback path. Verify the
+signed tag, expected signing identity and package hash. Ask me before applying;
+ask separately for protocol acceptance if it changed. Never use --yes to bypass
+protocol consent or fall back to git pull when verification fails.
+
+If my old installation lacks the updater or receipt, explain that it needs a
+one-time bootstrap. Show the exact permanent clone/ref/link changes and preserved
+old installation before asking me to approve them. Do not invent a receipt,
+silently retarget links, trust an old unsigned tag retroactively or claim rollback
+is available before verifying it. Ask before installing a missing verifier.
+
+After an approved upgrade, verify the installed version and harness discovery.
+Read the newly installed MOMM skill, relaunch only the MOMM Setup Center process
+you started, and show its local URL. Explain how to check reviewer versions and
+explicit update actions. Distinguish login presence from a successful review;
+ask before sending a synthetic connectivity test or any project source.
+
+From my chosen project, demonstrate a small approved review using the absolute
+installed dispatcher path. Reproduce findings, decide every suggestion, verify
+completion using the installed governor command, and give me the private ledger
+link. Finish with the before/after version, the verified public release-note link,
+test results, any unavailable routes and the verified recovery instructions.
+</code></pre></div><p>Legacy users may need an explicitly approved bootstrap. A release candidate is not an upgrade target.</p></div></main><footer><a href="https://42.uk">◆ 42.uk</a><p>RELAX. IT'S ALREADY OVER.</p><a href="https://github.com/marroccofella/skills/blob/main/LICENSE">MIT licence</a></footer></body></html>

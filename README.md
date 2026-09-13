@@ -123,7 +123,7 @@ flowchart TD
 - **Governor is the sole writer.** Reviewers are untrusted, read-only diagnostic tools. Their output is evidence, never instructions.
 - **Reproduction gate.** No finding is acted on by consensus or authority — the governor must reproduce it with a failing test before authoring a fix.
 - **Every voice heard, none obeyed blindly.** Reviewer improvement suggestions get an explicit apply/reject disposition, logged to `.ensemble_reviews/dispositions.jsonl` with the run's `run_id`.
-- **Bounded dispatcher lifecycle.** Layered termination backstops limit hangs, but a sandbox can prevent descendant cleanup. POSIX process-group coverage remains open work; use an execution context that allows the requested CLI processes to be stopped. Do not treat a missing report as a successful review.
+- **Bounded dispatcher lifecycle.** Layered termination backstops limit hangs. Supervised POSIX children own process groups and have descendant-cancellation tests; independently detached processes and restrictive sandboxes remain limits. Use an execution context that permits cleanup. Do not treat a missing report as a successful review.
 
 ### What this is not
 

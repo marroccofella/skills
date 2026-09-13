@@ -17,6 +17,22 @@ and a verified Sigstore-signed tag. Do not call this candidate released until th
 gates pass. Main-channel updates require a signed development checkpoint; an
 ordinary unsigned branch head is not eligible. Legacy unsigned tags stay intact.
 
+The candidate adds a source-linked version-history archive and an existing-user
+upgrade prompt. Published releases, tags without Release records and untagged code
+milestones are distinguished; gaps are not invented. Legacy installs must approve
+a bootstrap, preserve their prior installation and establish an actual receipt.
+Growing governor logs are streamed with full-byte hash rechecks, bounded individual
+records and selected-run memory; corruption or concurrent mutation fails closed.
+The completion command uses the absolute installed skill path from the project.
+Public export regression tests now cover validation-before-write, sparse legacy
+reports, canonical duplicate comparison and aliased preview roots. Filesystem I/O
+failure is not a multi-file atomic transaction. Current documentation distinguishes
+supervised POSIX groups from independently detached processes. CLI maintenance
+refuses known Volta/Scoop/Chocolatey/asdf/mise-managed executable paths; executable
+magic alone is not ownership proof, and unrecognized package managers remain a
+discovery limitation. Declined-update assertions include an actual API call counter
+and a positive control; exact-command endpoint checks cover successful launches.
+
 Candidate release testing also found interrupted notice claims, changed ignore
 rules stranding rollback, and browser default speech bypassing local-only voice
 selection. Each now has a regression fixture. The signing workflow can reuse
@@ -275,9 +291,11 @@ dispositions belong beside the review log the dispatcher wrote.
 
 ## Open items
 
-- **Fresh source-bearing release review** — sharing updater/installer/protocol/
-  release-test diffs with Claude, Copilot and Grok is approved. Additional provider
-  sharing is not implied; the latest substantive release quorum remains unmet.
+- **Fresh source-bearing release review** — the user approved the final dispatcher,
+  dashboard, public website and documentation scopes for Claude and Antigravity,
+  in addition to the previously approved updater/installer/protocol scopes.
+  Approval is not a review result; each final scope still needs source-bound
+  quorum, governor decisions and verification before publication.
 - The running Setup Center instance must be relaunched after upgrades; old
   processes serve stale UI (observed live on 1.9.x → 1.10.0).
 - Explicit timeout overrides are already honored (see 1.12.0 above); provider

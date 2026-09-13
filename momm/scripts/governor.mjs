@@ -11,6 +11,23 @@ const hash = s => typeof s === "string" && /^[a-f0-9]{64}$/.test(s);
 const nonempty = s => typeof s === "string" && !!s.trim();
 const demand = (ok, message) => { if (!ok) throw new Error(message); };
 
+// Hash a fixed-size read snapshot with bounded memory. A concurrently growing
+// log fails this inspection instead of making the reader chase it forever.
+function scanFile(file, visit = () => {}) {
+  const fd = fs.openSync(file, 'r'), sha = createHash('sha256');
+  try {
+    const size = fs.fstatSync(fd).size, buffer = Buffer.alloc(64 * 1024);
+    let position = 0;
+    while (position < size) {
+      const n = fs.readSync(fd, buffer, 0, Math.min(buffer.length, size - position), position);
+      demand(n > 0, 'evidence changed during read');
+      const bytes = buffer.subarray(0, n); sha.update(bytes); visit(bytes); position += n;
+    }
+    demand(fs.fstatSync(fd).size === size, 'evidence changed during read');
+    return sha.digest('hex');
+  } finally { fs.closeSync(fd); }
+}
+
 export function captureSourceSnapshot(root, artifact, inputPath) {
   const files = [];
   let verifyDiff = null;
@@ -58,6 +75,7 @@ export function inspectCompletion(root, runId) {
     evidence_level: "local records and byte hashes validated; not independent proof of execution or correctness",
     items: [], unresolved: [], errors: [] };
   const reads = new Map();
+  const logReads = new Set();
   try {
     root = fs.realpathSync(root);
     demand(/^rev_[a-zA-Z0-9_]+$/.test(runId), "invalid run id");
@@ -80,7 +98,36 @@ export function inspectCompletion(root, runId) {
       return bytes;
     };
     const ref = value => { demand(value && hash(value.sha256), "evidence needs a sha256"); const bytes = read(value.path); demand(digest(bytes) === value.sha256, `changed evidence: ${value.path}`); return bytes; };
-    const jsonl = relative => read(relative).toString("utf8").split(/\r?\n/).filter(s => s.trim()).map(s => JSON.parse(s));
+    const jsonl = relative => {
+      const rows = []; let parts = [], lineBytes = 0, selectedBytes = 0;
+      const segment = (bytes, end) => {
+        lineBytes += bytes.length;
+        demand(lineBytes <= 8_000_000, 'ledger record exceeds 8 MB limit');
+        if (bytes.length) parts.push(Buffer.from(bytes));
+        if (!end) return;
+        const line = Buffer.concat(parts, lineBytes).toString('utf8');
+        if (line.trim()) {
+          const row = JSON.parse(line); // Corrupt unrelated records still fail closed.
+          demand(row && typeof row === 'object' && !Array.isArray(row), 'invalid ledger record');
+          if (row.run_id === runId) {
+            selectedBytes += lineBytes;
+            demand(selectedBytes <= 8_000_000, 'run ledger records exceed 8 MB limit');
+            rows.push(row);
+          }
+        }
+        parts = []; lineBytes = 0;
+      };
+      const sha = scanFile(local(relative), bytes => {
+        let start = 0;
+        for (let end = bytes.indexOf(10); end >= 0; end = bytes.indexOf(10, start)) {
+          segment(bytes.subarray(start, end), true); start = end + 1;
+        }
+        segment(bytes.subarray(start), false);
+      });
+      segment(Buffer.alloc(0), true);
+      reads.set(relative, sha); logReads.add(relative);
+      return rows;
+    };
     const reportBytes = read(`.ensemble_reviews/reports/${runId}.json`);
     const report = JSON.parse(reportBytes);
     const reportSha = digest(reportBytes);
@@ -197,7 +244,7 @@ export function inspectCompletion(root, runId) {
     // Recheck the read set so a concurrent edit cannot silently seal stale evidence.
     for (const [relative, sha] of reads) {
       if (sha === null) demand(!fs.existsSync(path.join(root, relative)), "decision file changed during validation");
-      else demand(digest(fs.readFileSync(local(relative))) === sha, "evidence changed during validation");
+      else demand((logReads.has(relative) ? scanFile(local(relative)) : digest(fs.readFileSync(local(relative)))) === sha, "evidence changed during validation");
     }
     state.validated_files = Object.fromEntries(reads);
     state.complete = state.quorum.met && !state.errors.length && !state.unresolved.length;

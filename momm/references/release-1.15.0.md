@@ -1,7 +1,9 @@
 # MOMM 1.15.0 — explicit updates and clearer evidence
 
-Release candidate. Publication is complete only after the safety matrix, privacy
-review and signed-tag verification; this file is not proof that the tag exists.
+These notes were prepared for the release candidate. Publication is complete only
+after the safety matrix, privacy review and signed-tag verification. Check the
+[canonical release record](https://github.com/marroccofella/skills/releases/tag/momm-1.15.0)
+and signature before installing; this file is not proof that the tag exists.
 
 ## Changes
 
@@ -17,6 +19,10 @@ review and signed-tag verification; this file is not proof that the tag exists.
 - Daily opt-outs including `DO_NOT_TRACK`; a notice is not update authorization.
 - Five focused information pages; corrected project working-directory guidance;
   one deterministic renderer for public evidence, tables, downloads and hashes.
+- A source-linked version archive separates published releases, historical tags
+  and public code milestones. An existing-user upgrade prompt covers both saved
+  installation receipts and explicitly approved legacy bootstrap; it never
+  instructs an agent to bypass signature or protocol-consent checks.
 - Interrupted daily-check recovery, ignored-file transition protection, matching
   signed-tag reuse on publication retry, and a main-checkpoint-only signing mode.
 - Local-only public read-aloud refuses browser-default or remote voices. Review
@@ -26,6 +32,9 @@ review and signed-tag verification; this file is not proof that the tag exists.
 - Offline governor completion command: unique item decisions, original seals,
   reproduction/refutation records and final source/test/output hashes. A receipt
   is separate from the original report; later edits invalidate current completion.
+- Growing append-only logs are streamed and fully hashed instead of failing at
+  the individual-evidence-file size limit. Records and selected-run data remain
+  bounded; malformed records and concurrent log changes fail closed.
 - Stabilisation: visible partial-installer results, skill-list whitespace handling,
   actionable torn-claim and malformed-policy errors, source-snapshot race checks,
   explicit root guidance and accurate a/b path binding. Dirty checkouts cannot pass
@@ -70,6 +79,6 @@ synthetic peer replies, without provider calls. It is not proof that every harne
 obeys the protocol. Record validation cannot establish that an observation is
 truthful or a chosen test adequate; no peer snippet is executed automatically.
 This release does not solve every reviewer reliability issue. See the maintained
-roadmap for large-input route failures, POSIX descendant cleanup and unsupported
+roadmap for large-input route failures, independently detached processes and unsupported
 source/media lifecycle binding. No API-key support,
 repository split, telemetry collection or marketing outreach was added.

@@ -127,6 +127,60 @@ try {
   decisions(rows);
   const healthy = () => inspectCompletion(fixture, report.run_id);
   test("all actual lifecycle evidence closes the run", () => assert.equal(healthy().complete, true, JSON.stringify(healthy())));
+  test('growing append-only logs do not exhaust the per-evidence-file allowance',()=>{
+    for(const name of ['review-log.jsonl','dispositions.jsonl']){
+      const file=path.join(fixture,'.ensemble_reviews',name),original=fs.readFileSync(file);
+      // Many individually bounded UTF-8 records; not one oversized record.
+      const unrelated=(JSON.stringify({run_id:'rev_other',note:'é'.repeat(500)})+'\r\n').repeat(9000);
+      try {fs.appendFileSync(file,unrelated);assert(fs.statSync(file).size>8_000_000);
+        const result=healthy();assert.equal(result.complete,true,JSON.stringify(result.errors));
+        assert.equal(result.validated_files['.ensemble_reviews/'+name],digest(fs.readFileSync(file)));
+      } finally {fs.writeFileSync(file,original);}
+    }
+  });
+  test('documented completion command runs from the reviewed project',()=>{
+    const skill=fs.readFileSync(path.join(scripts,'../SKILL.md'),'utf8');
+    const match=skill.match(/Run `node ([^`]+\/governor\.mjs) --run <run_id>` from the reviewed project/);
+    assert(match,'completion invocation missing');
+    const command=match[1].replace('<installed-momm>',path.dirname(scripts));
+    const result=run([command,'--run',report.run_id]);assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout).complete,true);
+  });
+  test('oversized records and corrupt unrelated log lines remain refused',()=>{
+    const file=path.join(fixture,'.ensemble_reviews/review-log.jsonl'),original=fs.readFileSync(file);
+    try {
+      fs.appendFileSync(file,JSON.stringify({run_id:'rev_other',note:'x'.repeat(8_000_000)})+'\n');assert(healthy().errors.some(s=>s.includes('ledger record exceeds')));
+      fs.writeFileSync(file,original);fs.appendFileSync(file,'{broken\n');assert.equal(healthy().complete,false);
+    }finally {fs.writeFileSync(file,original);}
+  });
+  test('log growth during its fixed-size read is refused',()=>{
+    const file=path.join(fixture,'.ensemble_reviews/review-log.jsonl'),original=fs.readFileSync(file),readSync=fs.readSync;let changed=false;
+    fs.readSync=(fd,...args)=>{const n=readSync(fd,...args);if(!changed&&fs.fstatSync(fd).size===original.length){changed=true;fs.appendFileSync(file,'\n');}return n;};
+    try{const result=healthy();assert(changed);assert.equal(result.complete,false);assert(result.errors.includes('evidence changed during read'));}
+    finally{fs.readSync=readSync;fs.writeFileSync(file,original);}
+  });
+  test('style-only suggestions need after evidence but not invented failing tests',()=>{
+    const item=pending.items.find(i=>i.kind==='suggestion'),afterStyle=observation(item.item_id,'after','evidence/after.txt',0,'2026-01-01T00:00:04Z');write('evidence/style.json',afterStyle);
+    decisions(rows.map(r=>r.item_id===item.item_id?{...r,disposition:'applied',change_kind:'style',verification:ref('evidence/style.json')}:r));
+    try{assert.equal(healthy().complete,true,JSON.stringify(healthy()));}finally{decisions(rows);}
+  });
+  test('an updated final manifest alone cannot justify changed source',()=>{
+    const file=path.join(fixture,`.ensemble_reviews/verification/${report.run_id}.json`),original=fs.readFileSync(file);
+    write('mean.cjs',good+'// unaccounted change\n');write(`.ensemble_reviews/verification/${report.run_id}.json`,observation('run','final','evidence/after.txt',0,'2026-01-01T00:00:05Z'));
+    try{assert.equal(healthy().complete,false);}finally{write('mean.cjs',good);fs.writeFileSync(file,original);}
+  });
+  test('a rejected nonexistent target must remain absent',()=>{
+    const id='rev_fixture_absent_target',target='never-created.cjs';
+    const absentReport={...report,run_id:id,input_sha256:digest(good),source_snapshot:captureSourceSnapshot(fixture,good,'mean.cjs'),findings:[{...findings[0],target_file:target}],reviewers:report.reviewers.map(r=>({...r,suggested_improvements:[]}))};
+    const p=`.ensemble_reviews/reports/${id}.json`;write(p,absentReport);const seal=ref(p);
+    const log=path.join(fixture,'.ensemble_reviews/review-log.jsonl'),original=fs.readFileSync(log);
+    fs.appendFileSync(log,JSON.stringify({run_id:id,governor:'codex',report_path:p,report_sha256:seal.sha256,input_sha256:absentReport.input_sha256,reviewer_status:{claude:'success',grok:'success'}})+'\n');
+    const item=inspectCompletion(fixture,id).items[0];
+    const check={...observation(item.item_id,'investigation','evidence/after.txt',0,'2026-01-01T00:00:06Z'),run_id:id,report_sha256:seal.sha256,input_sha256:absentReport.input_sha256,absent_paths:[target]};
+    write('evidence/absent.json',check);write(`.ensemble_reviews/verification/${id}.json`,{...check,item_id:'run',phase:'final'});
+    const row={run_id:id,governor:'codex',reviewer:'claude',item_id:item.item_id,report_sha256:seal.sha256,input_sha256:absentReport.input_sha256,disposition:'rejected',reason:'Controlled nonexistent-target fixture.',verification:ref('evidence/absent.json')};decisions([...rows,row]);
+    try{assert.equal(inspectCompletion(fixture,id).complete,true,JSON.stringify(inspectCompletion(fixture,id)));write(target,'now exists\n');assert.equal(inspectCompletion(fixture,id).complete,false);}
+    finally{if(fs.existsSync(path.join(fixture,target)))fs.unlinkSync(path.join(fixture,target));decisions(rows);fs.writeFileSync(log,original);}
+  });
   for (const [name, mutate] of [
     ["missing decision", r => r.slice(1)], ["duplicate decision", r => [...r, r[0]]],
     ["unrelated matching-run row", r => [...r, { ...r[0], item_id: "fake" }]],

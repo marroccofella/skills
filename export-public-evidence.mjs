@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { renderPublic } from "./scripts/render-momm-site.mjs";
+import { renderPublic, canonical } from "./scripts/render-momm-site.mjs";
 
 const args = process.argv.slice(2);
 const from = [];
@@ -82,10 +82,10 @@ for (const { dir, label } of from) {
     if (run.event || !run.run_id) continue;
     if (!/^rev_[A-Za-z0-9_]+$/.test(run.run_id)) throw new Error("Invalid run ID; refusing report path traversal");
     if (seen.has(run.run_id)) {
-      if (seen.get(run.run_id) !== JSON.stringify(run)) throw new Error(`Conflicting duplicate run ${run.run_id}; reconcile sources before exporting.`);
+      if (seen.get(run.run_id) !== JSON.stringify(canonical(run))) throw new Error(`Conflicting duplicate run ${run.run_id}; reconcile sources before exporting.`);
       diagnostics.identical_duplicates++; continue;
     }
-    seen.set(run.run_id, JSON.stringify(run));
+    seen.set(run.run_id, JSON.stringify(canonical(run)));
     const entry = sanitize({ ...run, subject: run.label ?? run.subject ?? "", source_workspace: label });
     runs.push(entry);
     const reportFile = path.join(er, "reports", `${run.run_id}.json`);
@@ -104,8 +104,6 @@ const data = {
   schema: "momm-evidence-export/1",
   generated: new Date().toISOString(),
   source: "github.com/marroccofella/skills · momm dispatcher telemetry from this repository's own workspaces (" + from.map((f) => f.label).join(", ") + ")",
-  sanitization: "User home/workspace paths normalized and private ledger links removed. Reviewer prose can quote source; --store-input may also persist input text. Inspect and explicitly authorize these public artifacts before publication.",
-  note: "stored_report_sha256 covers the exact bytes of each report file on the source machine; run log lines carry the same digests, so any quoted reviewer statement resolves to a content-addressed record",
   runs,
   reports,
   dispositions,
@@ -113,18 +111,8 @@ const data = {
 };
 scan("export", data);
 
-const json = JSON.stringify(data);
 const jsonPath = path.join(outDir, "momm-evidence.json");
-const html = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
-const block = /<script id="data" type="application\/json">[\s\S]*?<\/script>/;
-if (!block.test(html)) throw new Error("docs/evidence/index.html has no <script id=\"data\"> block to refresh");
-const embedded = json.replace(/<\//g, "<\\/");
-const nextHtml = html.replace(block, () => `<script id="data" type="application/json">${embedded}</script>`);
-const check = nextHtml.match(block)[0].replace(/^<script[^>]*>/, "").replace(/<\/script>$/, "");
-scan("embedded", JSON.parse(check));
-
-fs.writeFileSync(jsonPath, json);
-fs.writeFileSync(`${jsonPath}.sha256`, `${createHash("sha256").update(json).digest("hex")}  momm-evidence.json\n`);
-fs.writeFileSync(path.join(outDir, "index.html"), nextHtml);
-const rendered = renderPublic({ root: path.resolve(path.dirname(outDir), "..") });
+// All content validation and output construction precedes writes. This is not
+// crash-atomic across many files: an I/O failure still needs a clean rerender.
+const rendered = renderPublic({ root: path.resolve(path.dirname(outDir), ".."), sourceData: data });
 process.stdout.write(`${JSON.stringify({ ...rendered, out: jsonPath, import_diagnostics: diagnostics }, null, 2)}\n`);

@@ -39,14 +39,20 @@ renderer or the deliberately approved source snapshot, then regenerate:
 ```text
 node momm/scripts/multi-review.mjs --self-test
 node momm/scripts/transport.test.mjs
+node momm/scripts/process-scope.test.mjs
+node momm/scripts/entrypoint.test.mjs
 node momm/scripts/stabilisation.test.mjs
 node momm/scripts/governor.test.mjs
 node momm/scripts/update.test.mjs
 node momm/scripts/setup-ui.mjs --self-test
+node momm/scripts/setup-maintenance.test.mjs
 node momm/scripts/ledger.mjs --self-test
 node scripts/render-momm-site.mjs
 node scripts/render-momm-site.mjs --check
 node scripts/check-momm-site.mjs
+node scripts/momm-release-pages.test.mjs
+node scripts/public-export.test.mjs
+node scripts/doc-consistency.test.mjs
 node myrepo/scripts/publish.mjs --self-test
 ```
 

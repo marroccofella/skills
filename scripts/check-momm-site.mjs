@@ -9,7 +9,7 @@ import vm from "node:vm";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 renderPublic({ root, check: true });
-const files = ["index.html", "start.html", "updates.html", "evidence.html", "reference.html"];
+const files = ["index.html", "start.html", "updates.html", "evidence.html", "reference.html", "data/index.html"];
 let localLinks = 0;
 for (const name of files) {
   const file = path.join(root, "docs/momm", name), html = fs.readFileSync(file, "utf8");
@@ -69,6 +69,20 @@ const accepted = speechAttempt(localVoice);
 assert.equal(accepted.length, 1); assert.equal(accepted[0].voice, localVoice);
 for (const r of Object.values(data.reports)) assert.equal(r.public_report_sha256, createHash("sha256").update(JSON.stringify(canonical(r.report))).digest("hex"));
 const s = stats(data);
+const releases=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json')));
+for(const name of ['index','upgrade',...releases.map(r=>r.version)]){
+  const file=path.join(root,'docs/momm/releases',name+'.html'),html=fs.readFileSync(file,'utf8');
+  assert.match(html,/<main id="main">/);assert(!/<script(?![^>]*src=)/.test(html),'release notes must not introduce executable inline scripts');
+  for(const [,href] of html.matchAll(/(?:href|src)="([^"]+)"/g)){
+    if(href.startsWith('#')||href.startsWith('https://'))continue;
+    assert(!/^[a-z]+:/i.test(href),'unsafe release URL');
+    const dest=path.resolve(path.dirname(file),decodeURIComponent(href.split('#')[0]));
+    assert(dest.startsWith(path.join(root,'docs')+path.sep));assert(fs.existsSync(dest),'missing release link: '+href);localLinks++;
+  }
+}
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'versions.json')));
+assert(releases.some(r=>r.version===manifest.momm),'current version missing from archive');
+for(const entry of releases)assert(manifest.momm_releases.some(r=>r.version===entry.version),'missing changelog entry '+entry.version);
 assert.equal(s.log_successes, s.stored_successes + s.summary_only_successes);
 assert.equal(s.dispositions, Object.values(s.decisions).reduce((a, b) => a + b, 0));
 assert.deepEqual(canonical({ z: [{ b: 2, a: 1 }], a: 0 }), { a: 0, z: [{ a: 1, b: 2 }] });

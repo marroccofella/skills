@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { releasePages } from "./momm-release-pages.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = v => createHash("sha256").update(v).digest("hex");
@@ -46,7 +47,7 @@ export function stats(data) {
     dispositions: dispositions.length, decisions: counts(dispositions), coalition: { total: coalition.length, ...counts(coalition) },
     routes: routeRows, severity, by_day: byDay };
 }
-const nav = [["index.html", "Overview"], ["start.html", "Get started"], ["updates.html", "Update safely"], ["evidence.html", "Evidence"], ["reference.html", "Reference"]];
+const nav = [["index.html", "Overview"], ["start.html", "Get started"], ["updates.html", "Update safely"], ["evidence.html", "Evidence"], ["reference.html", "Reference"], ["releases/index.html", "Versions"]];
 function shell(file, title, body, version) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="MOMM: multi-model review through your existing CLI logins. One driving agent, independent review claims, explicit decisions and a private evidence trail."><meta name="theme-color" content="#080a0a"><title>${esc(title)} · MOMM</title><link rel="stylesheet" href="site.css"><script src="site.js" defer></script></head>
@@ -60,7 +61,7 @@ const hero = (tag, title, intro) => `<section class="page-hero">${eyebrow(tag)}<
 const note = (title, text) => `<aside class="notice"><strong>${title}</strong><p>${text}</p></aside>`;
 export function pages(data, s, version) {
   codeId = 0;
-  const link = `https://github.com/marroccofella/skills/blob/main/momm/references/release-${version}.md`;
+  const link = `releases/${version}.html`;
   const snapshot = esc(data.generated.slice(0, 10));
   const overview = `<section class="hero"><div>${eyebrow("MIXTURE OF MODEL MODALITY")}
     <a class="release-pill" href="${link}"><span class="dot"></span> ${esc(version)} · version notes <span>↗</span></a>
@@ -116,9 +117,11 @@ export function pages(data, s, version) {
     <section><h2>Does it mechanically enforce every reproduction?</h2><p>No. The governor validator checks source hashes, item decisions and recorded test evidence; it cannot prove that an observation is honest or a test adequate. It never executes peer-supplied test instructions. Treat the tests, code and disposition evidence as the checkable record.</p><h2>Is a unanimous ACCEPT enough?</h2><p>No. It only says the successful reviewers returned ACCEPT. Missing, timed-out or invalid routes do not join that verdict, and agreement never replaces your project’s tests.</p><h2>Does it work identically on every machine?</h2><p>No blanket guarantee is justified. The CI matrix is configured for Windows, macOS and Linux on Node 18, 20 and 22; check its result for the exact revision you use. Actual provider behavior also depends on CLI versions, account eligibility, quotas, network access and sandbox access to OAuth stores.</p><h2>What remains open?</h2><p>Large-input route reliability, containment of independently detached processes, unsupported source-snapshot types and broader independent evaluations remain distinct work. This release does not claim to have solved them with an update command or a new website.</p><p><a href="https://github.com/marroccofella/skills/blob/main/momm/ROADMAP.md">Read the maintained roadmap →</a></p></section></div>`;
   return Object.fromEntries([["index.html", "Independent reviews. Explicit decisions.", overview], ["start.html", "Get started", start], ["updates.html", "Update safely", updates], ["evidence.html", "Evidence", evidence], ["reference.html", "Reference", reference]].map(([f, t, b]) => [`docs/momm/${f}`, shell(f, t, b, version)]));
 }
-export function renderPublic({ root = ROOT, check = false } = {}) {
+export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const sourceFile = path.join(root, "docs/evidence/momm-evidence.json");
-  const data = JSON.parse(fs.readFileSync(sourceFile, "utf8"));
+  // Validate and build the complete output set before the first write. Exporters
+  // supply new data in memory; they must not stage it over the last good snapshot.
+  const data = sourceData === undefined ? JSON.parse(fs.readFileSync(sourceFile, "utf8")) : structuredClone(sourceData);
   for (const record of Object.values(data.reports)) {
     record.public_report_sha256 = sha(JSON.stringify(canonical(record.report)));
     record.public_hash_covers = "compact-utf8-json-recursive-key-sort/1";
@@ -129,7 +132,7 @@ export function renderPublic({ root = ROOT, check = false } = {}) {
   if (Object.values(s.decisions).reduce((a, b) => a + b, 0) !== s.dispositions) throw new Error("Disposition buckets do not reconcile");
   for (const key of Object.keys(s.decisions)) if (s.routes.reduce((n, r) => n + r[key], 0) + s.coalition[key] !== s.decisions[key]) throw new Error(`Attribution buckets do not reconcile: ${key}`);
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
-  const output = { ...pages(data, s, version), "docs/evidence/momm-evidence.json": json,
+  const output = { ...pages(data, s, version), ...releasePages(root), "docs/evidence/momm-evidence.json": json,
     "docs/evidence/momm-evidence.json.sha256": `${sha(json)}  momm-evidence.json\n`,
     "docs/momm/data/public-stats.json": JSON.stringify(s, null, 2) + "\n" };
   const ledger = fs.readFileSync(path.join(root, "docs/evidence/index.html"), "utf8");
@@ -147,9 +150,13 @@ export function renderPublic({ root = ROOT, check = false } = {}) {
   output["docs/momm/data/dispositions.csv"] = csv([decisionKeys, ...data.dispositions.map(d => decisionKeys.map(k => d[k]))]);
   output["docs/momm/data/findings-by-severity.csv"] = csv([["severity", "findings"], ...Object.entries(s.severity)]);
   output["docs/momm/data/runs-per-day.csv"] = csv([["day", "runs"], ...Object.entries(s.by_day).sort()]);
-  output["docs/momm/data/input-size-vs-time.csv"] = csv([["input_kb", "routes_dispatched", "routes_timed_out", "slowest_completed_seconds"], ...Object.values(data.reports).map(r => r.report).filter(r => r.input_bytes).map(r => [+(r.input_bytes / 1024).toFixed(1), r.reviewers.filter(p => p.status !== "self_excluded").length, r.reviewers.filter(p => p.status === "timeout").length, +(Math.max(0, ...r.reviewers.filter(p => p.status === "success").map(p => p.duration_ms || 0)) / 1000).toFixed(1)])]);
+  output["docs/momm/data/input-size-vs-time.csv"] = csv([["input_kb", "routes_dispatched", "routes_timed_out", "slowest_completed_seconds"], ...Object.values(data.reports).map(r => r.report).filter(r => r.input_bytes).map(r => {
+    const peers = r.reviewers || [];
+    return [+(r.input_bytes / 1024).toFixed(1), peers.filter(p => p.status !== "self_excluded").length, peers.filter(p => p.status === "timeout").length, +(Math.max(0, ...peers.filter(p => p.status === "success").map(p => p.duration_ms || 0)) / 1000).toFixed(1)];
+  })]);
   const downloads = [["routes.csv", "Route completion/timing from stored reports; all single-route decision counts and governor acceptance"], ["routes.md", "The same route table as Markdown"], ["decisions-by-attribution.csv", "Every decision bucket, including coalition/multiple attribution"], ["public-stats.json", "The generated page statistics and explicit denominators"], ["runs.csv", "Run ID, timestamp, governor, input size, finding counts and subject"], ["dispositions.csv", "Recorded decisions and reasons"], ["findings-by-severity.csv", "Findings in stored reports, grouped by severity"], ["runs-per-day.csv", "Recorded runs by date"], ["input-size-vs-time.csv", "Stored-report input sizes, dispatched routes, timeouts and successful durations"]];
   output["docs/momm/data/index.html"] = shell("evidence.html", "Evidence downloads", `${hero("PUBLIC DATA CATALOGUE", "The numbers,<br><span>in reusable form.</span>", "Generated from the same committed public snapshot as the information pages. Read the cohort definitions before comparing columns.")}<div class="doc-body wide"><p>Snapshot: ${esc(s.generated)}. This is project development evidence, not measured accuracy.</p><div class="table-wrap"><table><thead><tr><th>Download</th><th>Contents</th></tr></thead><tbody>${downloads.map(([f, d]) => `<tr><td><a href="${f}">${f}</a></td><td>${d}</td></tr>`).join("")}</tbody></table></div><p><a href="../evidence.html">Read the evidence definitions →</a></p></div>`, version).replace('href="site.css"', 'href="../site.css"').replace('src="site.js"', 'src="../site.js"').replace(/href="(index|start|updates|evidence|reference)\.html"/g, 'href="../$1.html"');
+  output["docs/momm/data/index.html"] = output["docs/momm/data/index.html"].replace('href="releases/index.html"', 'href="../releases/index.html"');
   const stale = [];
   for (const [file, text] of Object.entries(output)) {
     const dest = path.join(root, file);

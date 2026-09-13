@@ -44,6 +44,10 @@ intentionally fails. No history is silently rewritten by the tool.
 
 All file references are `{ "path": "project-relative/path", "sha256": "64 lowercase hex characters" }`.
 Use forward slashes. Files must be bounded local regular files (at most 8 MB each).
+Append-only run and decision logs are read in bounded chunks instead of sharing
+that whole-file limit. Each JSONL record and the selected run's records remain
+limited to 8,000,000 bytes; malformed records anywhere still fail validation.
+The entire log is hashed and rechecked, including unrelated records.
 Absolute paths, traversal and symbolic links/junctions are refused. Hash exact
 bytes, not reconstructed JSON. Save source snapshots, outputs, observations and
 decisions in the private evidence directory. Never publish them by default.

@@ -4,7 +4,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../docs");
+const root = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../docs"));
 const port = Number(process.argv[2] || 8842);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Choose a local port from 1024 to 65535");
 const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".mp4": "video/mp4", ".vtt": "text/vtt" };

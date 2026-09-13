@@ -166,6 +166,10 @@ function detectInstallation(agent, env = process.env, platform = process.platfor
         if (!fs.statSync(candidate).isFile()) continue;
         if (platform !== 'win32') { try { fs.accessSync(candidate, fs.constants.X_OK); } catch { continue; } }
         const resolved = fs.realpathSync(candidate);
+        // Executable magic is not installation ownership: these managers ship
+        // native shims too. Let their own updater maintain the selected install.
+        const managedPath = /\/(?:\.volta|scoop|chocolatey|\.asdf|\.local\/share\/mise)\//i;
+        if ([candidate,resolved].some(p=>managedPath.test(p.replaceAll('\\','/')))) return {kind:'unknown',path:candidate,note:'Package-manager installation; update through its package manager.'};
         const packageName = npmPackages[agent];
         if (packageName) {
           const marker = `/node_modules/${packageName}/`;

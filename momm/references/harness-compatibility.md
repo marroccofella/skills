@@ -2,6 +2,10 @@
 
 Use one canonical skill directory. Link or install that directory with the harness's documented mechanism; never copy credentials.
 
+Version numbers in the table and historical adapter notes record earlier checks,
+not the latest available packages or this user's current installation. Use the
+Setup Center's explicit version check for current installed/published versions.
+
 | Harness | Discovery/invocation | Status |
 | --- | --- | --- |
 | Codex desktop, CLI, IDE | User skills under `~/.agents/skills`; invoke as `$momm` | Standards-compliant core supported |
@@ -30,6 +34,14 @@ uses `--verbatim --no-subagents` without removing plan mode. Copilot 1.0.83 uses
 flags fail closed; flag availability is not a completed-review or liveness test.
 The September 12 release gate did not reach quorum: Claude/Grok timed out and
 Copilot reported an exhausted monthly quota. Do not represent that attempt as a pass.
+
+September 13 candidate checks used Claude 2.1.270 and Antigravity 1.2.2 for real
+source reviews; some Claude replies still failed strict quoted-scope validation.
+Grok 1.0.30 was detected, but readiness is not a completed review. Copilot 1.0.80
+below describes the original adapter; 1.0.83 above describes the later flag check.
+For Grok, the current candidate uses final JSON plus explicit tool deny rules and
+a bounded four-turn budget; the historical JSON-schema flag and first-login note
+below are not the current adapter contract.
 
 - Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.
 - Gemini reviewer: enabled when Gemini is not the governor; run headlessly in plan mode. CLI 0.55.1 is installed, but individual/Pro/Ultra access was retired (reported as `ineligible_tier`); Standard or Enterprise Gemini Code Assist organization licenses remain supported, and for consumer accounts Antigravity is the successor route.
