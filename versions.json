@@ -1,8 +1,19 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.15.0",
+  "momm": "1.15.1",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.15.1",
+      "tag": "momm-1.15.1",
+      "changes": [
+        "Fix signed updater staging discovery: gitsign needs a normal .git directory, with candidate files still unexecuted before verification.",
+        "Add a genuine signed-tag preview/apply gate before stable tag publication; retain all signature, hash and explicit consent checks.",
+        "Document 1.15.0 updater bootstrap and preserve the immutable original release."
+      ],
+      "sha256": "5a356aa1f001b116d8ac427f8ce5cfb4bd5df6db9e8f1ec6c6290bdb0fed9aa0",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
+    },
     {
       "version": "1.15.0",
       "tag": "momm-1.15.0",
