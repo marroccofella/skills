@@ -26,6 +26,13 @@ Reading: quorum coverage tripled, wall clock was slower. The scheduler ran at mo
 - Adaptive per-route timeouts from ledger seconds-per-KB: pieces scale with the existing size-based timeout; the E2 buckets exist so the next release can learn from them.
 - `--split auto` stays opt-in until five live runs over 100 KB beat the manual baseline and the coverage fixture shows at most 10 % loss.
 
-## Verification record
+## Verification record (candidate, 2026-09-13)
 
-To be filled by the release gate: local suites, OS matrix CI, momm review of the release diff with quorum on every piece, privacy scan, signed tag.
+- Local suites: 15 test files plus 5 self-tests, all green after fixes (`usage`, `guidance`, `split`, `scheduler`, `update-clock`, `probes` added to both CI workflows; OS matrix CI not yet run — the branch is unpushed).
+- Release gate: run `rev_20260913143455_cx2r`, the 337 KB code diff of this branch reviewed through the new `--split 12 --jobs 6` by Codex, Grok and Antigravity; 24 pieces, quorum 2 met on all 24, 49.6 min; 66 findings (3 CRITICAL, 58 WARNING, 5 NITPICK) and 157 suggestions. Rulings: 45 applied with a failing test first, 5 applied with modification, 11 rejected (chunk artefacts or not reproduced), 5 nitpicks deferred, all suggestions carried forward. Reviewer ratings recorded with `ledger.mjs --rate`.
+- Governor-direct scope: 7 hunks larger than the ceiling (whole new files) were reviewed whole as their own artifacts (runs `rev_20260913144450_tkrr`, `_144544_g83d`, `_144715_1e05`, `_145221_8nez`, `_145408_oxfr`, `_145943_7tl5`, `_150604_byvj`); 56 findings including 4 CRITICALs (probes held-by-prompt-echo and launcher verdict; guidance cross-file trust and untrusted-file crash; update-clock lock crash), 41 applied, 8 applied with modification, 1 rejected, nitpicks deferred. Two runs that missed quorum on timeouts were re-run against the fixed code with a 600 s budget.
+- Still owed before release: OS matrix CI on the pushed branch, privacy scan, signed tag via the release workflow, public evidence refresh, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
+
+## Suggestions carried forward
+
+157 gate suggestions and 52 direct-review suggestions are recorded as `deferred` rows in the private ledger against their run ids. Themes worth scheduling for 1.16.1: per-route caps learned from the ledger and a higher `--jobs` ceiling when three or more routes run; `--early-exit` once in-flight cancellation exists in `runProcess`; synthetic-diff hunk counts in the probe fixture; CRLF normalisation for JSON guidance; `Object.create(null)` maps in the guidance resolver; sidecar directory mode 0o700.
