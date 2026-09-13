@@ -16,7 +16,9 @@ Status: candidate on branch `release/momm-1.16.0`, built 2026-09-13 from the 1.1
 | Artifact | Method | Wall clock | Quorum |
 |---|---|---|---|
 | 135 KB 1.15 gate diff, 3 routes | manual lanes, 15 hand-cut pieces (2026-09-13 00:41) | ~26 min | 5 of 15 pieces |
-| Same diff, `--split 12 --jobs 6` | one command | _pending_ | _pending_ |
+| Same diff, `--split 12 --jobs 6` (run rev_20260913134425_f4kn) | one command, 15 pieces, 42 route reviews | 36.6 min | 15 of 15 pieces |
+
+Reading: quorum coverage tripled, wall clock was slower. The scheduler ran at most six reviewer processes (the hard cap) where the hand-cut lanes ran nine, and Codex needs about 100 s per 12 KB piece, so throughput is bounded by concurrency, not by splitting. Per route: Codex 14 of 15 pieces, Antigravity 14 of 15, Grok 9 of 15 (six exact-quote rejections). Usage was recorded for Codex (149 K tokens across 14 pieces) and Grok (578 K across 9); Antigravity reports none. Tuning for the next candidate: allow `--jobs` up to 9 when three or more routes are active, and let per-route caps come from the ledger.
 
 ## Deferred from the plan, on purpose
 
