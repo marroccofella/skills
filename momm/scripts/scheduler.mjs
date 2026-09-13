@@ -5,10 +5,16 @@
 export const HARD_JOB_CAP = 6;
 export const DEFAULT_ROUTE_CAPS = Object.freeze({ antigravity: 2, grok: 2 });
 
-function clampJobs(jobs, perRoute) {
-  const fallback = Object.keys(perRoute).length || HARD_JOB_CAP;
-  const n = Number.isFinite(Number(jobs)) && Number(jobs) > 0 ? Math.floor(Number(jobs)) : fallback;
-  return Math.min(Math.max(n, 1), HARD_JOB_CAP);
+// jobs: omitted (undefined/null) means HARD_JOB_CAP — perRoute entries are
+// per-route ceilings and never lower the global cap. Any value that is given
+// must be a positive number; it is floored and capped at HARD_JOB_CAP. Zero,
+// negatives and non-numbers throw: "no concurrency" must never silently
+// become "maximum concurrency".
+function clampJobs(jobs) {
+  if (jobs === undefined || jobs === null) return HARD_JOB_CAP;
+  const n = typeof jobs === "number" ? jobs : NaN;
+  if (!Number.isFinite(n) || n <= 0) throw new RangeError(`createScheduler: jobs must be a positive number (1-${HARD_JOB_CAP}); got ${String(jobs)}`);
+  return Math.min(Math.max(Math.floor(n), 1), HARD_JOB_CAP);
 }
 
 // schedule(route, pieceId, fn): fn receives { pieceId, route, onCancel(cb),
@@ -17,9 +23,13 @@ function clampJobs(jobs, perRoute) {
 // FIFO within a route and across routes in arrival order (skipping routes at
 // their cap). cancel(pieceId) rejects a queued task with { cancelled: true }
 // or, for a running task, calls the onCancel callbacks it registered; the
-// task then settles itself and is counted as cancelled rather than done.
+// task then settles itself and is counted as cancelled rather than done. A
+// callback registered AFTER cancel() (fn runs in a later microtask than
+// schedule(), so an immediate cancel beats its registration) is invoked at
+// once with the recorded reason, so such a task still settles and drain()
+// still completes.
 export function createScheduler({ jobs, perRoute = {}, now = Date.now } = {}) {
-  const maxJobs = clampJobs(jobs, perRoute);
+  const maxJobs = clampJobs(jobs);
   const capFor = (route) => {
     const cap = perRoute[route] ?? DEFAULT_ROUTE_CAPS[route] ?? maxJobs;
     return Math.min(Math.max(Math.floor(Number(cap)) || 1, 1), maxJobs);
@@ -59,7 +69,11 @@ export function createScheduler({ jobs, perRoute = {}, now = Date.now } = {}) {
       pieceId: task.pieceId,
       route: task.route,
       get cancelled() { return task.cancelled; },
-      onCancel(cb) { if (typeof cb === "function") task.onCancel.push(cb); },
+      onCancel(cb) {
+        if (typeof cb !== "function") return;
+        if (task.cancelled) { try { cb(task.cancelReason); } catch {} } // cancelled before registration: fire now
+        else task.onCancel.push(cb);
+      },
     };
     Promise.resolve()
       .then(() => task.fn(ctx))
@@ -99,7 +113,7 @@ export function createScheduler({ jobs, perRoute = {}, now = Date.now } = {}) {
       }
       const task = running.get(pieceId);
       if (!task) return false;
-      if (!task.cancelled) { task.cancelled = true; for (const cb of task.onCancel) { try { cb(reason); } catch {} } }
+      if (!task.cancelled) { task.cancelled = true; task.cancelReason = reason; for (const cb of task.onCancel) { try { cb(reason); } catch {} } }
       return true;
     },
     stats() {
@@ -130,16 +144,19 @@ export const EARLY_EXIT_REASONS = Object.freeze({
   noQuorum: "quorum not met",
   producedOutput: "route has produced output",
   withinMedian: "route silent but within its median first-output time",
+  noHistory: "no timing history",
 });
 
 // Cancel only when quorum is met, the route has sent nothing, it is past its
 // median first-output time, and its track record has not set the
-// no-early-exit bit.
+// no-early-exit bit. Without a measured median (null/undefined/non-finite)
+// there is no threshold to be past, so the route is never cancelled.
 export function earlyExitDecision({ quorumMet, route, bytesReceived, elapsedMs, medianFirstOutputMs, noEarlyExitRoutes }) {
   const protectedRoutes = noEarlyExitRoutes instanceof Set ? noEarlyExitRoutes : new Set(Array.isArray(noEarlyExitRoutes) ? noEarlyExitRoutes : []);
   if (protectedRoutes.has(route)) return { cancel: false, reason: EARLY_EXIT_REASONS.protectedRoute };
   if (!quorumMet) return { cancel: false, reason: EARLY_EXIT_REASONS.noQuorum };
   if (Number(bytesReceived) !== 0) return { cancel: false, reason: EARLY_EXIT_REASONS.producedOutput };
-  if (!(Number(elapsedMs) > Number(medianFirstOutputMs))) return { cancel: false, reason: EARLY_EXIT_REASONS.withinMedian };
+  if (typeof medianFirstOutputMs !== "number" || !Number.isFinite(medianFirstOutputMs)) return { cancel: false, reason: EARLY_EXIT_REASONS.noHistory };
+  if (!(Number(elapsedMs) > medianFirstOutputMs)) return { cancel: false, reason: EARLY_EXIT_REASONS.withinMedian };
   return { cancel: true, reason: EARLY_EXIT_REASONS.cancel };
 }

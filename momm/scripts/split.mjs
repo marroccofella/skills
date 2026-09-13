@@ -44,17 +44,42 @@ function stripEol(line) {
   return line.replace(/\r?\n$/, "");
 }
 
+// Git C-quotes a path that contains a tab, newline, quote, backslash, control
+// or (by default) non-ASCII byte: +++ "b/dir/a\tb.txt", "caf\303\251.js".
+// Octal escapes are UTF-8 BYTES, so the whole path is decoded to bytes first.
+const SIMPLE_ESCAPES = { t: 9, n: 10, r: 13, a: 7, b: 8, f: 12, v: 11, "\\": 92, '"': 34 };
+const QUOTED = /^"(?:[^"\\]|\\.)*"$/;
+function unquoteGitPath(quoted) {
+  const bytes = [];
+  for (const m of quoted.slice(1, -1).matchAll(/\\([0-7]{1,3})|\\(.)|([^\\]+)|(\\)$/g)) {
+    if (m[1] !== undefined) bytes.push(parseInt(m[1], 8) & 0xff);
+    else if (m[2] !== undefined) bytes.push(...(m[2] in SIMPLE_ESCAPES ? [SIMPLE_ESCAPES[m[2]]] : [92, ...Buffer.from(m[2], "utf8")]));
+    else if (m[3] !== undefined) bytes.push(...Buffer.from(m[3], "utf8"));
+    else bytes.push(92);
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+// Decode a header path: unquote if quoted (an unquoted path may instead carry
+// a "\t<timestamp>" suffix, which is dropped), then strip the a/ or b/ prefix.
+function decodeGitPath(raw, prefix) {
+  const value = QUOTED.test(raw) ? unquoteGitPath(raw) : raw.replace(/\t.*$/, "");
+  return prefix && value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
+
 function pathOf(headerLines) {
   const plain = headerLines.map(stripEol);
   for (const line of plain) {
-    if (line.startsWith("+++ ") && !line.startsWith("+++ /dev/null")) return line.slice(4).replace(/^b\//, "").replace(/\t.*$/, "");
+    if (line.startsWith("+++ ") && !line.startsWith("+++ /dev/null")) return decodeGitPath(line.slice(4), "b/");
   }
-  for (const line of plain) if (line.startsWith("rename to ")) return line.slice("rename to ".length);
+  for (const line of plain) if (line.startsWith("rename to ")) return decodeGitPath(line.slice("rename to ".length), null);
   for (const line of plain) {
-    if (line.startsWith("--- ") && !line.startsWith("--- /dev/null")) return line.slice(4).replace(/^a\//, "").replace(/\t.*$/, "");
+    if (line.startsWith("--- ") && !line.startsWith("--- /dev/null")) return decodeGitPath(line.slice(4), "a/");
   }
-  const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(plain[0] || "");
-  return match ? match[2] : (plain[0] || "").replace(/^diff --git /, "");
+  const first = plain[0] || "";
+  const quoted = /^diff --git ("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")$/.exec(first);
+  if (quoted) return decodeGitPath(quoted[2], "b/");
+  const match = /^diff --git a\/(.+?) b\/(.+)$/.exec(first);
+  return match ? match[2] : first.replace(/^diff --git /, "");
 }
 
 export function parseUnifiedDiff(text) {
@@ -65,6 +90,7 @@ export function parseUnifiedDiff(text) {
   const closeHunk = () => {
     if (!hunk) return;
     hunk.bytes = byteLength(hunk.header) + byteLength(hunk.body);
+    hunk.seq = file.hunks.length; // position in the file's original hunk order
     file.hunks.push(hunk);
     hunk = null;
   };
@@ -88,7 +114,7 @@ export function parseUnifiedDiff(text) {
     if (!file) continue; // preamble before the first file
     if (line.startsWith("@@ ")) {
       closeHunk();
-      hunk = { header: line, body: "", bytes: 0 };
+      hunk = { header: line, body: "", bytes: 0, seq: 0 };
       continue;
     }
     if (hunk) {
@@ -107,31 +133,34 @@ function padId(prefix, index, total) {
 }
 
 // Splits one over-ceiling file at hunk boundaries. Returns { chunks, oversize }
-// where each chunk/oversize text starts with the file header.
+// where each chunk/oversize text starts with the file header. Every chunk
+// records hunkSeqs (path -> original hunk positions) and every oversize entry
+// its hunkSeq, so reassemble() can restore the file's original hunk order.
 function splitFile(file, ceiling) {
   const chunks = [];
   const oversize = [];
   const headerBytes = byteLength(file.header);
   if (!file.hunks.length) {
-    oversize.push({ path: file.path, hunkHeader: null, bytes: file.bytes, text: file.text });
+    oversize.push({ path: file.path, hunkHeader: null, hunkSeq: null, bytes: file.bytes, text: file.text });
     return { chunks, oversize };
   }
   let current = null;
   const flush = () => {
-    if (current) chunks.push({ files: [file.path], text: file.header + current.text, bytes: headerBytes + current.bytes, order: file.order, seq: chunks.length });
+    if (current) chunks.push({ files: [file.path], text: file.header + current.text, bytes: headerBytes + current.bytes, order: file.order, seq: chunks.length, hunkSeqs: { [file.path]: current.seqs } });
     current = null;
   };
   for (const hunk of file.hunks) {
     if (headerBytes + hunk.bytes > ceiling) {
       // Sibling hunks either side of an oversize hunk keep sharing a chunk:
       // hunks stay in ascending line order, so the chunk is still a valid diff.
-      oversize.push({ path: file.path, hunkHeader: stripEol(hunk.header), bytes: headerBytes + hunk.bytes, text: file.header + hunk.header + hunk.body });
+      oversize.push({ path: file.path, hunkHeader: stripEol(hunk.header), hunkSeq: hunk.seq, bytes: headerBytes + hunk.bytes, text: file.header + hunk.header + hunk.body });
       continue;
     }
     if (current && current.bytes + hunk.bytes + headerBytes > ceiling) flush();
-    if (!current) current = { text: "", bytes: 0 };
+    if (!current) current = { text: "", bytes: 0, seqs: [] };
     current.text += hunk.header + hunk.body;
     current.bytes += hunk.bytes;
+    current.seqs.push(hunk.seq);
   }
   flush();
   return { chunks, oversize };
@@ -169,7 +198,7 @@ function packUnits(units, ceiling) {
   }
   return merged.map((bin) => {
     const ordered = bin.units.sort((a, b) => a.order - b.order);
-    return { files: ordered.map((u) => u.path), text: ordered.map((u) => u.text).join(""), bytes: bin.bytes, order: ordered[0].order, seq: 0 };
+    return { files: ordered.map((u) => u.path), text: ordered.map((u) => u.text).join(""), bytes: bin.bytes, order: ordered[0].order, seq: 0, hunkSeqs: Object.fromEntries(ordered.map((u) => [u.path, u.hunks.map((h) => h.seq)])) };
   });
 }
 
@@ -196,8 +225,8 @@ export function splitDiff(text, { ceilingBytes, minCeilingBytes = 4096 } = {}) {
   rawPieces.push(...packUnits(units, ceiling));
   rawPieces.sort((a, b) => a.order - b.order || a.seq - b.seq);
   oversize.sort((a, b) => a.order - b.order);
-  const pieces = rawPieces.map((p, i) => ({ id: padId("piece", i + 1, rawPieces.length), files: p.files, text: p.text, bytes: p.bytes, oversize: false }));
-  const oversizeOut = oversize.map((o, i) => ({ id: padId("oversize", i + 1, oversize.length), path: o.path, hunkHeader: o.hunkHeader, bytes: o.bytes, text: o.text }));
+  const pieces = rawPieces.map((p, i) => ({ id: padId("piece", i + 1, rawPieces.length), files: p.files, text: p.text, bytes: p.bytes, oversize: false, hunkSeqs: p.hunkSeqs }));
+  const oversizeOut = oversize.map((o, i) => ({ id: padId("oversize", i + 1, oversize.length), path: o.path, hunkHeader: o.hunkHeader, hunkSeq: o.hunkSeq, bytes: o.bytes, text: o.text }));
   const hunks = files.reduce((n, f) => n + f.hunks.length, 0);
   return {
     pieces,
@@ -212,29 +241,37 @@ function oldStart(hunkHeader) {
 }
 
 // Rebuilds { files: [{ path, header, binary, hunks }] } from pieces and
-// oversize entries. Hunks of a file are ordered by their old-side start line,
-// which is the order git emits them, so a file whose hunks were scattered
-// across pieces and oversize entries comes back in its original order.
+// oversize entries. Hunks of a file are ordered by the original position
+// splitDiff recorded at parse time (piece.hunkSeqs / oversize.hunkSeq), so a
+// file whose hunks were scattered across pieces and oversize entries comes
+// back in its original order even when old-side start lines tie. Parts built
+// without that bookkeeping fall back to old-start line, then arrival order.
 export function reassemble(pieces = [], oversize = []) {
   const byPath = new Map();
+  let arrival = 0;
   for (const part of [...pieces, ...oversize]) {
     for (const file of parseUnifiedDiff(part.text)) {
       if (!byPath.has(file.path)) byPath.set(file.path, { path: file.path, header: file.header, binary: file.binary, hunks: [] });
       const entry = byPath.get(file.path);
-      entry.hunks.push(...file.hunks.map((h, i) => ({ header: h.header, body: h.body, bytes: h.bytes, seq: i })));
+      const seqs = Array.isArray(part.hunkSeqs?.[file.path]) ? part.hunkSeqs[file.path] : Number.isInteger(part.hunkSeq) ? [part.hunkSeq] : [];
+      file.hunks.forEach((h, i) => entry.hunks.push({ header: h.header, body: h.body, bytes: h.bytes, seq: Number.isInteger(seqs[i]) ? seqs[i] : null, arrival: arrival++ }));
     }
   }
   for (const entry of byPath.values()) {
-    entry.hunks.sort((a, b) => oldStart(a.header) - oldStart(b.header));
-    entry.hunks.forEach((h) => delete h.seq);
+    const known = entry.hunks.every((h) => h.seq !== null);
+    entry.hunks.sort((a, b) => (known ? a.seq - b.seq : oldStart(a.header) - oldStart(b.header)) || a.arrival - b.arrival);
+    entry.hunks = entry.hunks.map(({ header, body, bytes }) => ({ header, body, bytes }));
   }
   return { files: [...byPath.values()] };
 }
 
 // True when a candidate quote is made solely of diff header lines — the only
 // text the splitter duplicates across pieces — so the parent merge can refuse
-// to treat it as corroboration.
+// to treat it as corroboration. Lines are classified by their RAW start: in a
+// diff a leading space is the context marker, so " index abc" is file content
+// that happens to resemble a header, and an indented "+++ b/x" is not a header
+// either. Only empty lines are ignored.
 export function headerOnlyQuote(text) {
-  const lines = String(text ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = String(text ?? "").split(/\r?\n/).filter((l) => l !== "");
   return lines.length > 0 && lines.every((l) => HEADER_LINE.test(l));
 }

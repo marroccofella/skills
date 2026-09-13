@@ -35,12 +35,16 @@ export function stripAnsi(text) {
   return String(text ?? "").replace(ANSI_SEQUENCES, "");
 }
 
-// Non-negative finite number, or null. Accepts "7,200"-style strings.
+// Non-negative finite NUMBER, or null. Arrays, strings, booleans and objects
+// are shapes we do not understand, so they are "not reported", never 0
+// (Number([]) is 0, Number(["5"]) is 5 — coercion would invent counts).
 function num(value) {
-  if (typeof value === "string") value = value.trim().replace(/[,_]/g, "");
-  if (value === "" || value === null || value === undefined || typeof value === "boolean") return null;
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+// Plain-text captures such as codex's "tokens used\n7,200" are parsed here.
+function numFromText(text) {
+  const s = String(text ?? "").trim().replace(/[,_]/g, "");
+  return s !== "" ? num(Number(s)) : null;
 }
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const firstKey = (o) => (isObject(o) && Object.keys(o).length ? Object.keys(o)[0] : null);
@@ -49,6 +53,7 @@ const pick = (obj, names) => { for (const k of names) { const v = num(obj?.[k]);
 // Last balanced top-level JSON object in text (string-aware). Non-JSON around
 // it is ignored; an unbalanced tail returns null rather than an earlier guess.
 export function lastJsonObject(text) {
+  text = typeof text === "string" ? text : String(text ?? "");
   let start = -1, depth = 0, inString = false, escaped = false, last = null;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -113,9 +118,12 @@ const ROUTES = {
   grok(text) {
     const o = lastJsonObject(text), u = o?.usage;
     if (!isObject(u)) return null;
+    // Observed Grok envelopes carry Anthropic-style cache_read_input_tokens /
+    // cache_creation_input_tokens (references/plan-1.16.0.md); an OpenAI-style
+    // prompt_tokens_details.cached_tokens is accepted when those are absent.
     const cacheRead = num(u.cache_read_input_tokens), cacheCreate = num(u.cache_creation_input_tokens);
-    return report({ input: num(u.input_tokens), output: num(u.output_tokens), reasoning: num(u.reasoning_tokens),
-      cached: cacheRead === null && cacheCreate === null ? null : (cacheRead ?? 0) + (cacheCreate ?? 0),
+    const cached = cacheRead === null && cacheCreate === null ? num(u.prompt_tokens_details?.cached_tokens) : (cacheRead ?? 0) + (cacheCreate ?? 0);
+    return report({ input: num(u.input_tokens), output: num(u.output_tokens), reasoning: num(u.reasoning_tokens), cached,
       total: num(u.total_tokens), cost: num(o.total_cost_usd ?? u.total_cost_usd), model: firstKey(o.modelUsage) ?? (typeof o.model === "string" ? o.model : null) });
   },
   codex(text) {
@@ -129,18 +137,18 @@ const ROUTES = {
     }
     // plain exec: "tokens used\n7,200" | "tokens used: 7200" | "tokens used 7200"
     const plain = [...text.matchAll(/tokens used[:\s]*\r?\n?\s*([\d][\d,_]*)/gi)].pop();
-    const total = plain ? num(plain[1]) : null;
+    const total = plain ? numFromText(plain[1]) : null;
     return total === null ? null : report({ total, model, cli_version });
   },
   antigravity() { return null; }, // envelope has duration_seconds/num_turns, no token fields
   copilot(text) {
-    const objects = jsonLines(text);
-    if (!objects.length) { const o = lastJsonObject(text); if (o) objects.push(o); }
-    for (const o of objects.reverse()) {
-      const t = findUsage(o);
-      if (t && (t.input !== null || t.output !== null)) return report({ ...t, model: typeof o.model === "string" ? o.model : null });
-    }
-    return null;
+    const withCounts = (o) => { const t = findUsage(o); return t && (t.input !== null || t.output !== null) ? report({ ...t, model: typeof o.model === "string" ? o.model : null }) : null; };
+    for (const o of jsonLines(text).reverse()) { const r = withCounts(o); if (r) return r; }
+    // Multi-line envelope: a child object sitting on its own line parses as a
+    // JSONL candidate without counters, so the enclosing envelope is always
+    // tried when no line-based candidate carried usage.
+    const envelope = lastJsonObject(text);
+    return envelope ? withCounts(envelope) : null;
   },
   gemini(text) {
     const s = lastJsonObject(text)?.stats;
@@ -193,18 +201,28 @@ export function rollupUsage(rows) {
       if (!rep || r.coverage?.tokens === false) return null;
       const t = num(rep.total_tokens); if (t !== null) return t;
       const i = num(rep.input_tokens), o = num(rep.output_tokens);
-      return i !== null && o !== null ? i + o : null;
+      if (i === null || o === null) return null;
+      // Reconstruct only from buckets the row's field_map says are disjoint:
+      // reasoning reported outside output_tokens, cached outside input_tokens.
+      // Unknown semantics (null field_map) add nothing rather than double count.
+      const fm = isObject(r.field_map) ? r.field_map : {};
+      const reasoning = fm.reasoning_in_output === false ? num(rep.reasoning_tokens) ?? 0 : 0;
+      const cached = fm.cache_in_input === false ? num(rep.cached_tokens) ?? 0 : 0;
+      return i + o + reasoning + cached;
     }).filter((t) => t !== null);
-    const costs = set.map((r) => num(isObject(r.reported) ? r.reported.cost_usd : null) ?? num(r.cost)).filter((c) => c !== null);
-    const accepted = set.reduce((a, r) => a + (num(r.accepted_findings) ?? 0), 0);
-    const totalCost = costs.length ? round6(costs.reduce((a, c) => a + c, 0)) : null;
+    // Cost and the findings it bought are taken from the SAME rows: a review
+    // whose cost is unknown contributes neither to the numerator nor to the
+    // denominator, so the ratio describes the observed sample, not a mix.
+    const costed = set.map((r) => ({ cost: num(isObject(r.reported) ? r.reported.cost_usd : null) ?? num(r.cost), accepted: num(r.accepted_findings) ?? 0 })).filter((x) => x.cost !== null);
+    const acceptedCosted = costed.reduce((a, x) => a + x.accepted, 0);
+    const totalCost = costed.length ? round6(costed.reduce((a, x) => a + x.cost, 0)) : null;
     const ratio = (k) => (n ? round6(k / n) : 0);
     return {
-      agent, reviews: n, tokens_reported: totals.length, cost_reported: costs.length,
-      coverage: { tokens: `${totals.length} of ${n}`, cost: `${costs.length} of ${n}`, tokens_ratio: ratio(totals.length), cost_ratio: ratio(costs.length) },
+      agent, reviews: n, tokens_reported: totals.length, cost_reported: costed.length,
+      coverage: { tokens: `${totals.length} of ${n}`, cost: `${costed.length} of ${n}`, tokens_ratio: ratio(totals.length), cost_ratio: ratio(costed.length) },
       median_total_tokens: median(totals),
       total_cost_usd: totalCost,
-      cost_per_accepted_finding: totalCost === null ? null : accepted === 0 ? "no accepted findings" : round6(totalCost / accepted),
+      cost_per_accepted_finding: totalCost === null ? null : acceptedCosted === 0 ? "no accepted findings" : round6(totalCost / acceptedCosted),
     };
   });
 }

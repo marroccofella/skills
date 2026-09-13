@@ -50,10 +50,17 @@ await test("caps: never more than jobs running, never more than per-route cap; F
   assert.equal(scheduler.stats().queued, 9);
   // arrival order across routes: antigravity-0, antigravity-1 (cap 2), then grok-0
   assert.deepEqual(log.map((l) => l.id), ["antigravity-0", "antigravity-1", "grok-0"]);
-  // release tasks one at a time in scheduling order, checking caps after each
-  for (const task of tasks) {
+  // release RUNNING tasks one at a time in start order, checking caps after
+  // each; a deferred is never fulfilled while its task is still queued, so a
+  // scheduler that over-starts on completion would be caught by assertCaps.
+  const released = new Set();
+  while (released.size < tasks.length) {
+    const next = log.find((l) => !released.has(l.id));
+    assert.ok(next, `nothing running with ${tasks.length - released.size} tasks left`);
+    assert.ok(scheduler.stats().running >= 1);
+    released.add(next.id);
     clock += 10;
-    task.d.resolve(`ok ${task.id}`);
+    tasks.find((t) => t.id === next.id).d.resolve(`ok ${next.id}`);
     await tick();
     assertCaps(scheduler, 3);
   }
@@ -72,9 +79,40 @@ await test("caps: never more than jobs running, never more than per-route cap; F
 
 await test("hard cap 6 and default jobs", () => {
   assert.equal(createScheduler({ jobs: 50 }).jobs, HARD_JOB_CAP);
-  assert.equal(createScheduler({ jobs: 0 }).jobs, HARD_JOB_CAP);
-  assert.equal(createScheduler({ perRoute: { a: 1, b: 1, c: 1 } }).jobs, 3);
   assert.equal(createScheduler({ jobs: 2, perRoute: { gemini: 9 } }).capFor("gemini"), 2);
+  assert.equal(createScheduler({ jobs: 2.9 }).jobs, 2);
+  // omitted jobs -> the hard cap, whatever perRoute says; route caps stay their own
+  assert.equal(createScheduler().jobs, HARD_JOB_CAP);
+  assert.equal(createScheduler({ perRoute: { a: 1, b: 1, c: 1 } }).jobs, HARD_JOB_CAP);
+  const custom = createScheduler({ perRoute: { custom: 4 } });
+  assert.equal(custom.jobs, HARD_JOB_CAP);
+  assert.equal(custom.capFor("custom"), 4);
+  assert.equal(createScheduler({ jobs: undefined }).jobs, HARD_JOB_CAP);
+  assert.equal(createScheduler({ jobs: null }).jobs, HARD_JOB_CAP);
+});
+
+await test("jobs: zero, negative or non-numeric is an error, never max parallelism", () => {
+  for (const jobs of [0, -1, "abc", NaN, Infinity, "0", true]) assert.throws(() => createScheduler({ jobs }), /jobs must be a positive number/, `jobs=${String(jobs)}`);
+});
+
+await test("cancel: a task cancelled before its onCancel registration still gets the hook and settles", async () => {
+  const scheduler = createScheduler({ jobs: 1 });
+  const log = [];
+  const t = fakeTask(log, "grok", "g0");
+  let seenCancelledAtStart = null;
+  const p = scheduler.schedule("grok", "g0", (ctx) => { seenCancelledAtStart = ctx.cancelled; return t.fn(ctx); });
+  assert.equal(scheduler.cancel("g0", "immediate"), true); // synchronously, before fn has run
+  const hung = Symbol("hung");
+  const result = await Promise.race([p, new Promise((r) => setTimeout(() => r(hung), 300))]);
+  assert.notEqual(result, hung, "task never settled after cancel-before-registration");
+  assert.deepEqual(result, { id: "g0", aborted: "immediate" });
+  assert.equal(seenCancelledAtStart, true);
+  const drained = await Promise.race([scheduler.drain().then(() => "drained"), new Promise((r) => setTimeout(() => r(hung), 300))]);
+  assert.equal(drained, "drained");
+  const s = scheduler.stats();
+  assert.deepEqual({ done: s.done, cancelled: s.cancelled, running: s.running }, { done: 0, cancelled: 1, running: 0 });
+  // a second cancel on a settled or unknown piece is a no-op
+  assert.equal(scheduler.cancel("g0"), false);
 });
 
 await test("cancel: queued task rejects with { cancelled: true } and never starts", async () => {
@@ -157,6 +195,11 @@ await test("earlyExitDecision: truth table", () => {
   // protection wins even when everything else says cancel; array form accepted; missing set means unprotected
   assert.equal(earlyExitDecision({ ...base, quorumMet: true, route: "gemini", noEarlyExitRoutes: ["gemini"] }).cancel, false);
   assert.equal(earlyExitDecision({ ...base, quorumMet: true, noEarlyExitRoutes: undefined }).cancel, true);
+  // no timing history (null/undefined/NaN median) never permits a cancel, however long the route has been silent
+  for (const medianFirstOutputMs of [null, undefined, NaN, "n/a"]) {
+    assert.deepEqual(earlyExitDecision({ ...base, quorumMet: true, elapsedMs: 10 ** 9, medianFirstOutputMs }), { cancel: false, reason: "no timing history" }, `median=${String(medianFirstOutputMs)}`);
+  }
+  assert.equal(EARLY_EXIT_REASONS.noHistory, "no timing history");
   // exhaustive: cancel iff all four conditions hold
   for (const quorumMet of [true, false]) for (const bytesReceived of [0, 12]) for (const elapsedMs of [3000, 5000]) for (const route of ["grok", "gemini"]) {
     const expected = quorumMet && bytesReceived === 0 && elapsedMs > 4000 && !protectedRoutes.has(route);

@@ -110,11 +110,18 @@ function checkSplit(source, label) {
     const rebuilt = chunks.map((c) => c.text.slice(large.header.length)).join("");
     assert.equal(rebuilt, large.hunks.map((h) => h.header + h.body).join(""));
   });
-  test(`${label}: same-directory affinity; whole files never split`, () => {
-    for (const p of pieces) {
-      if (p.files.length === 1) continue;
-      for (const path of p.files) assert.equal(parseUnifiedDiff(p.text).find((f) => f.path === path).hunks.length, files.find((f) => f.path === path).hunks.length);
+  test(`${label}: whole files never split — every under-ceiling file sits verbatim in exactly one piece`, () => {
+    const under = files.filter((f) => f.bytes <= CEILING);
+    assert.ok(under.length >= 10, "fixture must carry under-ceiling files");
+    for (const f of under) {
+      const holders = pieces.filter((p) => p.files.includes(f.path));
+      assert.equal(holders.length, 1, `${f.path} must sit in exactly one piece`);
+      const parsed = parseUnifiedDiff(holders[0].text).find((x) => x.path === f.path);
+      assert.ok(parsed, `${f.path} missing from ${holders[0].id}`);
+      assert.equal(parsed.hunks.length, f.hunks.length, `${f.path} lost hunks`);
+      assert.equal(parsed.text, f.text, `${f.path} must be carried verbatim`);
     }
+    for (const p of pieces) for (const path of p.files) assert.ok(files.some((f) => f.path === path), `${p.id} names unknown path ${path}`);
     const dirOf = (path) => pieces.find((p) => p.files.includes(path)).id;
     assert.equal(dirOf("lib/c/file0.js"), dirOf("lib/c/file1.js"));
   });
@@ -167,8 +174,18 @@ test("splitDiff: hunk-less oversize file (binary patch) lands in oversize, never
 test("headerOnlyQuote: true for header-only text", () => {
   assert.equal(headerOnlyQuote("diff --git a/x b/x\nindex 1111111..2222222 100644\n--- a/x\n+++ b/x"), true);
   assert.equal(headerOnlyQuote("@@ -1,3 +1,4 @@ function f()"), true);
-  assert.equal(headerOnlyQuote("  +++ b/src/a.js\r\n  --- a/src/a.js\r\n"), true);
+  assert.equal(headerOnlyQuote("+++ b/src/a.js\r\n--- a/src/a.js\r\n"), true);
   assert.equal(headerOnlyQuote("new file mode 100644\nrename from a\nrename to b"), true);
+  assert.equal(headerOnlyQuote("\n\n@@ -1 +1 @@\n"), true); // empty lines are ignored, not classified
+});
+test("headerOnlyQuote: classifies by raw line start — context and indented body lines are content", () => {
+  assert.equal(headerOnlyQuote(" index abc"), false); // a context line whose source text happens to look like a header
+  assert.equal(headerOnlyQuote(" const x = 1;"), false);
+  assert.equal(headerOnlyQuote("  +const x = 1;"), false);
+  assert.equal(headerOnlyQuote("  -const x = 1;"), false);
+  assert.equal(headerOnlyQuote(" diff --git a/x b/x"), false);
+  assert.equal(headerOnlyQuote("  +++ b/src/a.js\r\n  --- a/src/a.js\r\n"), false); // indented: a leading space is a context marker
+  assert.equal(headerOnlyQuote("@@ -1 +1 @@\n index abc"), false);
 });
 test("headerOnlyQuote: false for code or mixed text", () => {
   assert.equal(headerOnlyQuote("+const x = 1;"), false);
@@ -177,6 +194,65 @@ test("headerOnlyQuote: false for code or mixed text", () => {
   assert.equal(headerOnlyQuote(""), false);
   assert.equal(headerOnlyQuote(null), false);
   assert.equal(headerOnlyQuote("---"), false);
+});
+
+
+// ---- packing: affinity must beat diff-order greedy -----------------------------
+test("splitDiff: directory affinity beats diff-order greedy packing", () => {
+  // Interleaved directories, each file between a third and a half of the
+  // ceiling: greedy first-fit in diff order pairs x/one with y/one; directory
+  // grouping must pair x/one with x/two.
+  const src = ["x/one.js", "y/one.js", "x/two.js", "y/two.js"].map((p, i) => fileWithHunks(p, [hunk(1, 30, `f${i}`)])).flat().join("\n") + "\n";
+  const files = parseUnifiedDiff(src);
+  for (const f of files) assert.ok(f.bytes > CEILING / 3 && f.bytes < CEILING / 2, `${f.path} ${f.bytes}`);
+  const greedy = [];
+  for (const f of files) { const bin = greedy.find((b) => b.bytes + f.bytes <= CEILING); if (bin) { bin.files.push(f.path); bin.bytes += f.bytes; } else greedy.push({ files: [f.path], bytes: f.bytes }); }
+  assert.ok(greedy.some((b) => b.files.includes("x/one.js") && b.files.includes("y/one.js")), "fixture must discriminate: a greedy packer pairs x/one with y/one");
+  const { pieces } = splitDiff(src, { ceilingBytes: CEILING });
+  const pieceOf = (path) => pieces.find((p) => p.files.includes(path)).id;
+  assert.equal(pieces.length, 2);
+  assert.equal(pieceOf("x/one.js"), pieceOf("x/two.js"));
+  assert.equal(pieceOf("y/one.js"), pieceOf("y/two.js"));
+  assert.notEqual(pieceOf("x/one.js"), pieceOf("y/one.js"));
+  assert.deepEqual(pieces.map((p) => p.files), [["x/one.js", "x/two.js"], ["y/one.js", "y/two.js"]]); // piece order follows the first file's diff position
+});
+
+// ---- reassemble order ----------------------------------------------------------
+test("reassemble: hunk order follows the original diff even when old-start lines tie", () => {
+  // Hunk B (oversize) and hunk C share an old-side start line. C rides in a
+  // piece and B in oversize, so ordering by oldStart alone would yield A, C, B.
+  const A = hunk(10, 3, "A"), B = hunk(20, 140, "B"), C = ["@@ -20,3 +170,4 @@ function C()", " C_ctx_0", " C_ctx_1", " C_ctx_2", "+C_added"];
+  const src = fileWithHunks("src/tie.js", [A, B, C]).join("\n") + "\n";
+  const original = parseUnifiedDiff(src)[0];
+  assert.equal(original.hunks.length, 3);
+  const { pieces, oversize } = splitDiff(src, { ceilingBytes: CEILING });
+  assert.equal(oversize.length, 1);
+  assert.match(oversize[0].hunkHeader, /^@@ -20,140 /);
+  assert.equal(pieces.length, 1);
+  const back = reassemble(pieces, oversize).files[0];
+  assert.deepEqual(back.hunks.map((h) => h.header), original.hunks.map((h) => h.header));
+  assert.deepEqual(back.hunks.map((h) => h.header + h.body), original.hunks.map((h) => h.header + h.body));
+  assert.ok(back.hunks.every((h) => !("seq" in h)), "seq is internal bookkeeping");
+});
+
+// ---- git C-style path quoting ------------------------------------------------------
+test("parseUnifiedDiff: git C-quoted paths are decoded and the a/ b/ prefix stripped", () => {
+  const src = [
+    // written as git prints them: quotes, \t, octal UTF-8 bytes, \" and \\ escapes
+    "diff --git \"a/dir/a\\tb.txt\" \"b/dir/a\\tb.txt\"", "index 1111111..2222222 100644", "--- \"a/dir/a\\tb.txt\"", "+++ \"b/dir/a\\tb.txt\"", "@@ -1 +1 @@", "-x", "+y",
+    "diff --git \"a/caf\\303\\251 \\\"q\\\".js\" \"b/caf\\303\\251 \\\"q\\\".js\"", "index 1111111..2222222 100644", "--- \"a/caf\\303\\251 \\\"q\\\".js\"", "+++ \"b/caf\\303\\251 \\\"q\\\".js\"", "@@ -1 +1 @@", "-x", "+y",
+    "diff --git \"a/back\\\\slash\\n.txt\" \"b/back\\\\slash\\n.txt\"", "new file mode 100644", "--- /dev/null", "+++ \"b/back\\\\slash\\n.txt\"", "@@ -0,0 +1 @@", "+y",
+    "diff --git \"a/old\\tname.txt\" \"b/new\\tname.txt\"", "similarity index 100%", "rename from \"old\\tname.txt\"", "rename to \"new\\tname.txt\"",
+    "diff --git \"a/only header.txt\" \"b/only header.txt\"", "old mode 100644", "new mode 100755",
+    "diff --git a/plain.txt b/plain.txt", "--- a/plain.txt\t2026-09-13 10:00:00", "+++ b/plain.txt\t2026-09-13 10:00:01", "@@ -1 +1 @@", "-x", "+y",
+  ].join("\n") + "\n";
+  const expected = ["dir/a\tb.txt", "café \"q\".js", "back\\slash\n.txt", "new\tname.txt", "only header.txt", "plain.txt"];
+  assert.deepEqual(parseUnifiedDiff(src).map((f) => f.path), expected);
+  // splitDiff and reassemble carry the decoded path
+  const r = splitDiff(src, { ceilingBytes: CEILING });
+  assert.deepEqual(r.pieces.flatMap((p) => p.files), expected);
+  assert.deepEqual(reassemble(r.pieces, r.oversize).files.map((f) => f.path), expected);
+  assert.equal(r.pieces.map((p) => p.text).join(""), src, "decoding never rewrites the diff text");
 });
 
 console.log(JSON.stringify({ passed, failures }, null, 2));
