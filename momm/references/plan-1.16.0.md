@@ -102,7 +102,7 @@ Ordering principle: measurement first (E1, E2), because the guidance, scheduling
 
 **Proof.** The shallow-fetch fixture passes; `--check-all` output validated against `--version` of each CLI for both install kinds; batch update tested with a fake registry; canary probes recorded with CLI version in a fixture ledger.
 
-**Must not break.** No automatic updates, ever; every apply needs the explicit command; OAuth logins untouched by updates.
+**Must not break.** No automatic updates unless the user enables the toggle; with it off every apply needs the explicit command; a failed signature is never bypassed; OAuth logins untouched by updates.
 
 ## Sequencing and size
 
@@ -114,7 +114,7 @@ Ordering principle: measurement first (E1, E2), because the guidance, scheduling
 
 ## Non-goals for 1.16
 
-API-key routes; automatic updates; executing reviewer-supplied test snippets; new reviewer families (Kimi, Mistral), tracked in `references/cli/candidates.md`; any change to the read-only containment model; modifying SKILL.md at runtime.
+API-key routes; automatic updates the user has not switched on (the toggle is off by default and applies only verified releases); executing reviewer-supplied test snippets; new reviewer families (Kimi, Mistral), tracked in `references/cli/candidates.md`; any change to the read-only containment model; modifying SKILL.md at runtime.
 
 ## Open questions for the owner
 
