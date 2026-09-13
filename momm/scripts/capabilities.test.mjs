@@ -371,9 +371,14 @@ await test("finding overlay-rmw-lost-update: writes are serialised by a lock (co
   assert.equal(cap.readOverlay(home, { machine: "m1", installedVersions: { codex: "1.0.0", grok: "1.0.0" } }).entries.length, 24, "no entry lost to a concurrent read-modify-write");
   // A lock whose owner is alive is waited on; one whose owner is dead is cleared; a lock never released times out.
   const lock = `${cap.overlayPath(home, "m1")}.lock`;
-  const sleeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 1200)"], { stdio: "ignore", windowsHide: true });
-  await new Promise((r) => setTimeout(r, 100));
-  fs.writeFileSync(lock, `${sleeper.pid}\n`);
+  // The live owner must be a process whose death this test can observe while it busy-waits:
+  // a direct child that exits during the synchronous wait stays a zombie on POSIX (the event
+  // loop never reaps it), so kill(pid, 0) keeps reporting it alive and the wait times out
+  // (CI run 34786106618, ubuntu 22). Spawn it as a grandchild that is reparented to init.
+  const launcher = spawn(process.execPath, ["-e", "const c = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1200)'], { detached: true, stdio: 'ignore', windowsHide: true }); c.unref(); process.stdout.write(String(c.pid));"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  const sleeperPid = await new Promise((resolve) => { let out = ""; launcher.stdout.on("data", (d) => { out += d; }); launcher.on("close", () => resolve(Number.parseInt(out, 10))); });
+  assert.ok(Number.isInteger(sleeperPid) && sleeperPid > 0, `sleeper pid ${sleeperPid}`);
+  fs.writeFileSync(lock, `${sleeperPid}\n`);
   const t0 = Date.now();
   cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "text", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1", lockTimeoutMs: 10_000 });
   assert.ok(Date.now() - t0 >= 700, `waited on the live owner (${Date.now() - t0} ms)`);

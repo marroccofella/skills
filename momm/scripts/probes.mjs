@@ -576,7 +576,22 @@ export function inputProbePrompt(modality, filePath) {
 // Windows short names), the result always uses forward slashes; a file that is not under
 // the directory (or fake paths in tests) falls back to its basename.
 export function relativeProbeRef(filePath, projectDir) {
-  const real = p => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  // Canonicalise both sides the same way whether or not the file exists yet: resolve the
+  // deepest existing ancestor (macOS /var → /private/var, Windows short names and drive
+  // case) and re-append the rest, so a not-yet-written file under a symlinked temp dir does
+  // not compare a real path against a merely resolved one (CI run 34786106618).
+  const real = p => {
+    let current = path.resolve(p);
+    const tail = [];
+    while (!fs.existsSync(current)) {
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      tail.unshift(path.basename(current));
+      current = parent;
+    }
+    try { current = fs.realpathSync.native(current); } catch { /* keep the resolved ancestor */ }
+    return path.join(current, ...tail);
+  };
   const rel = path.relative(real(projectDir), real(filePath)).replaceAll("\\", "/");
   if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) return rel;
   return String(filePath).split(/[\\/]/).pop();
