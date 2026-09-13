@@ -109,8 +109,9 @@
             <div id="guidance-user" class="diagnostics-body guidance-user"></div>
           </details>
           <details class="diagnostics guidance-details">
-            <summary><span>Effective prompt preview</span><span class="health-count">The prompt minus the artifact — never source</span></summary>
+            <summary><span>Guidance preview</span><span class="health-count">Resolved guidance layers in position — never source</span></summary>
             <div class="preview-body">
+              <p id="guidance-preview-note" class="environment-note">This preview shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here. The artifact is a placeholder, never source.</p>
               <label class="preview-route">Route <select id="guidance-preview-route" aria-label="Preview route"></select></label>
               <pre id="guidance-preview" class="prompt-preview" tabindex="0"></pre>
             </div>

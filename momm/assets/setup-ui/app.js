@@ -40,6 +40,7 @@ const guidanceUser = document.querySelector("#guidance-user");
 const guidanceUserCount = document.querySelector("#guidance-user-count");
 const guidancePreview = document.querySelector("#guidance-preview");
 const guidancePreviewRoute = document.querySelector("#guidance-preview-route");
+const guidancePreviewNote = document.querySelector("#guidance-preview-note");
 
 let session = null;
 let report = null;
@@ -617,7 +618,10 @@ function renderGuidancePreview() {
     guidancePreviewRoute.innerHTML = routes.map((route) => `<option value="${escapeHtml(route)}">${escapeHtml(providerLabel(route))}</option>`).join("");
   }
   const route = routes.includes(guidancePreviewRoute.value) ? guidancePreviewRoute.value : routes[0];
-  guidancePreview.textContent = guidance.resolve_error ? `Preview unavailable: ${guidance.resolve_error}` : guidance.preview?.[route] || "";
+  // A guidance preview, not the effective prompt: the server builds it with a
+  // contract stub and no persona, and says so in guidance_preview_note.
+  guidancePreview.textContent = guidance.resolve_error ? `Preview unavailable: ${guidance.resolve_error}` : guidance.guidance_preview?.[route] || "";
+  if (guidancePreviewNote) guidancePreviewNote.textContent = `This preview ${guidance.guidance_preview_note || "shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here"}. The artifact is a placeholder, never source.`;
 }
 
 // `keep` holds the editor's current text when it moved on while a save was in
@@ -716,6 +720,21 @@ function updateCell(row) {
   return miniStatus("unknown");
 }
 
+// The outcome of the last apply pass, event-driven or from Apply now: counts,
+// then one line per applied CLI with the re-read version and the containment
+// probe verdict. Only a passing probe reads "ready"; fail, unavailable and a
+// probe that could not run read "updated, containment not verified". While the
+// switch is off the note says the event checked and applied nothing.
+function applyOutcome(activity, enabled) {
+  const last = activity.last_apply;
+  if (!last) return `<p class="environment-note">No update has been applied from this Setup Center yet${enabled ? "; the next check event (opening this page, Check everything, Check now, the timer) applies what it finds" : ""}.</p>`;
+  const when = `Last event ${escapeHtml(last.event || "—")} ${escapeHtml(formatWhen(last.at))}`;
+  if (!last.enabled) return `<p class="environment-note">${when}: ${escapeHtml(last.note || "automatic updates are off: checked only, nothing applied")}.</p>`;
+  const rows = (last.rows || []).map((row) => `<li data-apply-row="${escapeHtml(row.name)}"><strong>${escapeHtml(sourceLabel(row.name))}</strong> ${escapeHtml(row.from || "?")} → ${escapeHtml(row.version || row.to || "version unknown")}${row.probe_verdict ? ` · probe ${escapeHtml(row.probe_verdict)}` : ""} · ${escapeHtml(row.verification || "")}${row.ready === true ? " · ready" : ""}</li>`);
+  const failures = (last.failures || []).map((item) => `<li data-apply-row="${escapeHtml(item.name)}"><strong>${escapeHtml(sourceLabel(item.name))}</strong> failed: ${escapeHtml(item.reason || "unknown")}</li>`);
+  return `<p class="environment-note">${when}: applied ${Number(last.applied) || 0} / skipped ${Number(last.skipped) || 0} / failed ${Number(last.failed) || 0}${last.skipped_reason ? ` (${escapeHtml(last.skipped_reason)})` : ""}.</p>${rows.length || failures.length ? `<ul class="environment-note">${rows.join("")}${failures.join("")}</ul>` : ""}`;
+}
+
 function renderUpdateClock() {
   const card = document.querySelector("#update-clock-card");
   if (!card) return;
@@ -748,6 +767,8 @@ function renderUpdateClock() {
     </div>
     <div class="cli-table-scroll"><table class="cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="environment-note">Estimated ${escapeHtml(clockState.overhead_estimate_per_day ?? "—")} conditional request${clockState.overhead_estimate_per_day === 1 ? "" : "s"} per day at the current intervals. Checks run only on events (review start or finish, opening this page, Check everything, the timer below); nothing polls.${activity.last_finished_at ? ` Last check ${escapeHtml(formatWhen(activity.last_finished_at))} (${escapeHtml(activity.last_event || "—")}${activity.last_result?.skipped_reason ? `, ${escapeHtml(activity.last_result.skipped_reason)}` : ""}).` : ""}${activity.last_error ? ` Last error: ${escapeHtml(activity.last_error)}.` : ""}</p>
+    <p class="environment-note">When this switch is on, every check event also applies what it found, and each updated CLI is then probed for containment: MOMM sends one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider, never project content. The re-read version and the probe verdict are shown below; a route whose probe failed or could not run is listed as updated, containment not verified, and is not ready.</p>
+    ${applyOutcome(activity, auto.enabled)}
     <div class="timer-row">
       <div><strong>Timer</strong><small>Runs the clock every 6 hours when no MOMM process is open. Registered only with your confirmation of the exact command.</small><code>${escapeHtml(timer.install || "")}</code></div>
       <div class="skill-actions"><button class="mini-button" data-timer-action="install">Install…</button><button class="mini-button" data-timer-action="remove">Remove…</button></div>
@@ -772,7 +793,7 @@ async function clockPost(body) {
 }
 
 async function setClockSetting(key, checked) {
-  if (key === "enabled" && checked && !window.confirm("Turn on automatic updates?\n\nMOMM will apply only through its signed updater (after a successful dry run) and each reviewer CLI's official update command, and only for the sources ticked below. Nothing runs until the next check event. You can turn this off at any time.")) { renderUpdateClock(); return; }
+  if (key === "enabled" && checked && !window.confirm("Turn on automatic updates?\n\nMOMM will apply only through its signed updater (after a successful dry run) and each reviewer CLI's official update command, and only for the sources ticked below. Updates apply on the next check event (opening this page, Check everything, Check now, the timer).\n\nAfter each CLI update, a containment probe sends one synthetic sentence and one synthetic 20-line diff to that CLI's provider (never project content) and records the verdict; a CLI whose probe fails is shown as updated but not verified.\n\nYou can turn this off at any time.")) { renderUpdateClock(); return; }
   try {
     await clockPost({ op: "set", patch: { auto_update: { [key]: checked } } });
     showToast(key === "enabled" ? (checked ? "Automatic updates on." : "Automatic updates off.") : "Setting saved.");
@@ -783,11 +804,14 @@ async function clockAction(action) {
   try {
     if (action === "check") {
       const value = await clockPost({ op: "trigger", event: "setup.check" });
-      showToast(value.result?.ran ? `Checked ${value.result.results.length} source${value.result.results.length === 1 ? "" : "s"}.` : `Check skipped: ${value.result?.skipped_reason || "another check is running"}.`);
+      const applied = value.result?.apply?.applied?.length || 0;
+      showToast(`${value.result?.ran ? `Checked ${value.result.results.length} source${value.result.results.length === 1 ? "" : "s"}.` : `Check skipped: ${value.result?.skipped_reason || "another check is running"}.`}${applied ? ` Applied ${applied} update${applied === 1 ? "" : "s"}; see the card for each probe verdict.` : ""}`);
+      if (applied) loadMaintenance(true);
     } else if (action === "apply") {
       if (!window.confirm("Apply available updates now through the signed updater and the official CLI commands, for the sources ticked above?")) return;
       const value = await clockPost({ op: "apply" });
-      showToast(value.notices?.length ? value.notices.join(" · ") : value.applied?.length ? `Applied ${value.applied.length} update${value.applied.length === 1 ? "" : "s"}.` : `Nothing applied: ${value.skipped?.[0]?.reason || "nothing due"}.`);
+      const unverified = (value.applied || []).filter((row) => row.ready === false).length;
+      showToast(value.applied?.length ? `Applied ${value.applied.length} update${value.applied.length === 1 ? "" : "s"}${unverified ? `; ${unverified} updated, containment not verified` : ""}.` : value.notices?.length ? value.notices.join(" · ") : `Nothing applied: ${value.skipped?.[0]?.reason || "nothing due"}.`);
       loadMaintenance(true);
     }
   } catch (error) { showToast(error.message); }

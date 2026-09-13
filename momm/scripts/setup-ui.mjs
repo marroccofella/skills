@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
+import { runProbes, recordProbe, windowsLauncher } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
 
 const processScope = createProcessScope();
@@ -583,11 +584,15 @@ function startConnectivityJob(provider, governor) {
 // elsewhere in the meantime (the CLI, another session, a git pull) is refused
 // with 409 instead of being overwritten. A successful save trusts exactly the
 // bytes written, and nothing else, through the same trust store the dispatcher
-// consults. Previews are built by the dispatcher's own prompt assembler with a
-// literal placeholder for the artifact, so no source ever reaches this page.
+// consults. The guidance preview is built by the dispatcher's own prompt
+// assembler with a literal placeholder for the artifact, so no source ever
+// reaches this page. It is a GUIDANCE preview, not the effective prompt: the
+// built-in review contract is a stub here and no persona is supplied, so the
+// API names it guidance_preview and carries the note the page shows beside it.
 const GUIDANCE_ROUTES = Object.freeze(["codex", "claude", "gemini", "antigravity", "copilot", "grok"]);
 const GUIDANCE_BODY_LIMIT = 64 * 1024;
-const CONTRACT_STUB = "[review contract omitted: the dispatcher supplies the full momm-peer-review/2 contract here]";
+const GUIDANCE_PREVIEW_STUB = "[guidance preview: the built-in momm-peer-review/2 contract and the route persona are not rendered here; the dispatcher supplies both at review time]";
+const GUIDANCE_PREVIEW_NOTE = "shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here";
 
 // The on-disk hash, with the read failure carried alongside instead of thrown:
 // a directory or unreadable entry at the guidance path is a reportable state
@@ -603,7 +608,7 @@ function guidanceSnapshot({ cwd = process.cwd(), home } = {}) {
   const value = {
     file, user_file: userGuidancePath(home), routes: [...GUIDANCE_ROUTES], budget: { ...GUIDANCE_BUDGET },
     project: null, project_error: disk.error, project_sha256: disk.sha, trusted: false,
-    user: null, user_error: null, effective: {}, governor: null, preview: {}, notices: [], resolve_error: null,
+    user: null, user_error: null, effective: {}, governor: null, guidance_preview: {}, guidance_preview_note: GUIDANCE_PREVIEW_NOTE, notices: [], resolve_error: null,
   };
   try { value.project = readGuidanceFile(file); } catch (error) { value.project_error ||= safeDetail(error.message); }
   try { value.user = readGuidanceFile(userGuidancePath(home)); } catch (error) { value.user_error = safeDetail(error.message); }
@@ -613,7 +618,7 @@ function guidanceSnapshot({ cwd = process.cwd(), home } = {}) {
     value.effective = resolved.routes;
     value.governor = resolved.governor;
     value.notices = resolved.notices;
-    for (const route of GUIDANCE_ROUTES) value.preview[route] = formatEffectivePrompt(CONTRACT_STUB, resolved.routes[route].text, 0);
+    for (const route of GUIDANCE_ROUTES) value.guidance_preview[route] = formatEffectivePrompt(GUIDANCE_PREVIEW_STUB, resolved.routes[route].text, 0);
   } catch (error) { value.resolve_error = safeDetail(error.message); }
   return value;
 }
@@ -812,7 +817,10 @@ function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
 // needs runs through processScope so a closing server never leaves an updater
 // or a `grok update --check` behind, and never blocks the event loop the way the
 // module's synchronous defaults would inside a server.
-const clockActivity = { running: false, last_event: null, last_started_at: null, last_finished_at: null, last_result: null, last_error: null };
+// last_apply is the outcome of the most recent apply pass (an event's or the
+// dashboard's): counts, one row per applied source with the re-read version and
+// probe verdict, and — while automatic updates are off — the note that says so.
+const clockActivity = { running: false, last_event: null, last_started_at: null, last_finished_at: null, last_result: null, last_error: null, last_apply: null };
 
 // The re-entry guard every clock operation shares — trigger, apply and timer:
 // one runs at a time. A trigger arriving while one is in flight is not
@@ -868,11 +876,105 @@ function createServerClock() {
   catch (error) { process.stderr.write(`Update clock unavailable: ${safeDetail(error.message)}\n`); return null; }
 }
 
+// The exec probes.mjs runs its vectors through, owned by processScope so a
+// closing server kills a hung probe instead of leaving it behind. Same contract
+// as the module's defaultExec — (command, args, { input, timeout, cwd, env }) ->
+// { code, stdout, stderr, timedOut, error } — including its launcher rule (no
+// cmd.exe shims) and the secret scrub of the inherited environment; stdin is
+// piped because the codex and grok vectors feed the prompt that way.
+function probeExec(command, args = [], { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env } = {}) {
+  const env = { ...sourceEnv, NO_UPDATE_CHECK: "1", NO_COLOR: "1" };
+  for (const key of Object.keys(env)) if (/(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(key.toUpperCase())) delete env[key];
+  const launch = windowsLauncher(command, args, env);
+  if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
+  return new Promise((resolve) => {
+    let child;
+    try { child = processScope.spawn(launch.command, launch.args, { cwd, env, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }); }
+    catch (error) { resolve({ code: -1, stdout: "", stderr: safeDetail(error.message), error, timedOut: false }); return; }
+    supervise(child, { timeoutMs: timeout, stdoutLimit: 16_000_000, stderrLimit: 1_000_000, resolve });
+    child.stdin.on("error", () => {});
+    child.stdin.end(input);
+  });
+}
+
+// The production post-update probe (audit finding 5): after a CLI's official
+// update command succeeds, probes.mjs sends that CLI one synthetic canary
+// sentence and one synthetic 20-line diff — never project content — and the
+// full result is appended to this project's .ensemble_reviews/probes.jsonl.
+// The module reads `status` for its history note; the verdict, the tested
+// version and both sub-results travel with it so the page can show them.
+async function clockPostUpdateProbe(cli) {
+  const result = await runProbes(cli, { exec: probeExec, tmpdir: os.tmpdir() });
+  recordProbe(process.cwd(), result);
+  return { status: result.verdict, verdict: result.verdict, cli_version: result.cli_version ?? null, containment: result.containment?.status ?? null, one_line_review: result.one_line_review?.status ?? null, detail: [result.containment?.detail, result.one_line_review?.detail].filter(Boolean).join(" / ").slice(0, 600) || null };
+}
+
+// One dependency table for every apply pass — the dashboard action and the
+// event path alike — so a test can inject the child-process seams without
+// changing which seams production uses.
+const applyDeps = (deps = {}) => ({
+  runUpdater: deps.runUpdater || clockRunUpdater,
+  exec: deps.exec || clockExec,
+  versionOf: deps.versionOf || cliVersion,
+  postUpdateProbe: deps.postUpdateProbe || clockPostUpdateProbe,
+  isManaged: deps.isManaged || cliIsManaged,
+});
+
+const PROBE_VERDICTS = new Set(["pass", "fail", "unavailable"]);
+const NOT_VERIFIED = "updated, containment not verified";
+// Every applied CLI row leaves here with the re-read version and a probe
+// verdict of pass / fail / unavailable (a thrown probe reaches the module as
+// status "error" and is shown as unavailable). Only `pass` is ready; anything
+// else is "updated, containment not verified" and is never presented as ready.
+function annotateApply(result) {
+  const applied = (result?.applied || []).map((row) => {
+    const name = String(row?.name || "");
+    if (!name.startsWith("cli:")) return { ...row, verification: "applied through the signed updater", ready: null };
+    const raw = row.probe?.status ?? row.probe?.verdict ?? null;
+    const probe_verdict = PROBE_VERDICTS.has(raw) ? raw : "unavailable";
+    const version = row.to || row.probe?.cli_version || null;
+    const ready = probe_verdict === "pass";
+    return { ...row, cli: name.slice(4), version, probe_verdict, ready, verification: ready ? `verified: ${version || "version unknown"} passed the containment probe` : NOT_VERIFIED };
+  });
+  return { ...result, applied };
+}
+
+const disabledApply = () => ({ applied: [], skipped: [{ name: "*", reason: "auto_update.enabled is false" }], failed: [], notices: [], skipped_reason: "auto_update_disabled" });
+
+function recordApply(event, apply, enabled) {
+  clockActivity.last_apply = {
+    at: new Date().toISOString(), event, enabled,
+    applied: apply.applied.length, skipped: apply.skipped.length, failed: apply.failed.length, skipped_reason: apply.skipped_reason ?? null,
+    rows: apply.applied.map(({ name, cli, from, to, version, probe_verdict, verification, ready }) => ({ name, cli: cli ?? null, from: from ?? null, to: to ?? null, version: version ?? to ?? null, probe_verdict: probe_verdict ?? null, verification, ready })),
+    failures: apply.failed.map((f) => ({ name: f.name, reason: f.reason })),
+    note: enabled ? null : "automatic updates are off: checked only, nothing applied",
+  };
+  return apply;
+}
+
+// The apply pass behind the dashboard action and every event (audit finding
+// 7): runs inside the caller's guarded activity, through the same wiring.
+async function applyPass(clock, event, deps) {
+  const apply = recordApply(event, annotateApply(await applyUpdates(clock, applyDeps(deps))), true);
+  maintenanceCache = null; // installed versions may have changed
+  return apply;
+}
+
+// A check event (setup.open, setup.check, manual) is a check AND, while
+// automatic updates are on, the apply pass — the toggle's promise. Off: the
+// check still runs, nothing is applied, and the recorded outcome says so.
+async function checkThenApply(clock, event, deps = {}) {
+  const result = await clock.trigger(event);
+  const enabled = clock.settings().auto_update?.enabled === true;
+  const apply = enabled ? await applyPass(clock, event, deps) : recordApply(event, disabledApply(), false);
+  return { ...result, apply };
+}
+
 // Fire-and-forget entry (server start, the maintenance "check everything"
 // click): never rejects, and never restarts an operation already in flight.
-function triggerClock(clock, event) {
+function triggerClock(clock, event, deps = {}) {
   if (!clock) return Promise.resolve(null);
-  const run = runClockActivity(event, () => clock.trigger(event));
+  const run = runClockActivity(event, () => checkThenApply(clock, event, deps));
   return run ? run.catch(() => null) : Promise.resolve(null);
 }
 
@@ -900,7 +1002,7 @@ async function handleUpdateClock(body, clock, deps = {}) {
   if (op === "trigger") {
     const event = String(body.event || "");
     if (!["setup.check", "manual"].includes(event)) return { status: 400, value: { error: "Only setup.check or manual can be triggered from the Setup Center" } };
-    const run = runClockActivity(event, () => clock.trigger(event));
+    const run = runClockActivity(event, () => checkThenApply(clock, event, deps));
     if (!run) return busy();
     const result = await run.catch(() => null); // the failure is already in activity.last_error
     return { status: 200, value: { result, ...clockSnapshot(clock) } };
@@ -911,16 +1013,12 @@ async function handleUpdateClock(body, clock, deps = {}) {
     if (clockInflight) return busy();
     // Never call the applier while disabled: the no-op answer below is the
     // module's own shape, so the page renders both paths identically.
-    if (!clock.settings().auto_update.enabled) return { status: 200, value: { applied: [], skipped: [{ name: "*", reason: "auto_update.enabled is false" }], failed: [], notices: [], ...clockSnapshot(clock) } };
-    const run = runClockActivity("apply", () => applyUpdates(clock, {
-      runUpdater: deps.runUpdater || clockRunUpdater,
-      exec: deps.exec || clockExec,
-      versionOf: deps.versionOf || cliVersion,
-      isManaged: deps.isManaged || cliIsManaged,
-    }));
+    if (!clock.settings().auto_update.enabled) return { status: 200, value: { ...disabledApply(), ...clockSnapshot(clock) } };
+    // The same wiring as the event path, containment probe included: each
+    // applied CLI row carries its re-read version and probe verdict.
+    const run = runClockActivity("apply", () => applyPass(clock, "apply", deps));
     if (!run) return busy();
     const result = await run;
-    maintenanceCache = null; // installed versions may have changed
     return { status: 200, value: { ...result, ...clockSnapshot(clock) } };
   }
   if (op === "timer") {
@@ -1287,12 +1385,17 @@ async function dashboardRegression() {
     checks.guidance_over_budget_refused_400 = block.status === 400 && /2001.*2000/.test(block.value.error)
       && stack.status === 400 && /route codex.*6000/.test(stack.value.error) && !fs.existsSync(projectGuidanceFiles(u.cwd).guidance)
       && fs.readFileSync(projectGuidanceFiles(g.cwd).guidance).equals(bytesBefore);
-    const preview = saved.value.preview.codex;
+    const preview = saved.value.guidance_preview?.codex;
     checks.guidance_preview_has_placeholder_and_no_artifact = typeof preview === "string"
       && preview.endsWith("--- ARTIFACT TO REVIEW ---\n<artifact omitted: 0 bytes>")
-      && preview.includes(guidance.reviewers.codex) && preview.startsWith(CONTRACT_STUB)
+      && preview.includes(guidance.reviewers.codex) && typeof GUIDANCE_PREVIEW_STUB === "string" && preview.startsWith(GUIDANCE_PREVIEW_STUB)
       && preview.split("--- ARTIFACT TO REVIEW ---").length === 2 && !preview.includes("diff --git")
-      && Object.values(saved.value.preview).every((text) => text.includes("<artifact omitted: 0 bytes>"));
+      && Object.values(saved.value.guidance_preview).every((text) => text.includes("<artifact omitted: 0 bytes>"));
+    // effective-prompt-preview-overclaims (audit): the preview carries a contract stub
+    // and no persona, so the API and the page call it a guidance preview and say so.
+    checks.guidance_preview_is_named_and_notes_omissions = !("preview" in saved.value)
+      && /shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here/.test(saved.value.guidance_preview_note)
+      && (() => { const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"); return html.includes("Guidance preview") && !/Effective prompt preview/i.test(html) && html.includes("shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here"); })();
     // guidance-hash-bypasses-error-handling: a directory (or any unreadable
     // entry) at .momm/guidance.json is reported as project_error, never thrown,
     // and a save over it is refused rather than crashing on the rename.
@@ -1451,6 +1554,47 @@ async function dashboardRegression() {
     const timerAfter = await handleUpdateClock({ op: "timer", action: "remove", confirm: true, expected_command: clockTimer().remove }, hanging, { exec: async () => { runningDuringTimer = clockActivity.running; eventDuringTimer = clockActivity.last_event; return { code: 0 }; } });
     checks.update_clock_ops_never_overlap = runningWhileLive && refusedWhileBusy && finished.status === 200 && finished.value.result?.checked === true && clockActivity.running === false
       && timerAfter.status === 200 && runningDuringTimer === true && eventDuringTimer === "timer.remove" && clockActivity.running === false;
+
+    // Audit findings 5 and 7, on the real handler and event paths with a real clock
+    // and module (only the child processes and probes.mjs are faked): while
+    // disabled, setup.open checks and applies nothing and says so; the dashboard
+    // apply runs the updater once, re-reads `<cli> --version` once and probes once
+    // per applied CLI, and a failed probe is "updated, containment not verified",
+    // never ready; setup.check applies after its check once enabled.
+    const p = fixture("probe");
+    let latest = "1.1.0";
+    const probeClock = createUpdateClock({ home: p.home, stateFile: path.join(p.cwd, "state", "update-clock.json"), sources: [{ name: "cli:codex", kind: "cli", cli: "codex", check: async () => ({ latest }) }], fetcher: async () => { throw new Error("no network in tests"); }, exec: async () => ({ code: 0, stdout: "", stderr: "" }), installedVersions: { skill: "1.16.0", codex: "1.0.0" } });
+    const counts = { updater: 0, exec: [], version: [], probe: [] };
+    const probeDeps = {
+      home: p.home,
+      runUpdater: async () => { counts.updater += 1; return { code: 0, output: "" }; },
+      exec: async (bin, args) => { counts.exec.push([bin, ...args].join(" ")); return { code: 0, stdout: "", stderr: "" }; },
+      versionOf: async (cli) => { counts.version.push(cli); return `codex-cli ${latest}\n`; },
+      postUpdateProbe: async (cli) => { counts.probe.push(cli); return { status: "fail", containment: "unavailable", one_line_review: "ok", cli_version: latest }; },
+      isManaged: () => false,
+    };
+    const openedOff = await triggerClock(probeClock, "setup.open", probeDeps);
+    checks.update_clock_disabled_event_checks_but_applies_nothing = openedOff?.ran === true && openedOff.apply?.skipped_reason === "auto_update_disabled" && openedOff.apply.applied.length === 0
+      && counts.exec.length === 0 && counts.probe.length === 0 && counts.version.length === 0
+      && clockActivity.last_apply?.event === "setup.open" && clockActivity.last_apply.enabled === false && clockActivity.last_apply.applied === 0 && /off/i.test(clockActivity.last_apply.note)
+      && probeClock.status().sources[0].update_available === true;
+    await handleUpdateClock({ op: "set", patch: { auto_update: { enabled: true } } }, probeClock, { home: p.home });
+    const appliedNow = await handleUpdateClock({ op: "apply" }, probeClock, probeDeps);
+    const probedCodex = appliedNow.value?.applied?.find((row) => row.name === "cli:codex");
+    checks.update_clock_apply_probes_each_cli_and_reports_verdict = appliedNow.status === 200 && counts.updater === 0
+      && counts.exec.length === 1 && /npm install -g @openai\/codex@latest/.test(counts.exec[0]) && counts.version.join() === "codex" && counts.probe.join() === "codex"
+      && probedCodex?.to === "1.1.0" && probedCodex.version === "1.1.0" && probedCodex.probe_verdict === "fail" && probedCodex.ready === false && probedCodex.verification === "updated, containment not verified"
+      && appliedNow.value.activity.last_apply.event === "apply" && appliedNow.value.activity.last_apply.applied === 1 && appliedNow.value.activity.last_apply.rows[0].verification === "updated, containment not verified"
+      && probeClock.installedVersions.codex === "1.1.0" && appliedNow.value.sources[0].update_available === false;
+    latest = "1.2.0";
+    probeDeps.postUpdateProbe = async (cli) => { counts.probe.push(cli); return { status: "pass", containment: "held", one_line_review: "ok", cli_version: latest }; };
+    const checkedOn = await handleUpdateClock({ op: "trigger", event: "setup.check" }, probeClock, probeDeps);
+    const secondRow = checkedOn.value?.result?.apply?.applied?.find((row) => row.name === "cli:codex");
+    checks.update_clock_enabled_event_applies_after_check = checkedOn.status === 200 && checkedOn.value.result.ran === true
+      && counts.exec.length === 2 && counts.version.join() === "codex,codex" && counts.probe.join() === "codex,codex" && counts.updater === 0
+      && secondRow?.to === "1.2.0" && secondRow.probe_verdict === "pass" && secondRow.ready === true && /verified/.test(secondRow.verification)
+      && clockActivity.last_apply.event === "setup.check" && clockActivity.last_apply.enabled === true && clockActivity.last_apply.applied === 1 && clockActivity.running === false
+      && probeClock.installedVersions.codex === "1.2.0";
 
     // Ledger watcher: debounce collapses a burst, unrelated files are ignored, rebuilds stay 5 s apart.
     const timers = [];

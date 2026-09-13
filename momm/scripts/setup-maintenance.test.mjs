@@ -143,7 +143,8 @@ await test('triggerClock records every trigger failure as last_error and never t
   assert.doesNotThrow(()=>{result=c.trigger({trigger(){throw new Error('sync boom');}},'setup.open');},'a synchronous throw inside clock.trigger must not escape into the listen callback');
   assert.equal(await result,null);assert.equal(activity.last_error,'sync boom');assert.equal(activity.running,false);
   assert.equal(await c.trigger({trigger:()=>Promise.reject(new Error('async boom'))},'setup.open'),null);assert.equal(activity.last_error,'async boom');
-  assert.deepEqual(await c.trigger({trigger:async()=>({ran:true})},'setup.check'),{ran:true});assert.equal(activity.last_error,null,'positive control clears the error');
+  const ok=await c.trigger({trigger:async()=>({ran:true}),settings:()=>({auto_update:{enabled:false}})},'setup.check');
+  assert.equal(ok.ran,true);assert.equal(ok.apply.skipped_reason,'auto_update_disabled','a disabled clock reports the check without applying');assert.equal(activity.last_error,null,'positive control clears the error');
 });
 // clock-activity-reentrant: trigger, apply and timer run under one guard. A second
 // trigger while one is in flight is a 409 (never a restart), apply and timer are
@@ -176,6 +177,76 @@ await test('update-clock operations share one re-entry guard and never overlap',
   assert.equal(timer.status,200);assert.equal(runningDuringTimer,true,'timer actions run under the same guard');assert.equal(c.activity.last_event,'timer.remove');assert.equal(c.activity.running,false);
   const again=c.handle({op:'trigger',event:'manual'},clock,{});await tick();releaseAll({second:true});
   assert.equal((await again).status,200);assert.equal(calls,2,'control: an idle clock triggers again');
+});
+// Shared fixture for the clock slice: the production handler, triggerClock and
+// clockActivity with every child-process seam stubbed. `applyUpdates` is the
+// module fake; it records the dependency object the handler hands it.
+function clockSlice(overrides={}) {
+  const a=source.indexOf('const clockActivity ='),b=source.indexOf('// --- Ledger auto-regeneration',a);assert(a>=0&&b>a);
+  const seen={applyDeps:[],probes:[],recorded:[],runningDuringApply:[]};
+  const c=vm.createContext({process,Promise,Date,JSON,String,Object,Array,Set,Boolean,safeDetail:s=>String(s),writeSettings(){},
+    applyUpdates:async(_clock,deps)=>{seen.applyDeps.push(deps);seen.runningDuringApply.push(c.activity.running);return overrides.applyResult?overrides.applyResult():{applied:[],skipped:[],failed:[],notices:[],skipped_reason:null};},
+    runProbes:async(cli,opts)=>{seen.probes.push({cli,opts});return {schema:'momm-probe/1',cli,cli_version:'1.1.0',verdict:overrides.verdict||'fail',containment:{status:'unavailable'},one_line_review:{status:'ok'}};},
+    recordProbe:(root,result)=>{seen.recorded.push({root,result});return 'probes.jsonl';},
+    windowsLauncher:(command,args)=>({command,args}),
+    os:{tmpdir:()=>os.tmpdir()},installTimer:async()=>({done:true}),removeTimer:async()=>({done:true}),timerCommand:()=>({platform:'test',install:'install-cmd',remove:'remove-cmd'}),platformKey:()=>'test',updateClockScript:'clock.mjs',maintenanceCache:null,processScope:{},supervise(){},runNode(){},updaterScript:'',runCommand(){},detectInstallation:()=>({kind:'npm'}),createUpdateClock(){},localSkillVersion:()=>'1.16.0'});
+  vm.runInContext(source.slice(a,b)+';this.handle=handleUpdateClock;this.trigger=triggerClock;this.activity=clockActivity;',c);
+  return {c,seen};
+}
+const fakeClock=(enabled,trigger=async()=>({ran:true,skipped_reason:null,results:[]}))=>({trigger,status:()=>({}),settings:()=>({auto_update:{enabled}})});
+// dashboard-apply-skips-probe (audit finding 5): the real handler must hand the
+// module a post-update probe built from probes.mjs — runProbes with a processScope
+// exec and the OS tmpdir, recorded into this project's probes ledger — and report
+// each applied CLI's re-read version and verdict; a failed probe is never "ready".
+await test('the dashboard apply path wires the production containment probe and reports its verdict per CLI',async()=>{
+  const {c,seen}=clockSlice({applyResult:()=>({applied:[{name:'cli:codex',command:'npm install -g @openai/codex@latest',from:'1.0.0',to:'1.1.0',probe:{status:'fail',containment:'unavailable',one_line_review:'ok',cli_version:'1.1.0'}},{name:'skill',from:'1.15.1',to:'1.16.0'}],skipped:[],failed:[],notices:['codex updated']})});
+  const r=await c.handle({op:'apply'},fakeClock(true),{runUpdater:async()=>({code:0,output:''}),exec:async()=>({code:0}),versionOf:async()=>'1.1.0',isManaged:()=>false});
+  assert.equal(r.status,200);assert.equal(seen.applyDeps.length,1,'applyUpdates runs once');
+  const deps=seen.applyDeps[0];
+  assert.equal(typeof deps.postUpdateProbe,'function','the handler must supply postUpdateProbe; the module defaults it to null and records the update as applied without any probe');
+  const probe=await deps.postUpdateProbe('codex');
+  assert.equal(seen.probes.length,1);assert.equal(seen.probes[0].cli,'codex');
+  assert.equal(typeof seen.probes[0].opts.exec,'function','runProbes must get the server-owned exec, never its synchronous default');
+  assert.equal(seen.probes[0].opts.tmpdir,os.tmpdir());
+  assert.equal(seen.recorded.length,1);assert.equal(seen.recorded[0].root,process.cwd(),'the probe is recorded into this project');
+  assert.equal(seen.recorded[0].result.verdict,'fail');assert.equal(probe.status,'fail','the module reads probe.status');assert.equal(probe.cli_version,'1.1.0');
+  const codex=r.value.applied.find(x=>x.name==='cli:codex');
+  assert.equal(codex.version,'1.1.0','the re-read version is surfaced');assert.equal(codex.probe_verdict,'fail');assert.equal(codex.ready,false);
+  assert.equal(codex.verification,'updated, containment not verified');
+  const skill=r.value.applied.find(x=>x.name==='skill');assert.equal(skill.ready,null,'the skill row has no probe and no readiness claim');
+  assert.equal(r.value.activity.last_apply.event,'apply');assert.equal(r.value.activity.last_apply.applied,2);
+  assert.equal(r.value.activity.last_apply.rows.find(x=>x.name==='cli:codex').verification,'updated, containment not verified');
+  // A thrown probe reaches the row as status "error": still not verified, still not ready.
+  const {c:c2}=clockSlice({applyResult:()=>({applied:[{name:'cli:grok',from:'1.0.0',to:null,probe:{status:'error',error:'boom'}}],skipped:[],failed:[],notices:[]})});
+  const r2=await c2.handle({op:'apply'},fakeClock(true),{runUpdater:async()=>({code:0,output:''}),exec:async()=>({code:0})});
+  assert.equal(r2.value.applied[0].probe_verdict,'unavailable');assert.equal(r2.value.applied[0].ready,false);assert.equal(r2.value.applied[0].verification,'updated, containment not verified');
+  // Positive control: a passing probe is verified and ready.
+  const {c:c3}=clockSlice({applyResult:()=>({applied:[{name:'cli:claude',from:'1.0.0',to:'2.0.0',probe:{status:'pass'}}],skipped:[],failed:[],notices:[]})});
+  const r3=await c3.handle({op:'apply'},fakeClock(true),{runUpdater:async()=>({code:0,output:''}),exec:async()=>({code:0})});
+  assert.equal(r3.value.applied[0].probe_verdict,'pass');assert.equal(r3.value.applied[0].ready,true);assert.match(r3.value.applied[0].verification,/verified/);
+});
+// events-never-apply (audit finding 7): with auto_update.enabled, setup.open and
+// setup.check run the apply path after the check, under the same guard, and record
+// the outcome in clockActivity; while disabled nothing is applied and the card says so.
+await test('setup.open and setup.check apply updates after the check when enabled, under the shared guard, and record nothing applied when disabled',async()=>{
+  const {c,seen}=clockSlice({applyResult:()=>({applied:[{name:'cli:codex',from:'1.0.0',to:'1.1.0',probe:{status:'pass'}}],skipped:[{name:'skill',reason:'needs_protocol_acceptance'}],failed:[],notices:[]})});
+  let checks=0;const enabled=fakeClock(true,async()=>{checks++;return {ran:true,skipped_reason:null,results:[{name:'cli:codex',outcome:'changed'}]};});
+  const opened=await c.trigger(enabled,'setup.open');
+  assert.equal(checks,1);assert.equal(seen.applyDeps.length,1,'setup.open must apply after its check');assert.equal(seen.runningDuringApply[0],true,'apply runs inside the guarded activity');
+  assert.equal(opened.ran,true);assert.equal(opened.apply.applied.length,1);assert.equal(typeof seen.applyDeps[0].postUpdateProbe,'function','the event path uses the same probe wiring');
+  assert.deepEqual({event:c.activity.last_apply.event,enabled:c.activity.last_apply.enabled,applied:c.activity.last_apply.applied,skipped:c.activity.last_apply.skipped,failed:c.activity.last_apply.failed},{event:'setup.open',enabled:true,applied:1,skipped:1,failed:0});
+  assert.equal(c.activity.last_apply.rows[0].probe_verdict,'pass');assert.equal(c.activity.running,false);
+  const checked=await c.handle({op:'trigger',event:'setup.check'},enabled,{});
+  assert.equal(checked.status,200);assert.equal(checks,2);assert.equal(seen.applyDeps.length,2,'setup.check from the page applies too');
+  assert.equal(checked.value.result.apply.applied.length,1);assert.equal(checked.value.activity.last_apply.event,'setup.check');
+  const disabled=fakeClock(false,async()=>{checks++;return {ran:true,skipped_reason:null,results:[]};});
+  const off=await c.trigger(disabled,'setup.open');
+  assert.equal(checks,3,'the check still runs while disabled');assert.equal(seen.applyDeps.length,2,'nothing is applied while disabled');
+  assert.equal(off.apply.applied.length,0);assert.equal(off.apply.skipped_reason,'auto_update_disabled');
+  assert.equal(c.activity.last_apply.enabled,false);assert.equal(c.activity.last_apply.applied,0);assert.match(c.activity.last_apply.note,/off/i);
+  // A failed check never reaches apply.
+  const broken=fakeClock(true,async()=>{throw new Error('registry down');});
+  assert.equal(await c.trigger(broken,'setup.check'),null);assert.equal(seen.applyDeps.length,2);assert.equal(c.activity.last_error,'registry down');
 });
 // guidance-body-limit-unenforced: saveGuidance answers 413 for a file over the cap,
 // and the route hands that status to the page untouched.
@@ -256,7 +327,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -310,6 +381,42 @@ await test('automatic updates card renders off by default with the exact timer c
   assert.match(html,/data-clock-setting="skill" checked disabled/,'sub-toggles are inert while the master is off');
   assert(html.includes('schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR &quot;x&quot;'),'exact timer command shown, escaped');
   assert.match(html,/Estimated 6 conditional requests per day/);assert.match(html,/HTTP 503/);assert.match(html,/Codex CLI/);assert(!html.includes('undefined'));
+});
+// The card shows the last event's apply outcome — applied / skipped / failed —
+// with each updated CLI's re-read version and probe verdict; a failed or
+// unavailable probe reads "updated, containment not verified", never ready. It
+// also discloses the synthetic probe traffic that enabling the switch causes.
+await test('automatic updates card shows the last apply outcome per CLI, never presents an unverified route as ready, and discloses the probe traffic',()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'},grok:{label:'Grok'},claude:{label:'Claude Code'}}},null);
+  const base={auto_update:{enabled:true,skill:true,clis:true,models:true,accept_protocol:false},clock:{},sources:[],overhead_estimate_per_day:6,timer:{platform:'win32',install:'x',remove:'y'}};
+  c.setClock({...base,activity:{running:false,last_event:'setup.open',last_finished_at:'2026-09-13T10:00:00.000Z',last_apply:{at:'2026-09-13T10:00:01.000Z',event:'setup.open',enabled:true,applied:2,skipped:1,failed:1,skipped_reason:null,
+    rows:[{name:'cli:codex',cli:'codex',from:'1.0.0',to:'1.1.0',version:'1.1.0',probe_verdict:'fail',ready:false,verification:'updated, containment not verified'},{name:'cli:claude',cli:'claude',from:'1.0.0',to:'2.0.0',version:'2.0.0',probe_verdict:'pass',ready:true,verification:'verified: 2.0.0 passed the containment probe'}],
+    failures:[{name:'cli:grok',reason:'exit 1'}],note:null}}});
+  c.core.renderUpdateClock();const html=c.node('#update-clock-card').innerHTML;
+  assert.match(html,/applied 2 \/ skipped 1 \/ failed 1/,'the last event outcome is counted on the card');assert.match(html,/setup\.open/);
+  assert.match(html,/Codex CLI[^<]*<\/[^>]+>[^]*?1\.0\.0 → 1\.1\.0/,'the re-read version is shown for the applied CLI');
+  assert.match(html,/updated, containment not verified/);assert.match(html,/probe fail/i);
+  const codexRow=html.slice(html.indexOf('cli:codex'),html.indexOf('cli:claude'));assert(!/\bready\b/i.test(codexRow),'a failed probe must not be presented as ready: '+codexRow);
+  const claudeRow=html.slice(html.indexOf('cli:claude'));assert.match(claudeRow,/probe pass/i);assert.match(claudeRow,/ready/i,'positive control: a passing probe reads as ready');
+  assert.match(html,/Grok CLI[^]*?exit 1/,'a failed update is listed with its reason');
+  assert.match(html,/one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider/,'the probe traffic is disclosed on the card');
+  c.setClock({...base,auto_update:{...base.auto_update,enabled:false},activity:{running:false,last_event:'setup.check',last_finished_at:'2026-09-13T10:00:00.000Z',last_apply:{at:'2026-09-13T10:00:01.000Z',event:'setup.check',enabled:false,applied:0,skipped:0,failed:0,skipped_reason:'auto_update_disabled',rows:[],failures:[],note:'automatic updates are off: checked only, nothing applied'}}});
+  c.core.renderUpdateClock();const off=c.node('#update-clock-card').innerHTML;
+  assert.match(off,/automatic updates are off: checked only, nothing applied/,'while disabled the card says nothing was applied');assert(!/applied 0 \/ skipped 0/.test(off),'no misleading zero tally while disabled');
+  c.setClock({...base,activity:{running:false}});c.core.renderUpdateClock();
+  assert.match(c.node('#update-clock-card').innerHTML,/No update has been applied from this Setup Center yet/,'no event yet reads as such, not as a zero tally');
+});
+// effective-prompt-preview-overclaims: the preview is built with a contract stub
+// and no persona, so the page and API call it a guidance preview and say what is missing.
+await test('the guidance preview is labelled as such and notes that the built-in contract and persona are not rendered',()=>{
+  const html=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
+  assert(!/Effective prompt preview/i.test(html),'the old label overclaims');assert.match(html,/Guidance preview/);assert.match(html,/id="guidance-preview-note"/);
+  assert.match(html,/shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here/);
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},null);
+  c.setGuidance({routes:['codex'],guidance_preview:{codex:'[guidance preview stub]\nGUIDANCE FOR codex'},guidance_preview_note:'shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here',effective:{},resolve_error:null});
+  c.core.renderGuidancePreview();
+  assert.equal(c.node('#guidance-preview').textContent,'[guidance preview stub]\nGUIDANCE FOR codex','the page reads the renamed API field');
+  assert.match(c.node('#guidance-preview-note').textContent,/built-in contract and persona text are not rendered here/);
 });
 await test('guidance editor omits empty blocks and totals a route against user-level layers',()=>{
   const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},null);
@@ -428,7 +535,7 @@ await test('edits typed while a guidance save is in flight survive the save resp
   const unescape=s=>s.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
   Object.defineProperty(editor,'innerHTML',{set(html){areas=[...html.matchAll(/<textarea data-guidance="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g)].map(m=>({dataset:{guidance:unescape(m[1])},value:unescape(m[2])}));},get(){return areas.map(a=>`${a.dataset.guidance}=${a.value}`).join('|');}});
   editor.querySelectorAll=sel=>sel==='[data-guidance]'?areas:[];
-  const snapshot=governor=>({file:'.momm/guidance.json',user_file:'u',routes:['codex'],project:{governor},project_sha256:'a'.repeat(64),trusted:true,user:null,effective:{},preview:{},notices:[]});
+  const snapshot=governor=>({file:'.momm/guidance.json',user_file:'u',routes:['codex'],project:{governor},project_sha256:'a'.repeat(64),trusted:true,user:null,effective:{},guidance_preview:{},notices:[]});
   c.setGuidance(snapshot('first'));c.core.renderGuidance();
   const area=()=>areas.find(a=>a.dataset.guidance==='governor');
   area().value='first edited';
