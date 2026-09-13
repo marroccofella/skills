@@ -327,7 +327,11 @@ export async function runProbes(cli, { exec = defaultExec, tmpdir = os.tmpdir(),
       result.containment.reason = result.one_line_review.reason = versionReason;
       return result;
     }
-    result.cli_version = version.code === 0 ? semver(version.stdout) || semver(version.stderr) : null;
+    // The version is the semver the CLI printed, whatever its exit code: gemini 0.59 has been seen
+    // to exit non-zero from `--version` while still printing "0.59.0" (live run 2026-09-14), and an
+    // unbound overlay entry is worse than one bound to the version actually observed.
+    result.cli_version = semver(version.stdout) || semver(version.stderr) || null;
+    result.version_exit_code = version.code ?? null;
 
     // 1. Containment.
     const prompt = canaryPrompt(canaryPath);
@@ -804,7 +808,11 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
     const version = await exec(binary, ["--version"], execOpts({ timeout: Math.min(timeoutMs, 30_000), cwd: projectDir }));
     const versionReason = unavailableReason(version);
     if (versionReason === "not_installed" || versionReason === "unsupported_launcher") { result.reason = versionReason; result.detail = reasonText[versionReason]; return result; }
-    result.cli_version = version.code === 0 ? semver(version.stdout) || semver(version.stderr) : null;
+    // The version is the semver the CLI printed, whatever its exit code: gemini 0.59 has been seen
+    // to exit non-zero from `--version` while still printing "0.59.0" (live run 2026-09-14), and an
+    // unbound overlay entry is worse than one bound to the version actually observed.
+    result.cli_version = semver(version.stdout) || semver(version.stderr) || null;
+    result.version_exit_code = version.code ?? null;
     let matrix;
     try { matrix = await effectiveFn.call(registry, { home, installedVersions: { [cli]: result.cli_version }, loginIdentity }); }
     catch (e) { result.reason = "registry_error"; result.detail = `capabilities registry failed: ${clip(e?.message, 200)}`; return result; }

@@ -478,6 +478,24 @@ try {
     assert.equal(clearingAction("reprobe").includes("--modalities"), true); assert.equal(clearingAction("nonsense"), null);
     assert.equal(expiresAtFor("probe_failed", at), null);
   });
+  await test("version_is_the_printed_semver_whatever_the_exit_code", async () => {
+    // Live 2026-09-14: gemini 0.59 exited non-zero from --version while printing "0.59.0"; the
+    // whole probe then recorded "cli version unknown: entry not written" and no blocker reached
+    // the overlay. The printed semver is the version; the exit code is recorded beside it.
+    const reg = fakeRegistry({ gemini: { input: allInputs("documented") } });
+    const tier = () => ({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer eligible" });
+    const f = modalityExec({ version: { code: 1, stdout: "0.59.0\n", stderr: "Warning: True color (24-bit) support not detected." }, replies: { png: tier, pdf: tier, wav: tier } });
+    const r = await runModalityProbes("gemini", mopts({ registry: reg, exec: f.exec, command: "gemini" }));
+    assert.equal(r.cli_version, "0.59.0"); assert.equal(r.version_exit_code, 1);
+    assert.equal(cellOf(r, "image").status, "blocked"); assert.equal(cellOf(r, "image").blocker, "auth_tier");
+    assert.equal(cellOf(r, "image").overlay_written, true, "a blocker seen live must reach the overlay even when --version exits non-zero");
+    assert.ok(reg.entries.some(({ entry }) => entry.route === "gemini" && entry.cli_version === "0.59.0" && entry.blocker === "auth_tier"), JSON.stringify(reg.entries[0]));
+    const none = modalityExec({ version: { code: 1, stdout: "", stderr: "unknown option --version" }, replies: { png: tier, pdf: tier, wav: tier } });
+    const n = await runModalityProbes("gemini", mopts({ registry: reg, exec: none.exec, command: "gemini" }));
+    assert.equal(n.cli_version, null, "no semver printed: still unknown");
+    assert.equal(cellOf(n, "image").overlay_written, false, "nothing binds to an unknown version");
+  });
+
   await test("not_logged_in_is_unavailable_and_writes_nothing", async () => {
     const reg = fakeRegistry({ grok: { input: allInputs("verified"), output: { image_gen: { level: "verified", harvest: "~/.grok/**/*.jpg" } } } });
     const f = modalityExec({ replies: { png: () => ({ code: 1, stdout: "", stderr: "Error: Not signed in. Run `grok login` to authenticate." }) } });
