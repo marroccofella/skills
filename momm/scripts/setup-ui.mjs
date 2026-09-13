@@ -589,18 +589,23 @@ const GUIDANCE_ROUTES = Object.freeze(["codex", "claude", "gemini", "antigravity
 const GUIDANCE_BODY_LIMIT = 64 * 1024;
 const CONTRACT_STUB = "[review contract omitted: the dispatcher supplies the full momm-peer-review/2 contract here]";
 
-function guidanceFileSha(file) {
-  return fs.existsSync(file) ? sha256(fs.readFileSync(file)) : null;
+// The on-disk hash, with the read failure carried alongside instead of thrown:
+// a directory or unreadable entry at the guidance path is a reportable state
+// of the project (project_error), not a crash of the whole snapshot.
+function guidanceFileState(file) {
+  try { return { sha: fs.existsSync(file) ? sha256(fs.readFileSync(file)) : null, error: null }; }
+  catch (error) { return { sha: null, error: safeDetail(error.message) }; }
 }
 
 function guidanceSnapshot({ cwd = process.cwd(), home } = {}) {
   const file = projectGuidanceFiles(cwd).guidance;
+  const disk = guidanceFileState(file);
   const value = {
     file, user_file: userGuidancePath(home), routes: [...GUIDANCE_ROUTES], budget: { ...GUIDANCE_BUDGET },
-    project: null, project_error: null, project_sha256: guidanceFileSha(file), trusted: false,
+    project: null, project_error: disk.error, project_sha256: disk.sha, trusted: false,
     user: null, user_error: null, effective: {}, governor: null, preview: {}, notices: [], resolve_error: null,
   };
-  try { value.project = readGuidanceFile(file); } catch (error) { value.project_error = safeDetail(error.message); }
+  try { value.project = readGuidanceFile(file); } catch (error) { value.project_error ||= safeDetail(error.message); }
   try { value.user = readGuidanceFile(userGuidancePath(home)); } catch (error) { value.user_error = safeDetail(error.message); }
   try { value.trusted = value.project_sha256 !== null && isTrusted(cwd, "guidance", value.project_sha256, { home }); } catch (error) { value.project_error ||= safeDetail(error.message); }
   try {
@@ -627,7 +632,12 @@ function guidanceBudgetProblem(candidate, effective) {
   return null;
 }
 
-function saveGuidance(body, { cwd = process.cwd(), home } = {}) {
+const GUIDANCE_STALE = "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.";
+
+// `beforeCommit` is a test seam only: it stands in for a second process writing
+// the file after the pre-check and before the rename, so the final check can
+// be proven to catch that window.
+function saveGuidance(body, { cwd = process.cwd(), home, beforeCommit } = {}) {
   const file = projectGuidanceFiles(cwd).guidance;
   let guidance;
   try { guidance = validateGuidance(body?.guidance, ".momm/guidance.json"); } catch (error) { return { status: 400, value: { error: safeDetail(error.message) } }; }
@@ -636,11 +646,24 @@ function saveGuidance(body, { cwd = process.cwd(), home } = {}) {
   const before = guidanceSnapshot({ cwd, home });
   const budget = guidanceBudgetProblem(guidance, before.effective);
   if (budget) return { status: 400, value: { error: budget } };
-  if (before.project_sha256 !== expected) return { status: 409, value: { error: "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.", project_sha256: before.project_sha256 } };
+  // An entry that exists but has no hash cannot be matched by any expected_sha256:
+  // refuse instead of letting the rename fail against it.
+  if (before.project_sha256 === null && fs.existsSync(file)) return { status: 409, value: { error: `The guidance file exists but could not be read (${before.project_error || "unreadable"}). Repair or remove it, then reload.`, project_sha256: null } };
+  if (before.project_sha256 !== expected) return { status: 409, value: { error: GUIDANCE_STALE, project_sha256: before.project_sha256 } };
   const text = `${JSON.stringify(guidance, null, 2)}\n`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, text, { encoding: "utf8", mode: 0o600 });
+  beforeCommit?.();
+  // Re-hash the bytes on disk in the same synchronous section as the rename.
+  // Nothing in this process can interleave between the two statements, so a
+  // foreign write that landed after the pre-check above is caught here instead
+  // of being replaced; the temp file is withdrawn so no stray copy remains.
+  const current = guidanceFileState(file);
+  if (current.error || current.sha !== expected) {
+    try { fs.unlinkSync(temp); } catch {}
+    return { status: 409, value: { error: current.error ? `The guidance file became unreadable during the save (${current.error}). Reload and try again.` : GUIDANCE_STALE, project_sha256: current.sha } };
+  }
   fs.renameSync(temp, file);
   // `expect` pins the trust entry to the bytes just written; a race with
   // another writer between rename and trust is refused rather than trusted.
@@ -801,8 +824,10 @@ async function handleUpdateClock(body, clock, deps = {}) {
     if (!["install", "remove"].includes(action)) return { status: 400, value: { error: "timer action must be install or remove" } };
     const command = clockTimer()[action];
     // Same exact-command pattern as /api/action: the page must echo the command
-    // it showed, and the confirm flag must be the literal true.
-    if ((body.expected_command !== undefined && body.expected_command !== command) || body.confirm !== true) return { status: 409, value: { error: "Confirm the exact command first.", command } };
+    // it showed, every time, and the confirm flag must be the literal true. An
+    // omitted expected_command is a missing confirmation, not an implicit one;
+    // otherwise a stale page could register a command it never displayed.
+    if (body.expected_command !== command || body.confirm !== true) return { status: 409, value: { error: "Confirm the exact command first.", command } };
     const run = action === "install" ? installTimer : removeTimer;
     const result = await run({ platform: platformKey(), nodePath: process.execPath, scriptPath: updateClockScript, exec: deps.exec || clockExec, confirm: true });
     return { status: result.done ? 200 : 500, value: { ...result, ...clockSnapshot(clock) } };
@@ -819,9 +844,9 @@ async function handleUpdateClock(body, clock, deps = {}) {
 const LEDGER_FILES = new Set(["review-log.jsonl", "dispositions.jsonl"]);
 const LEDGER_MIN_GAP_MS = 5000;
 
-function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MIN_GAP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, watch = fs.watch } = {}) {
+function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MIN_GAP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, watch = fs.watch, exists = fs.existsSync } = {}) {
   const state = { watching: false, running: false, pending: false, regenerations: 0, last_regenerated_at: null, last_exit_code: null, last_error: null };
-  let debounce = null, retry = null, watcher = null, lastRunAt = -Infinity;
+  let debounce = null, retry = null, watcher = null, lastRunAt = -Infinity, stopped = true;
   async function regenerate() {
     if (state.running) { state.pending = true; return; }
     state.running = true;
@@ -835,10 +860,13 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
     } catch (error) { state.last_error = safeDetail(error.message); }
     finally {
       state.running = false;
-      if (state.pending) { state.pending = false; schedule(); }
+      // A notification that arrived mid-run is honored only while the watcher
+      // is still live: after stop() nothing may schedule again.
+      if (state.pending) { state.pending = false; if (!stopped) schedule(); }
     }
   }
   function schedule() {
+    if (stopped) return;
     if (debounce) clearTimer(debounce);
     const wait = Math.max(debounceMs, lastRunAt + minGapMs - now());
     debounce = setTimer(() => { debounce = null; return regenerate(); }, wait);
@@ -847,22 +875,29 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   function notify(filename) {
     if (LEDGER_FILES.has(String(filename ?? ""))) schedule();
   }
-  function start() {
+  // `catchUp` is set when this attach follows a gap (the directory was absent,
+  // or the previous watcher errored): telemetry written meanwhile had no watcher
+  // to see it, so one rebuild is scheduled if any telemetry file exists.
+  function start({ catchUp = false } = {}) {
+    stopped = false;
     try {
       watcher = watch(dir, { persistent: false }, (_event, filename) => notify(filename));
       watcher.on?.("error", () => { state.watching = false; watcher = null; retryLater(); });
       state.watching = true;
+      if (catchUp && [...LEDGER_FILES].some((name) => { try { return exists(path.join(dir, name)); } catch { return false; } })) schedule();
     } catch { state.watching = false; retryLater(); } // directory absent until the first review
   }
   function retryLater() {
-    if (retry) return;
-    retry = setTimer(() => { retry = null; start(); }, 30_000);
+    if (retry || stopped) return;
+    retry = setTimer(() => { retry = null; start({ catchUp: true }); }, 30_000);
     retry?.unref?.();
   }
   function stop() {
+    stopped = true;
     if (debounce) clearTimer(debounce);
     if (retry) clearTimer(retry);
     debounce = retry = null;
+    state.pending = false;
     try { watcher?.close?.(); } catch {}
     watcher = null;
     state.watching = false;
@@ -1128,6 +1163,28 @@ async function dashboardRegression() {
       && preview.includes(guidance.reviewers.codex) && preview.startsWith(CONTRACT_STUB)
       && preview.split("--- ARTIFACT TO REVIEW ---").length === 2 && !preview.includes("diff --git")
       && Object.values(saved.value.preview).every((text) => text.includes("<artifact omitted: 0 bytes>"));
+    // guidance-hash-bypasses-error-handling: a directory (or any unreadable
+    // entry) at .momm/guidance.json is reported as project_error, never thrown,
+    // and a save over it is refused rather than crashing on the rename.
+    const d = fixture("guidance-dir");
+    fs.mkdirSync(projectGuidanceFiles(d.cwd).guidance, { recursive: true });
+    let dirSnapshot = null, dirThrew = false, dirSave;
+    try { dirSnapshot = guidanceSnapshot(d); } catch { dirThrew = true; }
+    try { dirSave = saveGuidance({ expected_sha256: null, guidance: { governor: "x" } }, d); } catch { dirSave = { status: "threw" }; }
+    checks.guidance_unreadable_project_file_reported_not_thrown = !dirThrew && dirSnapshot?.project_sha256 === null
+      && typeof dirSnapshot?.project_error === "string" && dirSnapshot.project_error.length > 0 && Array.isArray(dirSnapshot.routes)
+      && dirSave.status === 409 && fs.statSync(projectGuidanceFiles(d.cwd).guidance).isDirectory();
+    // guidance-save-overwrites-intervening-write: a foreign write that lands
+    // after the pre-check must be caught in the same critical section as the
+    // rename. `beforeCommit` is the seam where that second process writes.
+    const r = fixture("guidance-race");
+    const raceFile = projectGuidanceFiles(r.cwd).guidance;
+    const first = saveGuidance({ expected_sha256: null, guidance: { governor: "A" } }, r);
+    const revisionB = Buffer.from(`${JSON.stringify({ governor: "B" }, null, 2)}\n`, "utf8");
+    const raced = saveGuidance({ expected_sha256: first.value.project_sha256, guidance: { governor: "C" } }, { ...r, beforeCommit: () => fs.writeFileSync(raceFile, revisionB) });
+    checks.guidance_intervening_write_refused_409 = first.status === 200 && raced.status === 409 && fs.readFileSync(raceFile).equals(revisionB)
+      && !fs.readdirSync(path.dirname(raceFile)).some((name) => name.endsWith(".tmp"))
+      && saveGuidance({ expected_sha256: sha256(revisionB), guidance: { governor: "C" } }, r).status === 200; // control: B's own hash lets C land
 
     // Usage: routes without reported usage read "0 of n", never zero.
     const usage = fixture("usage");
@@ -1163,6 +1220,15 @@ async function dashboardRegression() {
     const timerFalse = await handleUpdateClock({ op: "timer", action: "remove", confirm: "true" }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
     checks.timer_install_without_confirm_refused = timerDefault.status === 409 && timerDefault.value.command === clockTimer().install
       && timerMismatch.status === 409 && timerFalse.status === 409 && execs === 0;
+    // timer-command-confirmation-optional: confirm:true alone is not a
+    // confirmation; the page must echo the exact command it displayed.
+    const timerNoCommand = await handleUpdateClock({ op: "timer", action: "install", confirm: true }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    const timerRemoveNoCommand = await handleUpdateClock({ op: "timer", action: "remove", confirm: true }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    const execsAfterRefusals = execs;
+    const timerExact = await handleUpdateClock({ op: "timer", action: "remove", confirm: true, expected_command: clockTimer().remove }, clock, { exec: async () => { execs += 1; return { code: 0 }; } });
+    checks.timer_requires_exact_command_even_when_confirmed = timerNoCommand.status === 409 && timerNoCommand.value.command === clockTimer().install
+      && timerRemoveNoCommand.status === 409 && execsAfterRefusals === 0
+      && timerExact.status === 200 && execs === 1; // control: the echoed command reaches the (stubbed) OS once
     const badEvent = await handleUpdateClock({ op: "trigger", event: "daily.tick" }, clock, {});
     checks.update_clock_rejects_unknown_ops = badEvent.status === 400 && (await handleUpdateClock({ op: "nuke" }, clock, {})).status === 400 && (await handleUpdateClock({ op: "set" }, null, {})).status === 503;
 
@@ -1190,6 +1256,44 @@ async function dashboardRegression() {
     const settled = await failing.at(-1).fn().then(() => "resolved", () => "rejected");
     failingWatcher.stop();
     checks.ledger_watcher_catches_rejected_rebuilds = settled === "resolved" && failingWatcher.status().last_error === "ledger exploded" && failingWatcher.status().regenerations === 0 && failingWatcher.status().running === false;
+    // ledger-misses-writes-before-watch-attachment: telemetry written while the
+    // directory was absent (before the 30 s retry attached) is rebuilt once the
+    // watcher attaches, without waiting for another append. An empty directory
+    // attaches quietly.
+    const lateWatch = (dir) => {
+      const timers = []; let runs = 0, attempts = 0;
+      const watcher = createLedgerWatcher({ dir, run: async () => { runs += 1; await macrotask(); return { code: 0, stdout: "", stderr: "" }; }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => { attempts += 1; if (!fs.existsSync(dir)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return { on() {}, close() {} }; } });
+      return { watcher, timers, runs: () => runs, attempts: () => attempts };
+    };
+    const lateDir = path.join(root, "ledger-late");
+    const late = lateWatch(lateDir);
+    late.watcher.start();
+    const lateRetryPending = late.timers.length === 1 && late.timers[0].ms === 30_000 && late.watcher.status().watching === false;
+    fs.mkdirSync(lateDir, { recursive: true }); fs.writeFileSync(path.join(lateDir, "review-log.jsonl"), "{}\n"); // the first review lands before the retry
+    late.timers[0].fn();
+    const catchUp = late.timers.filter((timer) => !timer.cleared && timer.ms !== 30_000);
+    const catchUpScheduled = late.watcher.status().watching === true && catchUp.length === 1;
+    if (catchUp.length) await catchUp[0].fn();
+    late.watcher.stop();
+    const emptyDir = path.join(root, "ledger-empty");
+    const empty = lateWatch(emptyDir);
+    empty.watcher.start(); fs.mkdirSync(emptyDir, { recursive: true }); empty.timers[0].fn();
+    const emptyQuiet = empty.watcher.status().watching === true && empty.timers.filter((timer) => !timer.cleared && timer.ms !== 30_000).length === 0;
+    empty.watcher.stop();
+    checks.ledger_watcher_catches_up_on_writes_before_attachment = lateRetryPending && late.attempts() === 2 && catchUpScheduled && late.runs() === 1 && emptyQuiet && empty.runs() === 0;
+    // ledger-regeneration-resumes-after-stop: a notification that arrives while
+    // a rebuild is running must not schedule another rebuild once stop() ran.
+    const stopTimers = []; let stopRuns = 0, release = null;
+    const stopWatcher = createLedgerWatcher({ dir: root, run: () => { stopRuns += 1; return new Promise((resolve) => { release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; stopTimers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => ({ on() {}, close() {} }) });
+    stopWatcher.start(); stopWatcher.notify("review-log.jsonl");
+    const inFlight = stopTimers.at(-1).fn();          // rebuild running, awaiting `release`
+    stopWatcher.notify("dispositions.jsonl"); stopTimers.at(-1).fn(); // fires during the run: marks pending
+    const pendingWhileRunning = stopWatcher.status().pending === true && stopRuns === 1;
+    stopWatcher.stop();
+    const timersBeforeRelease = stopTimers.length;
+    release(); await inFlight;
+    checks.ledger_watcher_never_reschedules_after_stop = pendingWhileRunning && stopRuns === 1
+      && stopTimers.slice(timersBeforeRelease).filter((timer) => !timer.cleared).length === 0 && stopWatcher.status().pending === false && stopWatcher.status().running === false;
   } catch (error) {
     recordRegressionThrow(checks, error);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }

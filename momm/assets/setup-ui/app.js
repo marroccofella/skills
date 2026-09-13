@@ -59,6 +59,20 @@ let batchRunning = false;
 const batchSelected = new Set();
 const liveResults = new Map();
 const updateAttempts = new Map();
+// Governor transitions: the epoch is bumped on every change, so a status poll
+// or verification job started under the previous governor is recognised as
+// stale when it answers and dropped instead of populating the new view.
+let governorEpoch = 0;
+let refreshEpoch = 0;
+let refreshAgain = false;
+// One verification per provider at a time: provider -> the job entry that owns
+// the card until it settles or is superseded.
+const runningTests = new Map();
+const TEST_POLL_MS = 1800;
+// The server's connectivity budget is 240 s (CONNECTIVITY_TIMEOUT_MS) plus a
+// report flush; a job still "running" after this is shown as timed out rather
+// than polled forever.
+const TEST_DEADLINE_MS = 300_000;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -73,10 +87,13 @@ function showToast(message) {
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  if (session?.token) headers['X-MOMM-Token'] = session.token;
+  if (session?.token) headers["X-MOMM-Token"] = session.token;
   if (options.method === "POST") {
+    // Every mutation carries the local session token. Before /api/session has
+    // answered there is none to send, so refuse with an ordinary error the
+    // callers already handle instead of a TypeError from the dereference.
+    if (!session?.token) throw new Error("The local session is not ready yet. Reload the page and try again.");
     headers["Content-Type"] = "application/json";
-    headers["X-MOMM-Token"] = session.token;
   }
   const response = await fetch(path, { ...options, headers });
   const value = await response.json();
@@ -304,17 +321,29 @@ async function loadMaintenance(force = false) {
     if (!records(fresh?.cli_updates) || !records(fresh?.models) || !records(fresh?.skills?.versions)
       || !fresh.environment || typeof fresh.environment !== 'object' || Array.isArray(fresh.environment)
       || !Object.values(fresh.environment).every(names => Array.isArray(names) && names.every(name => typeof name === 'string'))
-      || typeof fresh.runtime?.platform !== 'string') throw new Error('Invalid maintenance response; previous results retained.');
+      || typeof fresh.runtime?.platform !== 'string'
+      || !fresh.cli_updates.every(item => typeof item.agent === 'string' && session?.providers?.[item.agent])) throw new Error('Invalid maintenance response; previous results retained.');
+    // Validation is proven by rendering: the new state is committed only once
+    // the maintenance card was built from it, and rolled back to the last good
+    // state otherwise, so the update controls never consult a record that
+    // could not be displayed.
+    const previous = maintenance;
+    maintenance = fresh;
+    try { renderMaintenance(); }
+    catch (error) {
+      maintenance = previous;
+      if (previous) renderMaintenance();
+      throw new Error(`Invalid maintenance response (${error.message}); previous results retained.`);
+    }
     for (const item of fresh.cli_updates) {
-      const previous = maintenance?.cli_updates.find(x => x.agent === item.agent)?.current;
-      if (previous && previous !== item.current) liveResults.delete(item.agent);
+      const before = previous?.cli_updates.find(x => x.agent === item.agent)?.current;
+      if (before && before !== item.current) liveResults.delete(item.agent);
       const attempt = updateAttempts.get(item.agent);
       if (attempt && item.current && item.current !== attempt.before) {
         attempt.observed = true;
         attempt.message = `Detected ${attempt.before || 'unknown'} → ${item.current}. Verify connection again.`;
       }
     }
-    maintenance = fresh;
     renderMaintenance();
     render();
     loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
@@ -325,19 +354,31 @@ async function loadMaintenance(force = false) {
 }
 
 async function refresh() {
-  if (refreshing) return;
+  // A poll already in flight for the current governor is enough; one for a
+  // previous governor is stale, so a fresh poll is queued behind it.
+  if (refreshing) { if (refreshEpoch !== governorEpoch) refreshAgain = true; return; }
   refreshing = true;
+  refreshEpoch = governorEpoch;
   refreshButton.disabled = true;
   summary.textContent = "Checking this computer…";
   try {
-    report = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
+    const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
+    if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
+    report = fresh;
+    // A verification belongs to the session it ran against: once readiness
+    // falls, the cached success goes with it, so a returning session must be
+    // verified again instead of resurrecting the old result.
+    for (const route of report.routes || []) if (route.ready !== true && liveResults.get(route.agent)?.status === "success") liveResults.delete(route.agent);
     render();
   } catch (error) {
-    summary.textContent = "We could not check the local reviewers.";
-    showToast(error.message);
+    if (refreshEpoch === governorEpoch) {
+      summary.textContent = "We could not check the local reviewers.";
+      showToast(error.message);
+    }
   } finally {
     refreshing = false;
     refreshButton.disabled = false;
+    if (refreshAgain) { refreshAgain = false; refresh(); }
   }
 }
 
@@ -374,38 +415,55 @@ async function launchAction(provider, action) {
   } catch (error) { showToast(error.message); }
 }
 
+// One verification per provider at a time. The entry in runningTests is the
+// job's identity: a second click reuses it, a governor change clears it, and
+// an answer arriving for an entry that is no longer current is dropped rather
+// than written over whatever owns the card now.
 async function runTest(provider, notify = true) {
-  liveResults.set(provider, { status: "running" });
-  render();
-  try {
-    const job = await api("/api/test", { method: "POST", body: JSON.stringify({ provider, governor: governorSelect.value }) });
-    return await new Promise((resolve) => {
-      const poll = setInterval(async () => {
-        try {
-          const current = await api(`/api/job/${job.id}`);
-          if (current.status === "running") return;
-          clearInterval(poll);
-          liveResults.set(provider, current);
-          render();
-          loadUsage(); // every verification is a sealed report; show what its CLI reported
-          if (notify) showToast(current.status === "success" ? `${session.providers[provider].label} passed the synthetic check.` : `${session.providers[provider].label}: ${current.result?.route_status || 'check failed'}. See the card for details.`);
-          resolve(current);
-        } catch (error) {
-          clearInterval(poll);
-          const failed = { status: "failed", error: error.message };
-          liveResults.set(provider, failed);
-          render();
-          if (notify) showToast(error.message);
-          resolve(failed);
-        }
-      }, 1800);
-    });
-  } catch (error) {
-    const failed = { status: "failed", error: error.message };
-    liveResults.set(provider, failed);
+  const inFlight = runningTests.get(provider);
+  if (inFlight) return inFlight.promise;
+  const entry = {};
+  runningTests.set(provider, entry);
+  const current = () => runningTests.get(provider) === entry;
+  const settle = (value, message) => {
+    if (!current()) return { status: "cancelled" };
+    runningTests.delete(provider);
+    liveResults.set(provider, value);
     render();
-    if (notify) showToast(error.message);
-    return failed;
+    if (notify && message) showToast(message);
+    return value;
+  };
+  entry.promise = verify();
+  return entry.promise;
+
+  async function verify() {
+    liveResults.set(provider, { status: "running" });
+    render();
+    try {
+      const job = await api("/api/test", { method: "POST", body: JSON.stringify({ provider, governor: governorSelect.value }) });
+      const deadline = Date.now() + TEST_DEADLINE_MS;
+      // Sequential polling: the next request goes out only after the previous
+      // one answered, so a slow answer can neither overlap the next poll nor
+      // land after the job settled. The deadline ends a job the server never
+      // reports on in a visible failed state.
+      while (current()) {
+        await sleep(TEST_POLL_MS);
+        if (!current()) break;
+        const state = await api(`/api/job/${job.id}`);
+        if (state.status !== "running") {
+          const live = current();
+          const value = settle(state, state.status === "success" ? `${providerLabel(provider)} passed the synthetic check.` : `${providerLabel(provider)}: ${state.result?.route_status || "check failed"}. See the card for details.`);
+          if (live) loadUsage(); // every verification is a sealed report; show what its CLI reported
+          return value;
+        }
+        if (Date.now() >= deadline) {
+          return settle({ status: "failed", error: "timeout", result: { route_status: "timeout", detail: `No result after ${Math.round(TEST_DEADLINE_MS / 60_000)} minutes. The check may still be finishing on this computer; retry once it has settled.` } }, `${providerLabel(provider)}: the check timed out.`);
+        }
+      }
+      return { status: "cancelled" };
+    } catch (error) {
+      return settle({ status: "failed", error: error.message }, error.message);
+    }
   }
 }
 
@@ -417,7 +475,8 @@ async function runQuickSetup() {
   try {
     await refresh();
     await loadMaintenance(false);
-    const eligible = reviewerRoutes().filter((route) => route.ready && routeState(route) !== "ready");
+    // A card already being verified is not eligible: its running job owns it.
+    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing"].includes(routeState(route)));
     if (!eligible.length) {
       const disconnected = reviewerRoutes().filter((route) => !route.ready);
       showToast(disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
@@ -561,14 +620,17 @@ function renderGuidancePreview() {
   guidancePreview.textContent = guidance.resolve_error ? `Preview unavailable: ${guidance.resolve_error}` : guidance.preview?.[route] || "";
 }
 
-function renderGuidance() {
+// `keep` holds the editor's current text when it moved on while a save was in
+// flight: the blocks are rebuilt from the loaded state, then that text is put
+// back so nothing typed during the save is lost.
+function renderGuidance({ keep = null } = {}) {
   if (!guidance) return;
   const project = guidance.project, user = guidance.user;
   const state = guidance.project_error ? `Project file unreadable: ${guidance.project_error}`
     : !project ? "No project guidance yet. Blocks you save here are written to .momm/guidance.json and trusted."
     : guidance.trusted ? "Project guidance loaded and trusted for this project."
     : "Project guidance is on disk but NOT trusted: runs ignore it until you save it here or trust its hash with the CLI.";
-  guidanceSummary.textContent = `${state}${guidance.notices?.length ? ` · ${guidance.notices.length} notice${guidance.notices.length === 1 ? "" : "s"} from the resolver.` : ""}`;
+  guidanceSummary.textContent = `${state}${guidance.notices?.length ? ` · ${guidance.notices.length} notice${guidance.notices.length === 1 ? "" : "s"} from the resolver.` : ""}${keep ? " · Text typed during the save is still here, unsaved." : ""}`;
   guidanceEditor.innerHTML = guidanceBlocks().map((block) => `
     <article class="guidance-block" data-block="${escapeHtml(block.key)}">
       <label>
@@ -577,6 +639,7 @@ function renderGuidance() {
       </label>
       <div class="guidance-meter"><small data-count="${escapeHtml(block.key)}"></small>${block.route ? `<small data-total="${escapeHtml(block.key)}" title="Includes the user-level layers and .reviewrules below plus the shared block"></small>` : ""}</div>
     </article>`).join("");
+  if (keep) for (const area of guidanceEditor.querySelectorAll?.("[data-guidance]") || []) if (typeof keep[area.dataset.guidance] === "string") area.value = keep[area.dataset.guidance];
   const userBlocks = guidanceBlocks().map((block) => [block, loadedBlock(user, block.key)]).filter(([, text]) => text);
   guidanceUserCount.textContent = guidance.user_error ? "unreadable" : userBlocks.length ? `${userBlocks.length} block${userBlocks.length === 1 ? "" : "s"}` : "none";
   guidanceUser.innerHTML = guidance.user_error ? `<p class="environment-note">${escapeHtml(guidance.user_error)}</p>`
@@ -601,6 +664,7 @@ async function loadGuidance() {
 
 async function saveGuidanceDraft() {
   if (!guidance || guidanceSaving) return;
+  const submitted = draftValues();
   const draft = draftGuidance();
   const blocks = [...(draft.governor ? ["governor"] : []), ...Object.keys(draft.reviewers || {})];
   const summary = blocks.length ? blocks.map((key) => `${key === "governor" ? "Governor" : key === "*" ? "All reviewers" : providerLabel(key)} (${(key === "governor" ? draft.governor : draft.reviewers[key]).length} chars)`).join("\n") : "(no blocks: the file becomes an empty object)";
@@ -609,8 +673,12 @@ async function saveGuidanceDraft() {
   updateGuidanceCounters();
   try {
     guidance = await api("/api/guidance", { method: "POST", body: JSON.stringify({ expected_sha256: guidance.project_sha256, guidance: draft }) });
-    renderGuidance();
-    showToast("Guidance saved and trusted for this project.");
+    // Text typed while the POST was in flight stays in the editor as an unsaved
+    // change; the response refreshes the loaded sha, trust and preview only.
+    const typed = draftValues();
+    const edited = JSON.stringify(typed) !== JSON.stringify(submitted);
+    renderGuidance(edited ? { keep: typed } : {});
+    showToast(edited ? "Guidance saved and trusted. Text typed during the save is still in the editor, unsaved." : "Guidance saved and trusted for this project.");
   } catch (error) {
     guidanceError.textContent = error.message;
     guidanceError.hidden = false;
@@ -845,11 +913,32 @@ usageRefreshButton.addEventListener("click", loadUsage);
 quickSetupButton.addEventListener("click", runQuickSetup);
 refreshButton.addEventListener("click", refresh);
 maintenanceRefreshButton.addEventListener("click", () => loadMaintenance(true));
-governorSelect.addEventListener("change", () => { liveResults.clear(); refresh(); loadMaintenance(true); });
-closeButton.addEventListener("click", async () => {
-  try { await api("/api/shutdown", { method: "POST", body: "{}" }); }
-  finally { document.body.innerHTML = '<main style="max-width:680px;margin:18vh auto;padding:30px;font-family:system-ui"><h1>Setup Center closed</h1><p>You can close this tab safely.</p></main>'; }
-});
+// Every in-flight status poll and verification job belongs to the previous
+// governor from here on: refresh() drops a stale answer, runTest() drops a
+// stale job, and a fresh poll is queued for the new selection.
+function changeGovernor() {
+  governorEpoch += 1;
+  liveResults.clear();
+  runningTests.clear();
+  refresh();
+  loadMaintenance(true);
+}
+
+// The closed page appears only after the server confirmed it is closing; a
+// refused shutdown leaves the controls in place so the user can retry.
+async function closeSetupCenter() {
+  closeButton.disabled = true;
+  try {
+    await api("/api/shutdown", { method: "POST", body: "{}" });
+    document.body.innerHTML = '<main style="max-width:680px;margin:18vh auto;padding:30px;font-family:system-ui"><h1>Setup Center closed</h1><p>You can close this tab safely.</p></main>';
+  } catch (error) {
+    closeButton.disabled = false;
+    showToast(`Setup Center is still running: ${error.message}`);
+  }
+}
+
+governorSelect.addEventListener("change", changeGovernor);
+closeButton.addEventListener("click", closeSetupCenter);
 
 (async () => {
   try {

@@ -185,17 +185,39 @@ await test('request body decodes split UTF-8 once and closes oversize streams',a
   const oversized=new EventEmitter();let destroyed=false;oversized.destroy=()=>{destroyed=true;};const pending=read(oversized);
   oversized.emit('data',Buffer.alloc(5000));await assert.rejects(pending);assert.equal(destroyed,true);
 });
-function ui() {
+// Drains host microtasks so promise chains inside the vm context settle.
+const flush=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setImmediate(r));};
+// Controllable timers: every setTimeout/setInterval is queued; tick() fires
+// what is due (intervals stay armed) and then drains microtasks.
+function fakeTimers(){
+  const queue=[];let id=0;
+  const add=(fn,ms,repeat)=>{const t={id:++id,fn,ms,repeat,cleared:false};queue.push(t);return t;};
+  return {setTimeout:(fn,ms)=>add(fn,ms,false),setInterval:(fn,ms)=>add(fn,ms,true),clearTimeout:t=>{if(t&&typeof t==='object')t.cleared=true;},clearInterval:t=>{if(t&&typeof t==='object')t.cleared=true;},
+    pending:()=>queue.filter(t=>!t.cleared),flush,
+    async tick(){for(const t of queue.filter(t=>!t.cleared)){if(!t.repeat)t.cleared=true;t.fn();}await flush();}};
+}
+// An api() double whose every call is a held promise the test settles by hand.
+function deferredApi(){
+  const calls=[];
+  const stub=(path,options={})=>{const call={path,method:options.method||'GET',body:options.body?JSON.parse(options.body):null,settled:false};call.promise=new Promise((res,rej)=>{call.resolve=v=>{call.settled=true;res(v);};call.reject=e=>{call.settled=true;rej(e);};});calls.push(call);return call.promise;};
+  return {stub,calls,find:(pattern,method)=>calls.filter(c=>c.path.includes(pattern)&&(!method||c.method===method))};
+}
+function ui(extra={}) {
   // Minimal DOM double: every selector resolves to a node that accepts the
-  // properties and listeners the page touches (theme toggle included). Timers
-  // are inert so a declined update's background poll cannot outlive the test.
+  // properties and listeners the page touches (theme toggle included), and
+  // records its listeners so a test can drive the same handler the page wires.
+  // Timers are inert by default so a declined update's background poll cannot
+  // outlive the test; pass fakeTimers() in `extra` to drive them.
   const nodes=new Map();
-  const node=()=>({value:'codex',textContent:'',innerHTML:'',title:'',hidden:false,disabled:false,style:{},dataset:{},options:[],classList:{add(){},remove(){},toggle(){}},addEventListener(){},querySelector:()=>null,querySelectorAll:()=>[]});
-  const document={querySelector:s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s);}};
+  const node=()=>({value:'codex',textContent:'',innerHTML:'',title:'',hidden:false,disabled:false,style:{},dataset:{},options:[],classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},querySelector:()=>null,querySelectorAll:()=>[]});
+  const document={body:node(),querySelector:s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s);}};
   const inert=()=>({unref(){}});
-  const context=vm.createContext({document,Map,Number,console,setTimeout:inert,clearTimeout(){},setInterval:inert,clearInterval(){},localStorage:{getItem:()=>null,setItem(){}},window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');}});
-  const end=client.indexOf('grid.addEventListener(');assert(end>0);
-  vm.runInContext(client.slice(0,end)+`\nthis.core={cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,draftGuidance,routeTotal,selectedBatch,toggleBatch:typeof toggleBatch==='function'?toggleBatch:null};this.init=(s,m)=>{session=s;maintenance=m};this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.setReport=r=>report=r;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  const context=vm.createContext({document,Map,Number,console,setTimeout:inert,clearTimeout(){},setInterval:inert,clearInterval(){},localStorage:{getItem:()=>null,setItem(){}},window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');},...extra});
+  // Everything but the boot IIFE: the listener registrations stay in, so the
+  // governor and Close handlers are reachable through node(...).listeners.
+  const end=client.lastIndexOf('(async () => {');assert(end>0);
+  const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -279,6 +301,139 @@ await test('failed login can be verified again without erasing the failed check'
   const route={agent:'codex',installed:true,ready:true};c.fail('codex',{route_status:'authentication_required',detail:'Expired login'});
   const html=c.core.providerCard(route);assert.match(html,/data-action="login"/);assert.match(html,/data-test="codex"/);assert.equal(c.core.routeState(route),'failed');
   c.fail('copilot',{route_status:'error',detail:'Monthly quota exceeded'});const quota=c.core.providerCard({...route,agent:'copilot'});assert.match(quota,/data-test="copilot"/);assert(!quota.includes('data-action="login"'));
+});
+// --- 1.16.0 gate findings (runs rev_20260913144450_tkrr) -------------------------------
+// expired-verification-resurrected: once readiness falls, the cached success is
+// gone for good; the session that returns must be verified again.
+await test('an expired session drops the cached verification; a returning session reads Session found, not Verified',async()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);
+  const status=ready=>({routes:[{agent:'codex',role:'reviewer',installed:true,ready}]});
+  c.setApi(async()=>status(true));await c.core.refresh();c.pass('codex');
+  assert.equal(c.core.routeState(c.getReport().routes[0]),'ready','control: a fresh success on a ready route is Verified');
+  c.setApi(async()=>status(false));await c.core.refresh();assert.equal(c.core.routeState(c.getReport().routes[0]),'login');
+  c.setApi(async()=>status(true));await c.core.refresh();
+  assert.equal(c.core.routeState(c.getReport().routes[0]),'detected','the old session\'s verification must not resurrect as Verified');
+});
+// governor-transition-retains-old-work: the previous governor's in-flight
+// status poll and verification job are discarded; the new governor gets its
+// own status request.
+await test('changing governor discards in-flight status polls and verification jobs from the previous governor',async()=>{
+  const timers=fakeTimers();const c=ui({...timers});
+  c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'},claude:{label:'Claude',docs:'x'},grok:{label:'Grok',docs:'x'}}},null);
+  const d=deferredApi();c.setApi(d.stub);
+  const governor=c.node('#governor');governor.value='codex';
+  c.core.refresh();c.core.runTest('grok');await flush();
+  assert.equal(d.find('/api/status').length,1);assert.equal(d.find('/api/test','POST').length,1);
+  governor.value='claude';governor.listeners.change();await flush();
+  d.find('/api/status')[0].resolve({routes:[{agent:'claude',role:'reviewer',installed:true,ready:true},{agent:'codex',role:'governor'}]});
+  d.find('/api/test','POST')[0].resolve({id:'job-a'});await flush();await timers.tick();
+  for(const call of d.find('/api/job/job-a'))call.resolve({status:'success',result:{route_status:'success'}});await flush();
+  const forB=d.find('/api/status').filter(call=>call.path.includes('governor=claude'));
+  assert.equal(forB.length,1,'a status request for the new governor must be issued: '+d.calls.map(x=>x.path).join(', '));
+  assert.notEqual(c.getReport()?.routes?.[0]?.agent,'claude','the old governor\'s late routes must not become the report');
+  assert.equal(c.getLive().has('grok'),false,'the old governor\'s verification must not repopulate live results');
+  forB[0].resolve({routes:[{agent:'codex',role:'reviewer',installed:true,ready:true},{agent:'claude',role:'governor'}]});await flush();
+  assert.equal(c.getReport().routes[1].agent,'claude','control: the new governor\'s answer is applied');
+});
+// quick-setup-duplicates-running-tests: one verification per provider at a time.
+await test('Quick Setup and repeated clicks never start a second verification for a provider already being verified',async()=>{
+  const timers=fakeTimers();const c=ui({...timers});
+  c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'},grok:{label:'Grok',docs:'x'}}},null);
+  const d=deferredApi();c.setApi(d.stub);
+  c.core.runTest('codex');c.core.runTest('codex');await flush();
+  const posts=()=>d.find('/api/test','POST').map(t=>t.body.provider);
+  same(posts(),['codex'],'a second manual click must reuse the running job');
+  c.core.runQuickSetup();await flush();
+  d.find('/api/status')[0].resolve({routes:[{agent:'codex',installed:true,ready:true},{agent:'grok',installed:true,ready:true}]});await flush();
+  d.find('/api/maintenance','POST')[0].reject(new Error('offline'));await flush();
+  same(posts(),['codex','grok'],'Quick Setup skips the provider whose check is still running');
+});
+// late-poll-error-overwrites-success / run-test-unbounded-async-interval: polls
+// are sequential (never overlapping) and stop for good once the job settles.
+await test('verification polls never overlap, and a settled job is never touched by a later poll',async()=>{
+  const timers=fakeTimers();const c=ui({...timers});
+  c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);c.setReport({routes:[{agent:'codex',installed:true,ready:true}]});
+  const d=deferredApi();c.setApi(d.stub);
+  const run=c.core.runTest('codex');await flush();
+  d.find('/api/test','POST')[0].resolve({id:'j1'});await flush();
+  await timers.tick();await timers.tick();await timers.tick();
+  assert.equal(d.find('/api/job/j1').length,1,'no poll may be issued while the previous one is unanswered');
+  d.find('/api/job/j1')[0].resolve({status:'success',result:{route_status:'success'}});await flush();
+  assert.equal((await run).status,'success');
+  await timers.tick();await timers.tick();
+  assert.equal(d.find('/api/job/j1').length,1,'no poll after the job settled');
+  assert.equal(c.getLive().get('codex').status,'success','a settled success is never overwritten');
+  assert.equal(c.core.routeState({agent:'codex',installed:true,ready:true}),'ready');
+});
+await test('a verification that never settles ends in a visible timeout state instead of polling forever',async()=>{
+  let now=1_000_000;class FakeDate extends Date{static now(){return now;}}
+  const timers=fakeTimers();const c=ui({...timers,Date:FakeDate});
+  c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);c.setReport({routes:[{agent:'codex',installed:true,ready:true}]});
+  const d=deferredApi();c.setApi(d.stub);
+  const run=c.core.runTest('codex');await flush();
+  d.find('/api/test','POST')[0].resolve({id:'j2'});await flush();
+  for(let i=0;i<400&&c.getLive().get('codex').status==='running';i++){await timers.tick();for(const call of d.find('/api/job/j2').filter(x=>!x.settled))call.resolve({status:'running'});now+=1800;await flush();}
+  const live=c.getLive().get('codex');
+  assert.equal(live.status,'failed','after 12 minutes of "running" the card must show a failure, not spin forever');
+  assert.equal(live.result?.route_status,'timeout');
+  assert.equal(c.core.routeState({agent:'codex',installed:true,ready:true}),'failed');
+  assert.match(c.core.routeCopy({agent:'codex'},'failed'),/time|minute/i);
+  assert.equal(timers.pending().length,0,'no timer keeps polling after the timeout');
+  assert.equal((await run).status,'failed');
+});
+// save-response-discards-new-edits: text typed while the POST is in flight
+// stays in the editor; the response refreshes sha/trust only.
+await test('edits typed while a guidance save is in flight survive the save response',async()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'}}},null);
+  const editor=c.node('#guidance-editor');let areas=[];
+  const unescape=s=>s.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+  Object.defineProperty(editor,'innerHTML',{set(html){areas=[...html.matchAll(/<textarea data-guidance="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g)].map(m=>({dataset:{guidance:unescape(m[1])},value:unescape(m[2])}));},get(){return areas.map(a=>`${a.dataset.guidance}=${a.value}`).join('|');}});
+  editor.querySelectorAll=sel=>sel==='[data-guidance]'?areas:[];
+  const snapshot=governor=>({file:'.momm/guidance.json',user_file:'u',routes:['codex'],project:{governor},project_sha256:'a'.repeat(64),trusted:true,user:null,effective:{},preview:{},notices:[]});
+  c.setGuidance(snapshot('first'));c.core.renderGuidance();
+  const area=()=>areas.find(a=>a.dataset.guidance==='governor');
+  area().value='first edited';
+  const d=deferredApi();c.setApi(d.stub);c.window.confirm=()=>true;
+  const saving=c.core.saveGuidanceDraft();await flush();
+  assert.equal(d.find('/api/guidance','POST')[0].body.guidance.governor,'first edited');
+  area().value='first edited, then more';
+  d.find('/api/guidance','POST')[0].resolve(snapshot('first edited'));await saving;
+  assert.equal(area().value,'first edited, then more','typing during the save must not be discarded');
+  assert.equal(c.getGuidance().project.governor,'first edited','the response still refreshes the loaded state');
+  const again=c.core.saveGuidanceDraft();await flush();d.find('/api/guidance','POST')[1].resolve(snapshot('first edited, then more'));await again;
+  assert.equal(area().value,'first edited, then more','control: an untouched editor shows the saved text');
+});
+// maintenance-validation-commits-invalid-state: rows that cannot be rendered are
+// refused before the last good state is replaced.
+await test('maintenance rows that cannot be rendered are refused before replacing the last good state',async()=>{
+  const good={cli_updates:[{agent:'codex',current:'1.0.0',latest:'1.1.0',source:'npm',status:'update_available',installed:true,update_command:'npm i',installation:{kind:'npm'}}],models:[],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:new Date().toISOString()};
+  for(const bad of [{cli_updates:[{}],models:[],skills:{versions:[]},environment:{},runtime:{platform:'linux'}},{...good,cli_updates:[{agent:'nobody'}]}]){
+    const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},good);c.setReport({routes:[{agent:'codex',installed:true,ready:true}]});c.core.renderMaintenance();
+    c.setApi(async()=>bad);await c.core.loadMaintenance();
+    assert.equal(c.getMaintenance(),good,'an unrenderable payload replaced the last good state: '+JSON.stringify(bad.cli_updates));
+    assert.doesNotThrow(()=>{c.core.renderMaintenance();c.core.render();});
+    assert.match(c.node('#maintenance-grid').innerHTML,/data-maint-provider="codex"/,'the existing update control still renders from the retained state');
+  }
+});
+// shutdown-failure-reported-as-closed: a failed shutdown keeps the page usable.
+await test('a failed shutdown request keeps the page usable instead of announcing the server closed',async()=>{
+  const c=ui();c.init({platform:'win32',providers:{}},null);
+  c.setApi(async()=>{throw new Error('HTTP 500');});
+  c.document.body.innerHTML='<main id="page">live</main>';
+  const close=c.node('#close-server').listeners.click;assert.equal(typeof close,'function');
+  await assert.doesNotReject(Promise.resolve(close({})),'the click handler must not leave an unhandled rejection');await flush();
+  assert.equal(c.document.body.innerHTML,'<main id="page">live</main>','the server is still running; the page must not claim otherwise');
+  assert.equal(c.node('#close-server').disabled,false,'the Close control stays available for a retry');
+  c.setApi(async()=>({closing:true}));await close({});await flush();
+  assert.match(c.document.body.innerHTML,/Setup Center closed/,'control: a successful shutdown shows the closed page');
+});
+// api-post-null-session-deref: a POST before the session exists rejects with a
+// plain error the callers already handle, not a TypeError from inside api().
+await test('a POST before the session is ready rejects with a plain error, never a TypeError, and never reaches fetch',async()=>{
+  const c=ui();let fetched=0;c.fetch=()=>{fetched++;throw new Error('Unexpected network');};c.setSession(null);
+  await assert.rejects(c.core.api('/api/shutdown',{method:'POST',body:'{}'}),e=>e.constructor.name!=='TypeError'&&/session/i.test(e.message));
+  assert.equal(fetched,0,'nothing may be sent without the session token');
+  c.setSession({token:'t'});await assert.rejects(c.core.api('/api/shutdown',{method:'POST',body:'{}'}),/Unexpected network/);assert.equal(fetched,1,'control: with a session the request reaches fetch');
 });
 // dark-theme-white-contrast / toast-ink-contrast / guidance-user-not-grid: the
 // toast and the light primary button take their pair from tokens that both
