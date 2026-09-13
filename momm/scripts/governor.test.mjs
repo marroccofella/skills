@@ -44,6 +44,16 @@ try {
     assert.equal(reviewProblem(p,'const x = 1;\r\nconst y = 2;'),null);
     assert(reviewProblem(p,'const x = 1;\nconst y = 2;'),'lone CR must not become an invented LF');
   });
+  test('diff scope preserves prefixes instead of reconstructing source', () => {
+    const artifact = '+  const value = read();\n+  return value;\n';
+    const check = quote => reviewProblem(peer({ reviewed_scope: [{ quote, assessment: 'The value is read then returned.' }] }), artifact);
+    assert.equal(check('+  const value = read();\n+  return value;'), null);
+    assert.equal(check('const value = read();'), null, 'a literal single-line substring is valid');
+    assert(check('  const value = read();\n  return value;'), 'stripping diff prefixes must remain invalid');
+    assert(check('+ const value = read();\n+ return value;'), 'reindentation must remain invalid');
+    assert.match(source, /short single-line excerpts/);
+    assert.match(source, /do not remove diff markers, reindent, or reformat/);
+  });
   test("validator rejects absent or non-string artifact without coercion", () => {
     for (const a of [undefined, null, {}, 42, Buffer.from("a.length")]) {
       const payload = peer({ reviewed_scope: [{ quote: String(a), assessment: "Fabricated coercion corpus" }] });

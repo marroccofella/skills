@@ -473,7 +473,7 @@ Also assess quality: efficiency (possible speed-ups or wasted work), elegance (s
 Respond with ONLY one JSON object - no markdown fences, no prose. Fields:
 - "review_status": "complete" only AFTER reviewing the supplied artifact; otherwise "incomplete". A plan to start reviewing is not a review.
 - "reviewed_scope": 1–12 objects with "quote" (an exact excerpt from the artifact, up to 500 UTF-16 code units) and "assessment" (your completed assessment of that excerpt, up to 1000 UTF-16 code units). CRLF/LF line endings are equivalent; all other characters must match literally. Empty only for incomplete reviews. This is a declared scope, not proof of correctness.
-Prefer 1–3 representative excerpts with a one- or two-sentence assessment each. Review the whole supplied artifact, but do not narrate every branch or repeat findings in scope. The limits are ceilings, not targets. Keep prose concise without omitting material defects.
+Prefer 1–3 short single-line excerpts with a one- or two-sentence assessment each. Copy each excerpt directly from the supplied text, not reconstructed source code. For multi-line diff excerpts, preserve every line's leading +, -, or context space; do not remove diff markers, reindent, or reformat. Review the whole supplied artifact, but do not narrate every branch or repeat findings in scope. The limits are ceilings, not targets. Keep prose concise without omitting material defects.
 - "verdict": "ACCEPT", "MODIFY", or "REJECT".
 - "confidence": number between 0 and 1 for your confidence in the verdict.
 - "findings": array, EMPTY if you found no real defects. Each element:
