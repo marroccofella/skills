@@ -176,6 +176,16 @@ try {
     assert.equal(result.complete, false); assert.equal(result.items.length, 5); assert(result.errors.some(e => /requested_routes/.test(e)));
     write(".ensemble_reviews/review-log.jsonl", originalLog);
   });
+  test('Windows short root alias matches only the same canonical Git root',()=>{
+    const gov=fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8');
+    const legacy=p=>path.win32.normalize(p);legacy.native=p=>legacy(p).replace('Q:\\RUNNER~1','Q:\\runner.long');
+    const artifact='diff --git a/x.txt b/x.txt\n';
+    const fakeFs={realpathSync:legacy,statSync:()=>({isFile:()=>true,size:8}),readFileSync:()=>Buffer.from('fixture\n')};
+    const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function inspectCompletion')).replace('export function','function')+';captureSourceSnapshot',
+      {fs:fakeFs,path:path.win32,process:{platform:'win32'},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>({status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
+    const result=capture('Q:\\RUNNER~1\\repo',artifact);assert.equal(result.complete,true,result.reason);
+    assert.match(capture('Q:\\RUNNER~1\\repo\\child',artifact).reason,/repository root/);
+  });
   test("fresh Git scope accepted; stale, deleted and binary scope refused", () => {
     const cwd = path.join(fixture, "scope"); fs.mkdirSync(cwd);
     const git = args => { const r = spawnSync("git", ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
@@ -187,16 +197,20 @@ try {
     assert.match(captureSourceSnapshot(subdir, diff).reason, /repository root/i);
     // Mutate after the initial diff comparison, at the first source read.
     // This makes the race deterministic rather than relying on wall-clock timing.
+    const raceCwd=path.join(fixture,'race-alias');fs.symlinkSync(cwd,raceCwd,process.platform==='win32'?'junction':'dir');
+    const raceTarget=fs.realpathSync(path.join(raceCwd,'x.txt'));
     let changed = false;
     const racedFs = new Proxy(fs, { get(target, key) {
       if (key !== "readFileSync") return target[key];
-      return (file, ...args) => { if (!changed && path.resolve(file) === path.join(cwd, "x.txt")) { changed = true; fs.writeFileSync(file, "concurrent\n"); } return fs.readFileSync(file, ...args); };
+      return (file, ...args) => { if (!changed && fs.realpathSync(file) === raceTarget) { changed = true; fs.writeFileSync(file, "concurrent\n"); } return fs.readFileSync(file, ...args); };
     } });
     const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
     const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function inspectCompletion")).replace("export function", "function") + ";captureSourceSnapshot", {
       fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); },
     });
-    assert.equal(capture(cwd, diff).complete, false, "concurrent source must not bind to an older reviewed diff");
+    const raced=capture(raceCwd,diff);
+    assert.equal(changed,true,'race fixture did not mutate the aliased source');
+    assert.equal(raced.complete, false, "concurrent source must not bind to an older reviewed diff");
     fs.writeFileSync(path.join(cwd, "x.txt"), "stale\n"); assert.equal(captureSourceSnapshot(cwd, diff).complete, false);
     fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,5,6])); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);
     fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2])); fs.unlinkSync(path.join(cwd, "blob.bin")); assert.equal(captureSourceSnapshot(cwd, git(["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"])).complete, false);

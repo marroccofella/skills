@@ -20,7 +20,10 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
   try {
     if (isDiff) {
       const git = args => { const r = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
-      demand(path.relative(fs.realpathSync(git(["rev-parse", "--show-toplevel"]).trim()), fs.realpathSync(root)) === "",
+      // Windows JS realpath can preserve an 8.3 spelling while Git returns
+      // its long name. Native resolution compares the same physical root.
+      const canonical = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
+      demand(path.relative(canonical(git(["rev-parse", "--show-toplevel"]).trim()), canonical(root)) === "",
         "Run the review from the repository root; Git source paths and the private evidence directory must share that root");
       demand(git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "supplied diff differs from current Git diff HEAD");
       verifyDiff = () => demand(git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]) === artifact, "source changed while collecting the reviewed Git snapshot");
