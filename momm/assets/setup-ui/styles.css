@@ -208,6 +208,30 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 .batch-cell { width: 28px; padding-right: 0 !important; }
 .batch-cell input { accent-color: var(--green-bright); }
 
+/* 1.16 E7 Modalities panel: level chips, blocker badges, planner. */
+.cap-table th, .cap-table td { padding: 8px; vertical-align: top; white-space: normal; }
+.cap-table th:first-child { min-width: 120px; }
+.cap-table thead th.cap-group { padding-bottom: 0; color: var(--muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.cap-table td:last-child { white-space: normal; }
+.cap-chip { padding: 4px 8px; font-size: 10px; letter-spacing: 0; text-transform: none; cursor: help; }
+.cap-verified { color: var(--green); background: var(--mint); }
+.cap-documented { color: var(--ink); background: var(--line); }
+.cap-model-only { color: var(--amber); background: var(--amber-soft); }
+.cap-no { color: var(--muted); background: transparent; border: 1px dashed var(--line); }
+.cap-probed::after { content: "*"; margin-left: 3px; opacity: .75; }
+.cap-blocker { display: inline-block; margin: 2px 0 0 4px; padding: 3px 6px; border-radius: 6px; color: var(--red); background: var(--red-soft); font: 800 9px/1.2 var(--font-mono); letter-spacing: .02em; cursor: help; }
+.cap-blocker-reprobe { color: var(--amber); background: var(--amber-soft); }
+.cap-actions { display: grid; gap: 5px; justify-items: start; }
+.cap-actions small { display: block; max-width: 230px; color: var(--muted); font-family: var(--font-sans); font-size: 10px; line-height: 1.4; }
+.capabilities-planner { margin-top: 12px; background: var(--card); }
+.plan-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 0 14px 10px; }
+.plan-form label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.plan-form input { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: 12px var(--font-mono); }
+.plan-form input:focus-visible { outline: 3px solid rgba(45, 139, 97, .35); outline-offset: 2px; }
+.plan-result { padding: 0 14px 14px; }
+.plan-steps, .plan-blocked { margin: 8px 0 0; padding-left: 18px; color: var(--ink); font-size: 12px; line-height: 1.6; }
+.plan-candidates { display: block; color: var(--muted); font-size: 10px; }
+
 /* Entrance: panels and cards rise in, staggered by --i set from the render order (rise lives in the theme). */
 .hero, .status-banner, .control-panel, .provider-card, .trust-card, .maintenance-panel { animation: rise var(--dur) var(--ease) both; animation-delay: calc(var(--i, 0) * 55ms); }
 /* Status meter: a conic ring that sweeps to the completion percentage (--pct set by the page). */

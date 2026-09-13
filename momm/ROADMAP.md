@@ -29,6 +29,38 @@ rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
 ## Candidate — not released
 
+### 1.16.0 candidate — measured, rated, guided, split, clock-driven, modality-aware
+
+Branch `release/momm-1.16.0` (draft PR #4; plan in `references/plan-1.16.0.md`,
+verification record in `references/release-1.16.0.md`). What it adds, all
+off-by-default where it touches the network or the user's machine: per-CLI
+token and cost accounting in reports, ledger and Setup Center; reviewer
+ratings (`ledger.mjs --rate`) with a five-run floor and 30-day route
+reliability that recommends only on ten or more runs; guidance layers behind a
+per-file trust gate (untrusted text is never sent); `--split` with per-piece
+quorum, governor-direct scope for oversize hunks and `--jobs` parallel
+dispatch; an event-driven update clock with conditional GETs whose
+automatic-update toggle is off by default and never enabled by an agent;
+`update --check-all`; containment probes per CLI; one design system with a
+theme toggle shared by the Setup Center and the private ledger.
+
+E7, the modality registry (`references/plan-1.16.0-e7-modalities.md`, two
+momm reviews): a shipped baseline `references/capabilities.json` (levels
+verified only from help captures, otherwise documented) plus a per-machine
+overlay written only by probes, with blockers that expire into `reprobe`
+rather than silently clearing; `multi-review.mjs --capabilities`; attachment
+routing and `--reviewers auto` on the effective cell (overlay over baseline)
+with `requires` bound to argv or `missing_flag`; `probes.mjs <cli>
+--modalities [--consent]` with synthetic material, content assertions and a
+disclosure before any generation; `modality.mjs plan|run` for cross-route
+chains with a separate immutable creative prompt, step-scoped harvest (a step
+that produces nothing fails) and consent per run; a Setup Center Modalities
+panel. Grok media is not bound in the review adapter because its containment
+is `--deny Read`; its image and PDF cells route as `missing_flag` until a
+staged-files-only read grant exists. Generation never runs inside a review.
+Publication still needs the privacy scan, the signed tag and the evidence
+refresh.
+
 Final September 13 repairs: updates fetch full ancestry and verify promotion and
 Git connectivity across intervening commits; repeated explicit harness installs
 preserve matching clean verified provenance. Existing update claims fail closed

@@ -4,14 +4,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, PROBE_CLIS, PROBES_FILE, sha256, findFindings, unavailableReason, SYNTHETIC_DIFF, defaultExec, windowsLauncher, parseTimeoutArg, isolateReply, classifyReply, canaryPrompt, AUTH_PATTERN } from "./probes.mjs";
+import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, PROBE_CLIS, PROBES_FILE, sha256, findFindings, unavailableReason, SYNTHETIC_DIFF, defaultExec, windowsLauncher, parseTimeoutArg, isolateReply, classifyReply, canaryPrompt, AUTH_PATTERN,
+  runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent } from "./probes.mjs";
+import zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 
 const results = {}, failures = [];
 async function test(name, fn) {
   try { await fn(); results[name] = true; }
   catch (e) { results[name] = false; failures.push({ name, error: e }); }
 }
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-probes-tests-"));
+// The fixture directory carries a SPACE on purpose: every synthetic path the fakes and the
+// probes exchange must survive it (momm review rev_20260913213315_o8c2, fake-cli-truncates-paths-with-spaces).
+const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm probes tests-"));
 const ok = stdout => ({ code: 0, stdout, stderr: "" });
 // The reply travels in each CLI's own envelope: claude `result`, grok `text`,
 // antigravity/gemini `response`; codex and copilot print plain text.
@@ -345,11 +350,377 @@ try {
     assert.equal(seen.MY_API_KEY, undefined); assert.equal(seen.MOMM_PROBE_CUSTOM, "1"); assert.equal(seen.NO_COLOR, "1"); assert.equal(r.code, 0);
   });
 
+  // ==== Modality probes (1.16 E7) =====================================================
+  // Fake registry: the effective matrix is whatever the test declares; every overlay write
+  // is captured, and the baseline object handed in is checked afterwards for mutation.
+  function fakeRegistry(routes) {
+    const baseline = JSON.parse(JSON.stringify({ schema: "momm-capabilities/1", routes }));
+    const entries = [];
+    return { entries, baseline, effectiveCalls: [], effective(args) { this.effectiveCalls.push(args); return JSON.parse(JSON.stringify(baseline)); }, writeOverlayEntry(home, entry) { entries.push({ home, entry }); }, routable: c => !!c && ["verified", "documented"].includes(c.level) && !c.blocker };
+  }
+  // Where an input probe put its synthetic file, read the way each CLI receives it.
+  function probeFileIn(args, input, cwd) {
+    // codex -i <path> / copilot --attachment <path>: the path is its own argv element.
+    const flagged = args.find((a, i) => i > 0 && ["-i", "--attachment"].includes(args[i - 1]) && /probe\.(?:png|pdf|wav)$/.test(a));
+    if (flagged) return flagged;
+    const blob = [...args, input].filter(s => typeof s === "string").join("\n");
+    // claude / antigravity / grok: "... file at <path> with|and ..." — the path may contain spaces.
+    const named = blob.match(/file at (.+?probe\.(?:png|pdf|wav)) (?:with|and)\b/);
+    if (named) return named[1];
+    // gemini: an @reference relative to the probe directory.
+    const ref = blob.match(/(?:^|\s)@(probe\.(?:png|pdf|wav))\b/);
+    return ref ? path.join(cwd ?? ".", ref[1]) : null;
+  }
+  // Fake CLI: finds the synthetic file the prompt (argv, stdin or @ref) names, checks it exists
+  // while the CLI runs, and answers through `replies[kind]`; anything else goes to `generate`.
+  function modalityExec({ replies = {}, version = ok("9.9.9 (fake)"), generate = null, log = [] } = {}) {
+    const calls = [];
+    const exec = async (command, args, options) => {
+      calls.push({ command, args, options }); log.push(["exec", args.slice(0, 3).join(" ")]);
+      if (args[0] === "--version") return version;
+      const blob = [...args, options?.input].filter(s => typeof s === "string").join("\n");
+      const p = /This is a capability probe/.test(blob) ? probeFileIn(args, options?.input, options?.cwd) : null;
+      if (p) {
+        const kind = path.extname(p).slice(1);
+        assert.ok(fs.existsSync(p), `synthetic ${kind} must exist while the CLI runs: ${p}`);
+        assert.ok(replies[kind], `unexpected ${kind} probe`);
+        return replies[kind]({ args, options, path: p, bytes: fs.readFileSync(p) });
+      }
+      assert.ok(generate, `unexpected exec without a synthetic file: ${args.join(" ")}`);
+      return generate({ args, options });
+    };
+    return { exec, calls, log };
+  }
+  const allInputs = level => ({ image: { level }, pdf: { level }, audio: { level }, video: { level } });
+  const mopts = extra => ({ tmpdir: fixture, timeoutMs: 5000, home: path.join(fixture, "home"), ...extra });
+  fs.mkdirSync(path.join(fixture, "home"), { recursive: true });
+  const cellOf = (r, m) => r.cells.find(c => c.modality === m);
+  const SENT = "WALNUT ORCHID 4471";
+
+  await test("modality_verified_for_every_route_when_the_reply_describes_the_content", async () => {
+    for (const cli of PROBE_CLIS) {
+      const reg = fakeRegistry({ [cli]: { input: allInputs("documented") } });
+      const f = modalityExec({ replies: { png: () => ok(envelope(cli, "Red.")), pdf: ({ options, args }) => ok(envelope(cli, `The page says: ${SENT}`)), wav: () => ok(envelope(cli, "A steady 440 Hz sine tone, one second long.")) } });
+      const r = await runModalityProbes(cli, mopts({ registry: reg, exec: f.exec, command: cli, colour: "red", sentence: SENT }));
+      assert.equal(r.schema, MODALITY_PROBE_SCHEMA); assert.equal(r.cli_version, "9.9.9"); assert.equal(r.consent, false);
+      for (const m of ["image", "pdf", "audio"]) assert.equal(cellOf(r, m).status, "verified", `${cli} ${m}: ${cellOf(r, m).reason}`);
+      assert.equal(cellOf(r, "video").status, "skipped"); assert.match(cellOf(r, "video").reason, /no synthetic/);
+      assert.equal(r.verdict, "pass", JSON.stringify(r.summary));
+      assert.equal(f.calls.length, 4, `${cli}: version + 3 input probes`);
+      assert.equal(reg.entries.length, 3);
+      for (const { home, entry } of reg.entries) { assert.equal(home, path.join(fixture, "home")); assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null); assert.equal(entry.expires_at, null); assert.equal(entry.cli_version, "9.9.9"); assert.match(entry.machine_id, /^[0-9a-f]{32}$/); assert.equal(entry.direction, "input"); assert.equal(entry.evidence.probe, MODALITY_PROBE_SCHEMA); assert.match(entry.evidence.material_sha256, /^[0-9a-f]{64}$/); }
+      assert.deepEqual(reg.effectiveCalls[0].installedVersions, { [cli]: "9.9.9" });
+      assert.equal(cellOf(r, "image").material.bytes, syntheticPng("red").length);
+      assert.equal(fs.readdirSync(fixture).filter(n => n.startsWith("momm-modality-")).length, 0, "private probe directory removed");
+    }
+  });
+  // A generic answer never counts, whatever the baseline level was; the overlay keeps that
+  // level (never `no`) and records probe_failed with no expiry (momm review rev_..._pd6p #2).
+  await test("generic_reply_is_probe_failed_and_keeps_the_baseline_level", async () => {
+    const reg = fakeRegistry({ claude: { input: { image: { level: "verified", evidence: { help_capture: "cli/help/claude.txt:164" } }, pdf: { level: "verified" }, audio: { level: "no" } } } });
+    const before = JSON.stringify(reg.baseline);
+    const f = modalityExec({ replies: { png: () => ok(envelope("claude", "I looked at the image and it seems to be a small square. Nothing else to report.")), pdf: () => ok(envelope("claude", "This appears to be a short one-page document.")) } });
+    const r = await runModalityProbes("claude", mopts({ registry: reg, exec: f.exec, command: "claude", colour: "blue", sentence: SENT }));
+    assert.equal(cellOf(r, "image").status, "probe_failed"); assert.match(cellOf(r, "image").reason, /generic reply: no colour named \(expected blue\)/);
+    assert.equal(cellOf(r, "pdf").status, "probe_failed"); assert.match(cellOf(r, "pdf").reason, /generic reply: the planted sentence/);
+    assert.equal(r.verdict, "fail");
+    assert.equal(reg.entries.length, 2);
+    for (const { entry } of reg.entries) { assert.equal(entry.level, "verified", "the baseline level is preserved on the entry"); assert.notEqual(entry.level, "no"); assert.equal(entry.blocker, "probe_failed"); assert.equal(entry.expires_at, null, "probe_failed holds until the next probe"); assert.match(entry.reason, /generic/); }
+    assert.equal(JSON.stringify(reg.baseline), before, "the baseline object is never mutated");
+    assert.equal(cellOf(r, "audio").status, "skipped"); assert.match(cellOf(r, "audio").reason, /level no/);
+  });
+  await test("wrong_colour_cannot_view_echo_and_toneless_replies_do_not_confirm", async () => {
+    const material = { colour: "green", sentence: SENT };
+    const prompt = inputProbePrompt("image", "/x/probe.png");
+    assert.equal(confirmContent("image", "Green", material, prompt).confirmed, true);
+    assert.equal(confirmContent("image", "It is mostly blue with a hint of green.", material, prompt).confirmed, false);
+    assert.match(confirmContent("image", "Blue", material, prompt).reason, /named blue, expected green/);
+    assert.match(confirmContent("image", "CANNOT-VIEW", material, prompt).reason, /CANNOT-VIEW/);
+    assert.match(confirmContent("image", `Sure: ${prompt}`, material, prompt).reason, /echoed/);
+    assert.equal(confirmContent("image", "", material, prompt).reason, "empty reply");
+    assert.equal(confirmContent("pdf", `text: walnut orchid   4471 end`, material, "").confirmed, true, "case and whitespace insensitive");
+    assert.equal(confirmContent("pdf", "WALNUT 4471", material, "").confirmed, false);
+    assert.equal(confirmContent("audio", "A short beep.", material, "").confirmed, true);
+    assert.equal(confirmContent("audio", "I processed the file successfully.", material, "").confirmed, false);
+    assert.equal(confirmContent("image", "A red square", { colour: "red" }, inputProbePrompt("image", "/p/probe.png")).confirmed, true, "the prompt itself names no colour");
+    for (const m of ["image", "pdf", "audio"]) for (const c of Object.keys(PROBE_COLOURS)) assert.equal(new RegExp(`\\b${c}\\b`, "i").test(inputProbePrompt(m, "/p/probe.png")), false, `${m} prompt must not name ${c}`);
+  });
+  await test("timeout_and_unisolated_reply_are_probe_failed", async () => {
+    const reg = fakeRegistry({ grok: { input: { image: { level: "verified" }, pdf: { level: "verified" } } } });
+    const f = modalityExec({ replies: { png: () => ({ code: null, stdout: "", stderr: "", timedOut: true, error: { code: "ETIMEDOUT" } }), pdf: () => ok(JSON.stringify({ result: "wrong envelope field" })) } });
+    const r = await runModalityProbes("grok", mopts({ registry: reg, exec: f.exec, command: "grok" }));
+    assert.equal(cellOf(r, "image").status, "probe_failed"); assert.match(cellOf(r, "image").reason, /timed out after 5 s/);
+    assert.equal(cellOf(r, "pdf").status, "probe_failed"); assert.match(cellOf(r, "pdf").reason, /not isolated/);
+    assert.equal(reg.entries.length, 2); assert.equal(reg.entries[0].entry.blocker, "probe_failed"); assert.equal(reg.entries[0].entry.expires_at, null);
+  });
+  await test("reply_naming_a_gate_records_that_blocker_with_its_expiry", async () => {
+    const at = 1_800_000_000_000;
+    // gemini: IneligibleTierError → auth_tier (7 d); copilot: monthly quota → quota (24 h); grok video: ZDR → zdr (7 d).
+    const gem = fakeRegistry({ gemini: { input: { image: { level: "documented" } } } });
+    const g = modalityExec({ replies: { png: () => ({ code: 1, stdout: "", stderr: "IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals" }) } });
+    const gr = await runModalityProbes("gemini", mopts({ registry: gem, exec: g.exec, command: "gemini", now: () => at }));
+    assert.equal(cellOf(gr, "image").status, "blocked"); assert.equal(cellOf(gr, "image").blocker, "auth_tier"); assert.match(cellOf(gr, "image").clearing_action, /Code Assist/);
+    assert.equal(gem.entries[0].entry.blocker, "auth_tier"); assert.equal(gem.entries[0].entry.level, "documented"); assert.equal(gem.entries[0].entry.expires_at, new Date(at + 7 * 86_400_000).toISOString());
+    const cop = fakeRegistry({ copilot: { input: { image: { level: "verified" } } } });
+    const c = modalityExec({ replies: { png: () => ({ code: 1, stdout: "You have exceeded your monthly quota.", stderr: "" }) } });
+    const cr = await runModalityProbes("copilot", mopts({ registry: cop, exec: c.exec, command: "copilot", now: () => at }));
+    assert.equal(cellOf(cr, "image").blocker, "quota"); assert.equal(cop.entries[0].entry.expires_at, new Date(at + 24 * 3_600_000).toISOString());
+    const grok = fakeRegistry({ grok: { input: {}, output: { video_gen: { level: "verified", harvest: "~/.grok/sessions/**/videos/*.mp4" } } } });
+    const seen = [];
+    const v = modalityExec({ generate: ({ args }) => { seen.push(args); return ok(envelope("grok", "Video generation tools are unavailable under zero data retention (ZDR). To enable, either turn off /privacy mode to disable ZDR or supply a user-hosted storage bucket.")); } });
+    const vr = await runModalityProbes("grok", mopts({ registry: grok, exec: v.exec, command: "grok", consent: true, disclose: () => {}, now: () => at }));
+    const video = cellOf(vr, "video_gen");
+    assert.equal(video.status, "blocked"); assert.equal(video.blocker, "zdr"); assert.match(video.clearing_action, /privacy|bucket/);
+    assert.equal(seen.length, 1, "the gate is learned from one request"); assert.ok(seen[0].some(a => /image_to_video/.test(a)) && seen[0].some(a => /probe\.png/.test(a)), "video probe uses the synthetic PNG");
+    assert.equal(grok.entries[0].entry.blocker, "zdr"); assert.equal(grok.entries[0].entry.level, "verified"); assert.equal(grok.entries[0].entry.expires_at, new Date(at + 7 * 86_400_000).toISOString());
+    assert.equal(blockerInText('{"denied_actions":[{"action":"run_command","display_name":"RunCommand"}]}'), "allowlist");
+    assert.equal(blockerInText('{"denied_actions":[{"action":"read_file","display_name":"ViewFile"}]}'), "missing_flag");
+    assert.equal(clearingAction("reprobe").includes("--modalities"), true); assert.equal(clearingAction("nonsense"), null);
+    assert.equal(expiresAtFor("probe_failed", at), null);
+  });
+  await test("not_logged_in_is_unavailable_and_writes_nothing", async () => {
+    const reg = fakeRegistry({ grok: { input: allInputs("verified"), output: { image_gen: { level: "verified", harvest: "~/.grok/**/*.jpg" } } } });
+    const f = modalityExec({ replies: { png: () => ({ code: 1, stdout: "", stderr: "Error: Not signed in. Run `grok login` to authenticate." }) } });
+    const r = await runModalityProbes("grok", mopts({ registry: reg, exec: f.exec, command: "grok", consent: true, disclose: () => {} }));
+    assert.equal(cellOf(r, "image").status, "unavailable"); assert.equal(cellOf(r, "image").reason, "not_logged_in");
+    assert.equal(cellOf(r, "pdf").status, "unavailable"); assert.equal(cellOf(r, "image_gen").status, "unavailable");
+    assert.equal(f.calls.length, 2, "version + first probe; nothing more is sent once the login is known to be missing");
+    assert.equal(reg.entries.length, 0, "environment problems are not evidence about a cell"); assert.equal(r.verdict, "unavailable");
+    const missing = modalityExec({ version: { code: -1, stdout: "", stderr: "spawn grok ENOENT", error: { code: "ENOENT" } } });
+    const readsBefore = reg.effectiveCalls.length;
+    const m = await runModalityProbes("grok", mopts({ registry: reg, exec: missing.exec, command: "grok" }));
+    assert.equal(m.reason, "not_installed"); assert.equal(m.verdict, "unavailable"); assert.equal(reg.effectiveCalls.length, readsBefore, "no registry read for an absent CLI");
+  });
+  // Consent gate (spec + review #1): without --consent the generative cell is listed with its
+  // disclosure and nothing is sent; with consent, exactly one request per UNBLOCKED cell, the
+  // disclosure printed before it; a blocked cell is skipped with its clearing action and no exec.
+  await test("generative_probes_need_consent_skip_blocked_cells_and_disclose_before_sending", async () => {
+    const home = path.join(fixture, "gen-home"); fs.mkdirSync(home, { recursive: true });
+    const routes = { codex: { input: { image: { level: "verified" } }, output: { image_gen: { level: "documented", harvest: "~/.codex/generated_images/**/*.png", mime: "image/png" } } } };
+    const listed = generativeCells("codex", routes.codex);
+    assert.equal(listed.length, 1); assert.equal(listed[0].blocked, false); assert.match(listed[0].disclosure, /quota is spent/); assert.match(listed[0].disclosure, /\.codex\/generated_images/); assert.ok(listed[0].disclosure.includes(listed[0].prompt), "the exact prompt is disclosed");
+    const refused = fakeRegistry(routes);
+    const noConsent = modalityExec({ replies: { png: () => ok("Red") } });
+    const r0 = await runModalityProbes("codex", mopts({ home, registry: refused, exec: noConsent.exec, command: "codex", colour: "red" }));
+    assert.equal(cellOf(r0, "image_gen").status, "skipped"); assert.match(cellOf(r0, "image_gen").reason, /consent_required/); assert.equal(cellOf(r0, "image_gen").disclosure, listed[0].disclosure);
+    assert.equal(noConsent.calls.length, 2, "version + image; no generation request without consent"); assert.equal(refused.entries.length, 1);
+    // With consent: the fake writes the file where the registry glob looks, so harvest finds and hashes it.
+    const log = [];
+    const reg = fakeRegistry(routes);
+    const generated = path.join(home, ".codex", "generated_images", "sess-1", "exec-abc.png");
+    const f = modalityExec({ log, replies: { png: () => ok("Red") }, generate: ({ args, options }) => { assert.ok(/image generation tool/.test(options.input) && args.includes("workspace-write")); fs.mkdirSync(path.dirname(generated), { recursive: true }); fs.writeFileSync(generated, syntheticPng("blue")); return ok(`Wrote ${generated}`); } });
+    const r = await runModalityProbes("codex", mopts({ home, registry: reg, exec: f.exec, command: "codex", consent: true, colour: "red", now: Date.now, disclose: text => log.push(["disclose", text]) }));
+    const gen = cellOf(r, "image_gen");
+    assert.equal(gen.status, "verified", gen.reason); assert.equal(gen.harvested.length, 1); assert.equal(gen.harvested[0].path, generated); assert.equal(gen.harvested[0].sha256, sha256(syntheticPng("blue")));
+    const disclosed = log.findIndex(e => e[0] === "disclose"), sent = log.findIndex((e, i) => e[0] === "exec" && i > disclosed);
+    assert.ok(disclosed >= 0 && sent > disclosed, `disclosure must precede the request: ${JSON.stringify(log)}`);
+    assert.equal(log.filter(e => e[0] === "disclose").length, 1); assert.equal(f.calls.length, 3, "version + image + one generation");
+    const entry = reg.entries.find(e => e.entry.modality === "image_gen").entry;
+    assert.equal(entry.level, "verified"); assert.equal(entry.direction, "output"); assert.deepEqual(entry.evidence.harvested_sha256, [sha256(syntheticPng("blue"))]);
+    assert.equal(r.verdict, "pass");
+    // Blocked cell: verified image_gen under zdr is skipped, its clearing action shown, and exec never called for it.
+    const blockedRoutes = { grok: { input: {}, output: { image_gen: { level: "verified", blocker: "zdr", harvest: "~/.grok/sessions/**/images/*.jpg" }, video_gen: { level: "documented", harvest: "~/.grok/sessions/**/videos/*.mp4" } } } };
+    const cells = generativeCells("grok", blockedRoutes.grok);
+    assert.equal(cells.find(c => c.cell === "image_gen").blocked, true); assert.equal(cells.find(c => c.cell === "image_gen").disclosure, null);
+    assert.equal(routeDisclosure(cells).includes("image_gen"), false); assert.ok(routeDisclosure(cells).includes("video_gen"));
+    const breg = fakeRegistry(blockedRoutes);
+    const sentArgs = [];
+    const b = modalityExec({ generate: ({ args }) => { sentArgs.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "videos"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.mp4"), "mp4"); return ok(envelope("grok", "done")); } });
+    const br = await runModalityProbes("grok", mopts({ home, registry: breg, exec: b.exec, command: "grok", consent: true, now: Date.now, disclose: () => {} }));
+    assert.equal(cellOf(br, "image_gen").status, "skipped"); assert.equal(cellOf(br, "image_gen").blocker, "zdr"); assert.match(cellOf(br, "image_gen").reason, /not sent/); assert.match(cellOf(br, "image_gen").clearing_action, /privacy/);
+    assert.equal(sentArgs.length, 1, "exactly one request, for the unblocked cell"); assert.match(sentArgs[0], /image_to_video/); assert.equal(sentArgs.some(a => /image_gen tool/.test(a)), false);
+    assert.equal(cellOf(br, "video_gen").status, "verified", cellOf(br, "video_gen").reason);
+    assert.equal(breg.entries.length, 1); assert.equal(breg.entries[0].entry.modality, "video_gen");
+    // Consent but no file harvested → probe_failed, level kept.
+    const dry = fakeRegistry(routes);
+    const d = modalityExec({ replies: { png: () => ok("Red") }, generate: () => ok("I could not generate anything.") });
+    const dr = await runModalityProbes("codex", mopts({ home: path.join(fixture, "empty-home"), registry: dry, exec: d.exec, command: "codex", consent: true, colour: "red", now: Date.now, disclose: () => {} }));
+    assert.equal(cellOf(dr, "image_gen").status, "probe_failed"); assert.match(cellOf(dr, "image_gen").reason, /no hashed file matched/);
+    assert.equal(dry.entries.find(e => e.entry.modality === "image_gen").entry.level, "documented");
+  });
+  await test("modality_records_share_the_ledger_but_never_displace_a_canary_verdict", async () => {
+    const root = path.join(fixture, "modality-root"); fs.mkdirSync(root);
+    const canary = fakeExec({ reply: () => ok("NO-TOOLS") });
+    const c = await runProbes("codex", opts({ exec: canary.exec, command: "codex", now: () => 1_700_000_000_000 }));
+    const reg = fakeRegistry({ codex: { input: { image: { level: "verified" } } } });
+    const f = modalityExec({ replies: { png: () => ok("Red") } });
+    const m = await runModalityProbes("codex", mopts({ registry: reg, exec: f.exec, command: "codex", colour: "red", now: () => 1_700_000_500_000 }));
+    recordProbe(root, c); recordProbe(root, m);
+    const lines = fs.readFileSync(path.join(root, PROBES_FILE), "utf8").trim().split("\n").map(l => JSON.parse(l));
+    assert.equal(lines.length, 2); assert.equal(lines[1].schema, MODALITY_PROBE_SCHEMA); assert.equal(lines[1].cells[0].status, "verified");
+    assert.equal(latestProbes(root).codex.schema, "momm-probe/1", "the newer modality record does not become the latest canary");
+  });
+  await test("synthetic_material_is_well_formed", () => {
+    const png = syntheticPng("yellow");
+    assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a"); assert.equal(png.readUInt32BE(16), 64); assert.equal(png.readUInt32BE(20), 64);
+    const idatLen = png.readUInt32BE(33); assert.equal(png.subarray(37, 41).toString("latin1"), "IDAT");
+    const raw = zlib.inflateSync(png.subarray(41, 41 + idatLen)); assert.equal(raw.length, 64 * (1 + 64 * 3)); assert.deepEqual([raw[1], raw[2], raw[3]], PROBE_COLOURS.yellow); assert.equal(raw[0], 0);
+    for (let y = 0; y < 64; y++) { const row = raw.subarray(y * 193, (y + 1) * 193); assert.equal(row[0], 0, `row ${y} filter`); for (let x = 0; x < 64; x++) assert.deepEqual([row[1 + x * 3], row[2 + x * 3], row[3 + x * 3]], PROBE_COLOURS.yellow, `pixel ${x},${y}`); }
+    assert.equal(png.readUInt32BE(41 + idatLen), crc32(png.subarray(37, 41 + idatLen)), "IDAT crc");
+    assert.equal(crc32(Buffer.from("123456789")), 0xcbf43926, "crc32 check value");
+    const pdf = syntheticPdf("AMBER (FALCON) 1234"), text = pdf.toString("latin1");
+    assert.ok(text.startsWith("%PDF-1.4")); assert.ok(text.endsWith("%%EOF\n")); assert.ok(text.includes("(AMBER \\(FALCON\\) 1234) Tj"));
+    const startxref = Number(/startxref\n(\d+)\n/.exec(text)[1]); assert.equal(text.slice(startxref, startxref + 4), "xref");
+    for (const m of text.matchAll(/(\d{10}) 00000 n/g)) assert.match(text.slice(Number(m[1]), Number(m[1]) + 8), /^\d 0 obj/);
+    const wav = syntheticWav();
+    assert.equal(wav.subarray(0, 4).toString(), "RIFF"); assert.equal(wav.subarray(8, 12).toString(), "WAVE"); assert.equal(wav.readUInt16LE(20), 1); assert.equal(wav.readUInt16LE(22), 1); assert.equal(wav.readUInt32LE(24), 8000); assert.equal(wav.readUInt16LE(34), 16); assert.equal(wav.readUInt32LE(40), 16000); assert.equal(wav.length, 16044);
+    // The samples carry the 440 Hz tone, not silence: zero crossings ≈ 2 × 440 per second, peak ≈ 12000.
+    let crossings = 0, peak = 0, previous = wav.readInt16LE(44);
+    for (let i = 1; i < 8000; i++) { const s = wav.readInt16LE(44 + i * 2); if ((s >= 0) !== (previous >= 0)) crossings++; peak = Math.max(peak, Math.abs(s)); previous = s; }
+    assert.ok(crossings >= 870 && crossings <= 890, `zero crossings ${crossings}`); assert.ok(peak >= 11500 && peak <= 12000, `peak ${peak}`);
+    assert.match(syntheticSentence(), /^[A-Z]+ [A-Z]+ \d{4}$/); assert.notEqual(syntheticSentence(() => Buffer.from([3, 3, 0, 0])).split(" ")[0], syntheticSentence(() => Buffer.from([3, 3, 0, 0])).split(" ")[1]);
+    assert.throws(() => syntheticPng("mauve"), /Unknown probe colour/);
+  });
+  await test("vectors_bind_the_file_and_codex_closes_the_variadic_image_flag", () => {
+    const v = inputProbeVector("codex", { filePath: "F", projectDir: "D", prompt: "P" });
+    assert.deepEqual(v.args, ["exec", "-i", "F", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"]); assert.equal(v.input, "P");
+    assert.ok(inputProbeVector("claude", { filePath: "F", projectDir: "D", prompt: "P" }).args.includes("--add-dir"));
+    assert.ok(inputProbeVector("gemini", { filePath: "C:\\x y\\probe.png", projectDir: "C:\\x y", prompt: "P" }).args.at(-1).startsWith("@probe.png "), "gemini @refs split on whitespace, so the reference is relative to the probe cwd");
+    assert.deepEqual(inputProbeVector("antigravity", { filePath: "F", projectDir: "D", prompt: "P" }).args, ["-p", "P", "--new-project", "--output-format", "json", "--mode=plan"]);
+    const cp = inputProbeVector("copilot", { filePath: "F", projectDir: "D", prompt: "P" }).args; assert.equal(cp[cp.indexOf("--attachment") + 1], "F"); assert.equal(cp[cp.indexOf("--add-dir") + 1], "D");
+    const gk = inputProbeVector("grok", { filePath: "F", projectDir: "D", prompt: "P" }).args; assert.equal(gk[gk.indexOf("--cwd") + 1], "D"); assert.ok(gk.includes("--disable-web-search"));
+    assert.equal(generativeProbeVector("claude", "image_gen", { projectDir: "D" }), null); assert.equal(generativeProbeVector("codex", "video_gen", { projectDir: "D" }), null);
+    assert.ok(generativeProbeVector("antigravity", "image_gen", { projectDir: "D" }).args.includes("--new-project"));
+    assert.equal(generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: "~/x/*.png" }), generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: "~/x/*.png" }), "deterministic, so the Setup Center can demand the exact echo");
+    assert.match(generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: null }), /no harvest glob/);
+  });
+  await test("glob_harvest_matches_double_star_and_filters_by_mtime", () => {
+    const home = path.join(fixture, "glob-home");
+    for (const rel of ["a/b/c/x.png", "a/y.png", "a/b/z.jpg", "other/w.png"]) { fs.mkdirSync(path.join(home, ".gen", path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(home, ".gen", rel), rel); }
+    assert.equal(expandHome("~/.gen/**/*.png", home), path.join(home, ".gen/**/*.png")); assert.equal(expandHome("/abs/x", home), "/abs/x"); assert.equal(expandHome("~user/x", home), "~user/x");
+    const all = globFiles("~/.gen/**/*.png", { home }).map(f => path.relative(path.join(home, ".gen"), f.path).replaceAll("\\", "/")).sort();
+    assert.deepEqual(all, ["a/b/c/x.png", "a/y.png", "other/w.png"]);
+    assert.deepEqual(globFiles("~/.gen/a/*.png", { home }).map(f => path.basename(f.path)), ["y.png"]);
+    assert.deepEqual(globFiles("~/.gen/a/*/z.jpg", { home }).map(f => path.basename(f.path)), ["z.jpg"]);
+    assert.deepEqual(globFiles("~/.gen/**/q?.png", { home }), []);
+    assert.deepEqual(globFiles("~/.gen/**/*.png", { home, since: Date.now() + 60_000 }), [], "older files are not harvested");
+    assert.deepEqual(globFiles("~/nowhere/**/*.png", { home }), []);
+    for (const f of globFiles("~/.gen/**/*.png", { home })) assert.equal(typeof f.bytes, "number");
+  });
+  await test("probe_args_parse_modalities_and_consent", () => {
+    assert.deepEqual(parseProbeArgs(["grok", "--modalities", "--consent", "--timeout", "9000"]), { record: false, modalities: true, consent: true, timeoutMs: 9000, clis: ["grok"] });
+    assert.deepEqual(parseProbeArgs([]).clis, [...PROBE_CLIS]); assert.equal(parseProbeArgs(["all", "--record"]).record, true);
+    assert.throws(() => parseProbeArgs(["--bogus"]), /Unknown argument/);
+    const entry = overlayEntryFor("codex", "1.0.0", "2026-09-13T00:00:00.000Z", { direction: "input", modality: "image", level_before: "documented", status: "probe_failed", blocker: "probe_failed", reason: "generic" }, { machineId: "m", loginIdentitySha256: "l" });
+    assert.deepEqual([entry.level, entry.blocker, entry.expires_at, entry.machine_id, entry.login_identity_sha256, entry.cli_version], ["documented", "probe_failed", null, "m", "l", "1.0.0"]);
+    assert.equal("level" in overlayEntryFor("codex", "1", "2026-09-13T00:00:00.000Z", { direction: "input", modality: "image", level_before: "no", status: "probe_failed" }), false, "no is never written");
+  });
+
+  // Against the REAL registry module (a temp home, so the machine's own overlay is untouched):
+  // a failed probe lands as blocker probe_failed with the baseline level standing; a later
+  // success clears it and upgrades the level; a blocked generative cell is never sent.
+  // ---- momm gate review rev_20260913213315_o8c2 reproductions --------------------------------
+  // generation-reprobe-lockout: probe_failed and reprobe are cleared BY a probe, so those cells
+  // are sent under --consent; every other blocker is skipped with its clearing action.
+  await test("generative_cells_under_probe_failed_or_reprobe_are_probed_other_blockers_skipped", async () => {
+    const base = { level: "documented", harvest: "~/.grok/sessions/**/images/*.jpg", mime: "image/jpeg" };
+    for (const blocker of ["probe_failed", "reprobe"]) { const [cell] = generativeCells("grok", { output: { image_gen: { ...base, blocker } } }); assert.equal(cell.blocked, false, `${blocker} must permit a recovery probe`); assert.equal(typeof cell.disclosure, "string"); assert.equal(cell.reprobe, true); }
+    for (const blocker of ["zdr", "quota", "auth_tier", "allowlist", "missing_flag"]) { const [cell] = generativeCells("grok", { output: { image_gen: { ...base, blocker } } }); assert.equal(cell.blocked, true, blocker); assert.equal(cell.disclosure, null); }
+    const home = path.join(fixture, "reprobe-home"); fs.mkdirSync(home, { recursive: true });
+    const reg = fakeRegistry({ grok: { input: {}, output: { image_gen: { ...base, blocker: "reprobe" }, video_gen: { level: "documented", blocker: "zdr", harvest: "~/.grok/sessions/**/*.mp4" } } } });
+    const sent = [];
+    const f = modalityExec({ generate: ({ args }) => { sent.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "images"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.jpg"), "jpg"); return ok(envelope("grok", "done")); } });
+    const r = await runModalityProbes("grok", mopts({ home, registry: reg, exec: f.exec, command: "grok", consent: true, now: Date.now, disclose: () => {} }));
+    assert.equal(cellOf(r, "image_gen").status, "verified", cellOf(r, "image_gen").reason);
+    assert.equal(sent.length, 1); assert.match(sent[0], /image_gen tool/);
+    assert.equal(cellOf(r, "video_gen").status, "skipped"); assert.equal(cellOf(r, "video_gen").blocker, "zdr");
+    const entry = reg.entries.find(e => e.entry.modality === "image_gen").entry; assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null, "the recovery probe clears the blocker");
+  });
+  // audio-refusal-verifies-capability: a refusal defeats every content pattern, not only CANNOT-VIEW.
+  await test("refusals_never_confirm_any_modality", () => {
+    for (const reply of ["Please note that I cannot access this file.", "I am unable to listen to audio files.", "The frequency of the tone could not be determined because the file read was denied.", "Sorry, I don't have access to audio; no tone here."]) assert.equal(confirmContent("audio", reply, { frequency: 440 }, "").confirmed, false, reply);
+    assert.equal(confirmContent("image", "I cannot view the image, but red is a common colour.", { colour: "red" }, "").confirmed, false);
+    assert.equal(confirmContent("pdf", `I could not open the file. Was it ${SENT}?`, { sentence: SENT }, "").confirmed, false);
+    assert.equal(confirmContent("audio", "A steady 440 Hz sine tone.", { frequency: 440 }, "").confirmed, true, "control");
+  });
+  // generation-verifies-unrelated-artifacts: only a hashed file produced AFTER this request
+  // counts, and an isolated refusal never verifies on files alone.
+  await test("generation_counts_only_hashed_files_produced_by_this_request", async () => {
+    const routes = { codex: { input: {}, output: { image_gen: { level: "documented", harvest: "~/.codex/generated_images/**/*.png" } } } };
+    const home = path.join(fixture, "unrelated-home"), dir = path.join(home, ".codex", "generated_images", "old"); fs.mkdirSync(dir, { recursive: true });
+    const stale = path.join(dir, "exec-old.png"); fs.writeFileSync(stale, syntheticPng("red")); const t = (Date.now() - 1000) / 1000; fs.utimesSync(stale, t, t);
+    const gen = extra => mopts({ home, registry: fakeRegistry(routes), command: "codex", consent: true, now: Date.now, disclose: () => {}, ...extra });
+    const none = modalityExec({ generate: () => ok("I have created the image you asked for.") });
+    const r1 = await runModalityProbes("codex", gen({ exec: none.exec }));
+    assert.equal(cellOf(r1, "image_gen").status, "probe_failed", "a file from one second before the request is not this request's output");
+    const fresh = path.join(home, ".codex", "generated_images", "new", "exec-new.png");
+    const writes = modalityExec({ generate: () => { fs.mkdirSync(path.dirname(fresh), { recursive: true }); fs.writeFileSync(fresh, "png"); return ok("written"); } });
+    // Hashing streams through openSync/readSync: an EACCES at open is a file that cannot be hashed.
+    const realOpen = fs.openSync; fs.openSync = (...a) => { if (String(a[0]) === fresh) throw Object.assign(new Error("EACCES: denied"), { code: "EACCES" }); return realOpen(...a); };
+    let r2; try { r2 = await runModalityProbes("codex", gen({ exec: writes.exec })); } finally { fs.openSync = realOpen; }
+    assert.equal(cellOf(r2, "image_gen").status, "probe_failed", "an unhashable file is not evidence"); assert.equal((cellOf(r2, "image_gen").harvested ?? []).length, 0);
+    const refuses = modalityExec({ generate: () => { fs.writeFileSync(fresh, syntheticPng("blue")); return ok("I cannot generate images in this session."); } });
+    const r3 = await runModalityProbes("codex", gen({ exec: refuses.exec }));
+    assert.equal(cellOf(r3, "image_gen").status, "probe_failed", "a refusal is not verified on files alone"); assert.match(cellOf(r3, "image_gen").reason, /refus/);
+    const good = modalityExec({ generate: () => { fs.writeFileSync(fresh, syntheticPng("blue")); return ok("wrote it"); } });
+    const r4 = await runModalityProbes("codex", gen({ exec: good.exec }));
+    assert.equal(cellOf(r4, "image_gen").status, "verified", cellOf(r4, "image_gen").reason); assert.equal(cellOf(r4, "image_gen").harvested.length, 1, "control: exactly the file this request wrote");
+  });
+  // windows-literal-glob-case-mismatch (+ terminal ** suggestion).
+  await test("glob_literal_segments_follow_the_filesystem_case_and_terminal_double_star_collects_files", () => {
+    const base = path.join(fixture, "glob-case"); fs.mkdirSync(path.join(base, "Generated", "deep"), { recursive: true });
+    fs.writeFileSync(path.join(base, "Generated", "result.png"), "x"); fs.writeFileSync(path.join(base, "Generated", "deep", "more.png"), "y");
+    if (process.platform === "win32") assert.equal(globFiles(path.join(base, "generated", "*.png")).length, 1, "literal segments match case-insensitively on win32");
+    assert.equal(globFiles(path.join(base, "Generated", "*.png")).length, 1);
+    assert.deepEqual(globFiles(path.join(base, "Generated", "**")).map(f => path.basename(f.path)).sort(), ["more.png", "result.png"], "a terminal ** yields every file below");
+  });
+  // fake-cli-truncates-paths-with-spaces: the fake reads the path the way each CLI does.
+  await test("fake_cli_resolves_synthetic_paths_with_spaces", () => {
+    const spaced = path.join(fixture, "Jane Doe", "probe.png");
+    assert.equal(probeFileIn(["exec", "-i", spaced, "--sandbox"], "This is a capability probe. View the image", "D"), spaced);
+    assert.equal(probeFileIn(["-p", `This is a capability probe. View the image file at ${spaced} with your file or image tool`], "", "D"), spaced);
+    assert.equal(probeFileIn(["--prompt", "@probe.png This is a capability probe."], "", path.join(fixture, "x y")), path.join(fixture, "x y", "probe.png"));
+    assert.ok(/\s/.test(fixture), "the suite itself runs in a directory containing a space");
+  });
+  // registry-import-hides-missing-dependencies: only a missing capabilities.mjs is "absent".
+  await test("registry_absence_is_only_a_missing_capabilities_file", () => {
+    const here = path.join(fixture, "reg"); fs.mkdirSync(here, { recursive: true });
+    const file = path.join(here, "capabilities.mjs");
+    const notFound = message => Object.assign(new Error(message), { code: "ERR_MODULE_NOT_FOUND" });
+    assert.equal(registryAbsent(notFound(`Cannot find module '${file}' imported from probes.mjs`), file), true);
+    fs.writeFileSync(file, "import 'left-pad';\n");
+    assert.equal(registryAbsent(notFound(`Cannot find package 'left-pad' imported from ${file}`), file), false, "a missing dependency inside an existing registry is a failure, not absence");
+    assert.equal(registryAbsent(notFound(`Cannot find module '${file}'`), file), false, "the file exists: whatever failed, it is not absence");
+    assert.equal(registryAbsent(new SyntaxError("Unexpected token"), file), false);
+  });
+
+  await test("real_registry_round_trip_probe_failed_then_verified", async () => {
+    let registry;
+    const registryFile = fileURLToPath(new URL("./capabilities.mjs", import.meta.url));
+    try { registry = await import("./capabilities.mjs"); } catch (e) { if (registryAbsent(e, registryFile)) { results.real_registry_round_trip_probe_failed_then_verified = "unchecked: capabilities.mjs absent"; return; } throw e; }
+    const home = path.join(fixture, "real-home"); fs.mkdirSync(home, { recursive: true });
+    const view = () => registry.effective({ home, installedVersions: { codex: "9.9.9" } }).routes.codex;
+    assert.equal(view().input.image.level, "verified", "baseline codex image is verified from the help capture");
+    const generic = modalityExec({ replies: { png: () => ok("It looks like a small square image.") } });
+    const r1 = await runModalityProbes("codex", mopts({ home, registry, exec: generic.exec, command: "codex", colour: "green" }));
+    assert.equal(cellOf(r1, "image").status, "probe_failed"); assert.equal(cellOf(r1, "image").overlay_written, true, cellOf(r1, "image").overlay_error);
+    const failed = view().input.image;
+    assert.equal(failed.blocker, "probe_failed"); assert.equal(failed.level, "verified", "the baseline level stands"); assert.equal(failed.source, "overlay"); assert.equal(registry.routable(failed), false);
+    assert.equal(cellOf(r1, "image_gen").status, "skipped"); assert.match(cellOf(r1, "image_gen").reason, /consent_required/); assert.equal(cellOf(r1, "image_gen").level_before, "documented");
+    const named = modalityExec({ replies: { png: () => ok("Green") } });
+    const r2 = await runModalityProbes("codex", mopts({ home, registry, exec: named.exec, command: "codex", colour: "green" }));
+    assert.equal(cellOf(r2, "image").status, "verified");
+    const cleared = view().input.image;
+    assert.equal(cleared.blocker, null); assert.equal(cleared.level, "verified"); assert.equal(registry.routable(cleared), true);
+    // An upgraded CLI invalidates the entry: a blocker becomes reprobe, never a silent unblock.
+    const stale = modalityExec({ replies: { png: () => ok("nothing to say") }, version: ok("9.9.9") });
+    await runModalityProbes("codex", mopts({ home, registry, exec: stale.exec, command: "codex", colour: "green" }));
+    assert.equal(registry.effective({ home, installedVersions: { codex: "10.0.0" } }).routes.codex.input.image.blocker, "reprobe");
+    assert.match(registry.clearingAction("reprobe", "codex"), /probes\.mjs codex --modalities/);
+    // The overlay file lives under the temp home only, mode-restricted, and names this machine.
+    const files = fs.readdirSync(path.join(home, ".momm")).filter(n => n.startsWith("capabilities-"));
+    assert.equal(files.length, 1); assert.equal(JSON.parse(fs.readFileSync(path.join(home, ".momm", files[0]), "utf8")).machine_id, registry.machineId());
+    if (process.platform !== "win32") { assert.equal(fs.statSync(path.join(home, ".momm", files[0])).mode & 0o777, 0o600, "overlay is owner-only"); assert.equal(fs.statSync(path.join(home, ".momm")).mode & 0o777, 0o700); }
+    // The projection of the shipped baseline is what the dispatcher pins as MODALITY_SUPPORT.
+    const projected = registry.projection(registry.loadBaseline());
+    assert.deepEqual(Object.keys(projected.grok).sort(), ["image", "pdf", "text"]);
+  });
+
   if (failures.length) {
     for (const { name, error } of failures) process.stderr.write(`FAIL ${name}\n  ${String(error?.stack || error).split("\n").slice(0, 6).join("\n  ")}\n`);
     process.stdout.write(JSON.stringify({ passed: false, tests: results }, null, 2) + "\n");
     process.exitCode = 1;
   } else process.stdout.write(JSON.stringify({ passed: true, tests: results }, null, 2) + "\n");
 } finally {
-  if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-probes-tests-")) fs.rmSync(fixture, { recursive: true, force: true });
+  if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm probes tests-")) fs.rmSync(fixture, { recursive: true, force: true });
 }

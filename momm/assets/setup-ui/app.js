@@ -46,8 +46,19 @@ const guidanceUserCount = document.querySelector("#guidance-user-count");
 const guidancePreview = document.querySelector("#guidance-preview");
 const guidancePreviewRoute = document.querySelector("#guidance-preview-route");
 const guidancePreviewNote = document.querySelector("#guidance-preview-note");
+const capabilitiesGrid = document.querySelector("#capabilities-grid");
+const capabilitiesSummary = document.querySelector("#capabilities-summary");
+const capabilitiesPipelines = document.querySelector("#capabilities-pipelines");
+const capabilitiesRefreshButton = document.querySelector("#capabilities-refresh");
+const planForm = document.querySelector("#plan-form");
+const planIn = document.querySelector("#plan-in");
+const planOut = document.querySelector("#plan-out");
+const planResult = document.querySelector("#plan-result");
 
 let session = null;
+let capabilities = null;
+// route -> the modality probe job that owns the route's buttons until it settles.
+const capabilityJobs = new Map();
 let report = null;
 let maintenance = null;
 let refreshing = false;
@@ -924,6 +935,189 @@ async function runBatchUpdate() {
   showToast(`Batch update finished. ${outcomes.join(" · ")}`);
 }
 
+// --- Modalities panel (1.16 E7) ----------------------------------------------------------
+// Rows are routes, columns are modalities, cells are chips at the four levels with a
+// blocker badge; the invocation and evidence sit in the chip's title, the clearing action
+// in the badge's. "Probe inputs" sends synthetic files; "Probe generation" confirms with the
+// exact disclosure the server will demand back and never sends a blocked cell. The planner
+// is pure: it shows the chain the runner WOULD take and the cells that block it.
+const CAP_LEVEL_LABEL = { verified: "verified", documented: "documented", "model-only": "model-only", no: "no" };
+
+function capBlockerInfo(route, direction, modality) {
+  return (capabilities?.blockers || []).find((b) => b.route === route && b.direction === direction && b.modality === modality) || null;
+}
+
+function capCell(route, direction, modality) {
+  const cell = capabilities?.routes?.[route]?.[direction]?.[modality];
+  if (!cell) return '<td><span class="chip cap-chip cap-no" title="No cell in the registry">—</span></td>';
+  const evidence = cell.evidence ? [cell.evidence.help_capture ? `help capture ${cell.evidence.help_capture}` : "", ...(cell.evidence.docs || []).slice(0, 1)].filter(Boolean).join(" · ") : "";
+  const title = [
+    cell.how ? `Invocation: ${cell.how}` : `Level ${cell.level}: ${capabilities.level_actions?.[cell.level] || "no path"}`,
+    cell.requires?.length ? `Requires: ${cell.requires.join(", ")}` : "",
+    evidence ? `Evidence: ${evidence}` : "",
+    cell.harvest ? `Harvest: ${cell.harvest}` : "",
+    cell.source === "overlay" ? `Set by this machine's probe${cell.overlay?.at ? ` on ${formatWhen(cell.overlay.at)}` : ""}${cell.overlay?.expires_at ? `, until ${formatWhen(cell.overlay.expires_at)}` : ""}` : "",
+  ].filter(Boolean).join("\n");
+  const info = capBlockerInfo(route, direction, modality);
+  const badge = cell.blocker ? `<span class="cap-blocker cap-blocker-${escapeHtml(cell.blocker)}" title="${escapeHtml(`${cell.reason ? `${cell.reason}\n` : ""}To clear: ${info?.clearing_action || "see the registry"}`)}">${escapeHtml(cell.blocker)}</span>` : "";
+  return `<td><span class="chip cap-chip cap-${escapeHtml(cell.level)}${cell.source === "overlay" ? " cap-probed" : ""}" title="${escapeHtml(title)}">${escapeHtml(CAP_LEVEL_LABEL[cell.level] || cell.level)}</span>${badge}</td>`;
+}
+
+function capActions(route) {
+  const running = capabilityJobs.has(route) || (capabilities.probes?.running || []).includes(route);
+  const gen = capabilities.generation?.[route];
+  const blockedGen = (gen?.cells || []).filter((c) => c.blocked);
+  const genTitle = !gen?.cells?.length ? "No generative cell at documented or verified on this route" : !gen.open ? `Every generative cell is blocked: ${blockedGen.map((c) => `${c.cell} (${c.blocker})`).join(", ")}` : `Sends ${gen.open} generation request${gen.open === 1 ? "" : "s"} after your consent${blockedGen.length ? `; skips ${blockedGen.map((c) => `${c.cell} (${c.blocker})`).join(", ")}` : ""}`;
+  const last = capabilities.probes?.last?.[route];
+  const lastText = running ? "Probing… synthetic files only." : last?.at ? `Last probe ${formatWhen(last.at)}: ${last.verdict}${last.summary ? ` (${last.summary.verified} verified, ${last.summary.failed} failed, ${last.summary.blocked} blocked)` : ""}` : "Not probed on this machine yet.";
+  return `<td class="cap-actions">
+    <button class="mini-button" data-cap-probe="inputs" data-route="${escapeHtml(route)}" ${running ? "disabled" : ""} title="Sends one synthetic PNG, PDF and tone per documented input cell; never project content">Probe inputs</button>
+    <button class="mini-button" data-cap-probe="generation" data-route="${escapeHtml(route)}" ${running || !gen?.open ? "disabled" : ""} title="${escapeHtml(genTitle)}">Probe generation…</button>
+    <small>${escapeHtml(lastText)}</small></td>`;
+}
+
+function pipelinesText() {
+  const p = capabilities?.pipelines || {};
+  const names = { image_critique: "Image critique", pdf_critique: "PDF critique", audio_critique: "Audio critique", video_critique: "Video critique", image_generation: "Image generation", video_generation: "Video generation" };
+  return Object.entries(names).map(([key, label]) => {
+    const entry = p[key] || { routes: [], blocked: [] };
+    const blocked = (entry.blocked || []).map((b) => `${providerLabel(b.route)} blocked by ${b.blocker}`).join(", ");
+    return `${label}: ${entry.routes.length ? entry.routes.map(providerLabel).join(", ") : "none"}${blocked ? ` (${blocked})` : ""}`;
+  }).join(" · ");
+}
+
+function renderCapabilities() {
+  if (!capabilities) return;
+  const routes = Object.keys(capabilities.routes || {});
+  const inputs = capabilities.input_modalities || ["image", "pdf", "audio", "video", "speech"];
+  const outputs = capabilities.output_modalities || ["image_gen", "video_gen", "speech", "code_exec", "web"];
+  const blockers = capabilities.blockers || [];
+  const overlay = capabilities.overlay || {};
+  capabilitiesSummary.textContent = `${routes.length} routes · ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} on this machine${overlay.reprobe ? ` (${overlay.reprobe} to re-probe)` : ""} · baseline captured ${capabilities.captured_at || "—"}${overlay.applied ? ` · ${overlay.applied} cell${overlay.applied === 1 ? "" : "s"} set by this machine's probes` : ""}.`;
+  capabilitiesGrid.innerHTML = `<table class="momm-table cli-table cap-table"><thead>
+    <tr><th></th><th class="cap-group" colspan="${inputs.length}">Takes in</th><th class="cap-group" colspan="${outputs.length}">Produces</th><th class="cap-group">Probes</th></tr>
+    <tr><th>Route</th>${inputs.map((m) => `<th>${escapeHtml(m)}</th>`).join("")}${outputs.map((m) => `<th>${escapeHtml(m.replace("_gen", " gen").replace("_", " "))}</th>`).join("")}<th></th></tr></thead>
+    <tbody>${routes.map((route) => `<tr><th scope="row">${escapeHtml(providerLabel(route))}<small>${escapeHtml(capabilities.routes[route].installed_version ? `installed ${capabilities.routes[route].installed_version}` : "not detected")}</small></th>${inputs.map((m) => capCell(route, "input", m)).join("")}${outputs.map((m) => capCell(route, "output", m)).join("")}${capActions(route)}</tr>`).join("")}</tbody></table>`;
+  capabilitiesPipelines.textContent = `Possible now, derived from this matrix and what each adapter binds: ${pipelinesText()}. Chips marked * were set by this machine's probes; a reprobe badge means a recorded result expired or its CLI version or login changed.`;
+}
+
+async function loadCapabilities() {
+  capabilitiesRefreshButton.disabled = true;
+  try {
+    capabilities = await api("/api/capabilities");
+    renderCapabilities();
+  } catch (error) {
+    capabilitiesSummary.textContent = `The capability registry could not be read: ${error.message}`;
+    capabilitiesGrid.innerHTML = "";
+    capabilitiesPipelines.textContent = "";
+  } finally { capabilitiesRefreshButton.disabled = false; }
+}
+
+// Polls one modality probe job. The route's buttons follow capabilityJobs OR the server's
+// probes.running, so every exit here — result, deadline, failed poll — releases this page's
+// handle (only if it still owns the route) and then re-reads the matrix: a job the server
+// still reports as running keeps the route locked, and a failed poll never leaves the
+// buttons disabled for the rest of the session.
+async function pollCapabilityJob(route, id) {
+  const deadline = Date.now() + 15 * 60_000;
+  const owns = () => capabilityJobs.get(route)?.id === id;
+  const release = () => { if (owns()) capabilityJobs.delete(route); };
+  try {
+    for (;;) {
+      await sleep(TEST_POLL_MS);
+      if (!owns()) return null;
+      const state = await api(`/api/job/${id}`);
+      if (!owns()) return null;
+      if (state.status !== "running") {
+        release();
+        const s = state.result?.summary;
+        showToast(`${providerLabel(route)} modality probe: ${state.result?.verdict || state.status}${s ? ` — ${s.verified} verified, ${s.failed} failed, ${s.blocked} blocked, ${s.skipped} skipped` : ""}${state.result?.detail ? `. ${state.result.detail}` : ""}.`);
+        await loadCapabilities();
+        return state;
+      }
+      if (Date.now() > deadline) {
+        release();
+        showToast(`${providerLabel(route)} modality probe: no result after 15 minutes. The matrix shows whether the server is still running it.`);
+        await loadCapabilities();
+        return null;
+      }
+    }
+  } catch (error) {
+    release();
+    showToast(`${providerLabel(route)} modality probe: ${error.message}`);
+    await loadCapabilities();
+    return null;
+  }
+}
+
+async function probeRoute(route, kind) {
+  if (!capabilities || capabilityJobs.has(route)) return null;
+  const body = { op: "probe", cli: route };
+  if (kind === "generation") {
+    const gen = capabilities.generation?.[route];
+    if (!gen?.open || !gen.disclosure) { showToast("Nothing to generate: every generative cell of this route is blocked or absent."); return null; }
+    const skipped = (gen.cells || []).filter((c) => c.blocked).map((c) => `${c.cell}: blocked by ${c.blocker} — ${c.clearing_action}`).join("\n");
+    if (!window.confirm(`Send this generation probe? It spends the provider's quota.\n\n${gen.disclosure}${skipped ? `\n\nSkipped (blocked, never sent):\n${skipped}` : ""}`)) return null;
+    Object.assign(body, { generate: true, consent: true, disclosure: gen.disclosure });
+  } else body.inputs = true;
+  // Own the route before the POST leaves so a second click cannot send a second probe while
+  // the first is still in flight; the placeholder is replaced by the job the server returns.
+  const pending = { id: null, pending: true };
+  capabilityJobs.set(route, pending);
+  renderCapabilities();
+  try {
+    const job = await api("/api/capabilities", { method: "POST", body: JSON.stringify(body) });
+    if (capabilityJobs.get(route) !== pending) return null;
+    capabilityJobs.set(route, job);
+    renderCapabilities();
+    return await pollCapabilityJob(route, job.id);
+  } catch (error) {
+    if (capabilityJobs.get(route) === pending) capabilityJobs.delete(route);
+    showToast(error.message);
+    renderCapabilities();
+    return null;
+  }
+}
+
+// A candidate's `how` is one invocation string for a single cell or an object keyed per
+// cell; both render as text (Object.values on a string would split it per character).
+function invocationText(how) {
+  if (typeof how === "string") return how;
+  if (how && typeof how === "object") return Object.values(how).filter((v) => typeof v === "string" && v).join("; ");
+  return "";
+}
+const PLAN_RUN_COMMAND = "node momm/scripts/modality.mjs run --plan <file> --consent";
+
+function renderPlan(planned) {
+  if (!planned) { planResult.innerHTML = ""; return; }
+  const steps = (planned.steps || []).map((step, i) => {
+    const chosen = (step.candidates || []).find((c) => c.route === step.chosen);
+    const candidates = (step.candidates || []).map((c) => `${providerLabel(c.route)}: ${c.routable ? `routable (${c.level})` : c.blocker ? `blocked by ${c.blocker}` : `level ${c.level}`}`).join(" · ");
+    const how = invocationText(chosen?.how);
+    return `<li><strong>Step ${i + 1}</strong> ${escapeHtml((step.from || []).join(" + "))} → ${escapeHtml((step.to || []).join(" + "))}: ${step.chosen ? `<span class="chip chip-good">${escapeHtml(providerLabel(step.chosen))}</span> <small>${escapeHtml(chosen?.level || "")}${how ? ` · ${escapeHtml(how)}` : ""}</small>` : '<span class="chip chip-bad">no route</span>'}<small class="plan-candidates">${escapeHtml(candidates || "no candidates")}</small></li>`;
+  }).join("");
+  const blocked = (planned.blocked_by || []).map((b) => `<li><span class="cap-blocker${b.blocker ? ` cap-blocker-${escapeHtml(b.blocker)}` : ""}">${escapeHtml(b.blocker || b.level || "no route")}</span> step ${(b.step ?? 0) + 1}${b.route ? ` · ${escapeHtml(providerLabel(b.route))}` : ""}: ${escapeHtml(b.reason || "")}${b.clearing_action ? ` — <em>${escapeHtml(b.clearing_action)}</em>` : ""}</li>`).join("");
+  // The command is text inside innerHTML: its <file> placeholder is escaped so the parser cannot swallow it as a tag.
+  planResult.innerHTML = `<p class="environment-note">${planned.possible ? `Possible: ${escapeHtml((planned.routes_used || []).map(providerLabel).join(" → "))}. Nothing was executed; running a chain is a separate command with its own consent (${escapeHtml(PLAN_RUN_COMMAND)}).` : "Not possible on this machine right now; the blockers below name what would clear each one."}</p><ol class="plan-steps">${steps}</ol>${blocked ? `<p class="environment-note">Blocked by:</p><ul class="plan-blocked">${blocked}</ul>` : ""}`;
+}
+
+async function runPlan(event) {
+  event?.preventDefault?.();
+  const list = (value) => String(value || "").split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const need = { input: list(planIn.value), output: list(planOut.value) };
+  try {
+    const result = await api("/api/capabilities", { method: "POST", body: JSON.stringify({ op: "plan", need }) });
+    renderPlan(result.plan);
+  } catch (error) { planResult.innerHTML = `<p class="guidance-error">${escapeHtml(error.message)}</p>`; }
+}
+
+capabilitiesGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-cap-probe]");
+  if (button && !button.disabled) probeRoute(button.dataset.route, button.dataset.capProbe);
+});
+capabilitiesRefreshButton.addEventListener("click", loadCapabilities);
+planForm.addEventListener("submit", runPlan);
+
 grid.addEventListener("click", (event) => {
   const actionButton = event.target.closest("[data-action]");
   const testButton = event.target.closest("[data-test]");
@@ -986,6 +1180,7 @@ closeButton.addEventListener("click", closeSetupCenter);
     loadGuidance();
     loadUsage();
     loadUpdateClock();
+    loadCapabilities();
   } catch (error) {
     summary.textContent = "Setup Center could not start.";
     showToast(error.message);

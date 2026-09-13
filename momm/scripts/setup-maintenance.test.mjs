@@ -8,7 +8,7 @@ const source = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8
 const start = source.indexOf('function parseVersion('), end = source.indexOf('// Returns true only if a terminal');
 assert(start >= 0 && end > start);
 const passed = [], failures = [];
-async function test(name, fn) { try { await fn(); passed.push(name); } catch (e) { failures.push({name,error:e.message}); } }
+async function test(name, fn) { try { await fn(); passed.push(name); } catch (e) { failures.push({name,error:e.message,stack:String(e.stack||'').split('\n').slice(1,4).map(l=>l.trim())}); } }
 // vm-context values carry foreign prototypes, so structural checks compare JSON.
 const same=(actual,expected,message)=>assert.equal(JSON.stringify(actual),JSON.stringify(expected),message);
 async function report(grok = {code:0,stdout:'{}'}) {
@@ -92,6 +92,8 @@ function handler(body,token=true,extra={}) {
     STATIC_ASSETS:{'/':['index.html','text/html; charset=utf-8'],'/momm-theme.css':['momm-theme.css','text/css; charset=utf-8'],'/styles.css':['styles.css','text/css; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8']},
     serveAsset:(_,file,contentType)=>({status:200,asset:file,contentType}),serveLedger:async()=>({status:200,ledger:true}),ledgerFileUrl:()=>'file:///C:/proj/.ensemble_reviews/ledger.html',Object,
     guidanceSnapshot:()=>({project:null}),usageReport:()=>({rows:[]}),clockSnapshot:()=>({}),saveGuidance:()=>({status:200,value:{}}),handleUpdateClock:async()=>({status:503,value:{error:'no clock'}}),GUIDANCE_BODY_LIMIT:65536,
+    // 1.16 E7: the Modalities routes hand the handler's status through untouched.
+    capabilitiesSnapshot:async()=>({status:200,value:{routes:{codex:{}},blockers:[]}}),handleCapabilities:async(body)=>({status:body?.op==='probe'&&body.generate&&body.consent!==true?409:200,value:{op:body?.op}}),
     maintenanceReport:async()=>({cli_updates:[]}),triggerClock:()=>Promise.resolve(null),maintenanceCache:null},...extra});
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
   return {serve,launches:()=>launched};
@@ -350,7 +352,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -646,7 +648,285 @@ await test('the dashboard emits the shared chip classes and tables compose .momm
   c.fail('codex',{route_status:'error'});assert.match(c.core.providerCard({agent:'codex',installed:true,ready:true,version:'1.0.0'}),/class="chip status chip-bad"/);
   for(const html of [detected,missing])assert(!/class="status (ready|login|install|failed)"/.test(html),'no legacy colour classes remain');
   assert.match(c.core.miniStatus('current'),/^<span class="chip chip-good mini-status">/);assert.match(c.core.miniStatus('missing'),/chip chip-bad/);assert.match(c.core.miniStatus('unknown'),/chip chip-neutral/);
-  assert.equal((client.match(/<table class="momm-table cli-table/g)||[]).length,3,'every dashboard table composes the shared table rules');
+  assert.equal((client.match(/<table class="momm-table cli-table/g)||[]).length,4,'every dashboard table composes the shared table rules (CLI versions, update clock, usage, modalities)');
+});
+// --- Modalities panel (1.16 E7) ---------------------------------------------------------------
+// Routes: GET needs the session token and serves the snapshot; POST hands the handler's
+// status through, so a generation probe without consent is the 409 the handler returns.
+await test('the capabilities routes need the session token and pass the handler status through',async()=>{
+  const denied=await handler({},false).serve({method:'GET',url:'/api/capabilities',socket:{}},{});assert.equal(denied.status,403);
+  const served=await handler({}).serve({method:'GET',url:'/api/capabilities',socket:{}},{});assert.equal(served.status,200);assert.deepEqual(Object.keys(served.value.routes),['codex']);
+  const refused=await handler({op:'probe',cli:'codex',generate:true}).serve({method:'POST',url:'/api/capabilities',socket:{}},{});assert.equal(refused.status,409,'probe generation without consent is refused at the handler and the route keeps the 409');
+  const planned=await handler({op:'plan',need:{input:['text'],output:['image']}}).serve({method:'POST',url:'/api/capabilities',socket:{}},{});assert.equal(planned.status,200);assert.equal(planned.value.op,'plan');
+  const gone=await handler({},true,{capabilitiesSnapshot:async()=>({status:503,value:{error:'registry unavailable'}})}).serve({method:'GET',url:'/api/capabilities',socket:{}},{});assert.equal(gone.status,503,'no registry degrades to 503, never a crash');
+  const noToken=await handler({op:'plan',need:{}},false).serve({method:'POST',url:'/api/capabilities',socket:{}},{});assert.equal(noToken.status,403);
+});
+// The production handler with a fake registry module: consent gate, exact disclosure echo,
+// blocked generative cells skipped without a request, input probes through the injected exec,
+// plan passed through, busy guard.
+import {runModalityProbes,generativeCells,routeDisclosure,latestModalityProbes} from './probes.mjs';
+function capabilitiesSlice({matrix,planResult={possible:true,steps:[],routes_used:['codex'],blocked_by:[]},maxJobs=12,cliVersion=async()=>'9.9.9'}={}) {
+  const a=source.indexOf('// --- Modalities panel (1.16 E7)'),b=source.indexOf('// --- Ledger auto-regeneration',a);assert(a>=0&&b>a);
+  const written=[];
+  const module={effective:({installedVersions})=>JSON.parse(JSON.stringify({...matrix,installed:installedVersions})),clearingAction:(blocker,route)=>`clear ${blocker} on ${route}`,levelAction:()=>null,writeOverlayEntry:(home,entry)=>{written.push({home,entry});},routable:c=>!!c&&['verified','documented'].includes(c.level)&&!c.blocker};
+  const registry={module,plan:(m,need,extra)=>({...planResult,need,...extra}),error:null};
+  const c=vm.createContext({providers:Object.fromEntries(['codex','claude','gemini','antigravity','copilot','grok'].map(a=>[a,{label:a,modalities:a==='grok'?['text']:['text','image','pdf']}])),jobs:new Map(),maxJobs,crypto,safeDetail:s=>String(s),os,process,Promise,Date,JSON,Object,Array,String,Number,Boolean,Set,Map,parseVersion:s=>String(s||'').match(/\d+\.\d+\.\d+/)?.[0]||null,cliVersion,probeExec:async()=>{throw new Error('the server exec must not be used when a test exec is injected');},recordProbe:()=>{},runModalityProbes,generativeCells,routeDisclosure,latestModalityProbes:()=>({})});
+  vm.runInContext(source.slice(a,b)+';capabilitiesRegistry=this.registry;this.snapshot=capabilitiesSnapshot;this.handle=handleCapabilities;this.jobs=jobs;',Object.assign(c,{registry}));
+  return {c,written,registry};
+}
+import crypto from 'node:crypto';
+const capMatrix={schema:'momm-capabilities-effective/1',machine_id:'m',captured_at:'2026-09-13',overlay:{applied:1,reprobe:0,invalidated:[],stale:[]},routes:{
+  codex:{installed_version:'9.9.9',input:{text:{level:'verified'},image:{level:'verified',how:'-i {file}',evidence:{help_capture:'references/cli/help/codex-exec.txt:37'}},pdf:{level:'no'}},output:{image_gen:{level:'documented',how:'image_gen tool',harvest:'~/.codex/generated_images/**/*.png',mime:'image/png'}}},
+  claude:{installed_version:null,input:{text:{level:'verified'},image:{level:'documented'},pdf:{level:'documented'}},output:{image_gen:{level:'no'}}},
+  gemini:{input:{text:{level:'verified'},image:{level:'documented',blocker:'auth_tier',source:'overlay',reason:'IneligibleTierError',overlay:{at:'2026-09-13T00:00:00.000Z',expires_at:'2026-09-20T00:00:00.000Z'}}},output:{}},
+  antigravity:{input:{text:{level:'verified'},image:{level:'documented',requires:['--new-project']}},output:{image_gen:{level:'documented',harvest:'~/.gemini/antigravity-cli/brain/**/*.jpg',mime:'image/jpeg'},code_exec:{level:'documented',blocker:'allowlist'}}},
+  copilot:{input:{text:{level:'verified'},image:{level:'verified',blocker:'reprobe',source:'overlay',reason:'quota recorded 2026-09-01 is expired; probe before routing'}},output:{}},
+  grok:{input:{text:{level:'verified'},image:{level:'documented'},speech:{level:'model-only'}},output:{image_gen:{level:'documented',harvest:'~/.grok/sessions/**/images/*.jpg',mime:'image/jpeg'},video_gen:{level:'documented',blocker:'zdr',source:'overlay',harvest:'~/.grok/sessions/**/*.mp4',mime:'video/mp4'}}}}};
+// syntheticPng (probes.mjs) writes a stored (uncompressed) IDAT: 8-byte signature, IHDR chunk
+// (25 bytes), IDAT header (8 bytes), zlib header (2 bytes), stored-block header (5 bytes) and
+// the first scanline's filter byte at offset 48, so bytes 49-51 are the first pixel's RGB.
+const colourOf=file=>{const b=fs.readFileSync(file);const [r,g,bl]=[b[49],b[50],b[51]];return r>200&&g>200?'yellow':r>200?'red':g>150?'green':bl>150?'blue':'unknown';};
+// Waits for a job to leave "running"; a job still running after five seconds is a failure in its own right.
+const settle=async job=>{for(let i=0;i<500&&job.status==='running';i++)await new Promise(r=>setTimeout(r,10));if(job.status==='running')throw new Error(`job ${job.id} for ${job.provider} still running after 5 s`);return job;};
+await test('the capabilities snapshot carries blockers with clearing actions, per-route disclosures and derived pipelines',async()=>{
+  const {c}=capabilitiesSlice({matrix:capMatrix});
+  const snap=await c.snapshot({home:os.tmpdir(),installedVersions:{codex:'9.9.9'}});
+  assert.equal(snap.status,200);const v=snap.value;
+  assert.equal(v.routes.gemini.input.image.blocker,'auth_tier');
+  same(v.blockers.map(b=>`${b.route}.${b.direction}.${b.modality}=${b.blocker}`),['gemini.input.image=auth_tier','antigravity.output.code_exec=allowlist','copilot.input.image=reprobe','grok.output.video_gen=zdr']);
+  assert.equal(v.blockers.find(b=>b.blocker==='reprobe').clearing_action,'clear reprobe on copilot');assert.equal(v.blockers.find(b=>b.blocker==='auth_tier').expires_at,'2026-09-20T00:00:00.000Z');
+  assert.equal(v.generation.grok.open,1);assert.equal(v.generation.grok.cells.find(x=>x.cell==='video_gen').blocked,true);assert.equal(v.generation.grok.cells.find(x=>x.cell==='video_gen').clearing_action,'clear zdr on grok');
+  assert.match(v.generation.grok.disclosure,/image_gen/);assert(!v.generation.grok.disclosure.includes('video_gen'),'a blocked cell is not in the disclosure');assert.match(v.generation.codex.disclosure,/quota is spent/);assert.equal(v.generation.claude.disclosure,null);
+  same(v.pipelines.image_critique.routes,['codex','claude','antigravity'],'grok binds no media on the card, gemini and copilot are blocked');
+  same(v.pipelines.image_critique.blocked,[{route:'gemini',blocker:'auth_tier'},{route:'copilot',blocker:'reprobe'}]);
+  same(v.pipelines.image_generation.routes,['codex','antigravity','grok']);same(v.pipelines.video_generation.routes,[]);same(v.pipelines.video_generation.blocked,[{route:'grok',blocker:'zdr'}]);
+  assert(!JSON.stringify(v).includes('all five'));
+});
+await test('probe generation needs consent and the exact disclosure, skips blocked cells without a request, and input probes run through the injected exec',async()=>{
+  const {c,written}=capabilitiesSlice({matrix:capMatrix});
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'momm-cap-home-'));
+  const calls=[];
+  const exec=async(command,args,options)=>{calls.push(args);if(args[0]==='--version')return {code:0,stdout:'9.9.9',stderr:''};const blob=[...args,options.input].filter(v=>typeof v==='string').join('\n');const png=/This is a capability probe/.test(blob)?blob.match(/(\S*probe\.png)\b/)?.[1]:null;if(png)return {code:0,stdout:JSON.stringify({text:colourOf(png)}),stderr:''};if(/capability probe/.test(blob))return {code:0,stdout:JSON.stringify({text:'a page'}),stderr:''};const dir=path.join(home,'.grok','sessions','s','images');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'1.jpg'),'jpg');return {code:0,stdout:JSON.stringify({text:'written'}),stderr:''};};
+  const deps={home,installedVersions:{grok:'9.9.9'},exec};
+  try{
+    const snap=await c.snapshot(deps);const disclosure=snap.value.generation.grok.disclosure;
+    const noConsent=await c.handle({op:'probe',cli:'grok',generate:true},deps);assert.equal(noConsent.status,409);assert.equal(noConsent.value.disclosure,disclosure);assert.match(noConsent.value.error,/consent/i);
+    assert.equal((await c.handle({op:'probe',cli:'grok',generate:true,consent:true,disclosure:'other text'},deps)).status,409,'a stale disclosure is refused');
+    assert.equal((await c.handle({op:'probe',cli:'grok',generate:true,consent:'yes',disclosure},deps)).status,409,'consent must be the literal true');
+    assert.equal((await c.handle({op:'probe',cli:'claude',generate:true,consent:true,disclosure:''},deps)).status,409,'no generative cell: nothing to consent to');
+    assert.equal((await c.handle({op:'probe',cli:'grok'},deps)).status,400);assert.equal((await c.handle({op:'probe',cli:'zork',inputs:true},deps)).status,400);assert.equal((await c.handle({op:'zap'},deps)).status,400);
+    assert.equal(calls.length,0,'no request leaves the machine on a refusal');
+    const job=await c.handle({op:'probe',cli:'grok',generate:true,consent:true,disclosure},deps);
+    assert.equal(job.status,202);assert.equal((await c.handle({op:'probe',cli:'grok',inputs:true},deps)).status,409,'one probe per route at a time');
+    await settle(job.value);
+    assert.equal(job.value.status,'success',JSON.stringify(job.value.result));
+    same(job.value.disclosed.filter(t=>!/skipped/.test(t)),[disclosure],'the exact disclosure is what was shown before sending');assert(job.value.disclosed.some(t=>/skipped, blocker zdr/.test(t)));
+    const video=job.value.result.cells.find(x=>x.modality==='video_gen');assert.equal(video.status,'skipped');assert.equal(video.blocker,'zdr');assert.equal(video.clearing_action,'clear zdr on grok');
+    const sent=calls.filter(a=>a[0]!=='--version');assert.equal(sent.length,1,'exactly one generation request');assert(sent[0].join(' ').includes('image_gen tool'));assert(!sent.some(a=>a.join(' ').includes('image_to_video')));
+    assert.equal(job.value.result.cells.find(x=>x.modality==='image').status,'skipped','inputs were not requested by the generation button');
+    assert.equal(written.length,1);assert.equal(written[0].entry.route,'grok');assert.equal(written[0].entry.modality,'image_gen');assert.equal(written[0].entry.level,'verified');
+    calls.length=0;
+    const inputs=await c.handle({op:'probe',cli:'grok',inputs:true},deps);assert.equal(inputs.status,202);await settle(inputs.value);
+    const image=inputs.value.result.cells.find(x=>x.modality==='image');assert.equal(image.status,'verified',image.reason);assert.equal(calls.filter(a=>a[0]!=='--version').length,1,'image only: grok pdf is absent in this fixture');
+    assert.equal(inputs.value.result.cells.find(x=>x.modality==='image_gen').status,'skipped');assert.match(inputs.value.result.cells.find(x=>x.modality==='image_gen').reason,/consent_required/);
+    const planned=await c.handle({op:'plan',need:{input:['text'],output:['image']}},deps);assert.equal(planned.status,200);assert.equal(planned.value.plan.possible,true);same(planned.value.plan.need,{input:['text'],output:['image']});
+    assert.equal((await c.handle({op:'plan'},deps)).status,400);assert.equal((await c.handle({op:'plan',need:[]},deps)).status,400);
+    const gone={module:null,plan:null,error:'gone'};assert.equal((await c.snapshot({registry:gone})).status,503);assert.equal((await c.handle({op:'plan',need:{}},{registry:gone})).status,503);
+  } finally {fs.rmSync(home,{recursive:true,force:true});}
+});
+// The page: chips at the four levels with the invocation in the title, blocker badges
+// (reprobe included) carrying the clearing action, per-route probe buttons, the generation
+// confirm showing the disclosure, and a planner that renders the chain and its blockers.
+const capSnapshot={...capMatrix,levels:['verified','documented','model-only','no'],input_modalities:['image','pdf','audio','video','speech'],output_modalities:['image_gen','video_gen','speech','code_exec','web'],
+  blockers:[{route:'gemini',direction:'input',modality:'image',blocker:'auth_tier',reason:'IneligibleTierError',clearing_action:'Use a Standard or Enterprise Code Assist licence'},{route:'copilot',direction:'input',modality:'image',blocker:'reprobe',reason:'expired',clearing_action:'Probe before routing: run node momm/scripts/probes.mjs copilot --modalities'},{route:'grok',direction:'output',modality:'video_gen',blocker:'zdr',clearing_action:'Inside grok run /privacy'},{route:'antigravity',direction:'output',modality:'code_exec',blocker:'allowlist',clearing_action:'Add command(<target>)'}],
+  generation:{codex:{open:1,disclosure:'MOMM generative probe, codex / image_gen: one request ... quota is spent ...',cells:[{cell:'image_gen',blocked:false,blocker:null}]},grok:{open:1,disclosure:'MOMM generative probe, grok / image_gen: ... quota is spent ...',cells:[{cell:'image_gen',blocked:false},{cell:'video_gen',blocked:true,blocker:'zdr',clearing_action:'Inside grok run /privacy'}]},claude:{open:0,disclosure:null,cells:[]},gemini:{open:0,disclosure:null,cells:[]},antigravity:{open:1,disclosure:'x',cells:[{cell:'image_gen',blocked:false}]},copilot:{open:0,disclosure:null,cells:[]}},
+  pipelines:{image_critique:{routes:['codex','claude','antigravity'],blocked:[{route:'gemini',blocker:'auth_tier'},{route:'copilot',blocker:'reprobe'}]},pdf_critique:{routes:['claude','antigravity'],blocked:[]},audio_critique:{routes:[],blocked:[]},video_critique:{routes:[],blocked:[]},image_generation:{routes:['codex','antigravity','grok'],blocked:[]},video_generation:{routes:[],blocked:[{route:'grok',blocker:'zdr'}]}},
+  probes:{running:[],last:{codex:{at:'2026-09-13T10:00:00.000Z',verdict:'pass',summary:{verified:1,failed:0,blocked:0,skipped:4}}}},level_actions:{'model-only':'No headless path','no':'No path found'}};
+const capProviders={codex:{label:'Codex'},claude:{label:'Claude Code'},gemini:{label:'Gemini'},antigravity:{label:'Antigravity'},copilot:{label:'GitHub Copilot'},grok:{label:'Grok'}};
+await test('the Modalities panel renders level chips, blocker badges with clearing actions, probe buttons and derived pipelines',()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);
+  assert.equal(typeof c.core.renderCapabilities,'function');c.core.renderCapabilities();
+  const html=c.node('#capabilities-grid').innerHTML;
+  assert.match(html,/<table class="momm-table cli-table cap-table"/);
+  for(const level of ['verified','documented','model-only','no'])assert.match(html,new RegExp(`class="chip cap-chip cap-${level}`),`a ${level} chip renders`);
+  assert.match(html,/cap-chip cap-verified[^"]*" title="Invocation: -i \{file\}[^"]*Evidence: help capture references\/cli\/help\/codex-exec\.txt:37/,'the invocation and evidence sit in the chip title');
+  assert.match(html,/cap-documented cap-probed" title="[^"]*Set by this machine&#39;s probe/,'an overlay cell is marked as probed here');
+  assert.match(html,/<span class="cap-blocker cap-blocker-auth_tier" title="IneligibleTierError\nTo clear: Use a Standard or Enterprise Code Assist licence">auth_tier<\/span>/);
+  assert.match(html,/cap-blocker cap-blocker-reprobe" title="[^"]*probes\.mjs copilot --modalities">reprobe<\/span>/,'a reprobe badge names the clearing action');
+  assert.match(html,/cap-blocker-zdr[^>]*>zdr</);assert.match(html,/cap-blocker-allowlist[^>]*>allowlist</);
+  assert.equal((html.match(/data-cap-probe="inputs"/g)||[]).length,6);assert.equal((html.match(/data-cap-probe="generation"/g)||[]).length,6);
+  assert.match(html,/data-cap-probe="generation" data-route="claude" disabled title="No generative cell/);
+  assert.match(html,/data-cap-probe="generation" data-route="grok"  title="Sends 1 generation request after your consent; skips video_gen \(zdr\)"/);
+  assert.match(html,/Last probe [^<]*pass \(1 verified, 0 failed, 0 blocked\)/);assert.match(html,/Not probed on this machine yet/);
+  assert.match(c.node('#capabilities-summary').textContent,/6 routes · 4 blockers on this machine/);
+  const pipelines=c.node('#capabilities-pipelines').textContent;
+  assert.match(pipelines,/Image critique: Codex, Claude Code, Antigravity \(Gemini blocked by auth_tier, GitHub Copilot blocked by reprobe\)/);assert.match(pipelines,/Video generation: none \(Grok blocked by zdr\)/);
+  assert(!/all five/i.test(pipelines+html),'no hard-coded claim about which routes critique media');
+  assert(!html.includes('undefined')&&!html.includes('null'));
+});
+await test('Probe generation confirms with the exact disclosure and never posts without it; the planner renders chain and blockers',async()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);
+  const posts=[];c.setApi(async(p,o)=>{posts.push({path:p,body:o?.body?JSON.parse(o.body):null});return {id:'job-x',status:'running'};});
+  let shown=null;c.window.confirm=text=>{shown=text;return false;};
+  assert.equal(await c.core.probeRoute('grok','generation'),null);
+  assert.match(shown,/spends the provider's quota/);assert(shown.includes(capSnapshot.generation.grok.disclosure),'the confirm shows the exact disclosure');assert.match(shown,/Skipped \(blocked, never sent\):\nvideo_gen: blocked by zdr — Inside grok run \/privacy/);
+  assert.equal(posts.length,0,'declining sends nothing');
+  assert.equal(await c.core.probeRoute('claude','generation'),null);assert.equal(posts.length,0,'nothing to generate: no request');
+  c.window.confirm=()=>true;
+  c.core.probeRoute('grok','generation');await flush();
+  assert.equal(posts.length,1);same(posts[0].body,{op:'probe',cli:'grok',generate:true,consent:true,disclosure:capSnapshot.generation.grok.disclosure});
+  c.core.probeRoute('codex','inputs');await flush();
+  same(posts[1].body,{op:'probe',cli:'codex',inputs:true},'input probes carry no consent field');
+  const plan={schema:'momm-plan/1',possible:false,routes_used:['codex'],chain:[{from:['text'],to:['image_gen']},{from:['image'],to:['video_gen']}],steps:[
+    {from:['text'],to:['image_gen'],chosen:'codex',candidates:[{route:'codex',routable:true,level:'documented',blocker:null,how:{'output.image_gen':'image_gen tool'}},{route:'claude',routable:false,level:'no',blocker:null}]},
+    {from:['image'],to:['video_gen'],chosen:null,candidates:[{route:'grok',routable:false,level:'documented',blocker:'zdr',clearing_action:'Inside grok run /privacy'}]}],
+    blocked_by:[{step:1,route:'grok',level:'documented',blocker:'zdr',clearing_action:'Inside grok run /privacy',reason:'blocked by zdr'}]};
+  c.core.renderPlan(plan);const html=c.node('#plan-result').innerHTML;
+  assert.match(html,/Not possible on this machine right now/);assert.match(html,/Step 1<\/strong> text → image_gen: <span class="chip chip-good">Codex<\/span> <small>documented · image_gen tool<\/small>/);
+  assert.match(html,/Step 2<\/strong> image → video_gen: <span class="chip chip-bad">no route<\/span>/);
+  assert.match(html,/<span class="cap-blocker cap-blocker-zdr">zdr<\/span> step 2 · Grok: blocked by zdr — <em>Inside grok run \/privacy<\/em>/);
+  c.core.renderPlan({...plan,possible:true,blocked_by:[]});assert.match(c.node('#plan-result').innerHTML,/Possible: Codex\. Nothing was executed/);
+  c.node('#plan-in').value='text, Image';c.node('#plan-out').value='video';await c.core.runPlan({preventDefault(){}});
+  same(posts.at(-1).body,{op:'plan',need:{input:['text','image'],output:['video']}});
+});
+// Review rev_20260913213315_o8c2, setup-ui.mjs: active-probe-evicted / modality-job-fifo-evicts-running.
+// The job map is bounded, but eviction may only drop FINISHED jobs: a running probe is the
+// route's mutex and its poll id. When every job is still running the insert is refused.
+await test('job eviction never removes a running modality probe, and a map full of running jobs refuses the new one',async()=>{
+  const {c}=capabilitiesSlice({matrix:capMatrix,maxJobs:2});
+  let release=null;const held=new Promise(r=>{release=r;});let holding=true,heldCalls=0;
+  const exec=async(command,args)=>{if(args[0]==='--version')return {code:0,stdout:'9.9.9',stderr:''};if(holding){heldCalls++;await held;}return {code:0,stdout:JSON.stringify({text:'a page'}),stderr:''};};
+  const deps={home:os.tmpdir(),installedVersions:{grok:'9.9.9',codex:'9.9.9',antigravity:'9.9.9',claude:'9.9.9'},exec};
+  const waitHeld=async n=>{for(let i=0;i<500&&heldCalls<n;i++)await new Promise(r=>setTimeout(r,10));assert.equal(heldCalls,n,'the held probe reached exec');};
+  const grok=await c.handle({op:'probe',cli:'grok',inputs:true},deps);assert.equal(grok.status,202);await waitHeld(1);
+  holding=false;
+  const first=await c.handle({op:'probe',cli:'codex',inputs:true},deps);assert.equal(first.status,202);await settle(first.value);assert.notEqual(first.value.status,'running');
+  assert.equal(c.jobs.size,2);
+  const second=await c.handle({op:'probe',cli:'codex',inputs:true},deps);assert.equal(second.status,202,'room is made by dropping the finished job');await settle(second.value);
+  assert(c.jobs.has(grok.value.id),'the running grok job stays pollable');assert(!c.jobs.has(first.value.id),'the finished codex job is what was evicted');
+  assert.equal(grok.value.status,'running');
+  assert.equal((await c.handle({op:'probe',cli:'grok',inputs:true},deps)).status,409,'the grok mutex still holds');
+  holding=true;
+  const anti=await c.handle({op:'probe',cli:'antigravity',inputs:true},deps);assert.equal(anti.status,202);await waitHeld(2);
+  assert.equal(c.jobs.size,2);assert(!c.jobs.has(second.value.id));
+  const refused=await c.handle({op:'probe',cli:'claude',inputs:true},deps);
+  assert.equal(refused.status,429,'every job is running: nothing may be evicted, so the probe is refused');assert.match(refused.value.error,/running/i);
+  assert.equal(c.jobs.size,2);assert(c.jobs.has(grok.value.id)&&c.jobs.has(anti.value.id),'both running jobs survive the refused insert');
+  release();await settle(grok.value);await settle(anti.value);assert.notEqual(grok.value.status,'running');assert.notEqual(anti.value.status,'running');
+});
+// inherited-route-accepted: `providers[cli]` is truthy for inherited names; the declared route set is Object.hasOwn.
+await test('route validation uses the declared provider set, never inherited object properties',async()=>{
+  const {c}=capabilitiesSlice({matrix:capMatrix});
+  const deps={home:os.tmpdir(),installedVersions:{},exec:async()=>{throw new Error('no probe may run for an unknown route');}};
+  for(const cli of ['constructor','__proto__']){const r=await c.handle({op:'probe',cli,inputs:true},deps);assert.equal(r.status,400,cli);assert.equal(c.jobs.size,0,cli);}
+  let started=0;
+  const h=handler({provider:'constructor',governor:'codex'},true,{providers:{codex:{},grok:{}},startConnectivityJob:()=>{started++;return {id:'j'};}});
+  const r=await h.serve({method:'POST',url:'/api/test',socket:{}},{});assert.equal(r.status,400,'/api/test validates the same way');assert.equal(started,0);
+  const ok=await handler({provider:'grok',governor:'codex'},true,{providers:{codex:{},grok:{}},startConnectivityJob:()=>{started++;return {id:'j'};}}).serve({method:'POST',url:'/api/test',socket:{}},{});
+  assert.equal(ok.status,202);assert.equal(started,1);
+});
+// app.js: poll-failure-locks-route + unhandled-api-error-in-poll-capability-job. The poll's
+// failure must be reported, the route released (only if it still owns the job) and the matrix
+// re-read so the buttons follow the server's probes.running, not a stale local map.
+const probeApi=(calls,{job='job-1',poll,snapshot})=>async(p,o)=>{calls.push({path:p,method:o?.method||'GET'});if(o?.method==='POST')return {id:job,status:'running'};if(p.startsWith('/api/job/'))return poll();return snapshot();};
+await test('a rejected job poll reports the error, releases the route and re-reads the matrix instead of locking the buttons',async()=>{
+  const timers=fakeTimers();const c=ui(timers);c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);
+  const toasts=[];c.showToast=m=>toasts.push(String(m));
+  const calls=[];c.setApi(probeApi(calls,{poll:()=>{throw new Error('job status unavailable');},snapshot:()=>({...capSnapshot,probes:{running:[],last:{}}})}));
+  const outcome=c.core.probeRoute('codex','inputs').then(()=>'settled',e=>`rejected: ${e.message}`);
+  await flush();
+  assert.match(c.node('#capabilities-grid').innerHTML,/data-cap-probe="inputs" data-route="codex" disabled/,'the route locks while the job runs');
+  await timers.tick();await flush();
+  assert.equal(await outcome,'settled','the poll failure must not escape probeRoute');
+  assert(toasts.some(t=>/job status unavailable/.test(t)),`the error is reported: ${JSON.stringify(toasts)}`);
+  const firstPoll=calls.findIndex(x=>x.path.startsWith('/api/job/'));
+  assert(calls.some((x,i)=>i>firstPoll&&x.path==='/api/capabilities'&&x.method==='GET'),'the matrix is re-read after the failure');
+  assert(!/data-route="codex" disabled/.test(c.node('#capabilities-grid').innerHTML),'buttons recover when the server reports no running probe');
+  assert.equal(timers.pending().length,0,'no poll keeps running');
+});
+// timeout-reenables-inflight-probe: the 15-minute deadline drops the page's own handle on
+// the job but the server may still be running it, so the matrix is re-read before any
+// Probe button can be enabled; a route the server reports as running stays locked.
+await test('a probe past its deadline re-reads the matrix before enabling buttons, so an in-flight server job stays locked',async()=>{
+  const timers=fakeTimers();const c=ui(timers);c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);
+  c.showToast=()=>{};
+  let now=Date.now();vm.runInContext('Date',c).now=()=>now;
+  const calls=[];c.setApi(probeApi(calls,{job:'job-2',poll:()=>({id:'job-2',status:'running'}),snapshot:()=>({...capSnapshot,probes:{running:['codex'],last:{}}})}));
+  const outcome=c.core.probeRoute('codex','inputs');await flush();
+  await timers.tick();await flush();
+  assert.match(c.node('#capabilities-grid').innerHTML,/data-route="codex" disabled/,'still running after the first poll');
+  assert.equal(calls.filter(x=>x.path==='/api/capabilities'&&x.method==='GET').length,0);
+  now+=16*60_000;
+  await timers.tick();await flush();await outcome;
+  assert.equal(calls.filter(x=>x.path==='/api/capabilities'&&x.method==='GET').length,1,'the matrix is re-read at the deadline');
+  assert.match(c.node('#capabilities-grid').innerHTML,/data-cap-probe="inputs" data-route="codex" disabled/,'the server still reports the probe running: the route stays locked');
+  assert.equal(timers.pending().length,0,'polling stops at the deadline');
+});
+// gen-cells-unguarded: a generation entry with open+disclosure but no cells list must not reject the click.
+await test('Probe generation tolerates a generation entry without cells: the confirm still appears and nothing rejects',async()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);
+  c.setCapabilities({...capSnapshot,generation:{...capSnapshot.generation,claude:{open:1,disclosure:'MOMM generative probe, claude / image_gen'}}});
+  let shown=null;c.window.confirm=t=>{shown=t;return false;};
+  c.setApi(async()=>{throw new Error('declined: nothing may be posted');});
+  await assert.doesNotReject(()=>c.core.probeRoute('claude','generation'));
+  assert.match(String(shown),/MOMM generative probe, claude \/ image_gen/);
+});
+// unescaped-html-placeholder-in-plan + plan-command-placeholder-parsed-as-html: `<file>` must reach the reader.
+await test('the planner command placeholder <file> is escaped, not swallowed as an element',()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);
+  c.core.renderPlan({possible:true,steps:[],routes_used:['codex'],blocked_by:[]});
+  const html=c.node('#plan-result').innerHTML;
+  assert(html.includes('--plan &lt;file&gt; --consent'),`placeholder is escaped: ${html}`);assert(!html.includes('<file>'),'a raw <file> is parsed as a tag');
+});
+// plan-candidate-how-string-splitting: `how` may be a string (one cell) or an object (per cell).
+await test('a string invocation in a plan candidate renders whole, not split per character',()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);
+  c.core.renderPlan({possible:true,routes_used:['codex'],blocked_by:[],steps:[{from:['text'],to:['image_gen'],chosen:'codex',candidates:[{route:'codex',routable:true,level:'documented',blocker:null,how:'image_gen tool'}]}]});
+  const html=c.node('#plan-result').innerHTML;
+  assert.match(html,/documented · image_gen tool</);assert(!html.includes('i; m; a'),'Object.values on a string splits it');
+});
+// Suggestions applied from the same review (setup-ui.mjs): a cold installed-version scan is
+// shared by concurrent requests; a finished probe refreshes that route's cached version so its
+// overlay entry cannot read as `reprobe` against a stale number; a matrix without routes is served.
+await test('concurrent snapshots share one installed-version scan, and a probe refreshes the cached version for its route',async()=>{
+  let versionCalls=0,reported='9.9.9';
+  const {c}=capabilitiesSlice({matrix:capMatrix,cliVersion:async()=>{versionCalls++;await new Promise(r=>setTimeout(r,5));return reported;}});
+  const home=os.tmpdir();
+  const [a,b]=await Promise.all([c.snapshot({home}),c.snapshot({home})]);
+  assert.equal(a.status,200);assert.equal(b.status,200);assert.equal(versionCalls,6,'six routes, one scan for both requests');
+  assert.equal(a.value.installed.codex,'9.9.9');
+  await c.snapshot({home});assert.equal(versionCalls,6,'the cache serves the third read');
+  const exec=async(command,args)=>args[0]==='--version'?{code:0,stdout:'10.0.0',stderr:''}:{code:0,stdout:'a page',stderr:''};
+  const job=await c.handle({op:'probe',cli:'codex',inputs:true},{home,exec});assert.equal(job.status,202);await settle(job.value);
+  assert.equal(job.value.result.cli_version,'10.0.0');
+  const after=await c.snapshot({home});assert.equal(after.value.installed.codex,'10.0.0','the probe version replaces the cached one');assert.equal(after.value.installed.grok,'9.9.9');assert.equal(versionCalls,6,'no rescan was needed');
+});
+await test('a matrix without routes is served as an empty panel, not a crash',async()=>{
+  const {c}=capabilitiesSlice({matrix:{schema:'momm-capabilities-effective/1',overlay:{}}});
+  const snap=await c.snapshot({home:os.tmpdir(),installedVersions:{}});
+  assert.equal(snap.status,200);same(snap.value.blockers,[]);same(snap.value.generation,{});same(snap.value.pipelines.image_critique,{routes:[],blocked:[]});
+});
+// Suggestion applied (app.js): the route is owned synchronously on click, so a double click
+// sends one POST; a failed POST hands the buttons back.
+await test('a second click before the probe POST answers sends nothing, and a failed POST re-enables the buttons',async()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);
+  const toasts=[];c.showToast=m=>toasts.push(String(m));
+  const d=deferredApi();c.setApi(d.stub);
+  const first=c.core.probeRoute('codex','inputs');const second=c.core.probeRoute('codex','inputs');
+  assert.match(c.node('#capabilities-grid').innerHTML,/data-cap-probe="inputs" data-route="codex" disabled/,'the route locks before the POST answers');
+  await flush();assert.equal(d.find('/api/capabilities','POST').length,1,'one POST for two clicks');assert.equal(await second,null);
+  d.calls[0].reject(new Error('A modality probe for Codex is already running.'));
+  assert.equal(await first,null);
+  assert(toasts.some(t=>/already running/.test(t)));
+  assert(!/data-route="codex" disabled/.test(c.node('#capabilities-grid').innerHTML),'a failed POST releases the route');
+});
+// load-error-leaves-pipelines: a failed refresh must not leave the previous "Possible now" sentence under an empty grid.
+await test('a failed matrix refresh clears the pipelines sentence along with the grid',async()=>{
+  const c=ui();c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);c.core.renderCapabilities();
+  assert.match(c.node('#capabilities-pipelines').textContent,/Possible now/);
+  c.setApi(async()=>{throw new Error('registry unavailable');});
+  assert.equal(typeof c.core.loadCapabilities,'function');await c.core.loadCapabilities();
+  assert.match(c.node('#capabilities-summary').textContent,/registry unavailable/);assert.equal(c.node('#capabilities-grid').innerHTML,'');assert.equal(c.node('#capabilities-pipelines').textContent,'');
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
-import { runProbes, recordProbe, windowsLauncher } from "./probes.mjs";
+import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
 
 const processScope = createProcessScope();
@@ -44,8 +44,9 @@ let setupPointer = null;  // .ensemble_reviews/setup-center.json while the serve
 // misreports it as failed.
 const CONNECTIVITY_TIMEOUT_MS = 240_000;
 
-// `modalities` mirrors the dispatcher's MODALITY_SUPPORT (multi-review.mjs)
-// — keep the two in sync; the dispatcher's matrix is the enforcing authority.
+// `modalities` mirrors what the dispatcher's adapters bind for --attach
+// (multi-review.mjs MODALITY_SUPPORT ∩ ADAPTER_MEDIA) — the self-test keeps the
+// two in sync; at dispatch the effective capability registry is the authority.
 const providers = Object.freeze({
   codex: {
     label: "Codex",
@@ -94,7 +95,7 @@ const providers = Object.freeze({
   },
   antigravity: {
     label: "Antigravity",
-    modalities: ["text"],
+    modalities: ["text", "image", "pdf"],
     docs: "https://antigravity.google/docs/cli/install/",
     login: { win32: "agy login", darwin: "agy login", linux: "agy login" },
     update: { win32: "agy update", darwin: "agy update", linux: "agy update" },
@@ -109,7 +110,7 @@ const providers = Object.freeze({
   },
   copilot: {
     label: "GitHub Copilot",
-    modalities: ["text"],
+    modalities: ["text", "image", "pdf"],
     docs: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
     login: { win32: "copilot login", darwin: "copilot login", linux: "copilot login" },
     update: { win32: "copilot update", darwin: "copilot update", linux: "copilot update" },
@@ -546,11 +547,11 @@ function safeDetail(value) {
   return String(value || "").replaceAll(/\u001b\[[0-9;]*m/g, "").trim().slice(0, 600);
 }
 
+// Both job kinds enter the bounded map through admitJob (Modalities section below).
 function startConnectivityJob(provider, governor) {
-  while (jobs.size >= maxJobs) jobs.delete(jobs.keys().next().value);
   const id = crypto.randomUUID();
   const job = { id, provider, status: "running", started_at: new Date().toISOString() };
-  jobs.set(id, job);
+  if (!admitJob(job)) return null;
   const input = "Synthetic MOMM connectivity validation only. No repository source, filenames, or user data are included. Return the required structured review report.";
   runNode(dispatcherScript, [
     "--governor", governor,
@@ -1041,6 +1042,148 @@ async function handleUpdateClock(body, clock, deps = {}) {
   return { status: 400, value: { error: "Unsupported update-clock op" } };
 }
 
+// --- Modalities panel (1.16 E7) -------------------------------------------------
+// GET /api/capabilities serves the EFFECTIVE matrix (baseline plus this machine's
+// valid overlay, capabilities.mjs) with every blocker's clearing action, the
+// per-route generation disclosure, the pipelines derived from the matrix and the
+// last modality probe per route. POST runs the input probes (synthetic PNG/PDF/WAV,
+// processScope-owned exec) or, only with `consent: true` AND the exact disclosure
+// echoed back, the generation probe — which skips every blocked cell exactly as
+// the CLI does — or answers a pure plan(). The registry is loaded lazily so a
+// missing module degrades to 503, never a crash.
+let capabilitiesRegistry = null;
+async function loadCapabilitiesRegistry() {
+  if (capabilitiesRegistry) return capabilitiesRegistry;
+  try {
+    const module = await import("./capabilities.mjs");
+    const { plan } = await import("./modality.mjs");
+    capabilitiesRegistry = { module, plan, error: null };
+  } catch (error) {
+    return { module: null, plan: null, error: error?.code === "ERR_MODULE_NOT_FOUND" ? "momm/scripts/capabilities.mjs or modality.mjs is not present" : safeDetail(error.message) };
+  }
+  return capabilitiesRegistry;
+}
+// Installed semver per route binds the overlay (an entry probed on another version
+// reads as `reprobe`); read once per ten minutes through processScope-owned children.
+let installedVersionsCache = null;
+let installedVersionsInFlight = null;
+async function installedVersionsForRegistry() {
+  if (installedVersionsCache && Date.now() - installedVersionsCache.at < 10 * 60_000) return installedVersionsCache.value;
+  // A cold cache is filled once: concurrent snapshot and plan requests share the scan
+  // instead of each spawning every CLI.
+  installedVersionsInFlight ??= (async () => {
+    const value = {};
+    // The readiness report resolves every launcher the way the provider cards do (npm
+    // shims included); a bare `<cli> --version` is only the fallback for a route it missed.
+    try { for (const route of (await readiness("other")).routes ?? []) { const version = parseVersion(route?.version); if (route?.agent && version) value[route.agent] = version; } } catch { /* fall back per route */ }
+    for (const agent of Object.keys(providers)) if (!value[agent]) { const version = parseVersion(await cliVersion(agent)); if (version) value[agent] = version; }
+    installedVersionsCache = { at: Date.now(), value };
+    return value;
+  })().finally(() => { installedVersionsInFlight = null; });
+  return installedVersionsInFlight;
+}
+const CAPABILITY_INPUTS = Object.freeze(["image", "pdf", "audio", "video", "speech"]);
+const CAPABILITY_OUTPUTS = Object.freeze(["image_gen", "video_gen", "speech", "code_exec", "web"]);
+async function effectiveFor(registry, deps = {}) {
+  const installedVersions = deps.installedVersions ?? await installedVersionsForRegistry();
+  return registry.module.effective({ home: deps.home ?? os.homedir(), installedVersions });
+}
+// Which routes can critique each attached modality NOW (routable cell AND the
+// adapter binds it, as the provider card declares) and which can generate — derived
+// from the matrix on every call, never asserted.
+function pipelinesFrom(matrix) {
+  const routes = Object.keys(matrix.routes ?? {});
+  const routable = (cell) => Boolean(cell) && ["verified", "documented"].includes(cell.level) && !cell.blocker;
+  const critique = (modality) => ({ routes: routes.filter((r) => routable(matrix.routes[r].input?.[modality]) && (providers[r]?.modalities ?? []).includes(modality)), blocked: routes.filter((r) => matrix.routes[r].input?.[modality]?.blocker).map((r) => ({ route: r, blocker: matrix.routes[r].input[modality].blocker })) });
+  const generate = (cell) => ({ routes: routes.filter((r) => routable(matrix.routes[r].output?.[cell])), blocked: routes.filter((r) => matrix.routes[r].output?.[cell]?.blocker).map((r) => ({ route: r, blocker: matrix.routes[r].output[cell].blocker })) });
+  return { image_critique: critique("image"), pdf_critique: critique("pdf"), audio_critique: critique("audio"), video_critique: critique("video"), image_generation: generate("image_gen"), video_generation: generate("video_gen") };
+}
+async function capabilitiesSnapshot(deps = {}) {
+  const registry = deps.registry ?? await loadCapabilitiesRegistry();
+  if (!registry.module) return { status: 503, value: { error: `The capability registry is unavailable: ${registry.error}` } };
+  const matrix = await effectiveFor(registry, deps);
+  const clearing = (blocker, route) => registry.module.clearingAction(blocker, route);
+  const blockers = [];
+  const generation = {};
+  for (const [route, entry] of Object.entries(matrix.routes ?? {})) {
+    for (const direction of ["input", "output"]) for (const [modality, cell] of Object.entries(entry?.[direction] ?? {})) {
+      if (cell.blocker) blockers.push({ route, direction, modality, level: cell.level, blocker: cell.blocker, reason: cell.reason ?? null, source: cell.source ?? "baseline", expires_at: cell.overlay?.expires_at ?? null, clearing_action: clearing(cell.blocker, route) });
+    }
+    const cells = generativeCells(route, entry, { clearing: (b) => clearing(b, route) });
+    generation[route] = { cells, disclosure: routeDisclosure(cells) || null, open: cells.filter((c) => !c.blocked).length };
+  }
+  const running = [...jobs.values()].filter((job) => job.kind === "modality" && job.status === "running").map((job) => job.provider);
+  let last = {};
+  try { last = latestModalityProbes(deps.cwd ?? process.cwd()); } catch (error) { last = { error: safeDetail(error.message) }; }
+  return { status: 200, value: { ...matrix, levels: ["verified", "documented", "model-only", "no"], input_modalities: CAPABILITY_INPUTS, output_modalities: CAPABILITY_OUTPUTS, blockers, generation, pipelines: pipelinesFrom(matrix), probes: { running, last }, level_actions: { "model-only": registry.module.levelAction("model-only"), no: registry.module.levelAction("no") } } };
+}
+// The job map is bounded, but only FINISHED jobs may be evicted: a running job is the
+// route's mutex (the "already running" checks look in this map) and the id the page polls.
+// Returns false when every job is still running, so the caller refuses the new one (429).
+function admitJob(job) {
+  for (const [id, entry] of jobs) { if (jobs.size < maxJobs) break; if (entry.status !== "running") jobs.delete(id); }
+  if (jobs.size >= maxJobs) return false;
+  jobs.set(job.id, job);
+  return true;
+}
+const jobsFull = () => ({ error: `Every one of the ${maxJobs} job slots is still running; wait for one to finish before starting another.` });
+// One modality probe per route at a time, as a job the page polls on /api/job/<id>.
+// Every disclosure the probe prints is kept on the job so the page can show what was sent.
+function startModalityProbeJob(cli, { inputs, generate, registry, exec = probeExec, home, cwd = process.cwd() }) {
+  const id = crypto.randomUUID();
+  const job = { id, kind: "modality", provider: cli, inputs, generate, status: "running", started_at: new Date().toISOString(), disclosed: [] };
+  if (!admitJob(job)) return null;
+  runModalityProbes(cli, { registry: registry.module, exec, tmpdir: os.tmpdir(), ...(home ? { home } : {}), consent: generate === true, inputs: inputs === true, disclose: (text) => job.disclosed.push(text) })
+    .then((result) => {
+      try { recordProbe(cwd, result); } catch (error) { job.record_error = safeDetail(error.message); }
+      // The probe just read this CLI's version; keep the ten-minute cache in step so the
+      // overlay entry it wrote does not read as `reprobe` against a stale installed version.
+      const probedVersion = parseVersion(result.cli_version);
+      if (probedVersion && installedVersionsCache) installedVersionsCache.value[cli] = probedVersion;
+      job.status = result.verdict === "pass" ? "success" : "failed";
+      job.completed_at = new Date().toISOString();
+      job.result = { verdict: result.verdict, cli_version: result.cli_version, summary: result.summary, reason: result.reason ?? null, detail: result.detail ?? null, cells: result.cells.map(({ direction, modality, status, reason, blocker, clearing_action, level_before, seconds, harvested, overlay_written, overlay_error }) => ({ direction, modality, status, reason, blocker: blocker ?? null, clearing_action: clearing_action ?? null, level_before, seconds: seconds ?? null, harvested: (harvested ?? []).map((f) => ({ sha256: f.sha256, bytes: f.bytes })), overlay_written: overlay_written ?? false, overlay_error: overlay_error ?? null })) };
+    })
+    .catch((error) => { job.status = "failed"; job.completed_at = new Date().toISOString(); job.result = { verdict: "error", detail: safeDetail(error.message), cells: [] }; });
+  return job;
+}
+async function handleCapabilities(body, deps = {}) {
+  const registry = deps.registry ?? await loadCapabilitiesRegistry();
+  if (!registry.module) return { status: 503, value: { error: `The capability registry is unavailable: ${registry.error}` } };
+  const op = String(body?.op || "");
+  if (op === "plan") {
+    if (!body.need || typeof body.need !== "object" || Array.isArray(body.need)) return { status: 400, value: { error: "need must be an object: { input: [...], output: [...] } or { chain: [...] }" } };
+    try {
+      const matrix = await effectiveFor(registry, deps);
+      const planned = registry.plan(matrix, body.need, typeof body.prompt === "string" && body.prompt.trim() ? { prompt: body.prompt } : {});
+      return { status: 200, value: { plan: planned } };
+    } catch (error) { return { status: 400, value: { error: safeDetail(error.message) } }; }
+  }
+  if (op === "probe") {
+    const cli = String(body.cli || "").toLowerCase();
+    // Own properties only: `providers["constructor"]` is truthy but is not a route.
+    if (!Object.hasOwn(providers, cli)) return { status: 400, value: { error: "Unknown route" } };
+    const inputs = body.inputs === true, generate = body.generate === true;
+    if (!inputs && !generate) return { status: 400, value: { error: "probe needs inputs: true and/or generate: true" } };
+    if (generate) {
+      // Generation spends the provider's quota: it needs consent AND the exact disclosure
+      // the page showed (a stale page must not send a request it never disclosed). Blocked
+      // cells are listed with their clearing action and never sent; if every generative
+      // cell is blocked there is nothing to consent to.
+      const matrix = await effectiveFor(registry, deps);
+      const cells = generativeCells(cli, matrix.routes?.[cli], { clearing: (b) => registry.module.clearingAction(b, cli) });
+      const open = cells.filter((c) => !c.blocked);
+      if (!open.length) return { status: 409, value: { error: cells.length ? `Every generative cell of ${providers[cli].label} is blocked: ${cells.map((c) => `${c.cell} (${c.blocker}: ${c.clearing_action})`).join("; ")}` : `${providers[cli].label} has no generative cell at documented or verified.`, cells } };
+      const disclosure = routeDisclosure(cells);
+      if (body.consent !== true || body.disclosure !== disclosure) return { status: 409, value: { error: "Consent required: read the disclosure and send it back exactly, with consent: true.", disclosure, cells } };
+    }
+    if ([...jobs.values()].some((job) => job.kind === "modality" && job.provider === cli && job.status === "running")) return { status: 409, value: { error: `A modality probe for ${providers[cli].label} is already running.` } };
+    const job = startModalityProbeJob(cli, { inputs, generate, registry, exec: deps.exec, home: deps.home, cwd: deps.cwd });
+    return job ? { status: 202, value: job } : { status: 429, value: jobsFull() };
+  }
+  return { status: 400, value: { error: "Unsupported capabilities op" } };
+}
+
 // --- Ledger auto-regeneration (1.16 E3) -----------------------------------------
 // Watches the two append-only telemetry files while the server runs and
 // rebuilds the private ledger page. A burst of appends costs one rebuild
@@ -1352,6 +1495,11 @@ function createServer() {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
         return updateClock ? sendJson(response, 200, clockSnapshot(updateClock)) : sendJson(response, 503, { error: "The update clock is not running in this Setup Center." });
       }
+      if (request.method === "GET" && requestUrl.pathname === "/api/capabilities") {
+        if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        const snapshot = await capabilitiesSnapshot();
+        return sendJson(response, snapshot.status, snapshot.value);
+      }
       if (request.method === "GET" && requestUrl.pathname.startsWith("/api/job/")) {
         const job = jobs.get(requestUrl.pathname.slice("/api/job/".length));
         return job ? sendJson(response, 200, job) : sendJson(response, 404, { error: "Job not found" });
@@ -1366,6 +1514,10 @@ function createServer() {
         if (requestUrl.pathname === "/api/update-clock") {
           if (!updateClock) return sendJson(response, 503, { error: "The update clock is not running in this Setup Center." });
           const handled = await handleUpdateClock(body, updateClock);
+          return sendJson(response, handled.status, handled.value);
+        }
+        if (requestUrl.pathname === "/api/capabilities") {
+          const handled = await handleCapabilities(body);
           return sendJson(response, handled.status, handled.value);
         }
         if (requestUrl.pathname === "/api/action") {
@@ -1401,10 +1553,11 @@ function createServer() {
         if (requestUrl.pathname === "/api/test") {
           const provider = String(body.provider || "").toLowerCase();
           const governor = String(body.governor || "codex").toLowerCase();
-          if (!providers[provider] || !governors.has(governor) || provider === governor) {
+          if (!Object.hasOwn(providers, provider) || !governors.has(governor) || provider === governor) {
             return sendJson(response, 400, { error: "Unsupported reviewer/governor pairing" });
           }
-          return sendJson(response, 202, startConnectivityJob(provider, governor));
+          const job = startConnectivityJob(provider, governor);
+          return job ? sendJson(response, 202, job) : sendJson(response, 429, jobsFull());
         }
         if (requestUrl.pathname === "/api/shutdown") {
           sendJson(response, 202, { closing: true });
@@ -1426,11 +1579,16 @@ function createServer() {
 // The dispatcher's MODALITY_SUPPORT is the enforcing authority; the provider
 // cards must never drift from it. Read it straight out of the dispatcher
 // source so multi-review.mjs stays a single dependency-free file.
+// What a card may list for --attach is MODALITY_SUPPORT (the baseline projection)
+// restricted to ADAPTER_MEDIA (what invokeReviewer binds to argv).
 function readDispatcherModalities() {
   try {
     const source = fs.readFileSync(dispatcherScript, "utf8");
-    const match = source.match(/const MODALITY_SUPPORT = (\{[\s\S]*?\n\});/);
-    return match ? new Function(`return ${match[1]};`)() : null;
+    const support = source.match(/const MODALITY_SUPPORT = (\{[\s\S]*?\n\});/);
+    const adapter = source.match(/const ADAPTER_MEDIA = (\{[\s\S]*?\n\});/);
+    if (!support || !adapter) return null;
+    const supportTable = new Function(`return ${support[1]};`)(), adapterTable = new Function(`return ${adapter[1]};`)();
+    return Object.fromEntries(Object.keys(supportTable).map((agent) => [agent, ["text", ...(adapterTable[agent] ?? [])].filter((m) => m in supportTable[agent])]));
   } catch { return null; }
 }
 
@@ -1853,6 +2011,98 @@ async function dashboardRegression() {
     fakeProc.handlers.SIGINT.at(-1)();
     const removedOnSignal = !fs.existsSync(again.file) && fakeProc.exited === true;
     checks.setup_center_pointer_written_0600_and_removed = notWrittenWithoutDir && wrote && shape && ownerOnly && hooked && keepsOthers && removedOnSignal;
+
+    // Modalities panel (1.16 E7), against the real registry with a temp home and an injected
+    // exec: the matrix is served with blockers, clearing actions and per-route disclosures;
+    // a stale overlay reads as reprobe; a generation probe without consent (or with a
+    // disclosure that is not the exact one shown) is refused before any request; the input
+    // probe runs and records; generation with exact consent sends one request per UNBLOCKED
+    // cell and skips blocked cells with their clearing action; plan() renders; no registry = 503.
+    const cap = fixture("capabilities");
+    const capRegistry = await loadCapabilitiesRegistry();
+    if (!capRegistry.module) {
+      checks.capabilities_registry_loaded = false;
+      process.stderr.write(`capabilities registry unavailable: ${capRegistry.error}\n`);
+    } else {
+      checks.capabilities_registry_loaded = true;
+      const versions = Object.fromEntries(Object.keys(providers).map((agent) => [agent, "9.9.9"]));
+      const capDeps = { registry: capRegistry, home: cap.home, cwd: cap.cwd, installedVersions: versions };
+      capRegistry.module.writeOverlayEntry(cap.home, { route: "grok", direction: "output", modality: "video_gen", blocker: "zdr", reason: "probe named the ZDR gate", cli_version: "9.9.9" });
+      capRegistry.module.writeOverlayEntry(cap.home, { route: "gemini", direction: "input", modality: "image", blocker: "auth_tier", cli_version: "9.9.9" });
+      const snap = await capabilitiesSnapshot(capDeps);
+      const grokVideo = snap.value?.generation?.grok?.cells?.find((c) => c.cell === "video_gen");
+      checks.capabilities_matrix_served = snap.status === 200 && snap.value.routes.codex.input.image.level === "verified" && snap.value.routes.grok.output.video_gen.blocker === "zdr"
+        && snap.value.blockers.some((b) => b.route === "grok" && b.modality === "video_gen" && b.source === "overlay" && /privacy|bucket/.test(b.clearing_action) && typeof b.expires_at === "string")
+        && grokVideo?.blocked === true && /privacy|bucket/.test(grokVideo.clearing_action) && snap.value.generation.grok.open === 1
+        && /quota is spent/.test(snap.value.generation.grok.disclosure) && !snap.value.generation.grok.disclosure.includes("video_gen") && snap.value.generation.claude.disclosure === null
+        && snap.value.pipelines.image_critique.routes.includes("codex") && !snap.value.pipelines.image_critique.routes.includes("gemini") && !snap.value.pipelines.image_critique.routes.includes("grok")
+        && snap.value.pipelines.image_critique.blocked.some((b) => b.route === "gemini" && b.blocker === "auth_tier") && snap.value.pipelines.video_generation.routes.length === 0
+        && Array.isArray(snap.value.input_modalities) && snap.value.probes.running.length === 0 && snap.value.levels.length === 4;
+      const upgraded = await capabilitiesSnapshot({ ...capDeps, installedVersions: { ...versions, grok: "10.0.0" } });
+      checks.capabilities_stale_overlay_reads_reprobe = upgraded.value.routes.grok.output.video_gen.blocker === "reprobe"
+        && upgraded.value.blockers.some((b) => b.route === "grok" && b.blocker === "reprobe" && /probes\.mjs grok --modalities/.test(b.clearing_action));
+      // The fake CLI answers the colour probe by LOOKING at the PNG it was handed (stored-deflate
+      // pixels at a fixed offset), and "generates" by writing a file where the registry glob looks.
+      const colourOf = (file) => { const b = fs.readFileSync(file); const [r, g, bl] = [b[49], b[50], b[51]]; return r > 200 && g > 200 ? "yellow" : r > 200 ? "red" : g > 150 ? "green" : bl > 150 ? "blue" : "unknown"; };
+      const generatedAt = { codex: path.join(cap.home, ".codex", "generated_images", "s", "exec-1.png"), grok: path.join(cap.home, ".grok", "sessions", "s", "images", "1.jpg") };
+      const fakeExecFor = (route, calls) => async (command, args, options) => {
+        calls.push(args);
+        if (args[0] === "--version") return { code: 0, stdout: "9.9.9", stderr: "" };
+        const blob = [...args, options.input].filter((v) => typeof v === "string").join("\n");
+        const png = /This is a capability probe/.test(blob) ? blob.match(/(\S*probe\.png)\b/)?.[1]?.replace(/^@/, "") : null;
+        if (png) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: colourOf(png) }) : colourOf(png), stderr: "" };
+        if (/capability probe/.test(blob)) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "The page says something." }) : "The page says something.", stderr: "" };
+        fs.mkdirSync(path.dirname(generatedAt[route]), { recursive: true }); fs.writeFileSync(generatedAt[route], "bytes");
+        return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "written" }) : "written", stderr: "" };
+      };
+      const settle = async (job) => { for (let i = 0; i < 500 && job.status === "running"; i += 1) await new Promise((resolve) => setTimeout(resolve, 10)); return job; };
+      const refusedCalls = [];
+      const refusedDeps = { ...capDeps, exec: fakeExecFor("codex", refusedCalls) };
+      const noConsent = await handleCapabilities({ op: "probe", cli: "codex", generate: true }, refusedDeps);
+      const wrongDisclosure = await handleCapabilities({ op: "probe", cli: "codex", generate: true, consent: true, disclosure: "something else" }, refusedDeps);
+      const stringConsent = await handleCapabilities({ op: "probe", cli: "codex", generate: true, consent: "true", disclosure: snap.value.generation.codex.disclosure }, refusedDeps);
+      const nothingAsked = await handleCapabilities({ op: "probe", cli: "codex" }, refusedDeps);
+      const unknownRoute = await handleCapabilities({ op: "probe", cli: "nobody", inputs: true }, refusedDeps);
+      const noGenerativeCell = await handleCapabilities({ op: "probe", cli: "claude", generate: true, consent: true, disclosure: "" }, refusedDeps);
+      checks.capabilities_probe_without_consent_refused = noConsent.status === 409 && noConsent.value.disclosure === snap.value.generation.codex.disclosure && /consent/i.test(noConsent.value.error)
+        && wrongDisclosure.status === 409 && stringConsent.status === 409 && nothingAsked.status === 400 && unknownRoute.status === 400 && noGenerativeCell.status === 409 && /no generative cell/.test(noGenerativeCell.value.error)
+        && refusedCalls.length === 0;
+      const inputCalls = [];
+      const inputsJob = await handleCapabilities({ op: "probe", cli: "codex", inputs: true }, { ...capDeps, exec: fakeExecFor("codex", inputCalls) });
+      const busy = await handleCapabilities({ op: "probe", cli: "codex", inputs: true }, { ...capDeps, exec: fakeExecFor("codex", inputCalls) });
+      await settle(inputsJob.value);
+      const imageCell = inputsJob.value.result?.cells?.find((c) => c.modality === "image");
+      checks.capabilities_input_probe_runs_and_records = inputsJob.status === 202 && inputsJob.value.kind === "modality" && busy.status === 409 && inputsJob.value.status === "success"
+        && imageCell?.status === "verified" && imageCell.overlay_written === true && inputsJob.value.result.cells.find((c) => c.modality === "image_gen")?.status === "skipped"
+        && inputCalls.filter((a) => a[0] !== "--version").length === 1 && inputCalls.some((a) => a[0] === "exec" && a[1] === "-i")
+        && fs.existsSync(path.join(cap.cwd, ".ensemble_reviews", "probes.jsonl")) && (await capabilitiesSnapshot(capDeps)).value.probes.last.codex?.verdict === "pass";
+      const genCalls = [];
+      const genJob = await handleCapabilities({ op: "probe", cli: "codex", generate: true, consent: true, disclosure: snap.value.generation.codex.disclosure }, { ...capDeps, exec: fakeExecFor("codex", genCalls) });
+      await settle(genJob.value);
+      const genCells = genJob.value.result?.cells ?? [];
+      checks.capabilities_generation_probe_sends_one_request_after_exact_consent = genJob.status === 202 && genJob.value.status === "success"
+        && genJob.value.disclosed.length === 1 && genJob.value.disclosed[0] === snap.value.generation.codex.disclosure
+        && genCalls.filter((a) => a[0] !== "--version").length === 1 && genCalls.some((a) => a.includes("workspace-write"))
+        && genCells.find((c) => c.modality === "image_gen")?.status === "verified" && genCells.find((c) => c.modality === "image_gen").harvested.length === 1
+        && genCells.find((c) => c.modality === "image")?.status === "skipped" && /not requested/.test(genCells.find((c) => c.modality === "image").reason)
+        && (await capabilitiesSnapshot(capDeps)).value.routes.codex.output.image_gen.level === "verified";
+      const grokCalls = [];
+      const grokJob = await handleCapabilities({ op: "probe", cli: "grok", generate: true, consent: true, disclosure: snap.value.generation.grok.disclosure }, { ...capDeps, exec: fakeExecFor("grok", grokCalls) });
+      await settle(grokJob.value);
+      const grokCells = grokJob.value.result?.cells ?? [];
+      const videoCell = grokCells.find((c) => c.modality === "video_gen");
+      checks.capabilities_generation_skips_blocked_cells = grokJob.status === 202 && videoCell?.status === "skipped" && videoCell.blocker === "zdr" && /privacy|bucket/.test(videoCell.clearing_action)
+        && grokCalls.filter((a) => a[0] !== "--version").length === 1 && !grokCalls.some((a) => a.join(" ").includes("image_to_video")) && grokCalls.some((a) => a.join(" ").includes("image_gen tool"))
+        && grokJob.value.disclosed.some((t) => /skipped, blocker zdr/.test(t)) && grokCells.find((c) => c.modality === "image_gen")?.status === "verified";
+      const planned = await handleCapabilities({ op: "plan", need: { input: ["text"], output: ["image"] } }, capDeps);
+      const blockedPlan = await handleCapabilities({ op: "plan", need: { chain: ["text", "image", "video"] } }, capDeps);
+      const badNeed = await handleCapabilities({ op: "plan", need: { input: ["hologram"] } }, capDeps);
+      checks.capabilities_plan_renders = planned.status === 200 && planned.value.plan.possible === true && planned.value.plan.steps.length === 1 && ["codex", "antigravity", "grok"].includes(planned.value.plan.routes_used[0])
+        && blockedPlan.status === 200 && blockedPlan.value.plan.possible === false && blockedPlan.value.plan.blocked_by.some((b) => b.route === "grok" && b.blocker === "zdr" && /privacy|bucket/.test(b.clearing_action))
+        && badNeed.status === 400 && (await handleCapabilities({ op: "plan" }, capDeps)).status === 400 && (await handleCapabilities({ op: "plan", need: [] }, capDeps)).status === 400 && (await handleCapabilities({ op: "nuke" }, capDeps)).status === 400;
+      const gone = { module: null, plan: null, error: "gone" };
+      checks.capabilities_registry_absent_is_503 = (await capabilitiesSnapshot({ registry: gone })).status === 503 && (await handleCapabilities({ op: "plan", need: {} }, { registry: gone })).status === 503;
+    }
   } catch (error) {
     recordRegressionThrow(checks, error);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -1877,7 +2127,17 @@ async function selfTest() {
     })(),
     connectivity_budget_covers_slowest_route: CONNECTIVITY_TIMEOUT_MS >= 200_000,
     every_provider_declares_modalities: Object.values(providers).every((p) => Array.isArray(p.modalities) && p.modalities.includes("text")),
-    modalities_match_dispatcher: dispatcherModalities !== null && Object.keys(providers).every((agent) => JSON.stringify([...providers[agent].modalities].sort()) === JSON.stringify(Object.keys(dispatcherModalities[agent] ?? {}).sort())),
+    modalities_match_dispatcher: dispatcherModalities !== null && Object.keys(providers).every((agent) => JSON.stringify([...providers[agent].modalities].sort()) === JSON.stringify([...(dispatcherModalities[agent] ?? [])].sort())),
+    // 1.16 E7: the Modalities panel markup, its script and styles are present.
+    modalities_panel_present_in_ui: (() => {
+      try {
+        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
+        return ['id="capabilities-grid"', 'id="capabilities-summary"', 'id="plan-form"', 'id="plan-result"', 'id="capabilities-refresh"'].every((id) => html.includes(id))
+          && ["renderCapabilities", "renderPlan", "/api/capabilities", "data-cap-probe", "window.confirm", "disclosure"].every((needle) => js.includes(needle))
+          && [".cap-chip", ".cap-blocker", ".cap-verified", ".cap-documented", ".cap-model-only", ".cap-no", ".cap-table"].every((rule) => css.includes(rule))
+          && !/all five reviewers/i.test(html) && !/all five reviewers/i.test(js);
+      } catch { return false; }
+    })(),
     timeout_reports_timed_out: timedOutProbe.timedOut === true && timedOutProbe.code === null,
     unknown_provider_rejected: actionCommand("unknown", "login") === null,
     unknown_action_rejected: actionCommand("claude", "delete") === null,

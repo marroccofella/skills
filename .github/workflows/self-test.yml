@@ -68,6 +68,12 @@ jobs:
       - name: governor split/rating/direct rules (1.16)
         timeout-minutes: 2
         run: node momm/scripts/governor-split.test.mjs
+      - name: modality registry, overlay and effective matrix (1.16 E7)
+        timeout-minutes: 2
+        run: node momm/scripts/capabilities.test.mjs
+      - name: modality planner and step-scoped runner (1.16 E7)
+        timeout-minutes: 3
+        run: node momm/scripts/modality.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |

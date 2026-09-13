@@ -91,6 +91,29 @@
           <div id="usage-table" class="cli-table-scroll" aria-live="polite"></div>
         </section>
 
+        <section class="maintenance-panel capabilities-panel" aria-labelledby="capabilities-title">
+          <div class="maintenance-head">
+            <div>
+              <p class="step-label">Modalities</p>
+              <h2 id="capabilities-title">What each reviewer can take in and produce</h2>
+              <p id="capabilities-summary" class="summary" aria-live="polite">Loading the capability registry…</p>
+            </div>
+            <button id="capabilities-refresh" class="button secondary" type="button">Refresh matrix</button>
+          </div>
+          <p class="maintenance-privacy">Capabilities are evidence, not marketing. Each cell shows a level — verified, documented, model-only or no — from help captures, vendor documentation or this machine's own probes (marked *), and a blocker badge when this machine cannot use it now; hover a chip for the invocation and evidence, a badge for the action that clears it. <strong>Probe inputs</strong> sends one synthetic 64×64 PNG, one one-page synthetic PDF and one one-second tone per documented cell — never project content. <strong>Probe generation</strong> sends one generation request per unblocked generative cell and spends that provider's quota; it shows the exact request and asks for your consent first, and blocked cells are never sent. Which routes can critique or generate is derived from the matrix below, never assumed.</p>
+          <div id="capabilities-grid" class="cli-table-scroll" aria-live="polite"></div>
+          <p id="capabilities-pipelines" class="environment-note"></p>
+          <details class="diagnostics capabilities-planner" open>
+            <summary><span>Planner</span><span class="health-count">Which routes could serve a job and what blocks it — executes nothing</span></summary>
+            <form id="plan-form" class="plan-form">
+              <label>Need in <input id="plan-in" type="text" value="text" placeholder="text, image" spellcheck="false" aria-label="Input modalities"></label>
+              <label>Need out <input id="plan-out" type="text" value="image" placeholder="image, video" spellcheck="false" aria-label="Output modalities"></label>
+              <button id="plan-run" class="button secondary" type="submit">Plan</button>
+            </form>
+            <div id="plan-result" class="plan-result" aria-live="polite"></div>
+          </details>
+        </section>
+
         <section class="maintenance-panel guidance-panel" aria-labelledby="guidance-title">
           <div class="maintenance-head">
             <div>

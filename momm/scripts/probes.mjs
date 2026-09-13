@@ -39,7 +39,7 @@ const stripAnsi = text => String(text ?? "").replace(ANSI, "");
 const safeText = value => String(value ?? "").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 const squash = text => safeText(text).replace(/\s+/g, " ").trim();
 const clip = (text, n) => squash(text).slice(0, n);
-export const sha256 = text => createHash("sha256").update(String(text)).digest("hex");
+export const sha256 = text => createHash("sha256").update(Buffer.isBuffer(text) ? text : String(text)).digest("hex");
 const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+/)?.[0] || null;
 
 // ---- phrasing anchors (copied from the dispatcher's classifyFailure and the CLI knowledge base) ----
@@ -400,6 +400,8 @@ export function recordProbe(root, result) {
   try { fs.chmodSync(file, PRIVATE_FILE); } catch {}
   return file;
 }
+// Latest CANARY probe per CLI. Modality probes share the ledger file but carry
+// their own schema, so they never displace a containment verdict here.
 export function latestProbes(root) {
   const file = path.join(root, PROBES_FILE), latest = {};
   let text;
@@ -407,13 +409,467 @@ export function latestProbes(root) {
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim()) continue;
     let entry; try { entry = JSON.parse(raw); } catch { continue; }
-    if (!entry?.cli || !entry.at) continue;
+    if (!entry?.cli || !entry.at || entry.schema === MODALITY_PROBE_SCHEMA) continue;
     if (!latest[entry.cli] || Date.parse(entry.at) >= Date.parse(latest[entry.cli].at)) latest[entry.cli] = entry;
   }
   return latest;
 }
 
-// ---- CLI entry: node probes.mjs <cli|all> [--record] [--timeout ms] --------------------
+// Latest MODALITY probe record per CLI (the Setup Center shows it beside each route).
+export function latestModalityProbes(root) {
+  const file = path.join(root, PROBES_FILE), latest = {};
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch (e) { if (e.code === "ENOENT") return latest; throw e; }
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    let entry; try { entry = JSON.parse(raw); } catch { continue; }
+    if (!entry?.cli || !entry.at || entry.schema !== MODALITY_PROBE_SCHEMA) continue;
+    if (!latest[entry.cli] || Date.parse(entry.at) >= Date.parse(latest[entry.cli].at)) latest[entry.cli] = entry;
+  }
+  return latest;
+}
+
+// ==== Modality probes (1.16, E7) =====================================================
+// Prove, per input cell of the capability registry, that this CLI can SEE a file
+// of that modality: a synthetic 64x64 PNG (name the colour), a one-page synthetic
+// PDF (quote the planted sentence), a one-second synthetic tone (describe a tone).
+// A generic reply never counts. Every probe has a 120 s deadline. With consent,
+// one generation request per generative cell at `documented` or `verified` is
+// sent, the file harvested by the registry glob and hashed, and the exact request
+// disclosed beforehand. Results write the per-machine overlay through
+// capabilities.mjs (`verified` on success, `probe_failed` or a named blocker on
+// failure; the baseline is never downgraded to `no`) and append to probes.jsonl.
+export const MODALITY_PROBE_SCHEMA = "momm-modality-probe/1";
+export const MODALITY_TIMEOUT_MS = 120_000;
+export const INPUT_MODALITIES = Object.freeze(["image", "pdf", "audio", "video"]);
+export const GENERATIVE_CELLS = Object.freeze(["image_gen", "video_gen"]);
+export const PROBEABLE_LEVELS = new Set(["verified", "documented"]);
+// Colours with distinct, unambiguous names; the reply must name exactly this one.
+export const PROBE_COLOURS = Object.freeze({ red: [220, 24, 24], green: [24, 176, 48], blue: [24, 64, 220], yellow: [240, 220, 32] });
+const COLOUR_WORDS = Object.freeze({ red: /\b(?:red|crimson|scarlet)\b/i, green: /\bgreen\b/i, blue: /\b(?:blue|navy|azure)\b/i, yellow: /\b(?:yellow|gold(?:en)?)\b/i });
+const SENTENCE_WORDS = Object.freeze(["AMBER", "COBALT", "WALNUT", "FALCON", "MEADOW", "LANTERN", "VIOLET", "HARBOUR", "PEBBLE", "ORCHID", "SADDLE", "TUNDRA"]);
+export const TONE_PATTERN = /\b(?:tone|sine|beep|pitch|hz|hertz|frequency|note|whistle|buzz|hum|440)\b/i;
+export const CANNOT_VIEW_PATTERN = /\bCANNOT-VIEW\b/i;
+// The canary REFUSAL_PATTERN plus the access failures a content probe must never read as a
+// description ("could not open", "failed to read", "no such file"). Content probes only: the
+// canary classifier keeps its narrower pattern so a "could not find" never reads as held.
+export const ACCESS_FAILURE_PATTERN = new RegExp(`${REFUSAL_PATTERN.source}|\\b(?:could ?n(?:o|')t|couldn't|failed to|was unable to|am unable to) (?:open|read|access|load|find|process|view|listen|hear|see|decode)\\b|\\b(?:no such file|not found|does not exist|doesn't exist)\\b`, "i");
+// Blocker phrasing (from the CLI knowledge base): the reply names the gate itself.
+export const BLOCKER_PATTERNS = Object.freeze([
+  ["zdr", /zero data retention|\bZDR\b/i],
+  ["auth_tier", /IneligibleTierError|no longer supported for Gemini Code Assist/i],
+  ["quota", /exceeded your monthly quota|quota (?:has been )?(?:exceeded|exhausted)|usage limit reached/i],
+  ["allowlist", /"denied_actions"[^\n]{0,80}(?:run_command|RunCommand)|permissions\.allow/i],
+  ["missing_flag", /"denied_actions"[^\n]{0,80}(?:read_file|ViewFile|view_file)|--new-project|--add-dir/i],
+]);
+const CLEARING_ACTIONS = Object.freeze({
+  auth_tier: "sign in with a Code Assist Standard or Enterprise licence (gemini, then /auth); individual tiers were retired",
+  zdr: "turn ZDR off with /privacy in grok, or configure a user-hosted storage bucket in ~/.grok/managed_config.toml",
+  allowlist: "add command(<target>) to permissions.allow in ~/.gemini/antigravity-cli/settings.json",
+  missing_flag: "run the route with --new-project or --add-dir so the probe directory is granted",
+  quota: "wait for the provider's allowance to reset",
+  probe_failed: "check the CLI login and version, then run the modality probe again; the baseline level is kept",
+  reprobe: "the overlay entry expired or the CLI version / login changed: run the modality probe again (Probe inputs, or probes.mjs <cli> --modalities)",
+});
+// How long a recorded blocker stays in force before the registry asks for a re-probe.
+export const BLOCKER_TTL_MS = Object.freeze({ quota: 24 * 3_600_000, zdr: 7 * 86_400_000, allowlist: 7 * 86_400_000, auth_tier: 7 * 86_400_000, missing_flag: 7 * 86_400_000 });
+export const expiresAtFor = (blocker, atMs) => BLOCKER_TTL_MS[blocker] ? new Date(atMs + BLOCKER_TTL_MS[blocker]).toISOString() : null;
+// Stable per-machine identity for overlay binding (no user data: host, platform, arch and home path, hashed).
+export const localMachineId = ({ hostname = os.hostname(), platform = process.platform, arch = process.arch, home = os.homedir() } = {}) => sha256([hostname, platform, arch, home].join("|")).slice(0, 32);
+export const clearingAction = blocker => CLEARING_ACTIONS[blocker] ?? null;
+export const routableCell = cell => !!cell && PROBEABLE_LEVELS.has(cell.level) && !cell.blocker;
+// Blockers whose clearing action IS the next probe.
+export const REPROBE_BLOCKERS = new Set(["probe_failed", "reprobe"]);
+
+// ---- synthetic material (never project content) --------------------------------------
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+export function crc32(buffer) { let c = 0xffffffff; for (const b of buffer) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function adler32(buffer) { let a = 1, b = 0; for (const byte of buffer) { a = (a + byte) % 65521; b = (b + a) % 65521; } return ((b << 16) | a) >>> 0; }
+// A zlib stream made only of stored (uncompressed) deflate blocks: valid for any decoder, no zlib needed.
+export function storedZlib(data) {
+  const parts = [Buffer.from([0x78, 0x01])];
+  for (let offset = 0; offset < data.length || offset === 0; offset += 65535) {
+    const chunk = data.subarray(offset, Math.min(offset + 65535, data.length));
+    const final = offset + 65535 >= data.length ? 1 : 0;
+    const head = Buffer.alloc(5); head[0] = final; head.writeUInt16LE(chunk.length, 1); head.writeUInt16LE(chunk.length ^ 0xffff, 3);
+    parts.push(head, chunk);
+    if (final) break;
+  }
+  const trailer = Buffer.alloc(4); trailer.writeUInt32BE(adler32(data), 0);
+  parts.push(trailer);
+  return Buffer.concat(parts);
+}
+function pngChunk(type, payload) {
+  const head = Buffer.alloc(8); head.writeUInt32BE(payload.length, 0); head.write(type, 4, "latin1");
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, "latin1"), payload])), 0);
+  return Buffer.concat([head, payload, crc]);
+}
+export function syntheticPng(colour = "red", size = 64) {
+  const rgb = PROBE_COLOURS[colour];
+  if (!rgb) throw new Error(`Unknown probe colour: ${colour}`);
+  const row = Buffer.alloc(1 + size * 3); // filter byte 0 then RGB triples
+  for (let x = 0; x < size; x++) { row[1 + x * 3] = rgb[0]; row[2 + x * 3] = rgb[1]; row[3 + x * 3] = rgb[2]; }
+  const raw = Buffer.concat(Array.from({ length: size }, () => row));
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk("IHDR", ihdr), pngChunk("IDAT", storedZlib(raw)), pngChunk("IEND", Buffer.alloc(0))]);
+}
+export function syntheticSentence(random = randomBytes) {
+  const bytes = random(4);
+  const first = SENTENCE_WORDS[bytes[0] % SENTENCE_WORDS.length];
+  let second = SENTENCE_WORDS[bytes[1] % SENTENCE_WORDS.length];
+  if (second === first) second = SENTENCE_WORDS[(bytes[1] + 1) % SENTENCE_WORDS.length];
+  return `${first} ${second} ${1000 + ((bytes[2] << 8 | bytes[3]) % 9000)}`;
+}
+// One page, Helvetica, the sentence at the top; xref offsets computed, so any reader opens it.
+export function syntheticPdf(sentence) {
+  const text = String(sentence).replace(/[\\()]/g, c => `\\${c}`);
+  const stream = `BT /F1 24 Tf 72 700 Td (${text}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let body = "%PDF-1.4\n%âãÏÓ\n";
+  const offsets = [];
+  objects.forEach((obj, i) => { offsets.push(Buffer.byteLength(body, "latin1")); body += `${i + 1} 0 obj\n${obj}\nendobj\n`; });
+  const xref = Buffer.byteLength(body, "latin1");
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(o => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body, "latin1");
+}
+// One second, 8 kHz, 16-bit mono PCM sine tone.
+export function syntheticWav({ seconds = 1, rate = 8000, frequency = 440 } = {}) {
+  const samples = Math.round(seconds * rate), data = Buffer.alloc(samples * 2);
+  for (let i = 0; i < samples; i++) data.writeInt16LE(Math.round(Math.sin(2 * Math.PI * frequency * i / rate) * 12000), i * 2);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "latin1"); header.writeUInt32LE(36 + data.length, 4); header.write("WAVE", 8, "latin1");
+  header.write("fmt ", 12, "latin1"); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 2, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34);
+  header.write("data", 36, "latin1"); header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+export function syntheticMaterial(modality, { colour, sentence } = {}) {
+  if (modality === "image") { const c = colour ?? Object.keys(PROBE_COLOURS)[randomBytes(1)[0] % 4]; const bytes = syntheticPng(c); return { kind: "png", name: "probe.png", bytes, colour: c, sha256: sha256(bytes), description: `64x64 solid ${c} PNG` }; }
+  if (modality === "pdf") { const s = sentence ?? syntheticSentence(); const bytes = syntheticPdf(s); return { kind: "pdf", name: "probe.pdf", bytes, sentence: s, sha256: sha256(bytes), description: "one-page PDF with one synthetic sentence" }; }
+  if (modality === "audio") { const bytes = syntheticWav(); return { kind: "wav", name: "probe.wav", bytes, frequency: 440, sha256: sha256(bytes), description: "one-second 8 kHz 440 Hz tone" }; }
+  return null; // video: no synthetic material is generated here
+}
+
+// ---- prompts, vectors, disclosure ----------------------------------------------------
+// The prompts never name a colour, the sentence or a tone, so an echo cannot confirm.
+export function inputProbePrompt(modality, filePath) {
+  const tail = "Do not run any other command. If you cannot do this, reply with exactly CANNOT-VIEW and nothing else.";
+  if (modality === "image") return `This is a capability probe. View the image file at ${filePath} with your file or image tool and reply with ONE word: the dominant colour of the image. ${tail}`;
+  if (modality === "pdf") return `This is a capability probe. Read the PDF file at ${filePath} and reply with the exact text printed on its single page, nothing else. ${tail}`;
+  if (modality === "audio") return `This is a capability probe. Listen to the audio file at ${filePath} and describe in one sentence what it contains: the kind of sound and, if you can tell, its pitch or frequency. ${tail}`;
+  throw new Error(`No input probe prompt for ${modality}`);
+}
+// Exact per-route argument vectors for reading one file (references/cli/modalities.md §2.5).
+// codex: -i is variadic, so it comes FIRST and a later flag closes it; the prompt rides on stdin.
+// gemini: the @reference splits on whitespace, so it names the file RELATIVE to the probe
+// directory (the cwd); an absolute temp path with a space would be torn in two.
+export function inputProbeVector(cli, { filePath, projectDir, prompt }) {
+  const slash = path.basename(filePath);
+  switch (cli) {
+    case "codex": return { args: ["exec", "-i", filePath, "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"], input: prompt, cwd: projectDir };
+    case "claude": return { args: ["-p", prompt, "--tools", "Read", "--permission-mode", "plan", "--permission-prompts", "none", "--safe-mode", "--output-format", "json", "--add-dir", projectDir], input: "", cwd: projectDir };
+    case "gemini": return { args: ["--approval-mode", "plan", "--skip-trust", "--output-format", "json", "--prompt", `@${slash} ${prompt}`], input: "", cwd: projectDir };
+    case "antigravity": return { args: ["-p", prompt, "--new-project", "--output-format", "json", "--mode=plan"], input: "", cwd: projectDir };
+    case "copilot": return { args: ["-p", prompt, "--attachment", filePath, "-s", "--stream", "off", "--no-color", "--no-custom-instructions", "--disable-builtin-mcps", "--no-remote-export", "--log-level", "none", "--available-tools=view", "--allow-tool=view", "--add-dir", projectDir], input: "", cwd: projectDir };
+    case "grok": return { args: ["--cwd", projectDir, "-p", prompt, "--no-subagents", "--max-turns", "6", "--output-format", "json", "--permission-mode", "plan", "--disable-web-search"], input: "", cwd: projectDir };
+    default: throw new Error(`No modality probe vector for ${cli}`);
+  }
+}
+export const GENERATION_SUBJECT = "a plain solid blue circle centred on a white background, nothing else";
+// Generation requests per generative cell (references/cli/modalities.md §2.1-2.4); null where no tool exists.
+export function generativeProbeVector(cli, cell, { projectDir, imagePath }) {
+  if (cell === "image_gen") {
+    if (cli === "codex") { const prompt = `Use your image generation tool exactly once to create ${GENERATION_SUBJECT}. Do not copy or move the generated file and do not run any other command; reply with the absolute path of the file it wrote.`; return { prompt, args: ["exec", "--sandbox", "workspace-write", "--color", "never", "--skip-git-repo-check", "-"], input: prompt, cwd: projectDir }; }
+    if (cli === "grok") { const prompt = `Use the image_gen tool exactly once to create ${GENERATION_SUBJECT}. Do not run any command; reply with the absolute path of every file written.`; return { prompt, args: ["--cwd", projectDir, "-p", prompt, "--output-format", "json", "--permission-mode", "acceptEdits", "--no-subagents", "--disable-web-search"], input: "", cwd: projectDir }; }
+    if (cli === "antigravity") { const prompt = `Never run any command. Call the generate_image tool exactly once to create ${GENERATION_SUBJECT}. Quote the tool's output verbatim.`; return { prompt, args: ["-p", prompt, "--new-project", "--output-format", "json", "--print-timeout", "3m"], input: "", cwd: projectDir }; }
+    return null;
+  }
+  if (cell === "video_gen" && cli === "grok") {
+    const prompt = `Use the image_to_video tool exactly once on ${imagePath} with duration 6, resolution_name 480p and the prompt 'a slow zoom'. Do not run any command; reply with the tool's output verbatim, including any error message, and the absolute path of every file written.`;
+    return { prompt, args: ["--cwd", projectDir, "-p", prompt, "--output-format", "json", "--permission-mode", "acceptEdits", "--no-subagents", "--disable-web-search"], input: "", cwd: projectDir };
+  }
+  return null;
+}
+// What the user is told before a generative request leaves the machine. Deterministic
+// for a route and cell so the Setup Center can require the exact string echoed back.
+export function generativeDisclosure(cli, cell, { prompt, harvest }) {
+  return `MOMM generative probe, ${cli} / ${cell}: one request is sent to ${cli}'s provider under your account login with exactly this prompt: "${prompt}". Nothing from this project is included. The provider's quota is spent by this request. Any file it produces is looked for at ${harvest || "(no harvest glob in the registry)"}, hashed with sha256 and left where the tool wrote it; nothing is published.`;
+}
+// Every generative cell of a route the registry rates documented or verified, with its disclosure.
+export function generativeCells(cli, route, { clearing = clearingAction } = {}) {
+  const cells = [];
+  for (const cell of GENERATIVE_CELLS) {
+    const entry = route?.output?.[cell];
+    if (!entry || !PROBEABLE_LEVELS.has(entry.level)) continue;
+    const vector = generativeProbeVector(cli, cell, { projectDir: "<probe-dir>", imagePath: "<probe-dir>/probe.png" });
+    if (!vector) continue;
+    const blocker = entry.blocker ?? null;
+    // probe_failed and reprobe are cleared BY a probe, so those cells are sent (with consent);
+    // any other blocker (zdr, quota, auth_tier, allowlist, missing_flag) names a gate a probe
+    // cannot clear: the cell is listed with its clearing action and never sent, and only sent
+    // cells carry a disclosure and join the route disclosure.
+    const blocked = blocker !== null && !REPROBE_BLOCKERS.has(blocker);
+    cells.push({ cell, level: entry.level, blocker, blocked, reprobe: blocker !== null && !blocked, clearing_action: blocker ? clearing(blocker) : null, harvest: entry.harvest ?? null, mime: entry.mime ?? null, prompt: vector.prompt, disclosure: blocked ? null : generativeDisclosure(cli, cell, { prompt: vector.prompt, harvest: entry.harvest }) });
+  }
+  return cells;
+}
+export const routeDisclosure = cells => cells.filter(c => !c.blocked && c.disclosure).map(c => c.disclosure).join("\n\n");
+
+// ---- content assertions ---------------------------------------------------------------
+// A reply confirms a cell only when it describes the synthetic content: exactly the
+// planted colour, the planted sentence, or a tone. Empty, echo, CANNOT-VIEW and
+// generic replies are unconfirmed and stay `probe_failed`.
+export function confirmContent(modality, reply, material, prompt = "") {
+  const text = squash(reply);
+  if (!text) return { confirmed: false, reason: "empty reply" };
+  if (prompt && classifyReply(text, prompt) === "echo") return { confirmed: false, reason: "reply echoed the prompt instead of describing the file" };
+  if (CANNOT_VIEW_PATTERN.test(text)) return { confirmed: false, reason: "route replied CANNOT-VIEW", cannot_view: true };
+  // A refusal or an access failure defeats every content pattern below: "Please note that I
+  // cannot access this file" names a note, not a tone (momm review rev_20260913213315_o8c2).
+  if (ACCESS_FAILURE_PATTERN.test(text)) return { confirmed: false, reason: `reply refused or reported the file as inaccessible: ${clip(text, 120)}`, cannot_view: true };
+  if (modality === "image") {
+    const named = Object.entries(COLOUR_WORDS).filter(([, re]) => re.test(text)).map(([c]) => c);
+    if (named.length === 1 && named[0] === material.colour) return { confirmed: true, detail: `named ${material.colour}` };
+    if (!named.length) return { confirmed: false, reason: `generic reply: no colour named (expected ${material.colour})` };
+    return { confirmed: false, reason: `reply named ${named.join("/")}, expected ${material.colour}` };
+  }
+  if (modality === "pdf") {
+    if (text.toLowerCase().includes(squash(material.sentence).toLowerCase())) return { confirmed: true, detail: "quoted the planted sentence" };
+    return { confirmed: false, reason: "generic reply: the planted sentence was not quoted" };
+  }
+  if (modality === "audio") {
+    if (TONE_PATTERN.test(text)) return { confirmed: true, detail: "described a tone" };
+    return { confirmed: false, reason: "generic reply: no tone described" };
+  }
+  return { confirmed: false, reason: `no content assertion for ${modality}` };
+}
+export function blockerInText(text) {
+  for (const [blocker, pattern] of BLOCKER_PATTERNS) if (pattern.test(text)) return blocker;
+  return null;
+}
+
+// ---- harvest by glob -------------------------------------------------------------------
+export function expandHome(pattern, home) {
+  const text = String(pattern ?? "");
+  return /^~(?:[\\/]|$)/.test(text) ? path.join(home, text.slice(1)) : text;
+}
+const segmentMatcher = seg => new RegExp(`^${seg.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/\\\\]*").replace(/\?/g, "[^/\\\\]")}$`, process.platform === "win32" ? "i" : "");
+// Files matching a glob (`*`, `?`, `**`) modified at or after `since` (ms). Bounded walk that
+// starts at the longest literal prefix. Literal segments follow the filesystem's case rule
+// (case-insensitive on win32, like the wildcard segments); a terminal `**` yields every file below.
+const sameName = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+export function globFiles(pattern, { home = os.homedir(), since = 0, maxDepth = 14, maxFiles = 5000 } = {}) {
+  const absolute = path.resolve(expandHome(pattern, home));
+  const root = path.parse(absolute).root;
+  const segments = path.relative(root, absolute).split(/[\\/]+/).filter(Boolean);
+  const found = [], seen = new Set();
+  const push = file => {
+    if (seen.has(file) || found.length >= maxFiles) return;
+    let stat; try { stat = fs.statSync(file); } catch { return; }
+    if (!stat.isFile() || stat.mtimeMs < since) return;
+    seen.add(file); found.push({ path: file, bytes: stat.size, mtime: new Date(stat.mtimeMs).toISOString() });
+  };
+  const walk = (dir, index, depth) => {
+    if (depth > maxDepth || found.length >= maxFiles) return;
+    if (index === segments.length) { push(dir); return; }
+    const seg = segments[index];
+    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    if (seg === "**") {
+      if (index === segments.length - 1) { for (const e of entries) { if (e.isFile()) push(path.join(dir, e.name)); else if (e.isDirectory()) walk(path.join(dir, e.name), index, depth + 1); } return; }
+      walk(dir, index + 1, depth);
+      for (const e of entries) if (e.isDirectory()) walk(path.join(dir, e.name), index, depth + 1);
+      return;
+    }
+    const matcher = /[*?]/.test(seg) ? segmentMatcher(seg) : null;
+    for (const e of entries) {
+      if (matcher ? !matcher.test(e.name) : !sameName(e.name, seg)) continue;
+      const full = path.join(dir, e.name);
+      if (index === segments.length - 1) { if (e.isFile()) push(full); }
+      else if (e.isDirectory()) walk(full, index + 1, depth + 1);
+    }
+  };
+  // Descend the literal prefix directly (the filesystem resolves its case); walk from there.
+  let start = root, index = 0;
+  while (index < segments.length - 1 && !/[*?]/.test(segments[index])) { start = path.join(start, segments[index]); index += 1; }
+  walk(start, index, 0);
+  return found.sort((a, b) => a.path.localeCompare(b.path));
+}
+// sha256 of a file streamed in 1 MiB chunks (video artefacts are never read whole into memory).
+export function hashFile(file) {
+  const hash = createHash("sha256"), chunk = Buffer.alloc(1 << 20);
+  let fd = null;
+  try {
+    fd = fs.openSync(file, "r");
+    for (;;) { const read = fs.readSync(fd, chunk, 0, chunk.length, null); if (read === 0) break; hash.update(chunk.subarray(0, read)); }
+    return hash.digest("hex");
+  } catch { return null; }
+  finally { if (fd !== null) { try { fs.closeSync(fd); } catch {} } }
+}
+export function harvest(pattern, { home, since }) {
+  if (!pattern) return [];
+  return globFiles(pattern, { home, since }).map(f => ({ ...f, sha256: hashFile(f.path) }));
+}
+
+// ---- overlay entries --------------------------------------------------------------------
+// The entry handed to capabilities.mjs writeOverlayEntry(home, entry). `level` is set
+// only on success; a failure carries a blocker (`probe_failed`, or the gate the reply
+// named) and its reason, and never a level, so the baseline is not downgraded.
+// Shape (agreed with capabilities.mjs): { cli, direction, modality, level?, blocker, expires_at,
+// machine_id, cli_version, login_identity_sha256, at, evidence, reason? }. Success writes
+// level `verified` with blocker null (which also clears a `reprobe`); a failure keeps the
+// level the cell had (never `no`) and adds the blocker with its expiry: quota 24 h, the
+// account gates 7 days, probe_failed until the next probe (null).
+export function overlayEntryFor(cli, cliVersion, at, cell, { machineId = null, loginIdentitySha256 = null } = {}) {
+  const atMs = Date.parse(at);
+  // `route` is the registry's key for the CLI (capabilities.mjs writeOverlayEntry reads route,
+  // direction, modality, level, blocker, reason, cli_version, login_identity_sha256 and binds
+  // machine_id / at / expires_at itself); `cli` and the rest travel for the probes ledger.
+  const entry = { route: cli, cli, direction: cell.direction, modality: cell.modality, machine_id: machineId, cli_version: cliVersion, login_identity_sha256: loginIdentitySha256, at, probe_schema: MODALITY_PROBE_SCHEMA };
+  entry.evidence = { probe: MODALITY_PROBE_SCHEMA, at, seconds: cell.seconds ?? null, material_sha256: cell.material?.sha256 ?? null, reply_sample: cell.reply_sample ?? null, harvested_sha256: (cell.harvested ?? []).map(f => f.sha256).filter(Boolean) };
+  if (cell.status === "verified") { entry.level = "verified"; entry.blocker = null; entry.expires_at = null; }
+  else {
+    const blocker = cell.blocker ?? "probe_failed";
+    if (cell.level_before && cell.level_before !== "no") entry.level = cell.level_before;
+    entry.blocker = blocker; entry.expires_at = expiresAtFor(blocker, atMs); entry.reason = cell.reason ?? null;
+  }
+  return entry;
+}
+
+// ---- the modality probes -----------------------------------------------------------------
+// `inputs: false` (the Setup Center's "Probe generation" button) skips the input cells so a
+// generation probe spends exactly the requests its disclosure names.
+export async function runModalityProbes(cli, { registry, exec = defaultExec, tmpdir = os.tmpdir(), timeoutMs = MODALITY_TIMEOUT_MS, consent = false, inputs = true, now = () => Date.now(), env = process.env, home = os.homedir(), command, loginIdentity = null, disclose = text => process.stderr.write(`${text}\n`), colour, sentence } = {}) {
+  if (!PROBE_CLIS.includes(cli)) throw new Error(`Unknown reviewer CLI: ${cli}`);
+  const effectiveFn = typeof registry?.effective === "function" ? registry.effective : typeof registry?.effectiveMatrix === "function" ? registry.effectiveMatrix : null;
+  if (!effectiveFn || typeof registry.writeOverlayEntry !== "function") throw new Error("runModalityProbes needs the capability registry (capabilities.mjs: effective or effectiveMatrix, writeOverlayEntry)");
+  const at = new Date(now()).toISOString();
+  const machineId = typeof registry.machineId === "function" ? registry.machineId() : localMachineId({ home });
+  // `loginIdentity` is the registry's route -> identity map (raw or sha256); only this route's entry binds.
+  const ownIdentity = loginIdentity && typeof loginIdentity === "object" ? loginIdentity[cli] : null;
+  const loginIdentitySha256 = ownIdentity ? (/^[0-9a-f]{64}$/.test(String(ownIdentity)) ? String(ownIdentity) : sha256(String(ownIdentity))) : null;
+  // The registry's clearing action is route-specific; the local table is the fallback.
+  const clearing = blocker => (typeof registry.clearingAction === "function" ? registry.clearingAction(blocker, cli) : null) ?? clearingAction(blocker);
+  const binary = command || resolveCommand(cli, { env, home });
+  const result = { schema: MODALITY_PROBE_SCHEMA, cli, cli_version: null, at, consent: consent === true, cells: [], verdict: "unavailable", reason: null };
+  const root = path.resolve(tmpdir);
+  const base = fs.mkdtempSync(path.join(root, "momm-modality-"));
+  const execOpts = extra => ({ input: "", timeout: timeoutMs, cwd: base, env, ...extra });
+  const writeOverlay = cell => {
+    // An entry binds to the probed CLI version; without one there is nothing valid to bind to.
+    if (!result.cli_version) { cell.overlay_written = false; cell.overlay_error = "cli version unknown: entry not written"; return; }
+    try { registry.writeOverlayEntry(home, overlayEntryFor(cli, result.cli_version, at, cell, { machineId, loginIdentitySha256 })); cell.overlay_written = true; }
+    catch (e) { cell.overlay_written = false; cell.overlay_error = clip(e?.message, 200); }
+  };
+  try {
+    try { fs.chmodSync(base, PRIVATE_DIR); } catch {}
+    const projectDir = path.join(base, "project");
+    fs.mkdirSync(projectDir, { mode: PRIVATE_DIR });
+    const version = await exec(binary, ["--version"], execOpts({ timeout: Math.min(timeoutMs, 30_000), cwd: projectDir }));
+    const versionReason = unavailableReason(version);
+    if (versionReason === "not_installed" || versionReason === "unsupported_launcher") { result.reason = versionReason; result.detail = reasonText[versionReason]; return result; }
+    result.cli_version = version.code === 0 ? semver(version.stdout) || semver(version.stderr) : null;
+    let matrix;
+    try { matrix = await effectiveFn.call(registry, { home, installedVersions: { [cli]: result.cli_version }, loginIdentity }); }
+    catch (e) { result.reason = "registry_error"; result.detail = `capabilities registry failed: ${clip(e?.message, 200)}`; return result; }
+    const route = matrix?.routes?.[cli];
+    if (!route) { result.reason = "route_not_in_registry"; result.detail = `no ${cli} entry in the capability registry`; return result; }
+
+    // Runs one exec and classifies it into the cell: environment problems stop the run
+    // (nothing written), blockers named by the reply are recorded as such, everything
+    // else is judged by `judge(isolatedReply)` → { confirmed, reason }.
+    let environmentStop = null;
+    const runCell = async (cell, vector, prompt, judge) => {
+      const started = now();
+      const r = await exec(binary, vector.args, execOpts({ input: vector.input, cwd: vector.cwd }));
+      cell.seconds = Math.round((now() - started) / 100) / 10;
+      const text = combined(r);
+      const envReason = unavailableReason(r);
+      if (envReason === "not_installed" || envReason === "unsupported_launcher" || envReason === "not_logged_in") {
+        cell.status = "unavailable"; cell.reason = envReason; cell.detail = `${reasonText[envReason]} — provider said: ${clip(r.stderr || r.stdout, 200) || "(no output)"}`;
+        environmentStop = envReason; return r;
+      }
+      const blocker = blockerInText(text);
+      if (blocker) { cell.status = "blocked"; cell.blocker = blocker; cell.reason = `reply named the ${blocker} gate: ${clip(text.match(BLOCKER_PATTERNS.find(([b]) => b === blocker)[1])?.[0] ?? "", 80)}`; cell.detail = clip(r.stdout || r.stderr, 300); cell.clearing_action = clearing(blocker); return r; }
+      if (envReason === "timeout") { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = `timed out after ${Math.round(timeoutMs / 1000)} s`; return r; }
+      const iso = isolateReply(cli, r, prompt);
+      if (!iso.isolated) { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = `reply not isolated (${iso.detail}; exit ${r.code})`; cell.detail = clip(r.stdout || r.stderr, 300); return r; }
+      cell.reply_sample = clip(iso.reply, 160);
+      const judged = judge(iso.reply, r, started);
+      if (judged.confirmed) { cell.status = "verified"; cell.reason = judged.detail ?? "confirmed"; }
+      else { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = judged.reason; }
+      return r;
+    };
+
+    // 1. Input cells: only those the registry rates documented or verified.
+    for (const modality of INPUT_MODALITIES) {
+      const entry = route.input?.[modality];
+      const cell = { direction: "input", modality, level_before: entry?.level ?? "no", blocker_before: entry?.blocker ?? null, status: "skipped", reason: null };
+      result.cells.push(cell);
+      if (!entry || !PROBEABLE_LEVELS.has(entry.level)) { cell.reason = `level ${entry?.level ?? "no"}: not probed`; continue; }
+      if (!inputs) { cell.reason = "not requested (generation probe only)"; continue; }
+      if (environmentStop) { cell.status = "unavailable"; cell.reason = environmentStop; cell.detail = reasonText[environmentStop]; continue; }
+      const material = syntheticMaterial(modality, { colour, sentence });
+      if (!material) { cell.reason = "no synthetic material for this modality"; continue; }
+      const filePath = path.join(projectDir, material.name);
+      fs.writeFileSync(filePath, material.bytes, { mode: PRIVATE_FILE });
+      cell.material = { kind: material.kind, bytes: material.bytes.length, sha256: material.sha256, description: material.description };
+      const prompt = inputProbePrompt(modality, filePath);
+      const vector = inputProbeVector(cli, { filePath, projectDir, prompt });
+      await runCell(cell, vector, prompt, reply => confirmContent(modality, reply, material, prompt));
+      if (cell.status !== "unavailable") writeOverlay(cell);
+    }
+
+    // 2. Generative cells: listed with their disclosure; sent only with consent.
+    const generative = generativeCells(cli, route, { clearing });
+    for (const g of generative) {
+      const cell = { direction: "output", modality: g.cell, level_before: g.level, blocker_before: g.blocker, harvest: g.harvest, status: "skipped", reason: null, disclosure: g.disclosure };
+      result.cells.push(cell);
+      // A cell with an effective blocker is never sent, consent or not: the blocker and the
+      // action that clears it are reported instead (momm review rev_20260913200824_pd6p).
+      if (g.blocked) { cell.blocker = g.blocker; cell.clearing_action = g.clearing_action; cell.reason = `blocker ${g.blocker}: not sent — ${g.clearing_action ?? "clear the blocker first"}`; disclose(`MOMM generative probe, ${cli} / ${g.cell}: skipped, blocker ${g.blocker}. To clear: ${g.clearing_action ?? "see the registry"}.`); continue; }
+      if (!consent) { cell.reason = "consent_required: run with --consent after reading the disclosure"; continue; }
+      if (environmentStop) { cell.status = "unavailable"; cell.reason = environmentStop; cell.detail = reasonText[environmentStop]; continue; }
+      const imagePath = path.join(projectDir, "probe.png");
+      if (g.cell === "video_gen" && !fs.existsSync(imagePath)) fs.writeFileSync(imagePath, syntheticPng("blue"), { mode: PRIVATE_FILE });
+      const vector = generativeProbeVector(cli, g.cell, { projectDir, imagePath });
+      cell.prompt_sha256 = sha256(vector.prompt);
+      disclose(g.disclosure);
+      // Only a file this request produced counts: written at or after the exec started
+      // (floored to the second for coarse-mtime filesystems, never two seconds before) AND
+      // hashed. An isolated refusal is a failure however many files the glob finds.
+      await runCell(cell, vector, vector.prompt, (reply, _r, started) => {
+        const text = squash(reply);
+        if (CANNOT_VIEW_PATTERN.test(text) || REFUSAL_PATTERN.test(text)) return { confirmed: false, reason: `route refused the generation request: ${clip(text, 120)}` };
+        const since = Math.floor(started / 1000) * 1000;
+        const files = harvest(g.harvest, { home, since }).filter(f => typeof f.sha256 === "string");
+        cell.harvested = files.map(({ path: p, bytes, sha256: digest, mtime }) => ({ path: p, bytes, sha256: digest, mtime }));
+        if (files.length) return { confirmed: true, detail: `${files.length} file(s) harvested by ${g.harvest}` };
+        return { confirmed: false, reason: g.harvest ? `no hashed file matched ${g.harvest} after the request started — reply: ${clip(reply, 120) || "(empty)"}` : "the registry has no harvest glob for this cell" };
+      });
+      if (cell.status !== "unavailable") writeOverlay(cell);
+    }
+    return result;
+  } finally {
+    try { if (path.resolve(path.dirname(base)) === root && path.basename(base).startsWith("momm-modality-")) fs.rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+    catch (e) { result.cleanup_error = `${e?.code || "error"}: ${clip(e?.message, 160)}`; }
+    const probed = result.cells.filter(c => !["skipped", "unavailable"].includes(c.status));
+    if (result.cells.some(c => c.status === "unavailable") && !probed.length) result.verdict = "unavailable";
+    else if (!probed.length) result.verdict = result.reason ? "unavailable" : "nothing_to_probe";
+    else result.verdict = probed.every(c => c.status === "verified") ? "pass" : "fail";
+    result.summary = { verified: probed.filter(c => c.status === "verified").length, failed: probed.filter(c => c.status === "probe_failed").length, blocked: probed.filter(c => c.status === "blocked").length, skipped: result.cells.filter(c => c.status === "skipped").length, unavailable: result.cells.filter(c => c.status === "unavailable").length };
+  }
+}
+
+// ---- CLI entry -------------------------------------------------------------------------
+//   node probes.mjs <cli|all> [--record] [--timeout ms]          canary probes (E6)
+//   node probes.mjs <cli|all> --modalities [--consent] [--timeout ms]   modality probes (E7)
 // --timeout must be a positive integer number of milliseconds; anything else is an error
 // rather than a NaN deadline that would disable the kill timer.
 export function parseTimeoutArg(argv, fallback = 120_000) {
@@ -423,15 +879,41 @@ export function parseTimeoutArg(argv, fallback = 120_000) {
   if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) <= 0) throw new Error(`--timeout needs a positive integer number of milliseconds, got ${raw === undefined ? "nothing" : JSON.stringify(raw)}`);
   return Number(raw);
 }
+export function parseProbeArgs(argv) {
+  const t = argv.indexOf("--timeout");
+  const known = new Set(["--record", "--timeout", "--modalities", "--consent"]);
+  for (const a of argv) if (a.startsWith("--") && !known.has(a)) throw new Error(`Unknown argument: ${a}`);
+  const targets = argv.filter((a, i) => !a.startsWith("--") && !(t >= 0 && i === t + 1));
+  return { record: argv.includes("--record"), modalities: argv.includes("--modalities"), consent: argv.includes("--consent"), timeoutMs: parseTimeoutArg(argv), clis: targets.includes("all") || !targets.length ? [...PROBE_CLIS] : targets };
+}
+// The registry ships beside this file; it is loaded lazily so the canary probes never
+// depend on it and its absence is a clear message, not a crash at import time.
+export const REGISTRY_FILE = fileURLToPath(new URL("./capabilities.mjs", import.meta.url));
+// "Absent" means exactly that: the registry file itself is missing and the loader said so.
+// A module-not-found raised INSIDE an existing capabilities.mjs (a missing dependency) is a
+// packaging failure and must surface as one, never as "unchecked".
+export function registryAbsent(error, file = REGISTRY_FILE) {
+  if (error?.code !== "ERR_MODULE_NOT_FOUND") return false;
+  if (fs.existsSync(file)) return false;
+  const message = String(error.message ?? "");
+  const normalise = p => p.replaceAll("\\", "/").toLowerCase();
+  return normalise(message).includes(normalise(file)) || /capabilities\.mjs'?\s*(?:$|imported)/i.test(message) && !/imported from .*capabilities\.mjs/i.test(message);
+}
+export async function loadRegistry() {
+  try { return await import("./capabilities.mjs"); }
+  catch (e) { if (registryAbsent(e)) throw new Error("the capability registry (momm/scripts/capabilities.mjs) is not present; modality probes need it"); throw e; }
+}
 function isEntrypoint() { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isEntrypoint()) {
   (async () => {
-    const argv = process.argv.slice(2), record = argv.includes("--record"), t = argv.indexOf("--timeout");
-    const timeoutMs = parseTimeoutArg(argv);
-    const targets = argv.filter((a, i) => !a.startsWith("--") && !(t >= 0 && i === t + 1));
-    const clis = targets.includes("all") || !targets.length ? PROBE_CLIS : targets;
+    const opts = parseProbeArgs(process.argv.slice(2));
     const out = [];
-    for (const cli of clis) { const r = await runProbes(cli, { timeoutMs }); if (record) recordProbe(process.cwd(), r); out.push(r); }
+    if (opts.modalities) {
+      const registry = await loadRegistry();
+      for (const cli of opts.clis) { const r = await runModalityProbes(cli, { registry, timeoutMs: opts.timeoutMs, consent: opts.consent }); recordProbe(process.cwd(), r); out.push(r); }
+    } else {
+      for (const cli of opts.clis) { const r = await runProbes(cli, { timeoutMs: opts.timeoutMs }); if (opts.record) recordProbe(process.cwd(), r); out.push(r); }
+    }
     process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
     if (out.some(r => r.verdict === "fail")) process.exitCode = 1;
   })().catch(e => { process.stderr.write(`MOMM probes stopped: ${safeText(e.message)}\n`); process.exitCode = 1; });
