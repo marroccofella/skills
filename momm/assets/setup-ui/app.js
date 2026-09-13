@@ -1,3 +1,19 @@
+// Theme: system preference by default; an explicit choice is remembered per
+// browser in localStorage (a per-viewer convenience, never sent anywhere).
+(() => {
+  const root = document.documentElement, key = "momm-setup-theme";
+  let saved = null; try { saved = localStorage.getItem(key); } catch {}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  const button = document.querySelector("#theme-toggle");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const explicit = root.getAttribute("data-theme");
+    const dark = explicit ? explicit === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch {}
+  });
+})();
 const grid = document.querySelector("#provider-grid");
 const summary = document.querySelector("#summary");
 const statusTitle = document.querySelector("#status-title");
