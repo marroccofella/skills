@@ -19,7 +19,7 @@ import { createUpdateClock } from "./update-clock.mjs";
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
-const MOMM_VERSION = "1.15.1";
+const MOMM_VERSION = "1.16.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
