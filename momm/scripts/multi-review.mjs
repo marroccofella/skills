@@ -12,6 +12,9 @@ import { captureSourceSnapshot } from "./governor.mjs";
 import { createProcessScope } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
 import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
+import { splitDiff, headerOnlyQuote } from "./split.mjs";
+import { createScheduler } from "./scheduler.mjs";
+import { createUpdateClock } from "./update-clock.mjs";
 
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
@@ -36,6 +39,16 @@ function isNewerVersion(a, b) {
 // public file, format-validated before it is ever cached or printed.
 async function checkForUpdate(current, { stream = false } = {}) {
   return dailyCheck(current, { stream, root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..") });
+}
+// 1.16 update clock: a review is one of the events that may make a due source
+// check (conditional GET, 304 = free). Fail-silent, never delays a review,
+// honours NO_UPDATE_CHECK / DO_NOT_TRACK exactly like the daily notice.
+function clockTrigger(event, stream) {
+  if (stream || updateCheckDisabled()) return;
+  try {
+    const clock = createUpdateClock({ installedVersions: { skill: MOMM_VERSION } });
+    clock.trigger(event).catch(() => {});
+  } catch {}
 }
 
 // Private evidence is owner-only. On a shared machine another user must not be
@@ -588,6 +601,9 @@ Options:
   --guidance <route=text>   Standing instruction for one reviewer (or *=text for all), repeatable (1.16)
   --guidance-file <path>    JSON { governor, reviewers: { "*": "...", codex: "..." } } applied before --guidance
   --guidance-governor <t>   Advisory text for the governor, shown at dispatch and hashed into the report
+  --split <auto|KB>         Split a large diff into pieces at file/hunk boundaries and review each
+                            (auto = 40 KB); quorum applies per piece; oversize hunks go to the governor (1.16)
+  --jobs <1-6>              Concurrent reviewer processes across pieces (default: routes, or 2x with --split)
                             Project guidance (.momm/guidance.json) needs one-time trust: multi-review.mjs guidance --trust <sha256>
                             Defaults are per-agent, tuned from ledger track records: codex=surgeon, claude=architect,
                             gemini=fresheyes, antigravity=adversary, copilot=verifier, grok=innovator.
@@ -678,6 +694,14 @@ function parseArgs(argv) {
       (options.guidance ??= {})[route] = raw.slice(at + 1);
     }
     else if (arg === "--guidance-governor") options.guidanceGovernor = next();
+    else if (arg === "--split") {
+      // auto = 40 KB pieces (the size below which every route completes reliably
+      // in this project's ledger); or an explicit ceiling in KB.
+      const raw = String(next()).trim().toLowerCase();
+      if (raw === "auto") options.split = "auto";
+      else { const kb = Number(raw); if (!Number.isFinite(kb) || kb < 4) throw new Error(`--split must be auto or a ceiling in KB (>= 4), got "${raw}"`); options.split = Math.round(kb * 1024); }
+    }
+    else if (arg === "--jobs") { const n = Number.parseInt(next(), 10); if (!Number.isInteger(n) || n < 1 || n > 6) throw new Error("--jobs must be an integer from 1 to 6"); options.jobs = n; }
     else if (arg === "--ui") options.ui = true;
     else if (arg === "--no-ui") options.ui = false;
     else if (arg === "--self-test") options.selfTest = true;
@@ -1277,6 +1301,44 @@ function quotationKey(grouped, finding, agent, prose = false, corpus = null) {
 // rev_20260904152252_yvrw returned "prompt.txt:49", "§2.3 Analysis:11" and
 // "2. Methods:3" for the same sentence). In prose mode location keys are
 // therefore ignored and a shared quotation is the location.
+const SPLIT_AUTO_CEILING_BYTES = 40 * 1024;
+const SPLIT_HARD_CAP_BYTES = 2_000_000;
+const VERDICT_RANK = { REJECT: 3, MODIFY: 2, ACCEPT: 1 };
+const STATUS_RANK = { success: 0, invalid_output: 1, timeout: 2, error: 3, provider_unavailable: 4, authentication_required: 5, unsupported: 6, self_excluded: 7 };
+// One parent row per route from its piece results: success when at least one
+// piece reviewed, with per-piece outcomes kept; findings, scope and suggestions
+// concatenated; the worst verdict wins; usage summed only where reported.
+function mergePieceResults(pieceResults, agents, governor) {
+  return agents.map((agent) => {
+    const runs = pieceResults.map((piece) => ({ piece: piece.id, ...piece.results.find((r) => r.agent === agent) }));
+    if (agent === governor) return { agent, status: "self_excluded", pieces: {} };
+    const pieces = {};
+    for (const r of runs) pieces[r.status] = (pieces[r.status] ?? 0) + 1;
+    const ok = runs.filter((r) => r.status === "success");
+    const worst = runs.slice().sort((a, b) => (STATUS_RANK[b.status] ?? 9) - (STATUS_RANK[a.status] ?? 9))[0];
+    const usageRows = ok.map((r) => r.usage?.reported).filter(Boolean);
+    const sum = (key) => usageRows.every((u) => Number.isFinite(u[key])) && usageRows.length ? usageRows.reduce((acc, u) => acc + u[key], 0) : null;
+    return {
+      agent,
+      status: ok.length ? "success" : worst.status,
+      partial: ok.length > 0 && ok.length < runs.length,
+      pieces,
+      attempts: Math.max(...runs.map((r) => r.attempts ?? 1)),
+      duration_ms: runs.reduce((acc, r) => acc + (r.duration_ms ?? 0), 0),
+      ...(ok.length ? {} : { detail: worst.detail ?? null }),
+      ...(ok.length ? { review: {
+        verdict: ok.map((r) => r.review.verdict).sort((a, b) => (VERDICT_RANK[b] ?? 0) - (VERDICT_RANK[a] ?? 0))[0],
+        confidence: Math.min(...ok.map((r) => r.review.confidence ?? 1)),
+        summary: ok.map((r) => `${r.piece}: ${r.review.summary ?? ""}`).join(" "),
+        findings: ok.flatMap((r) => r.review.findings.map((f) => ({ ...f, piece: r.piece }))),
+        improvements: ok.flatMap((r) => (r.review.improvements ?? []).map((i) => (typeof i === "object" && i ? { ...i, piece: r.piece } : i))),
+        reviewed_scope: ok.flatMap((r) => r.review.reviewed_scope ?? []),
+        review_contract: ok[0].review.review_contract ?? null,
+      } } : {}),
+      usage: usageRows.length ? { reported: { input_tokens: sum("input_tokens"), output_tokens: sum("output_tokens"), reasoning_tokens: sum("reasoning_tokens"), cached_tokens: sum("cached_tokens"), total_tokens: sum("total_tokens"), cost_usd: sum("cost_usd"), model: usageRows[0].model ?? null, cli_version: usageRows[0].cli_version ?? null }, coverage: { tokens: usageRows.length === ok.length, cost: usageRows.every((u) => Number.isFinite(u.cost_usd)) }, field_map: ok.find((r) => r.usage)?.usage.field_map ?? null, pieces_reported: usageRows.length } : null,
+    };
+  });
+}
 function looksLikeDiff(artifact) {
   return /^(?:diff --git |--- a\/|\+\+\+ b\/|@@ )/m.test(String(artifact || ""));
 }
@@ -1924,6 +1986,17 @@ async function selfTest(pretty) {
       return true;
     })(),
     ui_redraw_counts_physical_lines: cursorUp !== null && Number(cursorUp[1]) === firstFrameLines,
+    split_args_parse_auto_and_kb_and_reject_small: (() => { const a = parseArgs(["--split", "auto"]); const b = parseArgs(["--split", "12"]); let rejected = false; try { parseArgs(["--split", "2"]); } catch { rejected = true; } return a.split === "auto" && b.split === 12 * 1024 && rejected; })(),
+    merge_pieces_worst_verdict_and_per_piece_outcomes: (() => {
+      const mk = (agent, status, verdict, id) => ({ agent, status, attempts: 1, duration_ms: 10, ...(status === "success" ? { review: { verdict, confidence: 0.9, summary: "s", findings: id ? [{ id, severity: "WARNING", target_file: "a", line_range: null, issue: "i", rationale: "r", test_suggestion: "t", sources: [agent] }] : [], improvements: [], reviewed_scope: [] }, usage: { reported: { total_tokens: 100, cost_usd: 0.01 } } } : { detail: "timed out" }) });
+      const merged = mergePieceResults([
+        { id: "piece-01", results: [mk("codex", "success", "ACCEPT", "f1"), mk("grok", "timeout")] },
+        { id: "piece-02", results: [mk("codex", "success", "REJECT", null), mk("grok", "success", "MODIFY", "f2")] },
+      ], ["codex", "grok"], "claude");
+      const codex = merged.find((r) => r.agent === "codex"), grok = merged.find((r) => r.agent === "grok");
+      return codex.status === "success" && codex.review.verdict === "REJECT" && codex.pieces.success === 2 && codex.partial === false && codex.usage.reported.total_tokens === 200 && grok.status === "success" && grok.partial === true && grok.pieces.timeout === 1 && grok.review.findings[0].piece === "piece-02";
+    })(),
+    merge_pieces_all_failed_keeps_worst_status: mergePieceResults([{ id: "piece-01", results: [{ agent: "grok", status: "timeout", detail: "t" }] }, { id: "piece-02", results: [{ agent: "grok", status: "invalid_output", detail: "x" }] }], ["grok"], "claude")[0].status === "timeout",
     guidance_absent_prompt_is_byte_identical_to_1_15: assemblePrompt("C", "", "A") === "C\n\n--- ARTIFACT TO REVIEW ---\nA",
     guidance_args_parse_star_and_route: (() => { const o = parseArgs(["--guidance", "*=be terse", "--guidance", "grok=quote tests", "--guidance-governor", "prefer security"]); return o.guidance["*"] === "be terse" && o.guidance.grok === "quote tests" && o.guidanceGovernor === "prefer security"; })(),
     guidance_args_reject_malformed: (() => { try { parseArgs(["--guidance", "no-equals"]); return false; } catch (error) { return /Malformed --guidance/.test(error.message); } })(),
@@ -2092,9 +2165,13 @@ async function main() {
   const rawArtifact = await collectArtifact(options);
   const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input);
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
-  if (byteLength > options.maxBytes) throw new Error(`Input is ${byteLength} bytes; limit is ${options.maxBytes}`);
+  // --split reviews pieces under the ceiling, so the whole-input limit becomes the
+  // splitter's hard cap (2 MB) rather than the per-review limit.
+  const inputLimit = options.split ? Math.max(options.maxBytes, SPLIT_HARD_CAP_BYTES) : options.maxBytes;
+  if (byteLength > inputLimit) throw new Error(`Input is ${byteLength} bytes; limit is ${inputLimit}${options.split ? " (split hard cap)" : ""}`);
   const sanitized = sanitizeText(rawArtifact);
   applyTier(options);
+  options.requestedTimeoutMs = options.timeoutMs;
   options.timeoutMs = effectiveTimeoutMs(byteLength, options.timeoutMs, options.timeoutExplicit === true);
   // Each --attach was an explicit per-file act by the user; staging copies the
   // media with metadata stripped and re-states exactly what is being shared
@@ -2106,6 +2183,7 @@ async function main() {
     }
   } catch { options.projectRules = null; }
   const uniqueReviewers = [...new Set(options.reviewers)];
+  clockTrigger("review.start", options.stream);
   // 1.16 guidance: persona (selector) → user → trusted project (.reviewrules,
   // guidance.json) → --guidance-file → --guidance. Resolved once per run, hashed
   // into the report, text kept only in the private sidecar. A run with no
@@ -2144,33 +2222,62 @@ async function main() {
     ui.preflight(entries);
     return entries;
   });
-  let results;
+  // 1.16 splitting: a large diff becomes pieces packed at file/hunk boundaries;
+  // every route reviews every piece through one bounded scheduler; quorum is
+  // judged per piece; a hunk no ceiling admits is never dropped — it is handed
+  // to the governor as governor_direct scope.
+  let split = null;
+  if (options.split && looksLikeDiff(sanitized.value)) {
+    const ceilingBytes = options.split === "auto" ? SPLIT_AUTO_CEILING_BYTES : options.split;
+    if (byteLength > ceilingBytes) {
+      split = { ceiling_bytes: ceilingBytes, ...splitDiff(sanitized.value, { ceilingBytes }) };
+      emitEvent(options.stream, { event: "split", ceiling_bytes: ceilingBytes, pieces: split.pieces.map((piece) => ({ id: piece.id, bytes: piece.bytes, files: piece.files.length })), governor_direct: split.oversize.map((o) => ({ id: o.id, path: o.path, bytes: o.bytes })) });
+      if (!options.stream) process.stderr.write(`momm split: ${split.pieces.length} pieces under ${Math.round(ceilingBytes / 1024)} KB${split.oversize.length ? `, ${split.oversize.length} oversize hunk(s) for the governor` : ""}\n`);
+    }
+  }
+  const scheduler = createScheduler({ jobs: options.jobs ?? Math.min(6, uniqueReviewers.length * (split ? 2 : 1)) });
+  const reviewOne = async (agent, artifactText, pieceId) => {
+    const tag = pieceId ? { piece: pieceId } : {};
+    emitEvent(options.stream, { event: "reviewer.started", reviewer: agent, ...tag });
+    const startedAt = Date.now();
+    const pieceOptions = pieceId ? { ...options, timeoutMs: effectiveTimeoutMs(Buffer.byteLength(artifactText, "utf8"), options.requestedTimeoutMs, options.timeoutExplicit === true) } : options;
+    // Provider 5xx flaps (observed live with Copilot) usually clear within
+    // seconds — absorb exactly one, and only for outages, never for auth.
+    const result = await invokeWithRetry(invokeReviewer, agent, artifactText, { ...pieceOptions,
+      onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...tag, ...progress }) },
+      (reason) => emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason, ...tag }));
+    const info = {
+      status: result.status,
+      verdict: result.review?.verdict ?? null,
+      findings: result.review?.findings.length ?? 0,
+      critical: result.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0,
+      attempts: result.attempts,
+      ...(result.detail ? { detail: clipped(sanitizeText(result.detail).value, 1200) } : {}),
+      // Wall time deliberately includes any failed attempt plus backoff.
+      duration_ms: Date.now() - startedAt,
+    };
+    emitEvent(options.stream, { event: "reviewer.completed", reviewer: agent, ...tag, ...info });
+    if (result.usage) emitEvent(options.stream, { event: "reviewer.usage", reviewer: agent, ...tag, reported: result.usage.reported, coverage: result.usage.coverage, field_map: result.usage.field_map });
+    if (!pieceId) ui.complete(agent, info);
+    // Persist the same bounded redacted diagnostic shown in progress, never
+    // reintroduce recognizable credentials from the provider's raw failure.
+    return { ...result, ...(info.detail ? {detail:info.detail} : {}), duration_ms: info.duration_ms, ...tag };
+  };
+  let results, pieceResults = null;
   try {
-    results = await Promise.all(uniqueReviewers.map(async (agent) => {
-      emitEvent(options.stream, { event: "reviewer.started", reviewer: agent });
-      const startedAt = Date.now();
-      // Provider 5xx flaps (observed live with Copilot) usually clear within
-      // seconds — absorb exactly one, and only for outages, never for auth.
-      const result = await invokeWithRetry(invokeReviewer, agent, sanitized.value, { ...options,
-        onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...progress }) },
-        (reason) => emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason }));
-      const info = {
-        status: result.status,
-        verdict: result.review?.verdict ?? null,
-        findings: result.review?.findings.length ?? 0,
-        critical: result.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0,
-        attempts: result.attempts,
-        ...(result.detail ? { detail: clipped(sanitizeText(result.detail).value, 1200) } : {}),
-        // Wall time deliberately includes any failed attempt plus backoff.
-        duration_ms: Date.now() - startedAt,
-      };
-      emitEvent(options.stream, { event: "reviewer.completed", reviewer: agent, ...info });
-      if (result.usage) emitEvent(options.stream, { event: "reviewer.usage", reviewer: agent, reported: result.usage.reported, coverage: result.usage.coverage, field_map: result.usage.field_map });
-      ui.complete(agent, info);
-      // Persist the same bounded redacted diagnostic shown in progress, never
-      // reintroduce recognizable credentials from the provider's raw failure.
-      return { ...result, ...(info.detail ? {detail:info.detail} : {}), duration_ms: info.duration_ms };
-    }));
+    if (!split) {
+      results = await Promise.all(uniqueReviewers.map((agent) => scheduler.schedule(agent, `single:${agent}`, () => reviewOne(agent, sanitized.value, null))));
+    } else {
+      pieceResults = await Promise.all(split.pieces.map(async (piece) => {
+        const pieceRuns = await Promise.all(uniqueReviewers.map((agent) => scheduler.schedule(agent, `${piece.id}:${agent}`, () => reviewOne(agent, piece.text, piece.id))));
+        const external = pieceRuns.filter((r) => r.agent !== options.governor && r.status === "success").length;
+        const met = external >= (options.minSuccess ?? 1);
+        emitEvent(options.stream, { event: "piece.completed", piece: piece.id, external_successes: external, quorum_met: met });
+        return { id: piece.id, files: piece.files, bytes: piece.bytes, results: pieceRuns, external_successes: external, quorum_met: met };
+      }));
+      results = mergePieceResults(pieceResults, uniqueReviewers, options.governor);
+      for (const merged of results) ui.complete(merged.agent, { status: merged.status, verdict: merged.review?.verdict ?? null, findings: merged.review?.findings.length ?? 0, critical: merged.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0, attempts: 1, duration_ms: merged.duration_ms, ...(merged.detail ? { detail: merged.detail } : {}) });
+    }
   } catch (error) {
     ui.stop();
     throw error;
@@ -2179,9 +2286,13 @@ async function main() {
     if (options.staging.directory) { try { fs.rmSync(options.staging.directory, { recursive: true, force: true }); } catch {} }
   }
   const preflightEntries = await preflightPromise;
-  const externalSuccesses = results.filter((result) => result.agent !== options.governor && result.status === "success").length;
+  const externalSuccesses = pieceResults ? Math.min(...pieceResults.map((piece) => piece.external_successes)) : results.filter((result) => result.agent !== options.governor && result.status === "success").length;
+  const quorumMet = options.minSuccess ? (pieceResults ? pieceResults.every((piece) => piece.quorum_met) : externalSuccesses >= options.minSuccess) : true;
   const prose = !looksLikeDiff(sanitized.value);
-  const findings = rationalize(results, { prose, artifact: sanitized.value });
+  // With pieces, corroboration runs over every piece result (same route may
+  // appear once per piece); header-only quotes never corroborate.
+  const findings = rationalize(pieceResults ? pieceResults.flatMap((piece) => piece.results.map((r) => ({ ...r, piece: piece.id }))) : results, { prose, artifact: sanitized.value })
+    .map((f) => ({ ...f, sources: [...new Set(f.sources)], ...(f.quote && headerOnlyQuote(f.quote) ? { header_only_quote: true } : {}) }));
   // Join key linking this report, the run log, and governor dispositions.
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
   if (resolvedGuidance.governor?.text || Object.values(resolvedGuidance.routes).some((entry) => entry.text)) {
@@ -2204,7 +2315,14 @@ async function main() {
     source_snapshot: sourceSnapshot,
     ...(options.inputMtime ? { input_modified: options.inputMtime } : {}),
     // The gate configuration rides in the evidence, not just the exit code.
-    ...(options.minSuccess ? { quorum: { required: options.minSuccess, achieved: externalSuccesses, met: externalSuccesses >= options.minSuccess } } : {}),
+    ...(options.minSuccess ? { quorum: { required: options.minSuccess, achieved: externalSuccesses, met: quorumMet, ...(pieceResults ? { pieces: pieceResults.length, pieces_met: pieceResults.filter((piece) => piece.quorum_met).length, failing_pieces: pieceResults.filter((piece) => !piece.quorum_met).map((piece) => piece.id) } : {}) } } : {}),
+    ...(split ? { split: {
+      ceiling_bytes: split.ceiling_bytes,
+      pieces: pieceResults.map((piece) => ({ id: piece.id, files: piece.files, bytes: piece.bytes, external_successes: piece.external_successes, quorum_met: piece.quorum_met, reviewers: Object.fromEntries(piece.results.map((r) => [r.agent, r.status])) })),
+      // Never dropped, never line-split: these hunks exceed every route's ceiling
+      // and complete the parent as scope the governor reviews directly.
+      governor_direct: split.oversize.map((o) => ({ id: o.id, path: o.path, hunk: o.hunkHeader, bytes: o.bytes, status: "governor_direct" })),
+    } } : {}),
     // Privacy default: the artifact itself is NOT stored — only its hash.
     // --store-input opts a run into carrying the sanitized text, for demos
     // and public evidence where the input is already public.
@@ -2234,6 +2352,7 @@ async function main() {
       reviewed_scope: result.review?.reviewed_scope ?? null,
       suggested_improvements: result.review?.improvements ?? null,
       usage: result.usage ?? null,
+      ...(result.pieces ? { pieces: result.pieces, partial: result.partial } : {}),
     })),
     // 1.16: what the CLIs reported (per route, never summed across routes whose
     // counts mean different things) plus the dispatcher's labelled estimate.
@@ -2376,6 +2495,7 @@ async function main() {
   // report (dispatcher_version); here it is also surfaced to humans, with an
   // update notice if a newer release is published.
   const newer = await checkForUpdate(MOMM_VERSION, { stream: options.stream });
+  clockTrigger("review.finish", options.stream);
   if (!options.stream) {
     process.stderr.write(`  momm ${MOMM_VERSION}${newer ? `  ↑ update available: ${newer} — run node momm/scripts/multi-review.mjs update in the skills clone; nothing installs automatically` : ""}\n`);
   }
@@ -2383,7 +2503,7 @@ async function main() {
   // additive, optional field (unknown-field-safe, so REPORT_SCHEMA is unchanged).
   process.stdout.write(`${JSON.stringify({ ...report, evidence, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
-  if (options.minSuccess && externalSuccesses < options.minSuccess) {
+  if (options.minSuccess && !quorumMet) {
     if (options.stream) emitEvent(true, { event: "quorum_failed", achieved: externalSuccesses, required: options.minSuccess });
     else process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
     process.exitCode = 3;
