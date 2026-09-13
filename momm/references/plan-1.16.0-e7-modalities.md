@@ -55,6 +55,25 @@ A "Modalities" panel: rows are routes, columns are the modalities, cells are chi
 - Planner tests: chains that are possible, chains blocked by a `model-only` cell, chains needing two routes, and the "same route for both steps" preference.
 - Runner tests with fake exec: files staged and hashed, refusal without consent, refusal below `documented`, no text from step N reaching step N+1 as a prompt.
 
+## Verified matrix (2026-09-13, this machine, account logins only)
+
+Full cells with citations and the probe log: [cli/modalities.md](cli/modalities.md). Condensed, evidence level first:
+
+| Route | Image in | PDF in | Audio/video in | Image gen | Video gen | Speech | Code exec | Web |
+|---|---|---|---|---|---|---|---|---|
+| codex 0.154 | verified `-i` | no | no | **verified** (`image_gen` tool; PNG under `~/.codex/generated_images/`) | no | no | verified sandbox | verified `--search` |
+| claude 2.1.270 | verified (Read) | verified (Read) | no | **no** | no | interactive `/voice` only | verified | verified |
+| antigravity 1.2.2 | verified (`view_file`, needs `--new-project` or `--add-dir`) | verified | model-only | **verified** (`generate_image`, Nano Banana; JPG under the brain dir) | no | interactive only | verified (auto-denied headless without an allow rule) | verified |
+| gemini 0.59 | documented | documented | documented (mp3/wav, mp4/mov) | no under account login (extension needs a key) | no | no | flag verified | documented, but the consumer login is rejected (`IneligibleTierError`, probed today) |
+| copilot 1.0.83 | verified `--attachment` | verified | no | **no** (every route needs a key) | no | interactive only | verified | verified |
+| grok 1.0.30 | verified (`read_file`) | verified | no | **verified** (`image_gen`, `image_edit`; JPG under the session dir) | tool present (`image_to_video`, `reference_to_video`) but **gated** by the zero-data-retention setting; refused today | preset voices inside video only | verified | verified incl. X search |
+
+Owner claims checked: Codex generates images, confirmed live. Copilot generates images, refuted. Grok turns an image into a video: tool confirmed, blocked by the ZDR gate until `/privacy` is turned off or a user-hosted bucket is configured. Gemini CLI image generation needs a key, so the Nano Banana route under an account login is Antigravity. Claude Code cannot generate images, confirmed.
+
+Pipelines possible today under account logins: prompt to image (codex, grok, antigravity); image or PDF to critique (all five reviewers); image to video (grok only, after the gate). Not possible without keys: audio or video input (Gemini only, and its login is blocked), any speech generation, headless microphone input.
+
+Disclosure: establishing this matrix sent one synthetic prompt per generative probe to Codex, Antigravity and Grok, each of which produced one image under the account login; the artefacts stay in the scratchpad and nothing was published.
+
 ## Not in scope
 
 Real-time speech in or out (no CLI here offers a headless path; recorded as `model-only` or `no`), model pinning changes, and any generation inside a review run.
