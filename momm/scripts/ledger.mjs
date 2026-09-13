@@ -6,6 +6,8 @@
 //
 //   node momm/scripts/ledger.mjs            # build from ./.ensemble_reviews
 //   node momm/scripts/ledger.mjs --open     # build and open in your browser
+//   node momm/scripts/ledger.mjs --rate <run_id> <reviewer> <1-5> [--tags a,b] [--note "..."]
+//                                            # record how a review READ (1.16); latest per run wins
 //
 import fs from "node:fs";
 import path from "node:path";
@@ -176,6 +178,120 @@ function rollup(dispositions, runs, reports) {
   return { rows, unattributed, totals, reconciled: totals.all === dispositions.length };
 }
 
+// --- 1.16: qualitative ratings, windows, size buckets --------------------
+// review_rating rows live in dispositions.jsonl beside dispositions but are a
+// different kind of record: the governor's own 1-5 verdict on how a review
+// READ, with a fixed tag vocabulary so they aggregate. Latest row per
+// (run_id, reviewer) wins, so a retried triage never double-weights a review.
+const RATING_MIN_N = 5;            // show a mean only from this many rated reviews
+const RECOMMEND_MIN_N = 10;        // recommend only from this many completed dispatches
+const CORE_TAGS = new Set(["specific", "reproducible", "off-artifact", "boilerplate", "hallucinated-lines", "late", "unique-catch"]);
+const NON_DISPATCH = new Set(["self_excluded"]);
+const NON_COMPLETION = new Set(["cancelled_after_quorum", "governor_direct"]);
+function isRatingRow(row) { return row && row.kind === "review_rating"; }
+function ratingsRollup(ratingRows) {
+  const latest = new Map();
+  for (const r of ratingRows) {
+    if (!isRatingRow(r)) continue;
+    const agent = String(r.reviewer || "").toLowerCase();
+    if (!agent || !r.run_id) continue;
+    const rating = Number(r.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) continue;
+    latest.set(`${r.run_id}:${agent}`, { agent, rating, tags: Array.isArray(r.tags) ? r.tags.map(String) : [] });
+  }
+  const by = {};
+  for (const { agent, rating, tags } of latest.values()) {
+    const row = (by[agent] ??= { agent, n: 0, sum: 0, tags: {}, custom_tags: {} });
+    row.n += 1; row.sum += rating;
+    for (const t of tags) {
+      if (CORE_TAGS.has(t)) row.tags[t] = (row.tags[t] ?? 0) + 1;
+      else if (t.startsWith("x-")) row.custom_tags[t] = (row.custom_tags[t] ?? 0) + 1;
+    }
+  }
+  return Object.fromEntries(Object.values(by).map((r) => [r.agent, { ...r, mean: r.n >= RATING_MIN_N ? r.sum / r.n : null, insufficient: r.n < RATING_MIN_N }]));
+}
+function sizeBucket(bytes) {
+  const kb = (Number(bytes) || 0) / 1024;
+  return kb < 8 ? "<8KB" : kb < 16 ? "8-16KB" : kb < 40 ? "16-40KB" : kb < 100 ? "40-100KB" : ">=100KB";
+}
+// Completion by route and input-size bucket over a trailing window. Runs whose
+// route ended cancelled_after_quorum or governor_direct are neither completions
+// nor failures: they are counted separately so an early exit can never make a
+// route look unreliable.
+function windowedReliability(runs, { days = 30, now = Date.now() } = {}) {
+  const since = now - days * 864e5;
+  const by = {};
+  for (const run of runs) {
+    const t = Date.parse(run.timestamp);
+    if (!Number.isFinite(t) || t < since) continue;
+    const bucket = sizeBucket(run.input_bytes);
+    for (const [rawAgent, status] of Object.entries(run.reviewer_status ?? {})) {
+      if (NON_DISPATCH.has(status)) continue;
+      const agent = String(rawAgent).toLowerCase();
+      const row = (by[agent] ??= { agent, dispatched: 0, completed: 0, excluded: 0, buckets: {} });
+      const b = (row.buckets[bucket] ??= { dispatched: 0, completed: 0, excluded: 0 });
+      if (NON_COMPLETION.has(status)) { row.excluded += 1; b.excluded += 1; continue; }
+      row.dispatched += 1; b.dispatched += 1;
+      if (status === "success") { row.completed += 1; b.completed += 1; }
+    }
+  }
+  for (const row of Object.values(by)) {
+    row.completionRate = row.dispatched ? row.completed / row.dispatched : null;
+    row.recommendation = row.dispatched < RECOMMEND_MIN_N ? `insufficient data (n=${row.dispatched})`
+      : row.completionRate < 0.5 ? "unreliable in this window: shorten input or drop the route for release gates"
+      : row.completionRate < 0.8 ? "completes most runs; keep, expect the odd timeout"
+      : "reliable in this window";
+    for (const b of Object.values(row.buckets)) b.completionRate = b.dispatched ? b.completed / b.dispatched : null;
+  }
+  return by;
+}
+// Usage (1.16 reports carry reviewers[].usage from the dispatcher). Rollup by
+// route with explicit coverage: reported counts only, never estimates.
+function usageRollup(reports) {
+  const by = {};
+  for (const { report } of Object.values(reports)) {
+    for (const r of report?.reviewers ?? []) {
+      if (r.status !== "success") continue;
+      const row = (by[r.agent] ??= { agent: r.agent, reviews: 0, tokens_reported: 0, cost_reported: 0, totals: [], cost: 0 });
+      row.reviews += 1;
+      const u = r.usage?.reported;
+      if (u && Number.isFinite(u.total_tokens)) { row.tokens_reported += 1; row.totals.push(u.total_tokens); }
+      if (u && Number.isFinite(u.cost_usd)) { row.cost_reported += 1; row.cost += u.cost_usd; }
+    }
+  }
+  return Object.fromEntries(Object.values(by).map((r) => [r.agent, { ...r, median_total_tokens: median(r.totals), total_cost_usd: r.cost_reported ? r.cost : null }]));
+}
+function runsPerDay(runs, { days = 30, now = Date.now() } = {}) {
+  const counts = new Array(days).fill(0);
+  for (const run of runs) {
+    const t = Date.parse(run.timestamp);
+    if (!Number.isFinite(t)) continue;
+    const back = Math.floor((now - t) / 864e5);
+    if (back >= 0 && back < days) counts[days - 1 - back] += 1;
+  }
+  return counts;
+}
+function sparkline(counts, width = 180, height = 28) {
+  const max = Math.max(1, ...counts);
+  const step = width / Math.max(1, counts.length - 1);
+  const pts = counts.map((c, i) => `${(i * step).toFixed(1)},${(height - 2 - (c / max) * (height - 4)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="runs per day, last ${counts.length} days, max ${max}"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function appendRating(er, args) {
+  const [runId, reviewer, ratingRaw] = args;
+  const rating = Number(ratingRaw);
+  if (!/^rev_[A-Za-z0-9_]+$/.test(String(runId)) || !reviewer || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new Error("usage: --rate <run_id> <reviewer> <1-5> [--tags specific,reproducible,...] [--note \"...\"]");
+  }
+  const tagsAt = args.indexOf("--tags"), noteAt = args.indexOf("--note");
+  const tags = tagsAt > -1 ? String(args[tagsAt + 1] ?? "").split(",").map((t) => t.trim()).filter(Boolean) : [];
+  for (const t of tags) if (!CORE_TAGS.has(t) && !/^x-[a-z0-9-]{1,40}$/.test(t)) throw new Error(`unknown tag "${t}" (core: ${[...CORE_TAGS].join(", ")}; custom tags start with x-)`);
+  const note = noteAt > -1 ? String(args[noteAt + 1] ?? "").slice(0, 500) : "";
+  const row = { kind: "review_rating", timestamp: new Date().toISOString(), run_id: runId, reviewer: String(reviewer).toLowerCase(), rating, tags, note };
+  fs.appendFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify(row)}\n`);
+  return row;
+}
+
 function ledgerSelfTest() {
   const rolled = rollup([
     { reviewer: "codex", disposition: "applied", run_id: "r1" },
@@ -212,6 +328,34 @@ function ledgerSelfTest() {
     rollup_completion_counts_timeouts_and_failures: by.codex.dispatched === 2 && by.codex.completed === 2 && by.codex.completionRate === 1 && by.grok.dispatched === 2 && by.grok.timeouts === 1 && by.grok.completionRate === 0.5 && by.copilot.failed === 1 && !("claude" in by),
     rollup_findings_use_sealed_reports_only: by.codex.medianFindings === 2 && by.codex.weightedFindingsPerReview === 1.5 && by.copilot.medianFindings === 1 && by.grok.medianFindings === null,
     rollup_utility_weights_named_findings: by.codex.utilityWeight === 3 && by.codex.utility === 1.5 && by.copilot.utility === 0,
+    ratings_latest_row_wins_and_min_n: (() => {
+      const rows = [1, 2, 3, 4].map((i) => ({ kind: "review_rating", run_id: `rev_${i}`, reviewer: "grok", rating: 2, tags: ["boilerplate"] }));
+      rows.push({ kind: "review_rating", run_id: "rev_1", reviewer: "grok", rating: 5, tags: ["specific", "x-payments"] });
+      const r = ratingsRollup(rows);
+      const four = r.grok.n === 4 && r.grok.mean === null && r.grok.insufficient && r.grok.tags.specific === 1 && r.grok.tags.boilerplate === 3 && r.grok.custom_tags["x-payments"] === 1;
+      rows.push({ kind: "review_rating", run_id: "rev_5", reviewer: "grok", rating: 4, tags: [] });
+      const five = ratingsRollup(rows).grok.mean === (5 + 2 + 2 + 2 + 4) / 5;
+      return four && five;
+    })(),
+    ratings_reject_out_of_range_and_unknown_kind: ratingsRollup([{ kind: "review_rating", run_id: "rev_1", reviewer: "codex", rating: 9 }, { run_id: "rev_1", reviewer: "codex", rating: 5 }]).codex === undefined,
+    reliability_window_excludes_cancelled_and_governor_direct: (() => {
+      const now = Date.parse("2026-09-13T00:00:00Z");
+      const mk = (daysAgo, status, bytes) => ({ run_id: "x", timestamp: new Date(now - daysAgo * 864e5).toISOString(), input_bytes: bytes, reviewer_status: { grok: status } });
+      const w = windowedReliability([mk(1, "success", 1000), mk(2, "timeout", 20000), mk(3, "cancelled_after_quorum", 1000), mk(4, "governor_direct", 1000), mk(40, "timeout", 1000)], { now });
+      return w.grok.dispatched === 2 && w.grok.completed === 1 && w.grok.excluded === 2 && w.grok.completionRate === 0.5 && w.grok.recommendation.startsWith("insufficient data (n=2)") && w.grok.buckets["<8KB"].completed === 1 && w.grok.buckets["16-40KB"].dispatched === 1;
+    })(),
+    reliability_recommends_only_with_min_n: (() => {
+      const now = Date.now();
+      const runs = Array.from({ length: 12 }, (_, i) => ({ run_id: "y" + i, timestamp: new Date(now - i * 3600e3).toISOString(), input_bytes: 100, reviewer_status: { codex: i < 4 ? "success" : "timeout" } }));
+      const w = windowedReliability(runs, { now });
+      return w.codex.dispatched === 12 && w.codex.recommendation.startsWith("unreliable");
+    })(),
+    usage_rollup_reports_coverage_not_zero: (() => {
+      const u = usageRollup({ a: { report: { reviewers: [{ agent: "grok", status: "success", usage: { reported: { total_tokens: 100, cost_usd: 0.02 } } }, { agent: "grok", status: "success", usage: { reported: null } }, { agent: "antigravity", status: "success" }] } } });
+      return u.grok.reviews === 2 && u.grok.tokens_reported === 1 && u.grok.median_total_tokens === 100 && u.grok.total_cost_usd === 0.02 && u.antigravity.tokens_reported === 0 && u.antigravity.median_total_tokens === null && u.antigravity.total_cost_usd === null;
+    })(),
+    sparkline_is_svg_with_one_point_per_day: sparkline(runsPerDay([{ timestamp: new Date().toISOString() }], { days: 7 })).includes("<svg") && runsPerDay([{ timestamp: new Date().toISOString() }], { days: 7 }).reduce((a, c) => a + c, 0) === 1,
+    rating_row_kind_is_separated_from_dispositions: isRatingRow({ kind: "review_rating" }) && !isRatingRow({ disposition: "applied" }),
   };
   const passed = Object.values(tests).every(Boolean);
   process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
@@ -220,6 +364,13 @@ function ledgerSelfTest() {
 if (process.argv.includes("--self-test")) ledgerSelfTest();
 
 const er = path.resolve(".ensemble_reviews");
+if (process.argv.includes("--rate")) {
+  try {
+    const row = appendRating(er, process.argv.slice(process.argv.indexOf("--rate") + 1));
+    process.stdout.write(`${JSON.stringify(row)}\n`);
+    process.exit(0);
+  } catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2); }
+}
 if (!fs.existsSync(er)) {
   process.stderr.write("No .ensemble_reviews here — run a momm review first, then rebuild your ledger.\n");
   process.exit(1);
@@ -232,7 +383,9 @@ const readJsonl = (file) => {
   });
 };
 const runs = readJsonl(path.join(er, "review-log.jsonl")).filter((entry) => !entry.event);
-const dispositions = readJsonl(path.join(er, "dispositions.jsonl"));
+const allDispositionRows = readJsonl(path.join(er, "dispositions.jsonl"));
+const ratingRows = allDispositionRows.filter(isRatingRow);
+const dispositions = allDispositionRows.filter((row) => !isRatingRow(row));
 // Index once; per-run lookups below would otherwise rescan every disposition
 // for every run (codex suggestion, rev_20260904131435_mf6w).
 const dispositionsByRun = new Map();
@@ -312,11 +465,28 @@ ${triageRow({ agent: "total", ...tr.totals, note: `${tr.totals.all} of ${disposi
 <table><tr><th>reviewer</th><th>completed / dispatched</th><th>completion</th><th>timeouts</th><th>other failures</th><th>median findings per review</th><th>severity-weighted findings per review</th><th>utility</th></tr>
 ${tr.rows.map((s) => `<tr><td>${esc(s.agent)}</td><td>${s.completed} / ${s.dispatched}</td><td>${pct(s.completionRate)}</td><td>${s.timeouts}</td><td>${s.failed}</td><td>${num(s.medianFindings)}</td><td>${num(s.weightedFindingsPerReview)}</td><td>${num(s.utility)}</td></tr>`).join("")}
 </table>
+<h4>How the reviews read — your ratings (1-5) and tags, latest per run</h4>
+${(() => { const rr = ratingsRollup(ratingRows); const agents = tr.rows.map((r) => r.agent).filter((a) => rr[a]).concat(Object.keys(rr).filter((a) => !tr.rows.some((r) => r.agent === a)));
+  return agents.length ? `<table><tr><th>reviewer</th><th>rated reviews</th><th>mean rating</th><th>tags</th></tr>${agents.map((a) => { const r = rr[a]; const tags = Object.entries({ ...r.tags, ...r.custom_tags }).sort((x, y) => y[1] - x[1]).map(([t, n]) => `${esc(t)} ×${n}`).join(", "); return `<tr><td>${esc(a)}</td><td>${r.n}</td><td>${r.mean === null ? `insufficient ratings (n=${r.n}, need ${RATING_MIN_N})` : (Math.round(r.mean * 10) / 10).toFixed(1)}</td><td>${tags || "—"}</td></tr>`; }).join("")}</table>`
+  : `<p class="dim">No ratings yet. After triage, record one per reviewer: <code>node momm/scripts/ledger.mjs --rate &lt;run_id&gt; &lt;reviewer&gt; &lt;1-5&gt; --tags specific,reproducible</code></p>`; })()}
+<h4>Last 30 days — completion by route and input size (early exits and governor-direct pieces excluded)</h4>
+${(() => { const w = windowedReliability(runs); const agents = Object.keys(w); const buckets = ["<8KB", "8-16KB", "16-40KB", "40-100KB", ">=100KB"];
+  return agents.length ? `<table><tr><th>reviewer</th><th>completed / dispatched</th>${buckets.map((b) => `<th>${esc(b)}</th>`).join("")}<th>excluded</th><th>recommendation</th></tr>${agents.map((a) => { const r = w[a]; return `<tr><td>${esc(a)}</td><td>${r.completed} / ${r.dispatched}${r.completionRate === null ? "" : ` (${pct(r.completionRate)})`}</td>${buckets.map((b) => { const x = r.buckets[b]; return `<td>${x ? `${x.completed}/${x.dispatched}` : "—"}</td>`; }).join("")}<td>${r.excluded}</td><td>${esc(r.recommendation)}</td></tr>`; }).join("")}</table>`
+  : '<p class="dim">No runs in the last 30 days.</p>'; })()}
+<p class="dim">Runs per day, last 30 days: ${sparkline(runsPerDay(runs))}</p>
+<h4>Reported usage per route (from the CLIs' own envelopes; coverage shown, nothing estimated)</h4>
+${(() => { const u = usageRollup(reports); const agents = Object.keys(u);
+  return agents.length && agents.some((a) => u[a].tokens_reported || u[a].cost_reported) ? `<table><tr><th>reviewer</th><th>reviews</th><th>tokens reported</th><th>median total tokens</th><th>cost reported</th><th>total cost (USD)</th></tr>${agents.map((a) => { const r = u[a]; return `<tr><td>${esc(a)}</td><td>${r.reviews}</td><td>${r.tokens_reported} of ${r.reviews}</td><td>${r.median_total_tokens === null ? "not reported" : Math.round(r.median_total_tokens)}</td><td>${r.cost_reported} of ${r.reviews}</td><td>${r.total_cost_usd === null ? "not reported" : r.total_cost_usd.toFixed(4)}</td></tr>`; }).join("")}</table>`
+  : '<p class="dim">No usage recorded yet — reports written by momm 1.16 and later carry each CLI\'s own token and cost figures where the CLI reports them.</p>'; })()}
 <p class="dim">Precision here is the governor's <b>acceptance rate</b> on this project — applied / (applied + rejected) as triaged after reproduction — not precision against a labeled ground truth; false-positive rate = rejected / (applied + rejected); deferred and other rows are counted but not adjudicated. Completion = successful reviews / dispatched (the governor's self-exclusion is not a dispatch). Findings per review use sealed reports only, weighting CRITICAL 3, WARNING 2, NITPICK 1. Utility = severity-weighted applied suggestions / completed reviews — a suggestion weighs 1 unless its disposition names a <code>finding_id</code>, in which case it takes that finding's weight. High precision from a route that rarely completes is not high utility. All of it is an advisory attention prior; every material finding still requires reproduction.</p></details>` : "";
 
 const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
 <style>
-  :root{--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a}
+  :root{--bg:#f6f8f6;--panel:#ffffff;--border:#d7e2d9;--text:#0f1a12;--muted:#2e7d4f;--dim:#5f6f63;--accent:#00875a;--warn:#9a6700;--crit:#b42318;color-scheme:light}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a;color-scheme:dark}}
+  :root[data-theme="dark"]{--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a;color-scheme:dark}
+  .theme{float:right;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:1px 8px}
+  .spark{vertical-align:middle;color:var(--accent)}
   body{background:var(--bg);color:var(--text);font:13px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:0 auto;padding:20px}
   h1{font-size:19px}h1 span{color:var(--accent)}
   .note{color:var(--dim);font-size:11px;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin:10px 0}
@@ -343,6 +513,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
   .track{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 14px;margin:10px 0}
   .track table{margin-top:6px}
 </style>
+<button class="theme" id="theme" type="button" aria-label="toggle light or dark theme">◐ theme</button>
 <h1><span>◆</span> My momm ledger <span class="dim">· ${runs.length} runs · ${Object.keys(reports).length} sealed reports · ${dispositions.length} dispositions</span></h1>
 <p class="note">${esc(data.private_note)} Generated ${esc(data.generated)}. This ledger covers ONLY this workspace (${esc(data.projects[0].root)}); other projects keep their own — rebuild any with <code>node scripts/ledger.mjs</code> from that project.</p>
 ${trackPanel}
@@ -350,6 +521,19 @@ ${rows || '<p class="dim">No runs recorded yet.</p>'}
 <p class="dim">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>
 <script>
 ${SPEECH_SCRIPT}
+(() => {
+  const root = document.documentElement, key = "momm-ledger-theme";
+  let saved = null; try { saved = localStorage.getItem(key); } catch {}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  const button = document.getElementById("theme");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    const next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch {}
+  });
+})();
 </script>`;
 
 // The ledger renders your reviewer transcripts — owner-only, like the reports.
