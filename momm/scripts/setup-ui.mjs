@@ -6,7 +6,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
@@ -34,6 +34,7 @@ let activeServer = null;
 let maintenanceCache = null;
 let updateClock = null;   // created at server start; null under --self-test
 let ledgerWatcher = null; // idem
+let setupPointer = null;  // .ensemble_reviews/setup-center.json while the server runs
 
 // Connectivity checks must outlive the slowest legitimate route: the
 // dispatcher grants grok 1.5x of the 120s base (180s), its kill path allows a
@@ -1057,8 +1058,13 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   // restored) keeps the old handle alive and silent, so identity is compared
   // whenever a rename event names anything other than a telemetry file.
   const identityOf = () => { try { const entry = stat(dir); return `${entry.dev}:${entry.ino}`; } catch { return null; } };
-  async function regenerate() {
-    if (state.running) { state.pending = true; return; }
+  let inflight = null; // the rebuild in progress, so rebuild() can await it instead of doubling it
+  function regenerate() {
+    if (state.running) { state.pending = true; return Promise.resolve(); }
+    inflight = regenerateNow().finally(() => { inflight = null; });
+    return inflight;
+  }
+  async function regenerateNow() {
     state.running = true;
     lastRunAt = now();
     try {
@@ -1130,7 +1136,18 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
     watcher = null;
     state.watching = false;
   }
-  return { start, stop, notify, status: () => ({ ...state }) };
+  const status = () => ({ ...state });
+  // On-demand rebuild for GET /ledger. It shares the run and the minimum gap
+  // with the scheduled path: a rebuild already in flight is awaited rather than
+  // doubled, and one that would land inside the gap waits the remainder out.
+  // Independent of start()/stop(): the request wants a page, not a subscription.
+  function rebuild() {
+    if (inflight) return inflight.then(status);
+    const wait = Math.max(0, lastRunAt + minGapMs - now());
+    if (wait <= 0) return regenerate().then(status);
+    return new Promise((resolve) => { const timer = setTimer(() => resolve(regenerate().then(status)), wait); timer?.unref?.(); });
+  }
+  return { start, stop, notify, rebuild, status };
 }
 
 function isLoopback(address) {
@@ -1206,6 +1223,16 @@ function authorized(request) {
   return request.headers["x-momm-token"] === sessionToken;
 }
 
+// Static assets: an allowlist of path -> [file, type]. momm-theme.css is the
+// shared design system (tokens, motion, topbar, chips, tables) that index.html
+// links before styles.css and that ledger.mjs inlines into the ledger page.
+const STATIC_ASSETS = Object.freeze({
+  "/": ["index.html", "text/html; charset=utf-8"],
+  "/momm-theme.css": ["momm-theme.css", "text/css; charset=utf-8"],
+  "/styles.css": ["styles.css", "text/css; charset=utf-8"],
+  "/app.js": ["app.js", "text/javascript; charset=utf-8"],
+});
+
 function serveAsset(response, file, contentType) {
   try {
     const bytes = fs.readFileSync(path.join(assetDir, file));
@@ -1216,15 +1243,94 @@ function serveAsset(response, file, contentType) {
   }
 }
 
+// --- Setup Center <-> ledger cross-links (1.16) ------------------------------
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// file:// URL of this project's ledger for /api/status, or null until one exists.
+function ledgerFileUrl(cwd = process.cwd()) {
+  const file = path.join(cwd, ".ensemble_reviews", "ledger.html");
+  try { return fs.existsSync(file) ? pathToFileURL(file).href : null; } catch { return null; }
+}
+
+// The ledger carries one inline <style> (the shared theme plus its own rules)
+// and one inline <script> (theme toggle, read-aloud, link rewrite). Serving it
+// from this origin keeps the dashboard CSP strict by allowing exactly those
+// blocks, by hash, and nothing else inline.
+function inlineHashes(html, tag) {
+  const pattern = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g");
+  return Array.from(html.matchAll(pattern), (match) => `'sha256-${crypto.createHash("sha256").update(match[1], "utf8").digest("base64")}'`);
+}
+function ledgerHeaders(html) {
+  const styles = inlineHashes(html, "style"), scripts = inlineHashes(html, "script");
+  return {
+    ...securityHeaders("text/html; charset=utf-8"),
+    "Content-Security-Policy": `default-src 'none'; img-src data:; style-src ${styles.join(" ") || "'none'"}; script-src ${scripts.join(" ") || "'none'"}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+  };
+}
+const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>. Run a momm review from that directory first; the ledger is built from its telemetry.</p><p><a href="/">Back to the Setup Center</a></p>`;
+
+// GET /ledger — the private ledger on this origin, so the dashboard's pill needs
+// no file:// hop. Regenerated first when missing or older than the telemetry it
+// summarises, through the watcher's rebuild (the same runNode(ledger.mjs) path,
+// the same minimum gap); 404 with a short page when the project has no
+// .ensemble_reviews at all. Returns what it did, for the self-test.
+async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (ledgerWatcher ? ledgerWatcher.rebuild() : runNode(ledgerScript, [], { timeoutMs: 60_000 })), fsx = fs } = {}) {
+  const dir = path.join(cwd, ".ensemble_reviews"), file = path.join(dir, "ledger.html");
+  const send = (status, headers, body) => { response.writeHead(status, headers); response.end(body); };
+  if (!fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd)); return { status: 404, rebuilt: false }; }
+  const mtime = (name) => { try { return fsx.statSync(path.join(dir, name)).mtimeMs; } catch { return -Infinity; } };
+  const newestTelemetry = Math.max(...[...LEDGER_FILES].map(mtime));
+  const stale = !fsx.existsSync(file) || mtime("ledger.html") < newestTelemetry;
+  let rebuildError = null;
+  if (stale) { try { await rebuild(); } catch (error) { rebuildError = safeDetail(error.message); } }
+  let html;
+  try { html = fsx.readFileSync(file, "utf8"); }
+  catch {
+    send(404, securityHeaders("text/html; charset=utf-8"), `<!doctype html><meta charset="utf-8"><title>Ledger not built</title><h1>The ledger could not be built</h1><p>${escapeHtml(rebuildError || "ledger.mjs wrote no page")}</p><p><a href="/">Back to the Setup Center</a></p>`);
+    return { status: 404, rebuilt: stale };
+  }
+  send(200, ledgerHeaders(html), html);
+  return { status: 200, rebuilt: stale };
+}
+
+// Ledger -> Setup Center: while the server runs, .ensemble_reviews/setup-center.json
+// names its loopback URL and pid (mode 0600). ledger.mjs reads it at build time
+// and, when that pid is alive, links straight back here; a file left by a crash
+// fails the pid check there and is overwritten by the next start. Written only
+// where .ensemble_reviews already exists — the ledger lives nowhere else — and
+// removed on server close, process exit and the terminating signals. remove()
+// deletes only a file that names this pid, never another Setup Center's.
+function createSetupCenterPointer({ cwd = process.cwd(), pid = process.pid, proc = process, fsx = fs } = {}) {
+  const dir = path.join(cwd, ".ensemble_reviews"), file = path.join(dir, "setup-center.json");
+  let written = false;
+  const remove = () => {
+    if (!written) return false;
+    written = false;
+    try { if (JSON.parse(fsx.readFileSync(file, "utf8")).pid !== pid) return false; } catch { return false; }
+    try { fsx.rmSync(file, { force: true }); return true; } catch { return false; }
+  };
+  const write = (url) => {
+    if (!fsx.existsSync(dir)) return false;
+    try {
+      fsx.rmSync(file, { force: true }); // create fresh so the 0600 mode applies (ignored when overwriting)
+      fsx.writeFileSync(file, `${JSON.stringify({ url, pid, started_at: new Date().toISOString() })}\n`, { mode: 0o600 });
+    } catch { return false; }
+    written = true;
+    proc.once?.("exit", remove);
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) proc.once?.(signal, () => { remove(); proc.exit?.(0); });
+    return true;
+  };
+  return { write, remove, file };
+}
+
 function createServer() {
   return http.createServer(async (request, response) => {
     if (!isLoopback(request.socket.remoteAddress)) return sendJson(response, 403, { error: "Loopback access only" });
     if (!isAllowedHost(request)) return sendJson(response, 403, { error: "Invalid Host header" });
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     try {
-      if (request.method === "GET" && requestUrl.pathname === "/") return serveAsset(response, "index.html", "text/html; charset=utf-8");
-      if (request.method === "GET" && requestUrl.pathname === "/styles.css") return serveAsset(response, "styles.css", "text/css; charset=utf-8");
-      if (request.method === "GET" && requestUrl.pathname === "/app.js") return serveAsset(response, "app.js", "text/javascript; charset=utf-8");
+      if (request.method === "GET" && Object.hasOwn(STATIC_ASSETS, requestUrl.pathname)) return serveAsset(response, ...STATIC_ASSETS[requestUrl.pathname]);
+      if (request.method === "GET" && requestUrl.pathname === "/ledger") return serveLedger(response);
       if (request.method === "GET" && requestUrl.pathname === "/api/session") {
         return sendJson(response, 200, { token: sessionToken, platform: platformKey(), providers });
       }
@@ -1232,7 +1338,7 @@ function createServer() {
         if (!authorized(request)) return sendJson(response, 403, {error:'Invalid local session'});
         const governor = String(requestUrl.searchParams.get("governor") || "codex").toLowerCase();
         if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
-        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null });
+        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null, ledger_url: ledgerFileUrl() });
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/guidance") {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
@@ -1303,6 +1409,7 @@ function createServer() {
         if (requestUrl.pathname === "/api/shutdown") {
           sendJson(response, 202, { closing: true });
           ledgerWatcher?.stop();
+          setupPointer?.remove?.();
           processScope.stop({graceful:true});
           activeServer?.close();
           setTimeout(() => { processScope.force(); activeServer?.closeAllConnections?.(); process.exit(0); }, 1200);
@@ -1687,6 +1794,65 @@ async function dashboardRegression() {
     rp.gone = false; rp.identity = 3; rp.callback("rename", path.basename(replacedDir)); // a straggling event after stop
     const stayedStopped = rp.attempts === 2 && replacedWatcher.status().watching === false && rp.timers.every((timer) => timer.cleared);
     checks.ledger_watcher_reattaches_when_directory_replaced = unrelatedIgnored && reattached && vanished && stayedStopped;
+    // rebuild(): GET /ledger's on-demand path awaits an in-flight run rather than doubling it, and waits out the 5 s gap.
+    const rb = { runs: 0, timers: [], release: null };
+    const rebuildWatcher = createLedgerWatcher({ dir: root, run: () => { rb.runs += 1; return new Promise((resolve) => { rb.release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms }; rb.timers.push(timer); return timer; }, clearTimer: () => {}, watch: () => ({ on() {}, close() {} }) });
+    const rbFirst = rebuildWatcher.rebuild(); const rbSecond = rebuildWatcher.rebuild(); // second arrives mid-run
+    const oneRunForTwoRequests = rb.runs === 1 && rebuildWatcher.status().running === true;
+    rb.release(); const [firstState, secondState] = await Promise.all([rbFirst, rbSecond]);
+    const bothServedByThatRun = firstState.regenerations === 1 && secondState.regenerations === 1 && rb.runs === 1 && rb.timers.length === 0;
+    clockNow += 2000; const rbThird = rebuildWatcher.rebuild(); // inside the gap: deferred by the remainder
+    const deferred = rb.runs === 1 && rb.timers.length === 1 && rb.timers[0].ms === 3000;
+    rb.timers[0].fn(); await macrotask(); rb.release(); const thirdState = await rbThird;
+    checks.ledger_rebuild_awaits_inflight_and_respects_gap = oneRunForTwoRequests && bothServedByThatRun && deferred && rb.runs === 2 && thirdState.regenerations === 2;
+    // /api/status.ledger_url: null until a ledger exists, then a file:// URL to it.
+    const luFx = fixture("ledger-url");
+    const nullBefore = ledgerFileUrl(luFx.cwd) === null;
+    fs.mkdirSync(path.join(luFx.cwd, ".ensemble_reviews"), { recursive: true }); fs.writeFileSync(path.join(luFx.cwd, ".ensemble_reviews", "ledger.html"), "<!doctype html>");
+    const luAfter = ledgerFileUrl(luFx.cwd);
+    checks.status_ledger_url_is_null_then_file_url = nullBefore && typeof luAfter === "string" && luAfter.startsWith("file:///") && luAfter.endsWith("/.ensemble_reviews/ledger.html") && fileURLToPath(luAfter) === path.join(luFx.cwd, ".ensemble_reviews", "ledger.html");
+    // GET /ledger: 404 without .ensemble_reviews; serves a fresh page without rebuilding; rebuilds a missing or stale one first.
+    const fakeResponse = () => { const r = { status: null, headers: null, body: null, writeHead(status, headers) { r.status = status; r.headers = headers; }, end(body) { r.body = String(body); } }; return r; };
+    const noDir = fixture("ledger-route-none"); const none = fakeResponse();
+    const noneResult = await serveLedger(none, { cwd: noDir.cwd, rebuild: async () => { throw new Error("must not rebuild without a directory"); } });
+    const missing404 = noneResult.status === 404 && none.status === 404 && none.headers["Content-Type"].startsWith("text/html") && none.body.includes("No ledger yet") && none.body.includes(escapeHtml(noDir.cwd));
+    const lr = fixture("ledger-route"); const lrDir = path.join(lr.cwd, ".ensemble_reviews"); fs.mkdirSync(lrDir, { recursive: true });
+    const page = (n) => `<!doctype html><meta charset="utf-8"><title>L</title><style>body{color:red}</style><p>ledger ${n}</p><script>console.log(${n});</script>`;
+    let rebuilds = 0; const rebuild = async () => { rebuilds += 1; fs.writeFileSync(path.join(lrDir, "ledger.html"), page(rebuilds)); const t = new Date(Date.now() + 5000); fs.utimesSync(path.join(lrDir, "ledger.html"), t, t); };
+    fs.writeFileSync(path.join(lrDir, "review-log.jsonl"), "{}\n");
+    const built = fakeResponse(); const builtResult = await serveLedger(built, { cwd: lr.cwd, rebuild });
+    const missingPageBuilt = builtResult.status === 200 && builtResult.rebuilt === true && rebuilds === 1 && built.body.includes("ledger 1") && built.headers["Content-Type"] === "text/html; charset=utf-8";
+    const csp = built.headers["Content-Security-Policy"];
+    const hashOf = (text) => `'sha256-${crypto.createHash("sha256").update(text, "utf8").digest("base64")}'`;
+    const hashedInline = csp.includes(`style-src ${hashOf("body{color:red}")}`) && csp.includes(`script-src ${hashOf("console.log(1);")}`) && !csp.includes("unsafe-inline") && csp.includes("frame-ancestors 'none'");
+    const fresh = fakeResponse(); const freshResult = await serveLedger(fresh, { cwd: lr.cwd, rebuild });
+    const freshServedAsIs = freshResult.status === 200 && freshResult.rebuilt === false && rebuilds === 1 && fresh.body.includes("ledger 1");
+    const later = new Date(Date.now() + 10_000); fs.utimesSync(path.join(lrDir, "review-log.jsonl"), later, later); // telemetry newer than the page
+    const staleRes = fakeResponse(); const staleResult = await serveLedger(staleRes, { cwd: lr.cwd, rebuild });
+    const staleRebuilt = staleResult.status === 200 && staleResult.rebuilt === true && rebuilds === 2 && staleRes.body.includes("ledger 2");
+    const failFx = fixture("ledger-route-failing"); fs.mkdirSync(path.join(failFx.cwd, ".ensemble_reviews"), { recursive: true });
+    const failed = fakeResponse(); const failedResult = await serveLedger(failed, { cwd: failFx.cwd, rebuild: async () => { throw new Error("ledger exploded"); } });
+    const failureIsA404 = failedResult.status === 404 && failed.body.includes("ledger exploded") && failed.headers["Content-Type"].startsWith("text/html");
+    checks.ledger_route_serves_rebuilds_when_stale_and_404s_without_directory = missing404 && missingPageBuilt && hashedInline && freshServedAsIs && staleRebuilt && failureIsA404;
+    // setup-center.json: written 0600 on start with url/pid/started_at, removed on shutdown, never written without .ensemble_reviews, never removes another pid's file.
+    const sp = fixture("setup-pointer"); const spDir = path.join(sp.cwd, ".ensemble_reviews");
+    const fakeProc = { handlers: {}, once(name, fn) { (this.handlers[name] ??= []).push(fn); }, exit() { this.exited = true; } };
+    const absent = createSetupCenterPointer({ cwd: sp.cwd, pid: 4242, proc: fakeProc });
+    const notWrittenWithoutDir = absent.write("http://127.0.0.1:1/") === false && !fs.existsSync(absent.file);
+    fs.mkdirSync(spDir, { recursive: true });
+    const pointer = createSetupCenterPointer({ cwd: sp.cwd, pid: 4242, proc: fakeProc });
+    const wrote = pointer.write("http://127.0.0.1:4321/") === true && fs.existsSync(pointer.file);
+    const pointerBody = wrote ? JSON.parse(fs.readFileSync(pointer.file, "utf8")) : {};
+    const shape = pointerBody.url === "http://127.0.0.1:4321/" && pointerBody.pid === 4242 && Number.isFinite(Date.parse(pointerBody.started_at));
+    const pointerMode = wrote ? fs.statSync(pointer.file).mode & 0o777 : null;
+    const ownerOnly = process.platform === "win32" ? pointerMode !== null : pointerMode === 0o600;
+    const hooked = Array.isArray(fakeProc.handlers.exit) && Array.isArray(fakeProc.handlers.SIGINT) && Array.isArray(fakeProc.handlers.SIGTERM);
+    fs.writeFileSync(path.join(spDir, "setup-center.json"), JSON.stringify({ url: "http://127.0.0.1:9/", pid: 9999 }));
+    const keepsOthers = pointer.remove() === false && fs.existsSync(pointer.file);
+    const again = createSetupCenterPointer({ cwd: sp.cwd, pid: 4242, proc: fakeProc }); again.write("http://127.0.0.1:4321/");
+    fakeProc.handlers.SIGINT.at(-1)();
+    const removedOnSignal = !fs.existsSync(again.file) && fakeProc.exited === true;
+    checks.setup_center_pointer_written_0600_and_removed = notWrittenWithoutDir && wrote && shape && ownerOnly && hooked && keepsOthers && removedOnSignal;
   } catch (error) {
     recordRegressionThrow(checks, error);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -1738,11 +1904,29 @@ async function selfTest() {
       && sampleEnvironment.model_overrides_present[0] === "COPILOT_MODEL"
       && sampleEnvironment.endpoint_overrides_present[0] === "OPENAI_BASE_URL",
     version_comparison: compareVersions("1.9.0", "1.8.9") === 1 && compareVersions("1.8.0", "1.8.0") === 0 && compareVersions("1.7.9", "1.8.0") === -1,
-    assets_present: ["index.html", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
+    assets_present: ["index.html", "momm-theme.css", "styles.css", "app.js"].every((file) => fs.existsSync(path.join(assetDir, file))),
     theme_toggle_markup_present: (() => {
       try {
-        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
-        return html.includes('id="theme-toggle"') && js.includes("momm-setup-theme") && js.includes('setAttribute("data-theme"') && css.includes('[data-theme="dark"]') && css.includes("prefers-color-scheme: dark");
+        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "momm-theme.css"), "utf8");
+        return html.includes('id="theme-toggle"') && js.includes("momm-setup-theme") && js.includes('setAttribute("data-theme"') && css.includes('[data-theme="dark"]') && css.includes("prefers-color-scheme: dark") && css.includes(".theme-toggle") && css.includes(".orbit");
+      } catch { return false; }
+    })(),
+    // One design system: the theme is served as CSS and linked before styles.css.
+    theme_asset_served_as_css: STATIC_ASSETS["/momm-theme.css"]?.[0] === "momm-theme.css" && STATIC_ASSETS["/momm-theme.css"]?.[1] === "text/css; charset=utf-8"
+      && (() => { try { const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"); const theme = html.indexOf('href="/momm-theme.css"'), styles = html.indexOf('href="/styles.css"'); return theme >= 0 && styles > theme; } catch { return false; } })(),
+    // Single source of tokens: every shared token is declared in the theme and none is redefined by styles.css.
+    styles_never_redefine_theme_tokens: (() => {
+      try {
+        const theme = fs.readFileSync(path.join(assetDir, "momm-theme.css"), "utf8"), styles = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
+        const tokens = ["ink", "muted", "paper", "card", "line", "green", "green-bright", "mint", "amber", "amber-soft", "red", "red-soft", "shadow", "glass", "pill", "hairline", "toast-bg", "toast-ink", "light-button-bg", "light-button-ink", "on-green", "font-display", "font-sans", "font-mono", "ease", "dur", "dur-fast"];
+        const declared = (css, name) => new RegExp(`--${name}\\s*:`).test(css);
+        return tokens.every((name) => declared(theme, name) && !declared(styles, name)) && !/(^|\s):root(?:\[data-theme="dark"\]|:not\(\[data-theme="light"\]\))?\s*\{/m.test(styles) && !/@keyframes (rise|sweep|pulse|toast-in|breathe)/.test(styles);
+      } catch { return false; }
+    })(),
+    ledger_nav_pill_present: (() => {
+      try {
+        const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8");
+        return html.includes('class="momm-nav"') && html.includes('id="ledger-link" href="/ledger"') && html.includes('class="momm-topbar"') && js.includes("report.ledger_url");
       } catch { return false; }
     })(),
     new_panels_present_in_ui: (() => {
@@ -1762,12 +1946,13 @@ async function selfTest() {
 // Bind before anything with side effects: the ledger watcher starts only once
 // the socket is listening, and a failed bind stops it again so no watcher
 // outlives a server that never came up.
-function startSetupCenter({ server, watcher, clock, port, browser }) {
+function startSetupCenter({ server, watcher, clock, port, browser, pointer }) {
   server.on("error", (error) => {
     watcher?.stop();
     process.stderr.write(`MOMM Setup Center could not start: ${safeDetail(error.message)}\n`);
     process.exitCode = 1;
   });
+  server.on("close", () => pointer?.remove?.());
   server.listen(port, "127.0.0.1", () => {
     const address = server.address();
     const url = `http://127.0.0.1:${address.port}/`;
@@ -1775,6 +1960,7 @@ function startSetupCenter({ server, watcher, clock, port, browser }) {
     process.stdout.write("Local-only. No source code or credential contents are read during setup.\n");
     if (browser) openBrowser(url);
     triggerClock(clock, "setup.open"); // fire-and-forget; due sources only; triggerClock never rejects
+    pointer?.write?.(url); // the ledger links back here while this pid is alive
     watcher?.start();
   });
 }
@@ -1788,5 +1974,6 @@ else {
   activeServer = createServer();
   updateClock = createServerClock();
   ledgerWatcher = createLedgerWatcher({ dir: path.join(process.cwd(), ".ensemble_reviews"), run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) });
-  startSetupCenter({ server: activeServer, watcher: ledgerWatcher, clock: updateClock, port: options.port, browser: options.browser });
+  setupPointer = createSetupCenterPointer();
+  startSetupCenter({ server: activeServer, watcher: ledgerWatcher, clock: updateClock, port: options.port, browser: options.browser, pointer: setupPointer });
 }

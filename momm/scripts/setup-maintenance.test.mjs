@@ -87,7 +87,10 @@ function handler(body,token=true,extra={}) {
     sendJson:(_,status,value)=>({status,value}),readBody:async()=>body,actionCommand:()=> 'codex update',launchTerminal:()=>{launched++;return true;},
     actionNote:()=>'',readiness:async()=>({routes:[]}),safeDetail:s=>s,
     // 1.16: module-level singletons the server reads; absent under test so the routes must degrade, not throw.
-    ledgerWatcher:{status:()=>({watching:true,last_regenerated_at:'2026-09-13T00:00:00.000Z'})},updateClock:null,
+    ledgerWatcher:{status:()=>({watching:true,last_regenerated_at:'2026-09-13T00:00:00.000Z'})},updateClock:null,setupPointer:null,
+    // 1.16 cross-links: the static allowlist and the ledger route are stubbed so the dispatch itself is what is under test.
+    STATIC_ASSETS:{'/':['index.html','text/html; charset=utf-8'],'/momm-theme.css':['momm-theme.css','text/css; charset=utf-8'],'/styles.css':['styles.css','text/css; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8']},
+    serveAsset:(_,file,contentType)=>({status:200,asset:file,contentType}),serveLedger:async()=>({status:200,ledger:true}),ledgerFileUrl:()=>'file:///C:/proj/.ensemble_reviews/ledger.html',Object,
     guidanceSnapshot:()=>({project:null}),usageReport:()=>({rows:[]}),clockSnapshot:()=>({}),saveGuidance:()=>({status:200,value:{}}),handleUpdateClock:async()=>({status:503,value:{error:'no clock'}}),GUIDANCE_BODY_LIMIT:65536,
     maintenanceReport:async()=>({cli_updates:[]}),triggerClock:()=>Promise.resolve(null),maintenanceCache:null},...extra});
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
@@ -104,12 +107,25 @@ await test('matching action confirmation launches and supplied mismatches never 
 await test('readiness endpoint requires local session before spawning probes',async()=>{
   const h=handler({},false);const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});assert.equal(r.status,403);
 });
-await test('status carries the ledger regeneration time; new GET routes need the session token too',async()=>{
+await test('status carries the ledger regeneration time and ledger_url; new GET routes need the session token too',async()=>{
   const h=handler({});const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});
   assert.equal(r.status,200);assert.equal(r.value.ledger.last_regenerated_at,'2026-09-13T00:00:00.000Z');assert.deepEqual(r.value.routes,[]);
+  assert.equal(r.value.ledger_url,'file:///C:/proj/.ensemble_reviews/ledger.html','ledger_url is the file URL the server computed, or null');
+  const none=await handler({},true,{ledgerFileUrl:()=>null}).serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});assert.equal(none.value.ledger_url,null);
   for(const route of ['/api/guidance','/api/usage','/api/update-clock']){const denied=await handler({},false).serve({method:'GET',url:route,socket:{}},{});assert.equal(denied.status,403,route);}
   const noClock=await h.serve({method:'GET',url:'/api/update-clock',socket:{}},{});assert.equal(noClock.status,503,'no clock under --self-test degrades to 503, never a crash');
   const post=await handler({op:'set',patch:{}}).serve({method:'POST',url:'/api/update-clock',socket:{}},{});assert.equal(post.status,503);
+});
+await test('the shared theme is served as CSS before styles.css, and /ledger dispatches to the ledger route without a session token',async()=>{
+  const h=handler({},false);
+  const theme=await h.serve({method:'GET',url:'/momm-theme.css',socket:{}},{});assert.equal(theme.asset,'momm-theme.css');assert.equal(theme.contentType,'text/css; charset=utf-8');
+  const styles=await h.serve({method:'GET',url:'/styles.css',socket:{}},{});assert.equal(styles.contentType,'text/css; charset=utf-8');
+  const page=await h.serve({method:'GET',url:'/',socket:{}},{});assert.equal(page.asset,'index.html');
+  const ledger=await h.serve({method:'GET',url:'/ledger',socket:{}},{});assert.equal(ledger.ledger,true,'the ledger is a page, not an API call: same-origin navigation carries no token');
+  for(const url of ['/constructor','/__proto__','/hasOwnProperty','/ledger.html','/momm-theme.css.map']){const r=await h.serve({method:'GET',url,socket:{}},{});assert.equal(r.status,404,url);}
+  const html=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
+  assert(html.indexOf('href="/momm-theme.css"')>=0&&html.indexOf('href="/momm-theme.css"')<html.indexOf('href="/styles.css"'),'theme linked before the page styles');
+  assert.match(html,/<nav class="momm-nav"[^>]*><a id="ledger-link" href="\/ledger"/,'topbar nav pill to the private ledger');
 });
 // post-update-clock-null: the POST route must answer 503 itself when no clock runs,
 // exactly as GET does, instead of trusting the handler to notice a null clock.
@@ -280,6 +296,13 @@ await test('ledger watcher starts after listen succeeds and is stopped when list
     c.start({server:fakeServer(fail),watcher:fakeWatcher(),clock:{},port:0,browser:true});return c;};
   run(false);
   assert(events.includes('watcher.start'),'a successful bind starts the watcher: '+events.join(' | '));
+  const pointerEvents=[];const pointer={write(url){pointerEvents.push(`write ${url}`);return true;},remove(){pointerEvents.push('remove');return true;}};
+  {const handlers={};const server={on(name,fn){handlers[name]=fn;},listen(_p,_h,cb){cb();},address:()=>({port:4321})};
+    const c=vm.createContext({process:{stdout:{write(){}},stderr:{write(){}},exitCode:0},openBrowser(){},triggerClock:()=>Promise.resolve(null),safeDetail:s=>String(s),Promise});
+    vm.runInContext(source.slice(a,b)+';this.start=startSetupCenter;',c);
+    c.start({server,watcher:fakeWatcher(),clock:{},port:0,browser:false,pointer});
+    assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/'],'setup-center.json is written with the bound URL once listening');
+    handlers.close();assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/','remove'],'and removed when the server closes');}
   assert(events.indexOf('watcher.start')>events.indexOf('listen 127.0.0.1:0'),'watcher must not start before bind: '+events.join(' | '));
   assert(events.includes('out MOMM Setup Center: http://127.0.0.1:4321/'));assert(events.includes('browser'));assert(events.includes('clock'));
   const c=run(true);
@@ -327,7 +350,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -585,14 +608,15 @@ await test('a POST before the session is ready rejects with a plain error, never
 // toast and the light primary button take their pair from tokens that both
 // palettes define with WCAG AA contrast; .guidance-user is a grid on its own.
 const css=fs.readFileSync(new URL('../assets/setup-ui/styles.css',import.meta.url),'utf8');
+const theme=fs.readFileSync(new URL('../assets/setup-ui/momm-theme.css',import.meta.url),'utf8');
 function luminance(hex){const m=/^#([0-9a-f]{6})$/i.exec(hex.trim());assert(m,`not a 6-digit hex colour: ${hex}`);const [r,g,b]=[0,2,4].map(i=>parseInt(m[1].slice(i,i+2),16)/255).map(c=>c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4);return 0.2126*r+0.7152*g+0.0722*b;}
 function contrast(a,b){const [hi,lo]=[luminance(a),luminance(b)].sort((x,y)=>y-x);return (hi+0.05)/(lo+0.05);}
-function block(selector){const i=css.indexOf(selector);assert(i>=0,`missing rule ${selector}`);const open=css.indexOf('{',i),close=css.indexOf('}',open);return css.slice(open+1,close);}
+function block(selector,source=css){const i=source.indexOf(selector);assert(i>=0,`missing rule ${selector}`);const open=source.indexOf('{',i),close=source.indexOf('}',open);return source.slice(open+1,close);}
 function token(body,name){const m=new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(body);assert(m,`token ${name} not declared in this palette`);return m[1].trim();}
 await test('WCAG helper sanity',()=>{assert(Math.abs(contrast('#ffffff','#000000')-21)<0.01);assert(contrast('#ffffff','#e6ffe6')<1.1,'the reported white-on-dark-ink toast really was unreadable');assert(contrast('#00c27a','#ffffff')<3,'the reported dark --green on a white button really failed AA');});
 for(const [palette,selector] of [['light',':root {'],['dark toggle',':root[data-theme="dark"]'],['dark system',':root:not([data-theme="light"])']]){
   await test(`${palette} palette declares toast and light-button pairs with contrast >= 4.5:1`,()=>{
-    const body=block(selector);
+    const body=block(selector,theme);
     for(const [bg,ink] of [['--toast-bg','--toast-ink'],['--light-button-bg','--light-button-ink']]){
       const ratio=contrast(token(body,bg),token(body,ink));assert(ratio>=4.5,`${palette} ${ink} on ${bg} is ${ratio.toFixed(2)}:1`);
     }
@@ -603,5 +627,26 @@ await test('toast and light primary button read their colours from the tokens, n
   const button=block('.button.primary.light {');assert.match(button,/color:\s*var\(--light-button-ink\)/);assert.match(button,/background:\s*var\(--light-button-bg\)/);assert(!/\bwhite\b/.test(button));
 });
 await test('.guidance-user establishes its own grid',()=>{assert.match(block('.guidance-user {'),/display:\s*grid/);});
+// single-source-tokens: the theme declares every shared token in all three palettes and styles.css declares none of them;
+// both pages read the same chip and table rules from the theme.
+await test('momm-theme.css is the single source of tokens; styles.css keeps layout only',()=>{
+  const tokens=['--ink','--muted','--paper','--card','--line','--green','--green-bright','--mint','--amber','--amber-soft','--red','--red-soft','--shadow','--glass','--pill','--hairline','--toast-bg','--toast-ink','--light-button-bg','--light-button-ink','--on-green'];
+  for(const selector of [':root {',':root[data-theme="dark"]',':root:not([data-theme="light"])']){const body=block(selector,theme);for(const name of tokens)token(body,name);}
+  for(const name of [...tokens,'--font-display','--font-sans','--font-mono','--ease','--dur','--dur-fast'])assert(!new RegExp(`${name}\\s*:`).test(css),`${name} must not be redefined in styles.css`);
+  assert(!/^:root\s*\{/m.test(css),'styles.css has no :root palette block');
+  for(const rule of ['.theme-toggle {','.orbit {','.momm-topbar {','.momm-brand-mark {','.momm-nav a,','.chip {','.chip-good,','.chip-bad,','.momm-table {','@keyframes rise','@keyframes toast-in','html.theme-switching'])assert(theme.includes(rule),`theme carries ${rule}`);
+  for(const rule of ['@keyframes rise','.theme-toggle {','.orbit {','.chip {','.momm-table {'])assert(!css.includes(rule),`styles.css no longer carries ${rule}`);
+});
+await test('the dashboard emits the shared chip classes and tables compose .momm-table',()=>{
+  const c=ui();const names=['codex','claude','gemini','antigravity','copilot','grok'];
+  c.init({platform:'win32',providers:Object.fromEntries(names.map(n=>[n,{label:n,docs:'https://example.invalid'}]))},{cli_updates:[{agent:'grok',current:'1.0.0',latest:'1.1.0',status:'update_available',update_command:'grok update'}],models:[]});
+  const detected=c.core.providerCard({agent:'codex',installed:true,ready:true,version:'1.0.0'}),missing=c.core.providerCard({agent:'grok',installed:false,ready:false});
+  assert.match(detected,/class="chip status chip-warn"/,'a detected-but-unverified route is an amber chip');assert.match(missing,/class="chip status chip-warn"/);
+  c.pass('codex');assert.match(c.core.providerCard({agent:'codex',installed:true,ready:true,version:'1.0.0'}),/class="chip status chip-good"/,'a verified route is a green chip');
+  c.fail('codex',{route_status:'error'});assert.match(c.core.providerCard({agent:'codex',installed:true,ready:true,version:'1.0.0'}),/class="chip status chip-bad"/);
+  for(const html of [detected,missing])assert(!/class="status (ready|login|install|failed)"/.test(html),'no legacy colour classes remain');
+  assert.match(c.core.miniStatus('current'),/^<span class="chip chip-good mini-status">/);assert.match(c.core.miniStatus('missing'),/chip chip-bad/);assert.match(c.core.miniStatus('unknown'),/chip chip-neutral/);
+  assert.equal((client.match(/<table class="momm-table cli-table/g)||[]).length,3,'every dashboard table composes the shared table rules');
+});
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

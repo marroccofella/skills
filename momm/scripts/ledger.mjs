@@ -22,6 +22,76 @@ import { inspectCompletion } from "./governor.mjs";
 // shows (rebuild, --rate) is copy-pasteable from any project directory.
 const LEDGER_CMD = `node "${fileURLToPath(import.meta.url)}"`;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+
+// One design system for the Setup Center and this page: the shared theme
+// (tokens, motion, topbar, chips, tables) is read from the installed skill at
+// build time and inlined, so the palette has exactly one source. A missing
+// theme is a broken install and fails loudly rather than shipping a second one.
+const THEME_PATH = path.join(scriptDir, "..", "assets", "setup-ui", "momm-theme.css");
+function readTheme() {
+  try { return fs.readFileSync(THEME_PATH, "utf8"); }
+  catch (error) { throw new Error(`momm-theme.css not found at ${THEME_PATH} (${error.code ?? error.message}); the ledger shares the Setup Center's theme and cannot build without it`); }
+}
+
+// Ledger -> Setup Center. While it runs, the Setup Center writes
+// .ensemble_reviews/setup-center.json ({ url, pid, started_at }) and removes it
+// on exit. The pill links to that URL only when the pid is still alive AND the
+// URL is loopback http; otherwise it shows the exact command that starts the
+// Setup Center from this install. A stale file (crash, power loss) therefore
+// never yields a dead link, and nothing but a loopback URL is ever embedded.
+const SETUP_CENTER_CMD = `node "${path.join(scriptDir, "setup-ui.mjs")}"`;
+const isLoopbackUrl = (value) => {
+  try { const u = new URL(value); return u.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname) && u.username === "" && u.password === ""; }
+  catch { return false; }
+};
+const pidAlive = (pid) => { try { return process.kill(pid, 0); } catch (error) { return error?.code === "EPERM"; } };
+function readSetupCenterPointer(dir) {
+  try { const value = JSON.parse(fs.readFileSync(path.join(dir, "setup-center.json"), "utf8")); return value && typeof value === "object" ? value : null; }
+  catch { return null; }
+}
+function resolveSetupCenterLink(pointer, { isAlive = pidAlive, command = SETUP_CENTER_CMD } = {}) {
+  const pid = Number(pointer?.pid), url = pointer?.url;
+  if (pointer && Number.isInteger(pid) && pid > 0 && typeof url === "string" && isLoopbackUrl(url) && isAlive(pid)) return { kind: "live", url, pid };
+  return { kind: "command", command };
+}
+function setupCenterPill(link) {
+  return link.kind === "live"
+    ? `<a id="setup-center-link" href="${esc(link.url)}" title="The Setup Center running now (pid ${esc(link.pid)})">Setup Center</a>`
+    : `<code title="The Setup Center is not running. Run this from any directory to open it; the next rebuild links here live.">${esc(link.command)}</code>`;
+}
+
+// Inline page scripts, kept as string constants so the self-test can exercise
+// them. Theme: same behaviour as the dashboard (system preference by default, an
+// explicit choice remembered per browser, one beat of eased colour on switch,
+// a live label saying what you will get). Served: when this page arrives over
+// http from the Setup Center, the pill becomes a relative link to it.
+const THEME_SCRIPT = `(() => {
+  const root = document.documentElement, key = "momm-ledger-theme";
+  let saved = null; try { saved = localStorage.getItem(key); } catch {}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  const button = document.getElementById("theme-toggle");
+  if (!button) return;
+  const isDark = () => { const explicit = root.getAttribute("data-theme"); return explicit ? explicit === "dark" : (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches); };
+  const label = () => { const el = document.getElementById("theme-label"); if (el) el.textContent = isDark() ? "Light" : "Dark"; button.setAttribute("aria-pressed", isDark() ? "true" : "false"); };
+  label();
+  button.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    root.classList.add("theme-switching");
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch {}
+    label();
+    setTimeout(() => root.classList.remove("theme-switching"), 450);
+  });
+})();`;
+const SERVED_LINK_SCRIPT = `(() => {
+  if (location.protocol !== "http:" && location.protocol !== "https:") return;
+  const pill = document.getElementById("setup-center-pill");
+  if (!pill) return;
+  const link = document.createElement("a");
+  link.id = "setup-center-link"; link.href = "/"; link.textContent = "Setup Center"; link.title = "The Setup Center serving this page";
+  pill.replaceChildren(link);
+})();`;
 
 // Read-aloud narration: composed ONLY from structured, closed-vocabulary
 // fields (statuses, verdicts, severity counts, disposition tallies) plus the
@@ -417,6 +487,65 @@ function ledgerSelfTest() {
           && ["Grok!", "a b", "x".repeat(41), "grok/../x", "<b>", "grok\n", "gr.ok"].every((name) => rejects(["rev_1", name, "5"]));
       } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     })(),
+    // Setup Center link resolver: alive pid + loopback URL -> live link; dead pid, missing file, or any non-loopback URL -> the start command.
+    setup_center_link_resolves_alive_dead_and_missing: (() => {
+      const alive = resolveSetupCenterLink({ url: "http://127.0.0.1:4321/", pid: 4321 }, { isAlive: (pid) => pid === 4321, command: "CMD" });
+      const dead = resolveSetupCenterLink({ url: "http://127.0.0.1:4321/", pid: 4321 }, { isAlive: () => false, command: "CMD" });
+      const missing = resolveSetupCenterLink(null, { isAlive: () => true, command: "CMD" });
+      const v6 = resolveSetupCenterLink({ url: "http://[::1]:5/", pid: 7 }, { isAlive: () => true, command: "CMD" });
+      const foreign = ["http://evil.example/", "http://127.0.0.1.evil.example/", "https://127.0.0.1/", "http://user@127.0.0.1/", "file:///C:/x", "javascript:alert(1)", 42, null].map((url) => resolveSetupCenterLink({ url, pid: 7 }, { isAlive: () => true, command: "CMD" }));
+      const badPid = [0, -1, 1.5, "abc", undefined].map((pid) => resolveSetupCenterLink({ url: "http://127.0.0.1:1/", pid }, { isAlive: () => true, command: "CMD" }));
+      const livePill = setupCenterPill(alive), commandPill = setupCenterPill(dead);
+      return alive.kind === "live" && alive.url === "http://127.0.0.1:4321/" && dead.kind === "command" && dead.command === "CMD" && missing.kind === "command" && v6.kind === "live"
+        && [...foreign, ...badPid].every((r) => r.kind === "command")
+        && livePill.includes('href="http://127.0.0.1:4321/"') && livePill.includes(">Setup Center<") && commandPill.startsWith("<code") && commandPill.includes(">CMD<") && !commandPill.includes("href")
+        && SETUP_CENTER_CMD.startsWith('node "') && SETUP_CENTER_CMD.endsWith('setup-ui.mjs"') && SETUP_CENTER_CMD !== LEDGER_CMD;
+    })(),
+    served_link_script_rewrites_only_over_http: (() => {
+      const run = (protocol) => {
+        const pill = { children: null, replaceChildren(node) { this.children = node; } };
+        const doc = { getElementById: (id) => (id === "setup-center-pill" ? pill : null), createElement: () => ({}) };
+        new Function("document", "location", SERVED_LINK_SCRIPT)(doc, { protocol });
+        return pill.children;
+      };
+      const http = run("http:"), file = run("file:");
+      return http && http.href === "/" && http.textContent === "Setup Center" && file === null;
+    })(),
+    theme_script_labels_and_persists_like_the_dashboard: (() => {
+      const stored = {}; const root = { attrs: {}, classes: new Set(), getAttribute(k) { return this.attrs[k] ?? null; }, setAttribute(k, v) { this.attrs[k] = v; }, classList: { add: (c) => root.classes.add(c), remove: (c) => root.classes.delete(c) } };
+      const label = { textContent: "" }, button = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(_e, f) { this.click = f; } };
+      const doc = { documentElement: root, getElementById: (id) => ({ "theme-toggle": button, "theme-label": label })[id] ?? null };
+      new Function("document", "localStorage", "matchMedia", "setTimeout", THEME_SCRIPT)(doc, { getItem: (k) => stored[k] ?? null, setItem: (k, v) => { stored[k] = v; } }, () => ({ matches: false }), (fn) => fn());
+      const saysDark = label.textContent === "Dark" && button.attrs["aria-pressed"] === "false";
+      button.click();
+      return saysDark && root.attrs["data-theme"] === "dark" && stored["momm-ledger-theme"] === "dark" && label.textContent === "Light" && button.attrs["aria-pressed"] === "true" && !root.classes.has("theme-switching");
+    })(),
+    // The built page: shared header, the theme inlined exactly once, legacy names mapped onto shared tokens, no hex outside the theme, a live Setup Center pill for a running pid.
+    built_ledger_shares_the_theme_once_with_no_stray_hex: (() => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-theme-"));
+      try {
+        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er);
+        fs.writeFileSync(path.join(er, "review-log.jsonl"), `${JSON.stringify({ run_id: "rev_1", timestamp: new Date().toISOString(), governor: "claude", reviewer_status: { grok: "success", codex: "timeout", claude: "self_excluded" }, findings_count: 1 })}\n`);
+        fs.writeFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_1", reviewer: "grok", suggestion: "s", disposition: "applied", reason: "r" })}\n`);
+        fs.mkdirSync(path.join(er, "reports")); fs.writeFileSync(path.join(er, "reports", "rev_1.json"), JSON.stringify({ run_id: "rev_1", reviewers: [{ agent: "grok", status: "success", verdict: "MODIFY", summary: "fine" }, { agent: "codex", status: "timeout" }], findings: [{ id: "f1", severity: "WARNING", sources: ["grok"], issue: "x" }] }));
+        fs.writeFileSync(path.join(er, "setup-center.json"), JSON.stringify({ url: "http://127.0.0.1:4321/", pid: process.pid, started_at: new Date().toISOString() }));
+        const built = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { cwd: dir, encoding: "utf8", windowsHide: true, timeout: 60_000 });
+        if (built.status !== 0) return false;
+        const html = fs.readFileSync(path.join(er, "ledger.html"), "utf8"), theme = readTheme();
+        const count = (text, needle) => text.split(needle).length - 1;
+        const style = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
+        const ownRules = style.replace(theme, "");
+        const header = html.includes('class="momm-topbar"') && html.includes('class="momm-brand-mark"') && html.includes('class="momm-brand-name">momm<') && html.includes('class="momm-page-title">Private ledger<') && html.includes('id="theme-toggle"') && html.includes('class="orbit"') && html.includes('id="theme-label"');
+        const themeOnce = count(html, "/* @momm-theme") === 1 && count(html, "--paper:") === count(theme, "--paper:") + 0 && style.includes(theme);
+        const legacyMapped = /--bg:\s*var\(--paper\)/.test(ownRules) && /--panel:\s*var\(--card\)/.test(ownRules) && /--border:\s*var\(--line\)/.test(ownRules) && /--text:\s*var\(--ink\)/.test(ownRules) && /--accent:\s*var\(--green-bright\)/.test(ownRules) && /--warn:\s*var\(--amber\)/.test(ownRules) && /--crit:\s*var\(--red\)/.test(ownRules) && /--dim:\s*var\(--muted\)/.test(ownRules);
+        const noStrayHex = !/#[0-9a-fA-F]{3,8}\b/.test(ownRules) && !/\sstyle="/.test(html) && count(html, "<style>") === 1;
+        const livePill = html.includes('id="setup-center-pill"') && html.includes('id="setup-center-link" href="http://127.0.0.1:4321/"') && !html.includes(esc(SETUP_CENTER_CMD));
+        const chips = html.includes('class="chip chip-success chip-mono"') && html.includes('class="chip chip-timeout chip-mono"') && html.includes('class="chip chip-self_excluded chip-mono"') && html.includes('class="chip chip-MODIFY"') && html.includes('class="chip chip-applied"') && html.includes('class="momm-table"');
+        const copy = html.includes("Generated locally from this workspace's telemetry; it stays in .ensemble_reviews and is never published unless you choose to.") && !html.includes("Precision here is") && html.includes("every material finding still needs reproduction.");
+        const scripts = count(html, "<script>") === 1 && html.includes("momm-ledger-theme") && html.includes('getElementById("setup-center-pill")');
+        return header && themeOnce && legacyMapped && noStrayHex && livePill && chips && copy && scripts;
+      } catch { return false; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    })(),
     // End to end: --rate prints the row, then rebuilds the page in the same invocation; the page's commands quote this script's installed path.
     rate_prints_row_then_rebuilds_ledger_with_installed_path_commands: (() => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-rate-"));
@@ -428,7 +557,8 @@ function ledgerSelfTest() {
         const runLedger = (args) => spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: "utf8", windowsHide: true, timeout: 60_000 });
         const html = () => fs.readFileSync(path.join(er, "ledger.html"), "utf8");
         const plain = runLedger([]); const before = plain.status === 0 ? html() : "";
-        const emptyStateUsesInstalledPath = before.includes(`<code>${esc(LEDGER_CMD)} --rate`) && before.includes(`<code>${esc(LEDGER_CMD)}</code>`) && !/node (momm\/)?scripts\/ledger\.mjs/.test(before) && !before.includes("insufficient ratings");
+        const emptyStateUsesInstalledPath = before.includes(`<code>${esc(LEDGER_CMD)} --rate`) && before.includes(`<code>${esc(LEDGER_CMD)}</code>`) && !/node (momm\/)?scripts\/ledger\.mjs/.test(before) && !before.includes("insufficient ratings")
+          && before.includes(`>${esc(SETUP_CENTER_CMD)}</code>`) && !before.includes('id="setup-center-link"'); // no setup-center.json: the pill is the start command
         fs.rmSync(path.join(er, "ledger.html"), { force: true });
         const rated = runLedger(["--rate", "rev_1", "grok", "4", "--tags", "specific"]);
         const lines = rated.stdout.trim().split(/\r?\n/);
@@ -486,7 +616,7 @@ if (fs.existsSync(reportsDir)) {
 
 const data = {
   generated: new Date().toISOString(),
-  private_note: "This page was generated locally from your own telemetry. It lives inside .ensemble_reviews/, which stays out of git — publishing it is always your explicit act, never a default.",
+  private_note: "Generated locally from this workspace's telemetry; it stays in .ensemble_reviews and is never published unless you choose to.",
   projects: [{ name: "This workspace", root: process.cwd().replaceAll("\\", "/"), runs, dispositions, reports }],
   preflight: { routes: [], caveat: "run --preflight for live route status; this page is a snapshot of recorded evidence" },
   versions: { dispatcher: "momm ledger", repo: "github.com/marroccofella/skills" },
@@ -497,30 +627,30 @@ const HARNESS = { codex: "Codex CLI · ChatGPT OAuth", claude: "Claude Code · A
 const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).map((run) => {
   const rpt = reports[run.run_id]?.report;
   const completion = rpt?.source_snapshot ? inspectCompletion(process.cwd(), run.run_id) : null;
-  const completionLine = completion ? `<p class="dim">${completion.complete ? "Local completion evidence validated" : "Governor verification incomplete or stale"} · ${esc(completion.evidence_level)}${completion.complete ? "" : ` · ${esc([...completion.errors, ...completion.unresolved.map(i => i.reason)].join("; "))}`}</p>` : "<p class=\"dim\">Historical record — completion not validated under the current protocol.</p>";
+  const completionLine = completion ? `<p class="dim">${completion.complete ? "Local completion evidence validated" : "Governor verification incomplete or stale"} · <span class="mono">${esc(completion.evidence_level)}</span>${completion.complete ? "" : ` · ${esc([...completion.errors, ...completion.unresolved.map(i => i.reason)].join("; "))}`}</p>` : "<p class=\"dim\">Historical record — completion not validated under the current protocol.</p>";
   const runDispositions = dispositionsByRun.get(run.run_id) ?? [];
   const subject = run.label ?? "";
-  const statuses = Object.entries(run.reviewer_status ?? {}).map(([agent, status]) => `<span class="st st-${esc(status)}" title="${esc(agent)}: ${esc(status)}">${esc(agent)}</span>`).join(" ");
+  const statuses = Object.entries(run.reviewer_status ?? {}).map(([agent, status]) => `<span class="chip chip-${esc(status)} chip-mono" title="${esc(agent)}: ${esc(status)}">${esc(agent)}</span>`).join(" ");
   // "0 findings" must never masquerade as a clean pass when nothing actually
   // reviewed: a run with zero completed external routes wears an explicit
   // no-verdict badge instead of a findings count.
   const externalStatuses = Object.entries(run.reviewer_status ?? {}).filter(([, status]) => status !== "self_excluded");
   const completedCount = externalStatuses.filter(([, status]) => status === "success").length;
   const outcomeBadge = completedCount === 0
-    ? `<span class="badge-noverdict" title="No external reviewer completed — this run produced no verdict, not a clean pass">no verdict — 0/${externalStatuses.length} completed</span>`
-    : `${run.findings_count ?? 0} findings`;
+    ? `<span class="chip chip-warn" title="No external reviewer completed — this run produced no verdict, not a clean pass">no verdict — 0/${externalStatuses.length} completed</span>`
+    : `<span class="chip chip-neutral">${run.findings_count ?? 0} findings</span>`;
   const successes = rpt ? rpt.reviewers.filter((r) => r.status === "success") : [];
   const failedLine = rpt && rpt.reviewers.some((r) => r.status !== "success" && r.status !== "self_excluded")
     ? `<p class="dim">Routes without a review: ${rpt.reviewers.filter((r) => r.status !== "success" && r.status !== "self_excluded").map((r) => `${esc(r.agent)} (${esc(r.status)})`).join(", ")}.</p>` : "";
-  const detail = rpt ? `<details><summary>${successes.length ? `full transcript · ${rpt.findings.length} finding${rpt.findings.length === 1 ? "" : "s"}` : "run record · no completed reviews"} · report sha256 ${esc(reports[run.run_id].sha256.slice(0, 12))}…</summary>
+  const detail = rpt ? `<details><summary>${successes.length ? `full transcript · ${rpt.findings.length} finding${rpt.findings.length === 1 ? "" : "s"}` : "run record · no completed reviews"} · report sha256 <code class="hash">${esc(reports[run.run_id].sha256.slice(0, 12))}…</code></summary>
     ${failedLine}
     ${completionLine}
-    ${successes.map((r) => `<div class="rev"><b>${esc(r.agent)}</b> <span class="dim">${esc(HARNESS[r.agent] ?? "")}${r.persona ? ` · persona: ${esc(r.persona)}` : ""}${r.duration_ms ? ` · ${(r.duration_ms / 1000).toFixed(1)}s` : ""}</span><span class="v v-${esc(r.verdict)}">${esc(r.verdict)}</span>${r.confidence != null ? ` <span class="dim">conf ${r.confidence}</span>` : ""}<p>${esc(r.summary ?? "(verdict without prose — see suggestions)")}</p>${r.suggested_improvements?.length ? `<ul>${r.suggested_improvements.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
-    ${rpt.findings.length ? `<h4>Findings — claims awaiting reproduction</h4>${rpt.findings.map((f) => `<div class="find f-${esc(f.severity)}"><b>${esc(f.severity)}</b> ${esc(f.id)} <span class="dim">by ${(f.sources ?? []).join(", ")}${f.verify_first ? " · verify first" : ""}</span><p>${esc(f.issue)}</p></div>`).join("")}` : ""}
-    ${runDispositions.length ? `<h4>Your dispositions</h4><table><tr><th>reviewer</th><th>suggestion</th><th>disposition</th><th>reason</th></tr>${runDispositions.map((d) => `<tr><td>${esc(d.reviewer)}</td><td>${esc(d.suggestion)}</td><td class="d-${esc(d.disposition)}">${esc(d.disposition)}</td><td>${esc(d.reason)}${d.evidence ? `<br><span class="dim">evidence: ${esc(d.evidence)}</span>` : ""}</td></tr>`).join("")}</table>` : ""}
+    ${successes.map((r) => `<div class="rev"><b>${esc(r.agent)}</b> <span class="dim">${esc(HARNESS[r.agent] ?? "")}${r.persona ? ` · persona: ${esc(r.persona)}` : ""}${r.duration_ms ? ` · <span class="mono">${(r.duration_ms / 1000).toFixed(1)}s</span>` : ""}</span><span class="chip chip-${esc(r.verdict)}">${esc(r.verdict)}</span>${r.confidence != null ? ` <span class="dim mono">conf ${r.confidence}</span>` : ""}<p>${esc(r.summary ?? "(verdict without prose — see suggestions)")}</p>${r.suggested_improvements?.length ? `<ul>${r.suggested_improvements.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
+    ${rpt.findings.length ? `<h4>Findings — claims awaiting reproduction</h4>${rpt.findings.map((f) => `<div class="find f-${esc(f.severity)}"><b>${esc(f.severity)}</b> <span class="id">${esc(f.id)}</span> <span class="dim">by ${esc((f.sources ?? []).join(", "))}${f.verify_first ? " · verify first" : ""}</span><p>${esc(f.issue)}</p></div>`).join("")}` : ""}
+    ${runDispositions.length ? `<h4>Your dispositions</h4><table class="momm-table"><tr><th>reviewer</th><th>suggestion</th><th>disposition</th><th>reason</th></tr>${runDispositions.map((d) => `<tr><td>${esc(d.reviewer)}</td><td class="prose">${esc(d.suggestion)}</td><td><span class="chip chip-${esc(d.disposition)}">${esc(d.disposition)}</span></td><td class="prose">${esc(d.reason)}${d.evidence ? `<br><span class="dim">evidence: ${esc(d.evidence)}</span>` : ""}</td></tr>`).join("")}</table>` : ""}
   </details>` : `<span class="dim">summary-only record (predates sealed reports)</span>`;
   const narration = narrationFor(run, rpt, runDispositions);
-  return `<article class="run"><header><b>${esc(subject || run.run_id)}</b> <span class="dim">${esc(new Date(run.timestamp).toLocaleString())} · gov ${esc(run.governor)} · ${outcomeBadge}${subject ? ` · ${esc(run.run_id)}` : ""}</span><button class="speak" type="button" data-narration="${esc(narration)}" aria-pressed="false" title="Read this run's summary aloud (local browser speech)">🔊 Read aloud</button></header><div>${statuses}</div>${detail}</article>`;
+  return `<article class="run"><header><b>${esc(subject || run.run_id)}</b><span class="meta">${esc(new Date(run.timestamp).toLocaleString())} · gov ${esc(run.governor)}${subject ? ` · ${esc(run.run_id)}` : ""}</span>${outcomeBadge}<button class="speak" type="button" data-narration="${esc(narration)}" aria-pressed="false" title="Read this run's summary aloud (local browser speech)">🔊 Read aloud</button></header><div class="chips">${statuses}</div>${detail}</article>`;
 }).join("\n");
 
 // Track record rollup: the same triage math as the dispatcher's --stats,
@@ -530,98 +660,95 @@ const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(Strin
 const tr = rollup(dispositions, runs, reports);
 const pct = (x) => (x === null ? "n/a" : `${Math.round(x * 100)}%`);
 const num = (x) => (x === null ? "n/a" : (Math.round(x * 100) / 100).toString());
-const triageRow = (s, cls = "") => `<tr class="${cls}"><td>${esc(s.agent)}</td><td>${s.applied}</td><td>${s.rejected}</td><td>${s.deferred}</td>${tr.totals.other ? `<td>${s.other}</td>` : ""}<td>${s.precision === undefined ? "" : pct(s.precision)}</td><td>${s.falsePositiveRate === undefined ? "" : pct(s.falsePositiveRate)}</td><td class="dim">${s.note ?? ""}</td></tr>`;
+const triageRow = (s, cls = "") => `<tr class="${cls}"><td>${esc(s.agent)}</td><td>${s.applied}</td><td>${s.rejected}</td><td>${s.deferred}</td>${tr.totals.other ? `<td>${s.other}</td>` : ""}<td>${s.precision === undefined ? "" : pct(s.precision)}</td><td>${s.falsePositiveRate === undefined ? "" : pct(s.falsePositiveRate)}</td><td class="prose dim">${s.note ?? ""}</td></tr>`;
 // Render whenever any row exists — including a history made only of rows
 // with no reviewer field (finding unattributed-only-history-hidden).
 const trackPanel = tr.totals.all ? `<details class="track" open><summary>Reviewer track record · ${dispositions.length} triaged suggestions · ${tr.totals.applied} applied · ${tr.totals.rejected} rejected · ${tr.totals.deferred} deferred${tr.totals.other ? ` · ${tr.totals.other} other` : ""}${tr.reconciled ? "" : " · ⚠ counts do not reconcile"}</summary>
 <h4>Triage record — what the governor did with each suggestion</h4>
-<table><tr><th>reviewer</th><th>applied</th><th>rejected</th><th>deferred</th>${tr.totals.other ? "<th>other</th>" : ""}<th>precision</th><th>false-positive rate</th><th></th></tr>
+<table class="momm-table"><tr><th>reviewer</th><th>applied</th><th>rejected</th><th>deferred</th>${tr.totals.other ? "<th>other</th>" : ""}<th>precision</th><th>false-positive rate</th><th></th></tr>
 ${tr.rows.map((s) => triageRow({ ...s, note: s.samples < 8 ? "small sample" : s.precision < 0.4 ? "verify-first tier" : "" })).join("")}
 ${tr.unattributed.applied + tr.unattributed.rejected + tr.unattributed.deferred + tr.unattributed.other ? triageRow({ ...tr.unattributed, note: "rows with no reviewer field" }, "dim") : ""}
 ${triageRow({ agent: "total", ...tr.totals, note: `${tr.totals.all} of ${dispositions.length} rows accounted for` }, "total")}
 </table>
 <h4>Execution reliability and utility</h4>
-<table><tr><th>reviewer</th><th>completed / dispatched</th><th>completion</th><th>timeouts</th><th>other failures</th><th>median findings per review</th><th>severity-weighted findings per review</th><th>utility</th></tr>
+<table class="momm-table"><tr><th>reviewer</th><th>completed / dispatched</th><th>completion</th><th>timeouts</th><th>other failures</th><th>median findings per review</th><th>severity-weighted findings per review</th><th>utility</th></tr>
 ${tr.rows.map((s) => `<tr><td>${esc(s.agent)}</td><td>${s.completed} / ${s.dispatched}</td><td>${pct(s.completionRate)}</td><td>${s.timeouts}</td><td>${s.failed}</td><td>${num(s.medianFindings)}</td><td>${num(s.weightedFindingsPerReview)}</td><td>${num(s.utility)}</td></tr>`).join("")}
 </table>
 <h4>How the reviews read — your ratings (1-5) and tags, latest per run</h4>
 ${(() => { const rr = ratingsRollup(ratingRows); const agents = tr.rows.map((r) => r.agent).filter((a) => rr[a]).concat(Object.keys(rr).filter((a) => !tr.rows.some((r) => r.agent === a)));
-  return agents.length ? `<table><tr><th>reviewer</th><th>rated reviews</th><th>mean rating</th><th>tags</th></tr>${agents.map((a) => { const r = rr[a]; const tags = Object.entries({ ...r.tags, ...r.custom_tags }).sort((x, y) => y[1] - x[1]).map(([t, n]) => `${esc(t)} ×${n}`).join(", "); return `<tr><td>${esc(a)}</td><td>${r.n}</td><td>${r.mean === null ? `insufficient ratings (n=${r.n}, need ${RATING_MIN_N})` : (Math.round(r.mean * 10) / 10).toFixed(1)}</td><td>${tags || "—"}</td></tr>`; }).join("")}</table>`
+  return agents.length ? `<table class="momm-table"><tr><th>reviewer</th><th>rated reviews</th><th>mean rating</th><th>tags</th></tr>${agents.map((a) => { const r = rr[a]; const tags = Object.entries({ ...r.tags, ...r.custom_tags }).sort((x, y) => y[1] - x[1]).map(([t, n]) => `${esc(t)} ×${n}`).join(", "); return `<tr><td>${esc(a)}</td><td>${r.n}</td><td>${r.mean === null ? `<span class="prose dim">insufficient ratings (n=${r.n}, need ${RATING_MIN_N})</span>` : (Math.round(r.mean * 10) / 10).toFixed(1)}</td><td>${tags || "—"}</td></tr>`; }).join("")}</table>`
   : `<p class="dim">No ratings yet. After triage, record one per reviewer: <code>${esc(LEDGER_CMD)} --rate &lt;run_id&gt; &lt;reviewer&gt; &lt;1-5&gt; --tags specific,reproducible</code> (run from this project; it rebuilds this page too)</p>`; })()}
 <h4>Last 30 days — completion by route and input size (early exits and governor-direct pieces excluded)</h4>
 ${(() => { const w = windowedReliability(runs); const agents = Object.keys(w); const buckets = ["<8KB", "8-16KB", "16-40KB", "40-100KB", ">=100KB"];
-  return agents.length ? `<table><tr><th>reviewer</th><th>completed / dispatched</th>${buckets.map((b) => `<th>${esc(b)}</th>`).join("")}<th>excluded</th><th>recommendation</th></tr>${agents.map((a) => { const r = w[a]; return `<tr><td>${esc(a)}</td><td>${r.completed} / ${r.dispatched}${r.completionRate === null ? "" : ` (${pct(r.completionRate)})`}</td>${buckets.map((b) => { const x = r.buckets[b]; return `<td>${x ? `${x.completed}/${x.dispatched}` : "—"}</td>`; }).join("")}<td>${r.excluded}</td><td>${esc(r.recommendation)}</td></tr>`; }).join("")}</table>`
+  return agents.length ? `<table class="momm-table"><tr><th>reviewer</th><th>completed / dispatched</th>${buckets.map((b) => `<th>${esc(b)}</th>`).join("")}<th>excluded</th><th>recommendation</th></tr>${agents.map((a) => { const r = w[a]; return `<tr><td>${esc(a)}</td><td>${r.completed} / ${r.dispatched}${r.completionRate === null ? "" : ` (${pct(r.completionRate)})`}</td>${buckets.map((b) => { const x = r.buckets[b]; return `<td>${x ? `${x.completed}/${x.dispatched}` : "—"}</td>`; }).join("")}<td>${r.excluded}</td><td class="prose">${esc(r.recommendation)}</td></tr>`; }).join("")}</table>`
   : '<p class="dim">No runs in the last 30 days.</p>'; })()}
 <p class="dim">Runs per day, last 30 days: ${sparkline(runsPerDay(runs))}</p>
 <h4>Reported usage per route (from the CLIs' own envelopes; coverage shown, nothing estimated)</h4>
 ${(() => { const u = usageRollup(reports); const agents = Object.keys(u);
-  return agents.length && agents.some((a) => u[a].tokens_reported || u[a].cost_reported) ? `<table><tr><th>reviewer</th><th>reviews</th><th>tokens reported</th><th>median total tokens</th><th>cost reported</th><th>total cost (USD)</th></tr>${agents.map((a) => { const r = u[a]; return `<tr><td>${esc(a)}</td><td>${r.reviews}</td><td>${r.tokens_reported} of ${r.reviews}</td><td>${r.median_total_tokens === null ? "not reported" : Math.round(r.median_total_tokens)}</td><td>${r.cost_reported} of ${r.reviews}</td><td>${r.total_cost_usd === null ? "not reported" : r.total_cost_usd.toFixed(4)}</td></tr>`; }).join("")}</table>`
+  return agents.length && agents.some((a) => u[a].tokens_reported || u[a].cost_reported) ? `<table class="momm-table"><tr><th>reviewer</th><th>reviews</th><th>tokens reported</th><th>median total tokens</th><th>cost reported</th><th>total cost (USD)</th></tr>${agents.map((a) => { const r = u[a]; return `<tr><td>${esc(a)}</td><td>${r.reviews}</td><td>${r.tokens_reported} of ${r.reviews}</td><td>${r.median_total_tokens === null ? "not reported" : Math.round(r.median_total_tokens)}</td><td>${r.cost_reported} of ${r.reviews}</td><td>${r.total_cost_usd === null ? "not reported" : r.total_cost_usd.toFixed(4)}</td></tr>`; }).join("")}</table>`
   : '<p class="dim">No usage recorded yet — reports written by momm 1.16 and later carry each CLI\'s own token and cost figures where the CLI reports them.</p>'; })()}
-<p class="dim">Precision here is the governor's <b>acceptance rate</b> on this project — applied / (applied + rejected) as triaged after reproduction — not precision against a labeled ground truth; false-positive rate = rejected / (applied + rejected); deferred and other rows are counted but not adjudicated. Completion = successful reviews / dispatched (the governor's self-exclusion is not a dispatch). Findings per review use sealed reports only, weighting CRITICAL 3, WARNING 2, NITPICK 1. Utility = severity-weighted applied suggestions / completed reviews — a suggestion weighs 1 unless its disposition names a <code>finding_id</code>, in which case it takes that finding's weight. High precision from a route that rarely completes is not high utility. All of it is an advisory attention prior; every material finding still requires reproduction.</p></details>` : "";
+<p class="dim caption">Precision is the governor's acceptance rate on this project — applied ÷ (applied + rejected), triaged after reproduction, not precision against labelled ground truth — while completion counts successful reviews per dispatch and utility weights applied suggestions by severity (CRITICAL 3, WARNING 2, NITPICK 1, or the named <code>finding_id</code>'s weight) per completed review. All of it is an advisory prior: every material finding still needs reproduction.</p></details>` : "";
 
-const html = `<!doctype html><meta charset="utf-8"><title>My momm ledger</title>
+const setupCenterLink = resolveSetupCenterLink(readSetupCenterPointer(er));
+const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>momm · Private ledger</title>
 <style>
-  :root{--bg:#f6f8f6;--panel:#ffffff;--border:#d7e2d9;--text:#0f1a12;--muted:#2e7d4f;--dim:#5f6f63;--accent:#00875a;--warn:#9a6700;--crit:#b42318;color-scheme:light}
-  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a;color-scheme:dark}}
-  :root[data-theme="dark"]{--bg:#080a0a;--panel:#111316;--border:#1f2a22;--text:#e6ffe6;--muted:#9be29b;--dim:#5c6f60;--accent:#00ff99;--warn:#ffd166;--crit:#ff7a7a;color-scheme:dark}
-  .theme{float:right;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:1px 8px}
-  .spark{vertical-align:middle;color:var(--accent)}
-  :root{--ease:cubic-bezier(.2,.8,.2,1);--dur:.32s}
-  @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
-  html.theme-switching,html.theme-switching *{transition:background-color var(--dur) var(--ease),color var(--dur) var(--ease),border-color var(--dur) var(--ease)!important}
-  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  .track,.run{animation:rise var(--dur) var(--ease) both}
-  .run{transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}.run:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-  .theme{transition:color var(--dur) var(--ease),border-color var(--dur) var(--ease)}
-  body{background:var(--bg);color:var(--text);font:13px/1.55 ui-monospace,Consolas,monospace;max-width:960px;margin:0 auto;padding:20px}
-  h1{font-size:19px}h1 span{color:var(--accent)}
-  .note{color:var(--dim);font-size:11px;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin:10px 0}
-  .run{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:10px 0}
-  .run header{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline}
-  .dim{color:var(--dim);font-size:11px}
-  .st{border:1px solid var(--border);border-radius:6px;padding:0 6px;font-size:10.5px;color:var(--muted)}
-  .st-success{color:var(--accent)}.st-timeout{color:var(--warn)}.st-authentication_required,.st-error{color:var(--crit)}.st-self_excluded{opacity:.6}
-  details{margin-top:8px}summary{cursor:pointer;color:var(--muted)}
-  .rev{border-left:3px solid var(--border);padding:4px 10px;margin:8px 0}
-  .rev p,.rev ul{margin:4px 0;max-width:70ch}.rev li{color:var(--muted)}
-  .v{border-radius:6px;padding:0 7px;font-weight:700;font-size:11px;margin-left:8px}
-  .v-ACCEPT{background:rgba(0,255,153,.12);color:var(--accent)}.v-MODIFY{background:rgba(255,209,102,.12);color:var(--warn)}.v-REJECT{background:rgba(255,122,122,.14);color:var(--crit)}
-  .find{border-left:3px solid var(--dim);padding:4px 10px;margin:6px 0}.f-CRITICAL{border-color:var(--crit)}.f-WARNING{border-color:var(--warn)}
-  table{border-collapse:collapse;font-size:11.5px;width:100%}td,th{border-bottom:1px solid var(--border);padding:4px 8px;text-align:left;vertical-align:top}
-  .d-applied{color:var(--accent)}.d-rejected{color:var(--warn)}.d-deferred{color:var(--muted)}
-  tr.total td{border-top:1px solid var(--muted);font-weight:700}tr.dim td{color:var(--dim)}
-  h4{margin:12px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-  .speak{margin-left:auto;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:1px 8px}
-  .speak:hover{color:var(--accent);border-color:var(--accent)}
-  .speak[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
-  .speak[disabled]{opacity:.5;cursor:default}
-  .badge-noverdict{background:rgba(255,209,102,.14);color:var(--warn);border-radius:6px;padding:0 7px;font-weight:700;font-size:11px}
-  .track{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 14px;margin:10px 0}
-  .track table{margin-top:6px}
+${readTheme()}
+/* Ledger rules. Legacy names map onto the shared tokens so the palette has one source; every colour below is a token. */
+:root{--bg:var(--paper);--panel:var(--card);--border:var(--line);--text:var(--ink);--accent:var(--green-bright);--warn:var(--amber);--crit:var(--red);--dim:var(--muted)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 var(--font-sans)}
+.shell{width:min(1040px,calc(100% - 32px));margin:0 auto;padding-bottom:40px}
+.mono,code,.hash,.id,.meta{font-family:var(--font-mono)}
+code{font-size:.92em;padding:1px 5px;border-radius:5px;background:var(--mint);color:var(--green)}
+h1{margin:30px 0 8px;font:600 clamp(28px,4vw,40px)/1.05 var(--font-display);letter-spacing:-.02em}
+h1 .count{display:block;margin-top:8px;color:var(--dim);font:12px var(--font-mono);letter-spacing:0}
+.note{margin:0;max-width:72ch;color:var(--dim);font-size:13px}
+.note-meta{margin:6px 0 20px;color:var(--dim);font:11px/1.7 var(--font-mono);word-break:break-all}
+.spark{vertical-align:middle;color:var(--accent)}
+.run,.track{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 18px;margin:12px 0;animation:rise var(--dur) var(--ease) both;transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+.run:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.run header{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.run header b{font:600 17px var(--font-display);letter-spacing:-.01em}
+.dim{color:var(--dim);font-size:12px}
+.meta{color:var(--dim);font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+details{margin-top:10px}summary{cursor:pointer;color:var(--dim);font-size:13px}summary:hover{color:var(--text)}
+.track>summary{color:var(--text);font:600 15px var(--font-display)}
+.rev{border-left:3px solid var(--border);padding:4px 12px;margin:10px 0}
+.rev p,.rev ul{margin:4px 0;max-width:70ch}.rev li{color:var(--dim)}.rev b{font-family:var(--font-mono)}
+.rev .chip{margin-left:8px}
+.find{border-left:3px solid var(--dim);padding:4px 12px;margin:8px 0}.f-CRITICAL{border-color:var(--crit)}.f-WARNING{border-color:var(--warn)}
+.find b{font-family:var(--font-mono)}.find .id{color:var(--dim)}.find p{margin:4px 0;max-width:70ch}
+.momm-table{margin-top:6px}
+h4{margin:18px 0 4px;color:var(--accent);font:800 10px/1.4 var(--font-sans);letter-spacing:.12em;text-transform:uppercase}
+.speak{margin-left:auto;cursor:pointer;border:1px solid var(--border);border-radius:999px;background:var(--pill);color:var(--dim);font:12px var(--font-sans);padding:6px 11px;transition:color var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease)}
+.speak:hover,.speak[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.speak[disabled]{opacity:.5;cursor:default}
+.caption{max-width:90ch;margin-top:14px}
+.foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--hairline);color:var(--dim);font-size:12px;max-width:90ch}
+@media (max-width:640px){.momm-nav code{max-width:100%;white-space:normal;word-break:break-all}.speak{margin-left:0}}
 </style>
-<button class="theme" id="theme" type="button" aria-label="toggle light or dark theme">◐ theme</button>
-<h1><span>◆</span> My momm ledger <span class="dim">· ${runs.length} runs · ${Object.keys(reports).length} sealed reports · ${dispositions.length} dispositions</span></h1>
-<p class="note">${esc(data.private_note)} Generated ${esc(data.generated)}. This ledger covers ONLY this workspace (${esc(data.projects[0].root)}); other projects keep their own — rebuild any with <code>${esc(LEDGER_CMD)}</code> from that project.</p>
+<div class="shell">
+<header class="momm-topbar">
+  <a class="momm-brand" href="#top" aria-label="momm private ledger, top of page"><span class="momm-brand-mark" aria-hidden="true">M</span><span><strong class="momm-brand-name">momm</strong><small class="momm-page-title">Private ledger</small></span></a>
+  <div class="momm-actions">
+    <nav class="momm-nav" aria-label="Related pages" id="setup-center-pill">${setupCenterPill(setupCenterLink)}</nav>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light or dark theme" aria-pressed="false" title="Light or dark: follows your system until you choose"><span class="orbit" aria-hidden="true"></span> <span id="theme-label">Theme</span></button>
+  </div>
+</header>
+<main id="top">
+<h1>Private ledger<span class="count">${runs.length} runs · ${Object.keys(reports).length} sealed reports · ${dispositions.length} dispositions</span></h1>
+<p class="note">${esc(data.private_note)}</p>
+<p class="note-meta">${esc(data.projects[0].root)} · generated ${esc(data.generated)} · rebuild: <code>${esc(LEDGER_CMD)}</code></p>
 ${trackPanel}
 ${rows || '<p class="dim">No runs recorded yet.</p>'}
-<p class="dim">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>
+<p class="foot">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>
+</main>
+</div>
 <script>
 ${SPEECH_SCRIPT}
-(() => {
-  const root = document.documentElement, key = "momm-ledger-theme";
-  let saved = null; try { saved = localStorage.getItem(key); } catch {}
-  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
-  const button = document.getElementById("theme");
-  if (!button) return;
-  button.addEventListener("click", () => {
-    const dark = root.getAttribute("data-theme") === "dark" || (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
-    const next = dark ? "light" : "dark";
-    root.classList.add("theme-switching");
-    root.setAttribute("data-theme", next);
-    try { localStorage.setItem(key, next); } catch {}
-    setTimeout(() => root.classList.remove("theme-switching"), 450);
-  });
-})();
+${THEME_SCRIPT}
+${SERVED_LINK_SCRIPT}
 </script>`;
 
 // The ledger renders your reviewer transcripts — owner-only, like the reports.

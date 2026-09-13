@@ -178,7 +178,7 @@ function providerCard(route) {
     <article class="provider-card ${state === "ready" ? "ready" : state === "failed" ? "failed" : ""}" data-card="${route.agent}">
       <div class="card-top">
         <div class="provider-name"><span class="provider-icon">${escapeHtml(provider.label.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(provider.label)}</h3><small class="version">Peer reviewer</small></div></div>
-        <span class="status ${state === "detected" ? "login" : state}">${stateLabel(state)}</span>
+        <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
       </div>
       <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>
       <div class="provider-facts">
@@ -229,7 +229,7 @@ function statusPresentation(status) {
 
 function miniStatus(status) {
   const [kind, label] = statusPresentation(status);
-  return `<span class="mini-status ${kind}">${escapeHtml(label)}</span>`;
+  return `<span class="chip chip-${kind} mini-status">${escapeHtml(label)}</span>`;
 }
 
 function skillRow(item) {
@@ -296,7 +296,7 @@ function renderMaintenance() {
   maintenanceGrid.innerHTML = `
     <article class="health-card wide">
       <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div><div class="skill-actions"><button id="batch-update" class="mini-button" type="button" disabled>Update selected…</button></div></div>
-      <div class="cli-table-scroll"><table class="cli-table"><thead><tr><th><span class="sr-only">Select for batch update</span></th><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
+      <div class="cli-table-scroll"><table class="momm-table cli-table"><thead><tr><th><span class="sr-only">Select for batch update</span></th><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
       <p class="environment-note">Checks never install updates. Each update shows its command and needs your confirmation. Tick several and use Update selected to see every exact command, confirm once, and run them one after another with a version re-check between. Unknown means unverified, not current. Installation versions do not prove account access or a successful review. After an updater finishes, use Check everything to verify the detected version.</p>
     </article>
     <article id="update-clock-card" class="health-card wide"></article>
@@ -376,6 +376,10 @@ async function refresh() {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
     if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
     report = fresh;
+    // The topbar pill links to /ledger on this origin; its tooltip names the
+    // file on disk once the ledger exists, so the page can also be opened directly.
+    const ledgerLink = document.querySelector("#ledger-link");
+    if (ledgerLink) ledgerLink.title = report.ledger_url ? `Also on disk: ${report.ledger_url}` : "Built here after your first review";
     // A verification belongs to the session it ran against: once readiness
     // falls, the cached success goes with it, so a returning session must be
     // verified again instead of resurrecting the old result.
@@ -534,7 +538,7 @@ function renderUsage() {
     if (typeof row.cost_per_accepted_finding === "string") return `${escapeHtml(row.cost_per_accepted_finding)}<small>total $${Number(row.total_cost_usd).toFixed(4)} beside it</small>`;
     return `$${Number(row.cost_per_accepted_finding).toFixed(4)}<small>as reported by the CLI</small>`;
   };
-  usageTable.innerHTML = `<table class="cli-table usage-rows"><thead><tr><th>Route</th><th>Reviews</th><th>Median total tokens</th><th>Total cost (USD, as reported)</th><th>Cost per accepted finding</th></tr></thead><tbody>${rows.map((row) => `<tr>
+  usageTable.innerHTML = `<table class="momm-table cli-table usage-rows"><thead><tr><th>Route</th><th>Reviews</th><th>Median total tokens</th><th>Total cost (USD, as reported)</th><th>Cost per accepted finding</th></tr></thead><tbody>${rows.map((row) => `<tr>
     <th scope="row">${escapeHtml(providerLabel(row.agent))}</th>
     <td>${escapeHtml(row.reviews)}</td>
     <td>${reportedCell(row.tokens_reported, row.reviews, row.median_total_tokens === null ? "—" : Number(row.median_total_tokens).toLocaleString())}</td>
@@ -775,7 +779,7 @@ function renderUpdateClock() {
       ${toggle("models", "Models", "Record new model names only; configured models never change.")}
       ${toggle("accept_protocol", "Accept protocol changes", "Let a skill update that changes the review protocol apply without you.")}
     </div>
-    <div class="cli-table-scroll"><table class="cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="cli-table-scroll"><table class="momm-table cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="environment-note">Estimated ${escapeHtml(clockState.overhead_estimate_per_day ?? "—")} conditional request${clockState.overhead_estimate_per_day === 1 ? "" : "s"} per day at the current intervals. Checks run only on events (review start or finish, opening this page, Check everything, the timer below); nothing polls.${activity.last_finished_at ? ` Last check ${escapeHtml(formatWhen(activity.last_finished_at))} (${escapeHtml(activity.last_event || "—")}${activity.last_result?.skipped_reason ? `, ${escapeHtml(activity.last_result.skipped_reason)}` : ""}).` : ""}${activity.last_error ? ` Last error: ${escapeHtml(activity.last_error)}.` : ""}</p>
     <p class="environment-note">When this switch is on, every check event also applies what it found, and each updated CLI is then probed for containment: MOMM sends one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider, never project content. The re-read version and the probe verdict are shown below; a route whose probe failed or could not run is listed as updated, containment not verified, and is not ready.</p>
     ${applyOutcome(activity, auto.enabled)}
