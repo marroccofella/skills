@@ -2,7 +2,7 @@ name: Skill safety suite
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/momm-bootstrap-hardening-20260914]
   pull_request:
     branches: [main]
 
