@@ -1,5 +1,10 @@
 # Getting started without surprises
 
+Before running newly downloaded MOMM code, use the [new/legacy bootstrap guide](bootstrap.md).
+It covers the verifier prerequisite, signed release and package check, and explicit
+installation approval. A downloaded clone is not automatically a verified release.
+The Setup Center instructions below assume a trusted installation.
+
 ## CLI versions and explicit updates
 
 In the local Setup Center, open **CLI versions, skills & diagnostics**. The six-CLI table includes the active controller even though it cannot review itself. It shows the installed version, latest checked version, source and installation type. **Check everything** refreshes these observations without installing anything. An unknown latest version is not a current version; Antigravity has no verified check-only updater, so its **Check / update…** action needs explicit consent.

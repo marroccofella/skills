@@ -1,5 +1,13 @@
 # Explicit updates and recovery
 
+**New install, missing verifier or old release without a receipt?** Start with
+[the bootstrap guide](bootstrap.md), not an installer from unverified code.
+`bootstrap.mjs --check` distinguishes missing tools from failed verification and
+identifies the new/legacy/1.15.0/ordinary-update route without changing anything.
+First-time users must separately inspect/trust this standalone tool; it cannot
+authenticate itself. GitHub's `bad_cert` / Unverified badge is not a gitsign result.
+Never suppress an actual gitsign identity, transparency or package-hash failure.
+
 MOMM 1.15.0's updater has a verified staging-discovery defect with gitsign 0.17.1.
 It fails closed before installation. Bootstrap with a separately signature/hash-
 verified 1.15.1-or-newer clone and invoke its updater with `--repo <existing-clone>`;

@@ -14,6 +14,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./momm/scripts/update.mjs";
+import { readiness } from "./momm/scripts/bootstrap.mjs";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 // Deprecated aliases are not freshly installed by the bulk installer.
@@ -149,6 +150,7 @@ function main() {
   for (const dir of options.customDirs) results.push({ target: "custom", links: linkAll(dir, skills, options) });
 
   const output = { source: repoRoot, skills, results, note: "Existing paths are never overwritten. No credentials are copied." };
+  if (skills.includes("momm")) output.update_readiness = readiness();
   try { output.installation = recordInstall(repoRoot, "install.mjs", results, { dryRun: options.dryRun, skills }); }
   catch (error) {
     output.installation = { updater_available: false, error: error.message,
