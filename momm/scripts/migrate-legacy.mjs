@@ -10,14 +10,17 @@ const fail = (code, message) => Object.assign(Error(message), { code });
 const inside = (file, root) => { const rel=path.relative(root,file);return !rel || (!rel.startsWith('..'+path.sep) && rel!=='..' && !path.isAbsolute(rel)); };
 function entry(file) { try { const s=fs.lstatSync(file);return { type:s.isSymbolicLink()?'link':s.isDirectory()?'directory':'other', dev:s.dev, ino:s.ino, link:s.isSymbolicLink()?fs.readlinkSync(file):null }; } catch(e){if(e.code==='ENOENT')return null;throw e;} }
 const same = (a,b) => JSON.stringify(a)===JSON.stringify(b);
-function canonicalEntry(file) { if(!file || !path.isAbsolute(file))throw fail('absolute_path_required','Use explicit absolute paths');return path.join(fs.realpathSync(path.dirname(file)),path.basename(file)); }
+// Node's JS resolver can retain Windows 8.3 spellings while Git expands them.
+// Compare one physical spelling without changing the identity of the entry.
+const physicalPath = file => (process.platform==='win32'?fs.realpathSync.native:fs.realpathSync)(file);
+function canonicalEntry(file) { if(!file || !path.isAbsolute(file))throw fail('absolute_path_required','Use explicit absolute paths');return path.join(physicalPath(path.dirname(file)),path.basename(file)); }
 function paths(options) {
   if(['prepared','skillPath','backup'].some(k=>typeof options[k]!=='string'||!path.isAbsolute(options[k])))throw fail('arguments_required','Specify --prepared, --skill-path and --backup as explicit absolute paths');
-  const skill=canonicalEntry(options.skillPath),backup=canonicalEntry(options.backup),repo=fs.realpathSync(options.prepared);
+  const skill=canonicalEntry(options.skillPath),backup=canonicalEntry(options.backup),repo=physicalPath(options.prepared);
   if(path.basename(skill)!=='momm' || path.dirname(skill)===skill)throw fail('unsupported_scope','Specify the exact existing momm discovery entry; aliases require inspection');
   if(inside(backup,path.dirname(skill)) || inside(backup,repo) || inside(repo,skill) || inside(skill,repo))throw fail('unsafe_backup','Backup must be outside the discovery directory and both installations');
   if(!entry(skill))throw fail('unsupported_scope','Existing MOMM discovery entry is missing; no path was guessed');
-  let oldRoot;try{oldRoot=fs.realpathSync(skill);}catch{throw fail('unsupported_scope','Existing MOMM link is broken or inaccessible; inspect it before migrating');}
+  let oldRoot;try{oldRoot=physicalPath(skill);}catch{throw fail('unsupported_scope','Existing MOMM link is broken or inaccessible; inspect it before migrating');}
   if(inside(backup,oldRoot)||oldRoot===path.join(repo,'momm'))throw fail('unsafe_backup','Do not back up into the old installation or migrate an already linked release');
   return {skill,backup,repo,journal:backup+'.momm-migration.json',lock:path.join(path.dirname(skill),'.momm-migration.lock')};
 }
@@ -99,7 +102,7 @@ export async function migrate(options,{run=execute,check=readiness,releaseRecord
     const output=JSON.parse(run(process.execPath,[path.join(p.repo,'momm/scripts/install.mjs'),'--custom-dir',path.dirname(p.skill)],p.repo,{timeout:120000}));
     const linked=entry(p.skill);
     const lockPath=path.resolve(p.repo,admin,'momm.lock');
-    if(linked?.type!=='link'||fs.realpathSync(p.skill)!==fs.realpathSync(path.join(p.repo,'momm'))||output.installation?.lock!==lockPath)throw fail('installation_incomplete','Link or installation receipt did not verify');
+    if(linked?.type!=='link'||physicalPath(p.skill)!==physicalPath(path.join(p.repo,'momm'))||output.installation?.lock!==lockPath)throw fail('installation_incomplete','Link or installation receipt did not verify');
     const receipt=readRegular(lockPath);
     if(receipt.schema!=='momm-lock/1'||receipt.current?.commit!==proof.commit||receipt.current?.version!==options.version||!receipt.installations?.some(i=>i.target==='custom'&&i.custom_dir===path.dirname(p.skill)&&i.skills?.length===1&&i.skills[0]==='momm'))throw fail('installation_incomplete','Saved installation scope differs from the approved MOMM-only destination');
     state.phase='installed';save(p.journal,state);releaseLock(p);

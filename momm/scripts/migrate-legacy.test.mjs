@@ -1,11 +1,16 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
+import { spawnSync } from 'node:child_process';
 import { migrate,rollback,parse } from './migrate-legacy.mjs';
 import { execute,verifyCheckout } from './bootstrap.mjs';
 const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..'),root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-migration-tests-')),results={};
+const skipped={};
 const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,s);};
-async function test(n,f){try{await f();results[n]=true;}catch(e){results[n]={failure:e.message};process.exitCode=1;}}
+// Inputs retain their caller spelling, including symlink/short-name temp roots.
+// Expected paths and race hooks use the OS-resolved parent of each entry.
+const physicalEntry=p=>path.join((process.platform==='win32'?fs.realpathSync.native:fs.realpathSync)(path.dirname(p)),path.basename(p));
+async function test(n,f){try{const result=await f();if(result?.skip)skipped[n]=result.skip;results[n]=true;}catch(e){results[n]={failure:e.message};process.exitCode=1;}}
 async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,dep);return migrate({...f.options,apply:true,acceptProtocol:true,planSha256:preview.plan_sha256},dep);}
 function fixture(name,link=false){
   const base=path.join(root,name),repo=path.join(base,'prepared'),skill=path.join(base,'harness','skills','momm'),backup=path.join(base,'backups','old-momm');
@@ -16,7 +21,7 @@ function fixture(name,link=false){
   const commit=git('rev-parse','HEAD'),original=link?path.join(base,'original-clone','momm'):skill;
   write(path.join(original,'SKILL.md'),'# Old protocol\n');write(path.join(original,'.ensemble_reviews/ledger.html'),'PRIVATE fixture evidence');
   if(link){fs.mkdirSync(path.dirname(skill),{recursive:true});fs.symlinkSync(original,skill,process.platform==='win32'?'junction':'dir');}
-  return {options:{prepared:repo,version:'1.15.1',skillPath:skill,backup},original,repo,skill,backup,dep:{check:()=>({status:'ready_to_verify'}),releaseRecord:async()=>({tag_name:'momm-1.15.1',draft:false,prerelease:false}),verify:()=>({commit,hash:'fixture-only'}),checkout:verifyCheckout}};
+  return {options:{prepared:repo,version:'1.15.1',skillPath:skill,backup},original:physicalEntry(original),repo:physicalEntry(repo),skill:physicalEntry(skill),backup:physicalEntry(backup),dep:{check:()=>({status:'ready_to_verify'}),releaseRecord:async()=>({tag_name:'momm-1.15.1',draft:false,prerelease:false}),verify:()=>({commit,hash:'fixture-only'}),checkout:verifyCheckout}};
 }
 try{
   await test('preview_has_exact_paths_protocol_and_no_moves_or_receipt',async()=>{
@@ -31,6 +36,31 @@ try{
     assert.equal(fs.readFileSync(path.join(link?f.original:f.backup,'.ensemble_reviews/ledger.html'),'utf8'),'PRIVATE fixture evidence');
     assert(!fs.existsSync(path.join(f.repo,'momm/.ensemble_reviews')));assert.equal(rollback(r.paths.journal).status,'rolled_back');
     assert.equal(fs.readFileSync(path.join(f.skill,'SKILL.md'),'utf8'),'# Old protocol\n');assert.equal(fs.readFileSync(path.join(f.skill,'.ensemble_reviews/ledger.html'),'utf8'),'PRIVATE fixture evidence');
+  });
+  await test('aliased_input_paths_share_one_plan_and_support_journal_rollback',async()=>{
+    const f=fixture('aliased-input'),alias=path.join(root,'input-alias');fs.symlinkSync(path.dirname(f.repo),alias,process.platform==='win32'?'junction':'dir');
+    const aliased={...f,options:{...f.options,prepared:path.join(alias,'prepared'),skillPath:path.join(alias,'harness/skills/momm'),backup:path.join(alias,'backups/old-momm')}};
+    const direct=await migrate(f.options,f.dep),viaAlias=await migrate(aliased.options,f.dep);
+    assert.deepEqual(viaAlias.paths,direct.paths);assert.equal(viaAlias.plan_sha256,direct.plan_sha256);
+    const r=await applyFixture(aliased);assert.equal(r.status,'migration_installed');
+    assert.equal(rollback(path.join(alias,'backups/old-momm.momm-migration.json')).status,'rolled_back');
+    assert.equal(fs.readFileSync(path.join(f.skill,'.ensemble_reviews/ledger.html'),'utf8'),'PRIVATE fixture evidence');
+  });
+  await test('windows_short_name_input_preserves_plan_receipt_and_rollback',async()=>{
+    if(process.platform!=='win32')return {skip:'Windows 8.3 names only'};
+    const f=fixture('explicit-short-name'),parent=path.dirname(f.repo);
+    // cmd's built-in path modifier queries an existing synthetic directory.
+    // No installer, remote script or mutable system setting is involved.
+    if(/[&|<>\r\n"^%!]/.test(parent))return {skip:'Synthetic path contains shell-control characters; no command executed'};
+    const cmd=path.join(process.env.SystemRoot||'C:\\Windows','System32','cmd.exe');
+    const query=spawnSync(cmd,['/d','/q','/c',`for %M in ("${parent}") do @echo %~sM`],{encoding:'utf8',timeout:10000,windowsHide:true,windowsVerbatimArguments:true});
+    assert.equal(query.status,0,'Windows short-name query must complete');
+    const shortParent=query.stdout.trim();assert(path.isAbsolute(shortParent));assert.equal(fs.realpathSync.native(shortParent),fs.realpathSync.native(parent));
+    if(shortParent===fs.realpathSync.native(parent))return {skip:'This volume does not provide a distinct 8.3 name'};
+    const viaShort={...f,options:{...f.options,prepared:path.join(shortParent,'prepared'),skillPath:path.join(shortParent,'harness/skills/momm'),backup:path.join(shortParent,'backups/old-momm')}};
+    const direct=await migrate(f.options,f.dep),short=await migrate(viaShort.options,f.dep);assert.deepEqual(short.paths,direct.paths);assert.equal(short.plan_sha256,direct.plan_sha256);
+    const r=await applyFixture(viaShort);assert.equal(r.status,'migration_installed');assert.equal(rollback(r.paths.journal).status,'rolled_back');
+    assert.equal(fs.readFileSync(path.join(f.skill,'.ensemble_reviews/ledger.html'),'utf8'),'PRIVATE fixture evidence');
   });
   await test('backup_inside_discovery_and_existing_backups_are_refused',async()=>{
     const f=fixture('backup-conflicts');await assert.rejects(migrate({...f.options,backup:path.join(path.dirname(f.skill),'momm.bak')},f.dep),{code:'unsafe_backup'});
@@ -115,5 +145,5 @@ try{
   await test('missing_old_protocol_is_an_actionable_scope_error',async()=>{
     const f=fixture('missing-old-protocol');fs.unlinkSync(path.join(f.skill,'SKILL.md'));await assert.rejects(migrate(f.options,f.dep),{code:'unsupported_scope'});assert(!fs.existsSync(f.backup));
   });
-  console.log(JSON.stringify({passed:Object.values(results).every(v=>v===true),tests:Object.keys(results).length,results,note:'Signature service stubbed; real installers, receipts, Git files and discovery links exercised only in temporary synthetic projects.'},null,2));
+  console.log(JSON.stringify({passed:Object.values(results).every(v=>v===true),tests:Object.keys(results).length,results,skipped,note:'Signature service stubbed; real installers, receipts, Git files and discovery links exercised only in temporary synthetic projects. Platform or filesystem skips are reported explicitly.'},null,2));
 }finally{const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true});}
