@@ -52,16 +52,20 @@ test("torn update claim fails closed with recovery guidance without removing it"
   assert.throws(() => exclusive("fixture", () => {}), /update.*claim|claim.*invalid/i); assert.equal(removed, false);
 });
 for (const installer of ["install.mjs", "momm/scripts/install.mjs"]) test(`${installer} exposes successful links when receipt writing fails`, () => {
-  let stdout = "", stderr = "", links = 0;
+  let stdout = "", stderr = "", links = 0, readinessChecks = 0;
+  const updateReadiness = { status: "prerequisites_missing", network_used: false, signature_verified: false };
   const proc = { argv: ["node", installer], stdout: { write: s => stdout += s }, stderr: { write: s => stderr += s }, exitCode: 0 };
   const options = { targets: [], customDirs: ["fixture"], dryRun: false, pretty: false };
   const linked = () => { links++; return { destination: "fixture/momm", status: "linked", skill: "momm" }; };
   const code = read(installer).slice(read(installer).indexOf("function main()"));
   vm.runInNewContext(code, { process: proc, path, os, repoRoot: root, skillRoot: path.join(root, "momm"), parseArgs: () => options,
     discoverSkills: () => ["momm"], commandExists: () => false, linkAll: () => [linked()], linkSkill: linked,
+    readiness: () => { readinessChecks++; return updateReadiness; },
     recordInstall: () => { throw Object.assign(new Error("receipt blocked"), { code: "EACCES" }); } });
   assert.equal(links, 1); assert.equal(proc.exitCode, 1);
+  assert.equal(readinessChecks, 1); assert(stdout.trim(), `installer returned no structured report: ${stderr}`);
   const result = JSON.parse(stdout); assert.equal(result.results.length, 1); assert.equal(result.installation.updater_available, false);
+  assert.deepEqual(result.update_readiness, updateReadiness);
   assert.match(result.installation.error, /receipt blocked/); assert.match(stderr, /receipt|install/i);
 });
 test("release check refuses dirty worktree rather than certifying HEAD alone", () => {
