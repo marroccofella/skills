@@ -5,16 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Connect and verify MOMM reviewers without handling API keys or repository source.">
     <title>MOMM Setup Center</title>
+    <link rel="stylesheet" href="/momm-theme.css">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <div class="shell">
-      <header class="topbar">
-        <a class="brand" href="#top" aria-label="MOMM Setup Center home">
-          <span class="brand-mark" aria-hidden="true">M</span>
-          <span><strong>MOMM</strong><small>Setup Center</small></span>
+      <header class="momm-topbar">
+        <a class="momm-brand" href="#top" aria-label="MOMM Setup Center home">
+          <span class="momm-brand-mark" aria-hidden="true">M</span>
+          <span><strong class="momm-brand-name">MOMM</strong><small class="momm-page-title">Setup Center</small></span>
         </a>
-        <div class="top-actions">
+        <div class="momm-actions">
           <div class="controller-control">
             <span>Controller</span>
             <select id="governor" aria-label="Active controller">
@@ -28,6 +29,8 @@
             </select>
           </div>
           <div class="local-pill"><span></span> Runs only on this computer</div>
+          <nav class="momm-nav" aria-label="Related pages"><a id="ledger-link" href="/ledger" title="Your private review ledger, built from this workspace's telemetry">Private ledger</a></nav>
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light or dark theme" aria-pressed="false" title="Light or dark: follows your system until you choose"><span class="orbit" aria-hidden="true"></span> <span id="theme-label">Theme</span></button>
         </div>
       </header>
 
@@ -73,6 +76,71 @@
             </div>
           </div>
           <div id="provider-grid" class="provider-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="maintenance-panel usage-panel" aria-labelledby="usage-title">
+          <div class="maintenance-head">
+            <div>
+              <p class="step-label">Usage</p>
+              <h2 id="usage-title">Tokens and cost, as each CLI reported them</h2>
+              <p id="usage-summary" class="summary" aria-live="polite">Reading the sealed reports in this project…</p>
+            </div>
+            <button id="usage-refresh" class="button secondary" type="button">Refresh usage</button>
+          </div>
+          <p class="maintenance-privacy">Nothing here is estimated. A route whose CLI reports no usage shows how many of its reviews reported, never a zero. Costs appear only where the CLI printed them. Reports are read locally from <code>.ensemble_reviews/reports</code>; no source or prompt text is shown.</p>
+          <div id="usage-table" class="cli-table-scroll" aria-live="polite"></div>
+        </section>
+
+        <section class="maintenance-panel capabilities-panel" aria-labelledby="capabilities-title">
+          <div class="maintenance-head">
+            <div>
+              <p class="step-label">Modalities</p>
+              <h2 id="capabilities-title">What each reviewer can take in and produce</h2>
+              <p id="capabilities-summary" class="summary" aria-live="polite">Loading the capability registry…</p>
+            </div>
+            <button id="capabilities-refresh" class="button secondary" type="button">Refresh matrix</button>
+          </div>
+          <p class="maintenance-privacy">Capabilities are evidence, not marketing. Each cell shows a level — verified, documented, model-only or no — from help captures, vendor documentation or this machine's own probes (marked *), and a blocker badge when this machine cannot use it now; hover a chip for the invocation and evidence, a badge for the action that clears it. <strong>Probe inputs</strong> sends one synthetic 64×64 PNG, one one-page synthetic PDF and one one-second tone per documented cell — never project content. <strong>Probe generation</strong> sends one generation request per unblocked generative cell and spends that provider's quota; it shows the exact request and asks for your consent first, and blocked cells are never sent. Which routes can critique or generate is derived from the matrix below, never assumed.</p>
+          <div id="capabilities-grid" class="cli-table-scroll" aria-live="polite"></div>
+          <p id="capabilities-pipelines" class="environment-note"></p>
+          <details class="diagnostics capabilities-planner" open>
+            <summary><span>Planner</span><span class="health-count">Which routes could serve a job and what blocks it — executes nothing</span></summary>
+            <form id="plan-form" class="plan-form">
+              <label>Need in <input id="plan-in" type="text" value="text" placeholder="text, image" spellcheck="false" aria-label="Input modalities"></label>
+              <label>Need out <input id="plan-out" type="text" value="image" placeholder="image, video" spellcheck="false" aria-label="Output modalities"></label>
+              <button id="plan-run" class="button secondary" type="submit">Plan</button>
+            </form>
+            <div id="plan-result" class="plan-result" aria-live="polite"></div>
+          </details>
+        </section>
+
+        <section class="maintenance-panel guidance-panel" aria-labelledby="guidance-title">
+          <div class="maintenance-head">
+            <div>
+              <p class="step-label">Standing guidance</p>
+              <h2 id="guidance-title">Tell reviewers what matters in this project</h2>
+              <p id="guidance-summary" class="summary" aria-live="polite">Loading <code>.momm/guidance.json</code>…</p>
+            </div>
+            <div class="skill-actions">
+              <button id="guidance-reload" class="button secondary" type="button">Reload</button>
+              <button id="guidance-save" class="button primary" type="button">Save &amp; trust…</button>
+            </div>
+          </div>
+          <p class="maintenance-privacy">Guidance shapes emphasis and suggestions. It never changes the review schema, the read-only rules or the truthfulness of findings. Reviewer text is sent to exactly the CLIs you select for a run, like the artifact; only hashes enter reports and public evidence. Saving here writes this project's <code>.momm/guidance.json</code> and trusts exactly those bytes. Each block holds up to 2000 characters; a route's whole stack, including the user-level layers below, up to 6000.</p>
+          <div id="guidance-editor" class="guidance-grid" aria-live="polite"></div>
+          <p id="guidance-error" class="guidance-error" role="alert" hidden></p>
+          <details class="diagnostics guidance-details">
+            <summary><span>Applies to every project · <code>~/.momm/guidance.json</code> (read-only here)</span><span id="guidance-user-count" class="health-count"></span></summary>
+            <div id="guidance-user" class="diagnostics-body guidance-user"></div>
+          </details>
+          <details class="diagnostics guidance-details">
+            <summary><span>Guidance preview</span><span class="health-count">Resolved guidance layers in position — never source</span></summary>
+            <div class="preview-body">
+              <p id="guidance-preview-note" class="environment-note">This preview shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here. The artifact is a placeholder, never source.</p>
+              <label class="preview-route">Route <select id="guidance-preview-route" aria-label="Preview route"></select></label>
+              <pre id="guidance-preview" class="prompt-preview" tabindex="0"></pre>
+            </div>
+          </details>
         </section>
 
         <section class="maintenance-panel" aria-labelledby="maintenance-title">
