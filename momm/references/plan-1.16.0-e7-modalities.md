@@ -88,4 +88,4 @@ Disclosure: establishing this matrix sent one synthetic prompt per generative pr
 
 ## Not in scope
 
-Real-time speech in or out (no CLI here offers a headless path), model pinning changes, and any generation inside a review run. Media-content validation is deferred: the runner and the dispatcher classify an artefact's modality by filename extension (and the dispatcher strips metadata), so a file whose bytes do not match its extension passes that gate and is caught only by the provider's reply or the step's harvest rules. A content sniff (magic bytes, and mime against the registry cell) is the 1.16.1 candidate for this gap.
+Real-time speech in or out (no CLI here offers a headless path), model pinning changes, and any generation inside a review run. Media-content validation is deferred: MOMM checks initial media types by filename extension, not file contents. Malformed or mislabelled files may still proceed; downstream rejection is not guaranteed. A content sniff (magic bytes, and mime against the registry cell) is the 1.16.1 candidate for this gap.
