@@ -499,7 +499,8 @@ await test("finding prompt-in-argv: the prompt never travels in argv; stdin or a
   const planned = mod.plan(m, { input: ["image"], output: ["text"] }, { prompt: PROMPT });
   assert.equal(planned.steps[0].chosen, "claude");
   const red = write(path.join(fresh("in"), "red.png"), PNG_A);
-  await mod.run(planned, { consent: true, inputs: [red], exec: async (c, a, o) => { calls.push({ c, a, o }); return ok("Red"); }, home, cwd, effective: m });
+  const completed = await mod.run(planned, { consent: true, inputs: [red], exec: async (c, a, o) => { calls.push({ c, a, o }); return ok(JSON.stringify({ type: "result", result: "Red", is_error: false })); }, home, cwd, effective: m });
+  assert.equal(completed.report.status, "complete");
   assert.ok(calls[0].o.input.startsWith(PROMPT));
   assert.ok(!calls[0].a.some((a) => a.includes(PROMPT)));
   assert.ok(calls[0].a.includes("--tools") && calls[0].a.includes("--add-dir"));
@@ -567,6 +568,60 @@ await test("suggestion: harvestNew window — unchanged, older-than-start and un
   fs.utimesSync(old, new Date(), new Date(started - 30_000));
   const found = mod.harvestNew(pattern, before, started).map((f) => path.basename(f)).sort();
   assert.deepEqual(found, ["fresh.png", "same.png"]);
+});
+
+// ---- 1.16 readiness audit (2026-09-14): three runner hardening findings, reproduced first ----
+await test("audit: a saved plan that is not possible refuses with the typed error even when blocked_by is missing or malformed", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  let calls = 0;
+  const exec = async () => { calls++; return ok("never"); };
+  for (const plan of [
+    { schema: mod.PLAN_SCHEMA, steps: [{}], possible: false, prompt: PROMPT },
+    { schema: mod.PLAN_SCHEMA, steps: [{}], possible: false, prompt: PROMPT, blocked_by: "not a list" },
+    { schema: mod.PLAN_SCHEMA, steps: [{}], possible: false, prompt: PROMPT, blocked_by: [null, { step: 0 }] },
+  ]) {
+    await assert.rejects(mod.run(plan, { consent: true, exec, home, cwd, effective: m }), (e) => e.code === "MOMM_PLAN_BLOCKED" && /not possible/.test(e.message) && Array.isArray(e.blocked_by), JSON.stringify(plan.blocked_by ?? null));
+  }
+  assert.equal(calls, 0);
+  assert.ok(!fs.existsSync(path.join(cwd, mod.MEDIA_DIR)), "a refused plan writes no media directory");
+});
+
+await test("audit: an initial input that cannot be read for hashing ends the run as error, never leaves the saved report running", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const planned = mod.plan(m, { input: ["image"], output: ["text"] }, { prompt: PROMPT });
+  const red = write(path.join(fresh("in"), "red.png"), PNG_A);
+  let calls = 0;
+  const open = fs.openSync;
+  fs.openSync = function (file, ...rest) { if (path.resolve(String(file)) === path.resolve(red) && String(rest[0] ?? "r").startsWith("r")) throw Object.assign(new Error("synthetic EACCES"), { code: "EACCES" }); return open.call(fs, file, ...rest); };
+  try {
+    await assert.rejects(mod.run(planned, { consent: true, inputs: [red], exec: async () => { calls++; return ok("never"); }, home, cwd, effective: m }), (e) => e.code === "EACCES" || e.code === "MOMM_INPUT_MISSING");
+  } finally { fs.openSync = open; }
+  assert.equal(calls, 0, "no provider is contacted");
+  const media = path.join(cwd, mod.MEDIA_DIR);
+  const reports = fs.readdirSync(media).map((n) => JSON.parse(fs.readFileSync(path.join(media, n, "report.json"), "utf8")));
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].status, "error", "terminal state persisted");
+  assert.match(reports[0].error ?? "", /EACCES|could not be read/);
+});
+
+await test("audit: the recorded step level comes from the live cells the run checked, not from the saved plan's claim", async () => {
+  const home = fresh("home"), cwd = fresh("cwd");
+  const m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  const step = planned.steps[0];
+  step.chosen = "claude";
+  step.candidates.find((c) => c.route === "claude").level = "verified";
+  for (const side of ["input", "output"]) m.routes.claude[side].text.level = "documented";
+  const r = await mod.run(planned, { consent: true, exec: async () => ok(JSON.stringify({ type: "result", result: "Hello.", is_error: false })), home, cwd, effective: m });
+  assert.equal(r.report.status, "complete");
+  assert.equal(r.report.steps[0].level, "documented", "live level wins");
+  assert.equal(r.report.steps[0].plan_level, "verified", "the plan's stale claim is kept beside it");
+  // When plan and live agree (a fresh plan on the current matrix), no plan_level field is added
+  // and the recorded level is the chosen route's live text level.
+  const agreed = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  const r2 = await mod.run(agreed, { consent: true, exec: async () => ok(JSON.stringify({ type: "result", result: "Hello.", is_error: false })), home, cwd, effective: m });
+  const chosen = r2.report.steps[0].route;
+  assert.equal(r2.report.steps[0].level, m.routes[chosen].input.text.level); assert.equal("plan_level" in r2.report.steps[0], false);
 });
 
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}

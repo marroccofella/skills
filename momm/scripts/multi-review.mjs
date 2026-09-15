@@ -905,13 +905,24 @@ function parseArgs(argv) {
   return options;
 }
 
+// The recursion state is one strict parser at both ends: an unset or empty variable is depth
+// zero, a plain non-negative integer is itself, and anything else (-1, 0.5, "garbage") is an
+// error, never zero. `parseInt(...) || 0` let all three proceed, and turned -1 into a child depth
+// of 0 (1.16 readiness audit, 2026-09-14).
+export function parseReviewDepth(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const text = String(value).trim();
+  if (!/^\d{1,6}$/.test(text)) throw new Error(`MULTI_LLM_REVIEW_DEPTH must be a non-negative integer (got ${JSON.stringify(String(value)).slice(0, 40)}); refusing to dispatch with an invalid recursion state`);
+  return Number.parseInt(text, 10);
+}
+
 function cleanOauthEnv(source = process.env) {
   const env = { ...source };
   for (const key of Object.keys(env)) {
     const upper = key.toUpperCase();
     if (FORBIDDEN_ENV_NAMES.has(upper) || /(?:^|_)(?:API_?KEY|SECRET_?KEY)(?:_|$)/.test(upper)) delete env[key];
   }
-  const depth = Number.parseInt(env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;
+  const depth = parseReviewDepth(env.MULTI_LLM_REVIEW_DEPTH);
   env.MULTI_LLM_REVIEW_DEPTH = String(depth + 1);
   env.NO_COLOR = "1";
   return env;
@@ -2000,6 +2011,15 @@ async function selfTest(pretty) {
         && reportProvenance(before, { ...before }).release_verified === true;
     })(),
     increments_depth: cleaned.MULTI_LLM_REVIEW_DEPTH === "1",
+    // 1.16 readiness audit: the recursion state is parsed strictly at both ends. -1, 0.5 and
+    // "garbage" must throw (never become 0); 0/""/unset are depth 0; "2" nests to 3.
+    recursion_depth_fails_closed: (() => {
+      const bad = ["-1", "0.5", "garbage", " 1x", "1e3", "+1"];
+      if (!bad.every((v) => { try { parseReviewDepth(v); return false; } catch { return true; } })) return false;
+      if (!bad.every((v) => { try { cleanOauthEnv({ MULTI_LLM_REVIEW_DEPTH: v }); return false; } catch { return true; } })) return false;
+      return parseReviewDepth(undefined) === 0 && parseReviewDepth("") === 0 && parseReviewDepth("0") === 0 && parseReviewDepth(" 7 ") === 7
+        && cleanOauthEnv({ MULTI_LLM_REVIEW_DEPTH: "2" }).MULTI_LLM_REVIEW_DEPTH === "3" && cleanOauthEnv({}).MULTI_LLM_REVIEW_DEPTH === "1";
+    })(),
     parses_nested_json: parsed?.verdict === "ACCEPT",
     final_review_wins_over_intermediate_wrapper: (() => {
       const reply = (summary, stopReason) => JSON.stringify({ text: JSON.stringify({ verdict: "MODIFY", confidence: 0.5, findings: [], summary }), stopReason });
@@ -2553,7 +2573,7 @@ async function main() {
     return;
   }
 
-  const currentDepth = Number.parseInt(process.env.MULTI_LLM_REVIEW_DEPTH || "0", 10) || 0;
+  const currentDepth = parseReviewDepth(process.env.MULTI_LLM_REVIEW_DEPTH); // invalid values throw: fail closed
   if (currentDepth > 0) throw new Error("Nested multi-LLM dispatch is blocked to prevent recursive harness calls");
   if (!VALID_GOVERNORS.has(options.governor)) throw new Error("--governor is required and must be codex, gemini, claude, antigravity, copilot, grok, or other");
   if (!Number.isFinite(options.timeoutMs) || !Number.isFinite(options.maxBytes)) throw new Error("Timeout and size limits must be numbers");

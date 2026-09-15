@@ -327,17 +327,27 @@ function stageCopy(source, dir, index, expectedSha = null) {
 // ---- runner -----------------------------------------------------------------------------------------
 export async function run(planObj, { prompt: promptOverride, inputs = [], consent = false, exec, home = os.homedir(), cwd = process.cwd(), env = process.env, now = () => new Date(), effective: matrix, resolveCommand = (route, command) => command, timeout = 600_000 } = {}) {
   if (consent !== true) throw fail("Refused: chain execution sends the prompt and artefacts to the chosen providers and spends their quota; pass consent: true (--consent) to proceed.", "MOMM_CONSENT_REQUIRED");
-  if (!planObj || planObj.schema !== PLAN_SCHEMA || !Array.isArray(planObj.steps)) throw fail(`Refused: not a ${PLAN_SCHEMA} plan`, "MOMM_BAD_PLAN");
+  if (!planObj || planObj.schema !== PLAN_SCHEMA || !Array.isArray(planObj.steps) || !planObj.steps.length) throw fail(`Refused: not a non-empty ${PLAN_SCHEMA} plan`, "MOMM_BAD_PLAN");
   const prompt = promptOverride ?? planObj.prompt;
   if (typeof prompt !== "string" || !prompt.trim()) throw fail("Refused: the plan carries no user prompt; plan with --prompt <text> (or --prompt-file) so every step receives the same immutable prompt.", "MOMM_PROMPT_REQUIRED");
-  if (!planObj.possible) throw fail(`Refused: the plan is not possible (${planObj.blocked_by.map((b) => `step ${b.step}: ${b.route ?? "no route"} ${b.reason}`).join("; ")})`, "MOMM_PLAN_BLOCKED", { blocked_by: planObj.blocked_by });
+  if (!planObj.possible) {
+    // A saved plan may be malformed or hand-edited: refuse with the typed error whether or
+    // not blocked_by is present (1.16 readiness audit: an absent list threw a bare TypeError).
+    const blockedBy = Array.isArray(planObj.blocked_by) ? planObj.blocked_by : [];
+    const reasons = blockedBy.map((b) => `step ${b?.step ?? "?"}: ${b?.route ?? "no route"} ${b?.reason ?? "(no reason recorded)"}`).join("; ") || "the plan records no reasons; re-run plan to see what blocks it";
+    throw fail(`Refused: the plan is not possible (${reasons})`, "MOMM_PLAN_BLOCKED", { blocked_by: blockedBy });
+  }
   matrix ??= effectiveMatrix({ home, baseline: loadBaseline() });
   // Re-check every step against the live matrix BEFORE anything runs. The cells are derived from
   // the step's own from/to (never trusted from the saved candidate list): a blocker or a level
   // below documented anywhere refuses the whole chain, so no provider is contacted for a chain
   // that cannot finish.
   const resolved = planObj.steps.map((step, i) => {
-    if (!Array.isArray(step.from) || !Array.isArray(step.to) || !step.from.length || !step.to.length) throw fail(`Refused: step ${i} lacks from/to`, "MOMM_BAD_PLAN");
+    if (!step || !Array.isArray(step.from) || !Array.isArray(step.to) || !step.from.length || !step.to.length || step.from.some(m => !INPUT_MODALITIES.includes(m)) || step.to.some(m => !OUTPUT_MODALITIES.includes(m))) throw fail(`Refused: step ${i} lacks valid from/to`, "MOMM_BAD_PLAN");
+    if (i) {
+      const produced = planObj.steps[i - 1].to.map(m => INPUT_ALIAS[m]);
+      if (step.from.some(m => !produced.includes(m))) throw fail(`Refused: step ${i} requires input not produced by the previous step`, "MOMM_BAD_PLAN");
+    }
     const route = step.chosen;
     const candidate = step.candidates?.find((c) => c.route === route);
     if (!route || !candidate || !matrix.routes[route]) throw fail(`Refused: step ${i} has no chosen route`, "MOMM_PLAN_BLOCKED");
@@ -353,12 +363,22 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
     const outCells = live.filter((c) => c.direction === "output" && GENERATIVE_OUTPUTS.includes(c.modality)).map((c) => ({ modality: c.modality, cell: c.live }));
     for (const { modality, cell } of outCells) if (!cell.harvest) throw fail(`Refused: step ${i} (${route}) has no harvest glob for ${modality}`, "MOMM_STEP_BLOCKED", { step: i, route });
     const how = live.filter((c) => c.direction === "output").map((c) => c.live.how).join("; ");
-    return { step, route, level: candidate.level, generative: outCells.length > 0, outCells, how };
+    // The recorded level is the weakest LIVE cell the step depends on, not what the saved plan
+    // claimed when it was written (1.16 readiness audit: a plan saying verified was reported as
+    // verified after the cell had dropped to documented). The plan's claim is kept beside it.
+    const rank = { verified: 2, documented: 1 };
+    const routeCells = matrix.routes[route];
+    const levelCells = [...live.map((c) => c.live), routeCells?.input?.text ?? null, routeCells?.output?.text ?? null].filter(Boolean);
+    const liveLevel = levelCells.reduce((weakest, cell) => ((rank[cell.level] ?? 0) < (rank[weakest] ?? 0) ? cell.level ?? "no" : weakest), "verified");
+    return { step, route, level: liveLevel, plan_level: candidate.level ?? null, generative: outCells.length > 0, outCells, how };
   });
   // The first step's media inputs must be supplied up front; later steps take the previous step's files.
   const firstMedia = resolved[0].step.from.filter((m) => m !== "text");
   if (firstMedia.length && !inputs.length) throw fail(`Refused: the first step takes ${firstMedia.join("+")} input; pass the artefact(s) with --input <file> (inputs option)`, "MOMM_INPUT_MISSING", { modalities: firstMedia });
-  for (const f of inputs) if (!fs.existsSync(f)) throw fail(`Refused: initial input ${f} not found`, "MOMM_INPUT_MISSING");
+  for (const f of inputs) if (!statOrNull(f)?.isFile()) throw fail(`Refused: initial input ${f} is not a regular file`, "MOMM_INPUT_MISSING");
+  const inputTypes = inputs.map(artefactModality);
+  const missingTypes = firstMedia.filter(m => !inputTypes.includes(m));
+  if (missingTypes.length) throw fail(`Refused: initial artefacts are missing required ${missingTypes.join("+")} input`, "MOMM_INPUT_MISSING", { modalities: missingTypes });
   if (!exec) ({ defaultExec: exec } = await import("./probes.mjs"));
   const at = typeof now === "function" ? now() : new Date(now);
   fs.mkdirSync(path.join(cwd, MEDIA_DIR), { recursive: true, mode: 0o700 });
@@ -371,10 +391,18 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
   const report = { schema: MEDIA_SCHEMA, run_id, at: at.toISOString(), prompt_sha256: sha256(prompt), need: planObj.need, chain: planObj.chain ?? planObj.steps.map(({ from, to }) => ({ from, to })), consent: true, status: "running", steps: [] };
   const persist = () => writePrivate(path.join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   persist();
-  let previous = inputs.map((f) => ({ absolute: path.resolve(f), sha256: hashFile(f) }));
+  let previous = [];
   try {
+    // Hashing the initial artefacts happens after the first persistence, so it must sit under
+    // the same terminal-state handling as every step: an unreadable input ends the run as
+    // "error", never leaves the saved report "running" (1.16 readiness audit).
+    previous = inputs.map((f) => {
+      const digest = hashFile(f);
+      if (!digest) throw fail(`Refused: initial input ${f} could not be read for hashing`, "MOMM_INPUT_MISSING");
+      return { absolute: path.resolve(f), sha256: digest };
+    });
     for (let i = 0; i < resolved.length; i++) {
-      const { step, route, level, generative, outCells, how } = resolved[i];
+      const { step, route, level, plan_level, generative, outCells, how } = resolved[i];
       const stepDir = path.join(dir, `step-${i + 1}`), inDir = path.join(stepDir, "in"), outDir = path.join(stepDir, "out");
       for (const d of [stepDir, inDir, outDir]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
       // Stage the previous step's files (verified against the hashes recorded for them) and bind them.
@@ -408,14 +436,22 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
               });
             }
           } else {
-            const target = path.join(outDir, "01-response.txt");
-            const reply = String(result.stdout ?? "");
-            writePrivate(target, reply);
-            files.push({ path: posix(path.relative(cwd, target)), sha256: sha256(reply), bytes: Buffer.byteLength(reply), mime: "text/plain", modality: "text", harvested_from: "stdout", absolute: target });
+            // Process success is not an answer. Parse the route's envelope and pass only
+            // its non-empty final text forward; error/session metadata is not an artefact.
+            const { isolateReply } = await import("./probes.mjs");
+            const answer = isolateReply(route, result, text);
+            if (!answer.isolated || !answer.reply.trim()) {
+              failure = "invalid_output";
+              failureDetail = answer.detail || "provider returned no non-empty text answer";
+            } else {
+              const target = path.join(outDir, "01-response.txt"), reply = answer.reply;
+              writePrivate(target, reply);
+              files.push({ path: posix(path.relative(cwd, target)), sha256: sha256(reply), bytes: Buffer.byteLength(reply), mime: "text/plain", modality: "text", harvested_from: "stdout", absolute: target });
+            }
           }
         }
       } finally { release?.(); }
-      report.steps.push({ step: i + 1, from: step.from, to: step.to, route, level, blocker: null, command_label: cmd.label, bound_flags: bound.flags, exit_code: result.code ?? null, timed_out: !!result.timedOut || result.error?.code === "ETIMEDOUT", prompt_sha256: sha256(text), prompt_included: text.startsWith(prompt), stdout_sha256: sha256(String(result.stdout ?? "")), files: files.map(({ absolute, ...f }) => f) });
+      report.steps.push({ step: i + 1, from: step.from, to: step.to, route, level, ...(plan_level && plan_level !== level ? { plan_level } : {}), blocker: null, command_label: cmd.label, bound_flags: bound.flags, exit_code: result.code ?? null, timed_out: !!result.timedOut || result.error?.code === "ETIMEDOUT", prompt_sha256: sha256(text), prompt_included: text.startsWith(prompt), stdout_sha256: sha256(String(result.stdout ?? "")), files: files.map(({ absolute, ...f }) => f) });
       if (failure) {
         report.status = "failed"; report.failure = failure; report.failed_step = i + 1;
         if (failureDetail) report.failure_detail = failureDetail;
@@ -479,7 +515,8 @@ async function main(argv) {
   process.stderr.write(usage());
   return verb === "--help" || verb === "-h" ? 0 : 4;
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isEntrypoint() { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
+if (isEntrypoint()) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (e) => {
     process.stderr.write(`${e.message}\n`);
     process.exitCode = ["MOMM_CONSENT_REQUIRED", "MOMM_PROMPT_REQUIRED", "MOMM_PLAN_BLOCKED", "MOMM_STEP_BLOCKED", "MOMM_INPUT_MISSING"].includes(e.code) ? 2 : 1;

@@ -433,6 +433,7 @@ async function main(argv) {
   if (!loginIdentity) process.stderr.write("login identity binding not checked (pass --logins '{\"route\":\"identity\"}' to bind overlay entries to a login)\n");
   process.stdout.write(renderMatrix(effective({ home, baseline, installedVersions, loginIdentity }), { json: values.json }));
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isEntrypoint() { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
+if (isEntrypoint()) {
   main(process.argv.slice(2)).catch((e) => { process.stderr.write(`${e.message}\n`); process.exitCode = 1; });
 }

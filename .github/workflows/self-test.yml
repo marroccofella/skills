@@ -74,6 +74,9 @@ jobs:
       - name: modality planner and step-scoped runner (1.16 E7)
         timeout-minutes: 3
         run: node momm/scripts/modality.test.mjs
+      - name: modality runner regressions from the 1.16 readiness audit
+        timeout-minutes: 2
+        run: node momm/scripts/modality-evaluation.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |
