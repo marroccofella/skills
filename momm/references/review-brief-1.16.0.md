@@ -45,6 +45,10 @@ Conclusion: the photorealistic goal is met in all three; strict prompt complianc
 
 Semantic corroboration that links, never merges; a per-route deadline for media critiques so one slow route does not hold the report; one command for generate → critique → draft dispositions; a stored image-review brief; a content sniff for media types; an opt-in, disclosed re-probe under `--reviewers auto`; `--jobs` up to 9 with three or more routes; `--early-exit` once in-flight cancellation exists.
 
+## Test plan
+
+The independent test plan covering every capability, section by section with expected results and the rules for testers, is [third-party-test-plan-1.16.0.md](third-party-test-plan-1.16.0.md). It states up front that the legal and commercial profile is not in this candidate.
+
 ## What the reviewer is asked to do
 
 Review the branch as a whole against `main` for correctness and for anything that weakens the review core (sole writer, reproduce before fix, OAuth only, no generation inside a review, off-by-default automation). Reproduce any material finding before proposing a fix; do not enable any toggle; do not run installers; treat `.ensemble_reviews/` as private telemetry. The release steps that remain, in order, once the review is clean: `momm-check/1` completion evidence for the gate runs, privacy scan on the final head, `momm-release.mjs --prepare` to seal the manifest entry, the signed tag through the release workflow, public evidence refresh, and a clean install and upgrade proof. None of these has been started.
