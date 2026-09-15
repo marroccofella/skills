@@ -6,7 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { releasePages } from "./momm-release-pages.mjs";
-import { evidenceVisuals, releasePanel, releaseChecks, tourSection, chartSeries } from "./momm-site-visuals.mjs";
+import { evidenceVisuals, releasePanel, releaseChecks, chartSeries } from "./momm-site-visuals.mjs";
+import { definition, answerSection, enhanceSearch, projectStory, evidenceBenefits, addAttribution } from "./momm-site-search.mjs";
+import { watchOutputs } from './momm-site-videos.mjs';
+import {technicalBody, brandBadge, ensembleObservations} from './momm-site-technical.mjs';
+import {homeCinema,homeDiagrams} from './momm-site-home.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = v => createHash("sha256").update(v).digest("hex");
@@ -48,7 +52,7 @@ export function stats(data) {
     dispositions: dispositions.length, decisions: counts(dispositions), coalition: { total: coalition.length, ...counts(coalition) },
     routes: routeRows, severity, by_day: byDay };
 }
-const nav = [["index.html", "Overview"], ["start.html", "Get started"], ["updates.html", "Update safely"], ["evidence.html", "Evidence"], ["reference.html", "Reference"], ["releases/index.html", "Versions"]];
+const nav = [["index.html", "Overview"], ["start.html", "Get started"], ["updates.html", "Update safely"], ["evidence.html", "Evidence"], ["technical.html", "Architecture"], ["reference.html", "Reference"], ["releases/index.html", "Versions"]];
 function shell(file, title, body, version) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="MOMM: multi-model review through your existing CLI logins. One driving agent, independent review claims, explicit decisions and a private evidence trail."><meta name="theme-color" content="#080a0a"><title>${esc(title)} · MOMM</title><link rel="stylesheet" href="site.css"><script src="site.js" defer></script></head>
@@ -67,7 +71,7 @@ export function pages(data, s, version) {
   const overview = `<section class="hero"><div>${eyebrow("MIXTURE OF MODEL MODALITY")}
     <a class="release-pill" href="${link}"><span class="dot"></span> ${esc(version)} · version notes <span>↗</span></a>
     <h1>One agent writes.<br><span>Others challenge it.</span><br>You keep the evidence.</h1>
-    <p class="lead">Give your coding agent a second opinion—from the AI CLIs you already use. MOMM brings the findings together. Your agent stays responsible for checking them.</p>
+    <p class="lead">${esc(definition)}</p>
     <div class="actions"><a class="button primary" href="start.html">Get started <span>→</span></a><a class="button" href="evidence.html#real-review">See a real review</a></div><p class="micro">Local orchestration · your existing account logins · no API-key setup</p></div>
     <div class="review-card" aria-label="Illustrative review flow, not a live run"><div class="card-bar"><span>REVIEW / THREE DISTINCT ROLES</span><span class="dot"></span></div><div class="flow-row"><span class="model governor">G</span><div><strong>Your current agent</strong><small>Writes the change. Does not review itself.</small></div><span class="role">governor</span></div><div class="flow-divider">↓ sanitized input to selected providers</div><div class="reviewers"><span class="model codex">CX</span><span class="model claude">CL</span><span class="model agy">AG</span><span class="model copilot">CP</span><span class="model grok">GK</span></div><p class="card-caption">Choose ready external reviewers.<br>These are CLI routes, not guaranteed model IDs.</p><div class="flow-divider">↓ claims, not instructions</div><div class="decision"><span>INVESTIGATE</span><span>VERIFY</span><span>RECORD</span></div><p class="card-foot">A vote is not a test. An ACCEPT is not proof.</p></div></section>
     <section class="principles"><article><span class="number">01</span><h2>One writer.</h2><p>Your current agent remains the only editor. Reviewer responses are untrusted evidence, never permission to change your project.</p></article><article><span class="number">02</span><h2>More than a verdict.</h2><p>See who found what, which routes failed, and why the governor applied, rejected or deferred each suggestion.</p></article><article><span class="number">03</span><h2>A record you own.</h2><p>Reports and decisions stay in your project’s private dashboard. The public example is a separate, sanitized export.</p></article></section>
@@ -131,12 +135,16 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   data.sanitization = "User home/workspace paths normalized and private ledger links removed. Reviewer prose may quote source. Input text is absent by default but can be stored with explicit --store-input; this historical public snapshot contains some such inputs. Private-to-public export requires separate authorization and inspection.";
   const json = JSON.stringify(data), s = stats(data), manifest = JSON.parse(fs.readFileSync(path.join(root, "versions.json"))), version = manifest.momm;
   const tour = JSON.parse(fs.readFileSync(path.join(root, "docs/momm/tour.json"), "utf8"));
+  const films = JSON.parse(fs.readFileSync(path.join(root, 'docs/momm/films.json'), 'utf8'));
   const catalogue = JSON.parse(fs.readFileSync(path.join(root, 'momm/references/release-history.json'), 'utf8'));
   const published = catalogue.some(r => r.version === version && r.kind === 'release' && r.tag && r.published_date);
   if (Object.values(s.decisions).reduce((a, b) => a + b, 0) !== s.dispositions) throw new Error("Disposition buckets do not reconcile");
   for (const key of Object.keys(s.decisions)) if (s.routes.reduce((n, r) => n + r[key], 0) + s.coalition[key] !== s.decisions[key]) throw new Error(`Attribution buckets do not reconcile: ${key}`);
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
-  const output = { ...pages(data, s, version), ...releasePages(root), "docs/evidence/momm-evidence.json": json,
+  const output = { ...pages(data, s, version), ...releasePages(root),
+    'docs/momm/technical.html': shell('technical.html', 'Architecture and reviewer-stacking evidence', technicalBody(data, s, version), version).replace('</head>', '<script type="module" src="stacking-model.mjs"></script></head>'),
+    'docs/momm/data/ensemble-observations.json': JSON.stringify(ensembleObservations(data), null, 2) + '\n',
+    "docs/evidence/momm-evidence.json": json,
     "docs/evidence/momm-evidence.json.sha256": `${sha(json)}  momm-evidence.json\n`,
     "docs/momm/data/public-stats.json": JSON.stringify(s, null, 2) + "\n" };
   // A recorded video never silently inherits a newer version. The banner uses
@@ -148,16 +156,22 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
       .replace('</head>', `<link rel="icon" type="image/svg+xml" href="${prefix}favicon.svg"></head>`);
   }
   output['docs/momm/index.html'] = output['docs/momm/index.html']
-    .replace('<section class="principles">', releasePanel(manifest, published) + '<section class="principles">')
-    .replace('<section class="boundary">', tourSection(tour, version) + '<section class="boundary">')
+    .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
+    .replace('<section class="principles">', () => homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + homeDiagrams(data, s, version) + '<section class="principles">')
+    .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
+    .replace('</head>', '<link rel="stylesheet" href="home.css"><script type="module" src="home-player.mjs"></script></head>')
     .replace('See a real review</a>', 'See a real review</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
   output['docs/momm/start.html'] = output['docs/momm/start.html'].replace('<section id="install">', `<section class="notice"><h2>Recommended: let your agent verify the release first</h2><p><a class="button primary" href="releases/upgrade.html">Copy the new-user / upgrade prompt →</a></p><p>A clone starts on the default branch, which can contain unreleased work. Before executing the manual installer below, select the published signed release, verify its expected signing identity and package hash, and read its installer help. The copyable prompt covers those steps and asks before installing missing prerequisites.</p></section><section id="install">`);
   const releaseEvidence = releaseChecks(catalogue, version);
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html']
-    .replace('<h2>Why the totals differ', releaseEvidence + '<h2>Why the totals differ')
-    .replace('<section id="real-review">', evidenceVisuals(data, s) + '<section id="real-review">')
+    .replace('<h2>Why the totals differ', () => releaseEvidence + '<h2>Why the totals differ')
+    .replace('<section id="real-review">', () => evidenceVisuals(data, s) + '<section id="real-review">')
     .replace('Read the release’s verification record →', 'Read the historical 1.13.0 fix record →');
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('<section id="privacy">', `<section id="modalities"><h2>Not just code: prose and supported attachments</h2><p>Use MOMM for manuscripts, specifications and other text when sharing with the selected providers is permitted. The same rule applies: reviewers make claims; the governor verifies and records decisions.</p><p>Text routes include Codex, Claude Code, Antigravity, Copilot and Grok. Verified attachment adapters differ: Codex supports images; Claude supports images and PDFs; Gemini supports images, PDFs, audio and video where the account is eligible. Other routes stay text-only until verified. Run preflight for the installed adapter’s actual capability; a provider logo is not evidence of multimedia support.</p><p>The historical public ledger contains the manuscript specimen <code>rev_20260904131823_wvxh</code>. <a href="../evidence/index.html">Inspect the sanitized specimen →</a> · <a href="https://github.com/marroccofella/skills/blob/main/momm/SKILL.md">Read the current protocol ↗</a></p><p>Strict review-contract rejection and input/source size ceilings remain possible. The source completion validator covers local text and supported Git text additions/modifications, not every binary, rename, deletion or media lifecycle.</p></section><section id="privacy">`);
+  output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('</main>', () => answerSection()+'</main>');
+  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p></section><section class="cta">');
+  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">', () => projectStory()+'<section class="cta">');
+  output['docs/momm/evidence.html'] = output['docs/momm/evidence.html'].replace('<section id="real-review">', () => evidenceBenefits(s)+'<section id="real-review">');
   output['docs/momm/data/route-outcomes.json'] = JSON.stringify(chartSeries(data).routes, null, 2) + '\n';
   const ledger = fs.readFileSync(path.join(root, "docs/evidence/index.html"), "utf8");
   const block = /<script id="data" type="application\/json">[\s\S]*?<\/script>/;
@@ -197,18 +211,34 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   })]);
   const downloads = [["routes.csv", "Route completion/timing from stored reports; all single-route decision counts and governor acceptance"], ["routes.md", "The same route table as Markdown"], ["route-outcomes.json", "Stored external-result denominators, self-exclusions and actual failure categories"], ["decisions-by-attribution.csv", "Every decision bucket, including coalition/multiple attribution"], ["public-stats.json", "The generated page statistics and explicit denominators"], ["runs.csv", "Run ID, timestamp, governor, input size, finding counts and subject"], ["dispositions.csv", "Recorded decisions and reasons"], ["findings-by-severity.csv", "Findings in stored reports, grouped by severity"], ["runs-per-day.csv", "Recorded runs by date"], ["input-size-vs-time.csv", "Stored-report input sizes, non-self-excluded route results, timeouts and successful durations. Blank slowest_completed_seconds means no successful timed response; never zero seconds."]];
   output["docs/momm/data/index.html"] = shell("evidence.html", "Evidence downloads", `${hero("PUBLIC DATA CATALOGUE", "The numbers,<br><span>in reusable form.</span>", "Generated from the same committed public snapshot as the information pages. Read the cohort definitions before comparing columns.")}<div class="doc-body wide"><p>Snapshot: ${esc(s.generated)}. This is project development evidence, not measured accuracy.</p><div class="table-wrap"><table><thead><tr><th>Download</th><th>Contents</th></tr></thead><tbody>${downloads.map(([f, d]) => `<tr><td><a href="${f}">${f}</a></td><td>${d}</td></tr>`).join("")}</tbody></table></div><p><a href="../evidence.html">Read the evidence definitions →</a></p></div>`, version).replace('href="site.css"', 'href="../site.css"').replace('src="site.js"', 'src="../site.js"').replace(/href="(index|start|updates|evidence|reference)\.html"/g, 'href="../$1.html"');
-  output["docs/momm/data/index.html"] = output["docs/momm/data/index.html"].replace('href="releases/index.html"', 'href="../releases/index.html"');
+  output["docs/momm/data/index.html"] = output["docs/momm/data/index.html"].replace('href="releases/index.html"', 'href="../releases/index.html"').replace('href="technical.html"', 'href="../technical.html"');
   output['docs/momm/data/index.html'] = output['docs/momm/data/index.html'].replace('</header>', '</header>' + banner('../')).replace('</head>', '<link rel="icon" type="image/svg+xml" href="../favicon.svg"></head>');
   const hub = fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8');
   const versionMarker = /<span data-momm-version>[^<]*<\/span>/g;
   if ([...hub.matchAll(versionMarker)].length !== 1) throw new Error('Hub must contain exactly one MOMM version marker');
   output['docs/index.html'] = hub.replace(versionMarker, () => `<span data-momm-version>${esc(version)}</span>`);
+  enhanceSearch(output, {version, catalogue});
+  for (const file of Object.keys(output).filter(f => f.startsWith('docs/momm/') && f.endsWith('.html'))) {
+    const prefix = file.includes('/releases/') || file.includes('/data/') ? '../' : '';
+    output[file] = output[file].replace('</head>', `<link rel="stylesheet" href="${prefix}technical.css"></head>`);
+  }
+  addAttribution(output);
+  Object.assign(output, watchOutputs(tour, version, root));
+  const videoSitemaps=[output['docs/video-sitemap.xml']];
+  for(const film of films){
+    const pages=watchOutputs(film,version,root,film.id);
+    videoSitemaps.push(pages['docs/video-sitemap.xml']);
+    delete pages['docs/video-sitemap.xml']; Object.assign(output,pages);
+  }
+  const videoEntries=videoSitemaps.filter(Boolean).flatMap(xml=>[...xml.matchAll(/<url>[\s\S]*?<\/url>/g)].map(m=>m[0]));
+  output['docs/video-sitemap.xml']='<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">'+videoEntries.join('')+'</urlset>\n';
   // lastmod is optional. Do not mislabel the evidence snapshot date, build time
   // or a moving Git HEAD as the last meaningful edit of every generated page.
   const urls = Object.keys(output).filter(f => f.endsWith('.html')).map(f =>
-    'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/index\.html$/, '')).sort();
-  output['docs/sitemap.xml'] = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-    + [...new Set(urls)].map(url => `  <url><loc>${esc(url)}</loc></url>`).join('\n') + '\n</urlset>\n';
+    'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/(^|\/)index\.html$/, '$1')).sort();
+  const videoByUrl=new Map(videoEntries.map(entry=>[entry.match(/<loc>(.*?)<\/loc>/)[1],entry.match(/<video:video>[\s\S]*?<\/video:video>/)[0]]));
+  output['docs/sitemap.xml'] = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">\n'
+    + [...new Set(urls)].map(url => `  <url><loc>${esc(url)}</loc>${videoByUrl.get(url)||''}</url>`).join('\n') + '\n</urlset>\n';
   const stale = [];
   for (const [file, text] of Object.entries(output)) {
     const dest = path.join(root, file);

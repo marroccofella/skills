@@ -1,0 +1,256 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:04.140
+Already using Codex, Claude, or another coding agent?
+
+00:00:04.140 --> 00:00:05.880
+MOMM gives it a review team.
+
+00:00:05.880 --> 00:00:09.860
+Instead of copying work between separate chats, make one request.
+
+00:00:09.860 --> 00:00:13.940
+Your selected AI tools challenge the work, and your agent brings the
+
+00:00:13.940 --> 00:00:14.960
+result back together.
+
+00:00:14.960 --> 00:00:16.260
+Keep your agent.
+
+00:00:16.260 --> 00:00:17.780
+Add the review team.
+
+00:00:17.780 --> 00:00:20.500
+MOMM stands for Mixture of Model Modality.
+
+00:00:20.500 --> 00:00:24.364
+Think different AI reviewers, working with different kinds of input:
+
+00:00:24.364 --> 00:00:28.614
+code, written plans, and, where a reviewer supports it, images or
+
+00:00:28.614 --> 00:00:29.000
+documents.
+
+00:00:29.000 --> 00:00:31.740
+It's not a new model.
+
+00:00:31.740 --> 00:00:34.080
+It's a way to make your existing tools work together.
+
+00:00:34.080 --> 00:00:36.220
+The benefit is broader scrutiny.
+
+00:00:36.220 --> 00:00:40.494
+Ask other tools to challenge an assumption, spot an overlooked risk,
+
+00:00:40.494 --> 00:00:44.380
+or suggest a simpler approach before you commit to it.
+
+00:00:44.380 --> 00:00:48.340
+Your current agent remains responsible for investigating and testing
+
+00:00:48.340 --> 00:00:49.220
+the advice.
+
+00:00:49.220 --> 00:00:53.111
+You get more challenge, without handing your project to competing
+
+00:00:53.111 --> 00:00:53.500
+editors.
+
+00:00:53.500 --> 00:00:57.740
+If you're manually copying work between chats, you wait for answers,
+
+00:00:57.740 --> 00:01:01.980
+compare the replies, then explain the changes back to your agent.
+
+00:01:01.980 --> 00:01:05.738
+MOMM runs selected reviews in parallel and collects them into one
+
+00:01:05.738 --> 00:01:06.080
+report.
+
+00:01:06.080 --> 00:01:08.580
+That's less manual coordination.
+
+00:01:08.580 --> 00:01:13.163
+It can reduce review waiting, although more reviewers still consume
+
+00:01:13.163 --> 00:01:14.080
+more quota.
+
+00:01:14.080 --> 00:01:17.620
+On September fourth, the public development record held three
+
+00:01:17.620 --> 00:01:21.947
+hundred and two apply decisions, and two hundred and fifty one
+
+00:01:21.947 --> 00:01:22.340
+rejections.
+
+00:01:22.340 --> 00:01:24.680
+Advice was weighed, not just accepted.
+
+00:01:24.680 --> 00:01:28.740
+These are the maintainer's records, not a customer benchmark.
+
+00:01:28.740 --> 00:01:32.473
+No universal productivity or accuracy percentage has been
+
+00:01:32.473 --> 00:01:32.940
+established.
+
+00:01:32.940 --> 00:01:33.740
+Why MOMM?
+
+00:01:33.740 --> 00:01:35.680
+You choose the provider tools.
+
+00:01:35.680 --> 00:01:38.380
+Keep the agent you already work in.
+
+00:01:38.380 --> 00:01:42.480
+Inspect the open source protocol and your local decision history.
+
+00:01:42.480 --> 00:01:46.380
+CodeRabbit and Qodo also offer AI review workflows.
+
+00:01:46.380 --> 00:01:50.565
+MOMM is a fit when you want to coordinate your selected account based
+
+00:01:50.565 --> 00:01:53.140
+tools, with one responsible agent and explicit verification.
+
+00:01:53.140 --> 00:01:54.640
+Here's how to start.
+
+00:01:54.640 --> 00:01:58.760
+You need Git, Node eighteen or newer, and a compatible agent.
+
+00:01:58.760 --> 00:02:00.880
+Keep the clone in a permanent folder.
+
+00:02:00.880 --> 00:02:04.758
+Open the MOMM guide, copy the installation and upgrade prompt, and
+
+00:02:04.758 --> 00:02:06.520
+paste it into your agent.
+
+00:02:06.520 --> 00:02:10.575
+It finds the stable release and previews installation for your
+
+00:02:10.575 --> 00:02:10.980
+harness.
+
+00:02:10.980 --> 00:02:12.140
+Approve the plan.
+
+00:02:12.140 --> 00:02:14.460
+Open the local Setup Center.
+
+00:02:14.460 --> 00:02:17.940
+Choose your current agent, connect a reviewer with its account
+
+00:02:17.940 --> 00:02:19.680
+login, and verify the connection.
+
+00:02:19.680 --> 00:02:24.208
+Start with one; add another when its perspective earns the extra
+
+00:02:24.208 --> 00:02:24.620
+quota.
+
+00:02:24.620 --> 00:02:28.670
+The dashboard shows command line versions and guides explicit
+
+00:02:28.670 --> 00:02:29.120
+updates.
+
+00:02:29.120 --> 00:02:32.220
+Provider subscriptions and usage limits still apply.
+
+00:02:32.220 --> 00:02:34.020
+Return to your project.
+
+00:02:34.020 --> 00:02:36.120
+Choose which providers may receive the work.
+
+00:02:36.120 --> 00:02:39.040
+Then ask: use MOMM to review my changes.
+
+00:02:39.040 --> 00:02:42.862
+Investigate findings, verify any fixes, record every decision, and
+
+00:02:42.862 --> 00:02:44.560
+show me the ledger.
+
+00:02:44.560 --> 00:02:47.240
+Your agent handles the review loop.
+
+00:02:47.240 --> 00:02:50.060
+You don't have to relay each conversation yourself.
+
+00:02:50.060 --> 00:02:53.300
+You're seeing MOMM review this film's own script.
+
+00:02:53.300 --> 00:02:55.300
+The result isn't just a score.
+
+00:02:55.300 --> 00:02:58.500
+See each reviewer's findings and suggestions together.
+
+00:02:58.500 --> 00:03:02.212
+Your agent tests material claims, applies changes the evidence
+
+00:03:02.212 --> 00:03:05.100
+supports, or rejects advice with a reason.
+
+00:03:05.100 --> 00:03:07.320
+Unfinished decisions stay visible.
+
+00:03:07.320 --> 00:03:09.300
+Agreement doesn't replace evidence.
+
+00:03:09.300 --> 00:03:11.100
+Then open your private ledger.
+
+00:03:11.100 --> 00:03:12.780
+Who raised the issue?
+
+00:03:12.780 --> 00:03:14.180
+What did your agent decide?
+
+00:03:14.180 --> 00:03:16.360
+What evidence supports the change?
+
+00:03:16.360 --> 00:03:20.780
+The report, decisions, and completion record are there to inspect.
+
+00:03:20.780 --> 00:03:25.380
+That makes review easier to revisit, explain, and hand over.
+
+00:03:25.380 --> 00:03:28.868
+Use MOMM for a meaningful change, a difficult decision, or a release
+
+00:03:28.868 --> 00:03:29.740
+you want challenged.
+
+00:03:29.740 --> 00:03:34.116
+Start small and judge the value on your own work: useful findings,
+
+00:03:34.116 --> 00:03:35.940
+review time, and rework avoided.
+
+00:03:35.940 --> 00:03:37.100
+Open the guide.
+
+00:03:37.100 --> 00:03:38.000
+Copy the prompt.
+
+00:03:38.000 --> 00:03:39.340
+Keep your agent.
+
+00:03:39.340 --> 00:03:40.151
+Add the review team.

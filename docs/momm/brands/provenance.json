@@ -1,0 +1,15 @@
+{
+  "schema": "momm-brand-assets/1",
+  "checked": "2026-09-13",
+  "usage": "Unmodified marks identify supported provider or product routes in independent technical documentation. They do not identify the actual responding model, certify availability or imply endorsement. All trademarks remain with their owners; the repository MIT licence does not relicense third-party trademarks.",
+  "assets": [
+    {"file":"openai.svg","mark":"OpenAI white monoblossom","source":"https://cdn.openai.com/brand/OpenAI-Logos-2025.zip","source_entry":"OpenAI-logos(new)/SVGs/OpenAI-white-monoblossom.svg","guidelines":"https://openai.com/brand/","sha256":"b94ea61d860fae6f82f43571f36f17111fcf5d348e8e9cc22ae4b441c7560011","note":"OpenAI provider mark, not a Codex model-version logo. Preserve artwork and clear space; subordinate to MOMM."},
+    {"file":"claude.svg","mark":"Claude Spark - Clay","source":"https://www-cdn.anthropic.com/ae59ca4ca194dac9c9dc3bc78c5829468cb0e8af.zip","source_entry":"Anthropic media resources/Anthropic logos/Claude logos/3 Claude Spark/SVG/Claude Spark - Clay.svg","guidelines":"https://anthropic.com/press-kit","sha256":"6d53db4be375e899c937c26cf16684a80d6e869b1928d72b37748bef2560e219","note":"Original Anthropic newsroom press-kit artwork; identifies the Claude family next to the Claude Code route label, not a particular inner model."},
+    {"file":"antigravity.png","mark":"Google Antigravity full-colour icon","source":"https://www.antigravity.google/assets/image/brand/antigravity-icon__full-color.png","guidelines":"https://www.antigravity.google/press","sha256":"e0cd08ccd10cd8d08ccf0ba449823ee88495825c0841619618100d3ab089f51e","note":"Original press asset for Google Antigravity, not the unrelated antigravity.com company."},
+    {"file":"copilot.svg","mark":"GitHub Copilot Octicon 24","source":"https://raw.githubusercontent.com/primer/octicons/main/icons/copilot-24.svg","guidelines":"https://primer.style/octicons/icon/copilot-24/","sha256":"eeafb3c2f333e04ccf7d031ae215f7adafaed4c6352556b0bf79496e048bcdd7","licence":"octicons-LICENSE.txt","note":"Original GitHub Primer SVG. Local content hash pins these downloaded bytes even if upstream main later changes. Black artwork is displayed on a light tile without recolouring."}
+  ],
+  "text_fallbacks": [
+    {"route":"grok","label":"Grok","source":"https://x.ai/legal/brand-guidelines","asset":"https://data.x.ai/logos/SpaceXAI_Grok_Assets.zip","reason":"Official download returned an access block. No alternate reproduction or guessed mark used."},
+    {"route":"gemini","label":"Gemini CLI","source":"https://design.google/library/gemini-ai-visual-design","reason":"Current reusable official logo asset not established in this audit. Plain-text identification retained rather than a stale or unrelated Gemini logo."}
+  ]
+}

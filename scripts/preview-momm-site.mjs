@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../docs"));
 const port = Number(process.argv[2] || 8842);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Choose a local port from 1024 to 65535");
-const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".mp4": "video/mp4", ".vtt": "text/vtt" };
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".mp4": "video/mp4", ".vtt": "text/vtt" };
 http.createServer((req, res) => {
   if (!["GET", "HEAD"].includes(req.method)) { res.writeHead(405, { "Allow": "GET, HEAD" }); res.end(); return; }
   try {
@@ -24,10 +24,21 @@ http.createServer((req, res) => {
     }
     const real = fs.realpathSync(file);
     if (!real.startsWith(root + path.sep)) throw new Error("outside docs");
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] || "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    const size=fs.statSync(real).size,range=req.headers?.range;
+    let start=0,end=size-1,status=200;
+    if(range){
+      const match=/^bytes=(\d*)-(\d*)$/.exec(range);
+      const reject=()=>{res.writeHead(416,{"Content-Range":`bytes */${size}`});res.end();};
+      if(!match||(!match[1]&&!match[2])){reject();return;}
+      if(!match[1]){const suffix=Number(match[2]);if(!Number.isSafeInteger(suffix)||suffix<=0){reject();return;}start=Math.max(0,size-suffix);}
+      else {start=Number(match[1]);if(match[2])end=Math.min(Number(match[2]),size-1);}
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>=size||end<start){reject();return;}
+      status=206;
+    }
+    res.writeHead(status, { "Content-Type": types[path.extname(file)] || "text/plain; charset=utf-8", "Content-Length":Math.max(0,end-start+1),"Accept-Ranges":"bytes",...(status===206?{"Content-Range":`bytes ${start}-${end}/${size}`}:{ }), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
     if (req.method === "HEAD") res.end();
     else {
-      const stream = fs.createReadStream(real);
+      const stream = fs.createReadStream(real,status===206?{start,end}:undefined);
       // Headers may already be sent. End the failed response, not the server.
       stream.once("error", () => res.destroy());
       res.once("close", () => stream.destroy());

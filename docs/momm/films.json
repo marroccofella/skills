@@ -1,0 +1,151 @@
+[
+  {
+    "schema": "momm-tour/2",
+    "id": "setup",
+    "title": "Dashboard & setup: your first ready reviewer",
+    "description": "Install MOMM, open your local Setup Center, connect a reviewer and return to your project for a first review.",
+    "version": "1.15.1",
+    "recorded_date": "2026-09-13",
+    "published_date": "2026-09-13T22:38:08.000Z",
+    "status": "accepted",
+    "narration_speed": 1.5,
+    "duration_seconds": 144.212375,
+    "video_sha256": "97dc67125eee62a41e48da2949bbebeec622e5fc63d54f6e443aded6bb485461",
+    "media_hashes": {
+      "films/setup/walkthrough.mp4": "97dc67125eee62a41e48da2949bbebeec622e5fc63d54f6e443aded6bb485461",
+      "films/setup/poster.jpg": "b56932d58bb74f25ad84874ae381a475a8dd29c5e3340075a8cb098cccc67bb5",
+      "films/setup/captions.vtt": "dc6c4c5072b34700204107083b6483a6d178f2c33dbd18ea8f595f7a43516806"
+    },
+    "voice": "Consented synthetic Dom narration, generated locally with Promptus F5-TTS",
+    "captions_burned_in": true,
+    "chapters": [
+      {
+        "id": "start",
+        "title": "Your first reviewer. Ready to go.",
+        "start": 0,
+        "end": 11.6,
+        "display_text": "This is the practical setup. The website explains MOMM. The Setup Center connects your tools. The ledger records your reviews. Three different jobs. Let's get your first reviewer ready."
+      },
+      {
+        "id": "install",
+        "title": "01 / Install for your own agent",
+        "start": 11.6,
+        "end": 32.02,
+        "display_text": "Open the installation guide. Copy the install or upgrade prompt into the agent you use. It checks Git, Node eighteen or newer, your existing installation, and the published stable release. Choose a permanent folder outside your projects. Review the plan, then approve it. You don't need every harness, or every reviewer."
+      },
+      {
+        "id": "open",
+        "title": "02 / Open the local Setup Center",
+        "start": 32.02,
+        "end": 48.82,
+        "display_text": "Ask your agent to open MOMM's Setup Center. If you prefer the terminal, run the setup command from the skills clone. The address is local to your machine, and its port may differ from this recording. Don't paste somebody else's localhost address and expect their dashboard."
+      },
+      {
+        "id": "governor",
+        "title": "03 / Choose who is driving",
+        "start": 48.82,
+        "end": 64.08,
+        "display_text": "Choose your current agent as the governor. That's the agent writing and testing your work. It is excluded from reviewing itself. Now pick an external reviewer. One is enough to begin. Add more when another perspective is worth the extra quota."
+      },
+      {
+        "id": "login",
+        "title": "04 / Connect, then verify",
+        "start": 64.08,
+        "end": 84.78,
+        "display_text": "An installed command line tool is not the same as a working account. Use its official login action and complete the browser login yourself. No API keys. Then verify the connection. Quick Setup tests detected sessions using a disclosed synthetic sentence, not your project. A successful check is evidence for now, not a promise about every future review."
+      },
+      {
+        "id": "maintenance",
+        "title": "05 / Check versions without auto-updates",
+        "start": 84.78,
+        "end": 105.76,
+        "display_text": "The maintenance panel separates installed versions from update availability. Check first. Read the proposed change. Run an update only when you choose to. MOMM's own signed updates also protect protocol changes with explicit acceptance. If you update MOMM, relaunch Setup Center so you're not looking at an older running page."
+      },
+      {
+        "id": "fixes",
+        "title": "When a route is not ready",
+        "start": 105.76,
+        "end": 126.64,
+        "display_text": "Follow the actual status. Missing means install the official tool. Authentication required means complete its login. Provider unavailable means wait and retry, not re-login. Quota exhausted means deal with the provider's allowance. You can continue with another ready reviewer; don't turn a failed route into a successful one on the screen."
+      },
+      {
+        "id": "first-review",
+        "title": "06 / Return to your project",
+        "start": 126.64,
+        "end": 144.212375,
+        "display_text": "Back in your project, approve which providers may receive the work. Ask MOMM to review your changes, investigate material findings, verify fixes, record every decision, and give you the ledger link. That completes the journey: set up once, request a review, then check what happened."
+      }
+    ]
+  },
+  {
+    "schema": "momm-tour/2",
+    "id": "trailer",
+    "title": "The MOMM trailer: your agent just got a review team",
+    "description": "Keep your agent. Add the review team. A short film about the practical workflow, real disagreements and decisions you can inspect.",
+    "version": "1.15.1",
+    "recorded_date": "2026-09-13",
+    "published_date": "2026-09-13T22:38:08.000Z",
+    "status": "accepted",
+    "narration_speed": 1.5,
+    "duration_seconds": 51.38675,
+    "video_sha256": "00cc9673ab57b3fedcb1f651bfaa8703abb331337bdf85b379e9b2e78cf52132",
+    "media_hashes": {
+      "films/trailer/walkthrough.mp4": "00cc9673ab57b3fedcb1f651bfaa8703abb331337bdf85b379e9b2e78cf52132",
+      "films/trailer/poster.jpg": "aa3a107774811ac5598e27d691d92af811b1ead33c002054c9ccf66450409288",
+      "films/trailer/captions.vtt": "79e05ed9205dd9ec19e594d3f9cecb904cbd7ac61d3fbc0f38aa84995837719d"
+    },
+    "voice": "Consented synthetic Dom narration, generated locally with Promptus F5-TTS",
+    "captions_burned_in": true,
+    "chapters": [
+      {
+        "id": "cold-open",
+        "title": "Your agent moves fast.",
+        "start": 0,
+        "end": 3.74,
+        "display_text": "Your agent moves fast. But who challenges the answer?"
+      },
+      {
+        "id": "blind-spot",
+        "title": "One answer. More than one perspective.",
+        "start": 3.74,
+        "end": 10.42,
+        "display_text": "Meet MOMM. Mixture of Model Modality. Keep the agent you trust to do the work. Bring in the tools you choose to challenge it."
+      },
+      {
+        "id": "team",
+        "title": "One request. A review team.",
+        "start": 10.42,
+        "end": 17.52,
+        "display_text": "One request. Parallel reviewers. Less copying between chats. More questions worth asking before you ship."
+      },
+      {
+        "id": "proof",
+        "title": "Not a vote. A decision you can inspect.",
+        "start": 17.52,
+        "end": 26.88,
+        "display_text": "Not a vote. Not blind trust. Your agent investigates. Tests the changes. Records what it accepted, what it rejected, and why."
+      },
+      {
+        "id": "real",
+        "title": "Real work. Real disagreements.",
+        "start": 26.88,
+        "end": 38.8,
+        "display_text": "Three reviewers challenged our own introduction. We clarified the setup. Rejected a claim that didn't match the code. Recorded why. Real decisions you can inspect, not a promised productivity multiplier."
+      },
+      {
+        "id": "different",
+        "title": "Your tools. Your agent. Your evidence.",
+        "start": 38.8,
+        "end": 46.66,
+        "display_text": "Choose your reviewers. Keep one writer. Own the local decision trail. Open source. Account based. Built for the way you already work."
+      },
+      {
+        "id": "end",
+        "title": "Keep your agent. Add the review team.",
+        "start": 46.66,
+        "end": 51.38675,
+        "display_text": "Start with one meaningful change. MOMM. Keep your agent. Add the review team."
+      }
+    ]
+  }
+]

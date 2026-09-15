@@ -8,6 +8,12 @@ import { createHash } from "node:crypto";
 import vm from "node:vm";
 await import("./ledger-ui.test.mjs");
 await import("./momm-site-visuals.test.mjs");
+await import("./momm-site-videos.test.mjs");
+await import("./momm-site-search.test.mjs");
+await import("./momm-site-regression.test.mjs");
+await import("./momm-site-technical.test.mjs");
+await import("./momm-site-home.test.mjs");
+await import("./preview-module.test.mjs");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 renderPublic({ root, check: true });
@@ -17,9 +23,9 @@ assert.equal([...hub.matchAll(/data-momm-version/g)].length, 1, 'hub needs one g
 assert(hub.includes(`<span data-momm-version>${expectedVersion}</span>`), 'hub must show the exact manifest version');
 const sitemap = fs.readFileSync(path.join(root, 'docs/sitemap.xml'), 'utf8');
 assert(!sitemap.includes('<lastmod>2026-09-04</lastmod>'), 'do not reuse the historical evidence date as current page modification time');
-for (const page of ['start.html', 'updates.html', 'reference.html', `releases/${expectedVersion}.html`, 'releases/upgrade.html'])
+for (const page of ['start.html', 'updates.html', 'reference.html', 'technical.html', 'watch/overview.html', 'watch/setup.html', 'watch/trailer.html', `releases/${expectedVersion}.html`, 'releases/upgrade.html'])
   assert(sitemap.includes(`https://marroccofella.github.io/skills/momm/${page}`), `sitemap omits ${page}`);
-const files = ["index.html", "start.html", "updates.html", "evidence.html", "reference.html", "data/index.html"];
+const files = ["index.html", "start.html", "updates.html", "evidence.html", "technical.html", "reference.html", "data/index.html"];
 let localLinks = 0;
 for (const name of files) {
   const file = path.join(root, "docs/momm", name), html = fs.readFileSync(file, "utf8");
@@ -31,7 +37,8 @@ for (const name of files) {
     assert(!/^file:/i.test(value), `${name}: local filesystem URL`);
     if (/^(https?:|mailto:|data:)/.test(value)) continue;
     const [relative, fragment] = value.split("#");
-    const dest = relative ? path.resolve(path.dirname(file), decodeURIComponent(relative)) : file;
+    const relativePath = relative.split('?')[0];
+    const dest = relativePath ? path.resolve(path.dirname(file), decodeURIComponent(relativePath)) : file;
     assert(dest.startsWith(path.join(root, "docs") + path.sep), `${name}: link escapes docs`);
     assert(fs.existsSync(dest), `${name}: missing ${value}`);
     if (fragment) assert(fs.readFileSync(dest, "utf8").includes(`id="${fragment}"`), `${name}: missing fragment ${value}`);
@@ -91,7 +98,7 @@ const s = stats(data);
 const releases=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json')));
 for(const name of ['index','upgrade',...releases.map(r=>r.version)]){
   const file=path.join(root,'docs/momm/releases',name+'.html'),html=fs.readFileSync(file,'utf8');
-  assert.match(html,/<main id="main">/);assert(!/<script(?![^>]*src=)/.test(html),'release notes must not introduce executable inline scripts');
+  assert.match(html,/<main id="main">/);assert(!/<script(?![^>]*(?:src=|type="application\/ld\+json"))/.test(html),'release notes must not introduce executable inline scripts');
   for(const [,href] of html.matchAll(/(?:href|src)="([^"]+)"/g)){
     if(href.startsWith('#')||href.startsWith('https://'))continue;
     assert(!/^[a-z]+:/i.test(href),'unsafe release URL');

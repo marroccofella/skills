@@ -16,7 +16,7 @@ const release=releasePanel({momm:'9.0.0',momm_releases:[{version:'9.0.0',tag:'mo
 assert(release.includes('MOMM <span>9.0.0'));assert(!release.includes('<script>'));
 const tour=JSON.parse(fs.readFileSync(new URL('../docs/momm/tour.json',import.meta.url),'utf8'));
 assert(!tourSection({...tour,status:'pending_voice_acceptance'},tour.version).includes('<video'),'pending narration must not become a public video');
-assert(tourSection(tour,'99.0.0').includes('current release is 99.0.0'),'old recording must visibly disclose version mismatch');
+assert(/current release is 99\.0\.0/i.test(tourSection(tour,'99.0.0')),'old recording must visibly disclose version mismatch');
 const home=fs.readFileSync(new URL('../docs/momm/index.html',import.meta.url),'utf8');
 // The banner state must follow the attributed catalogue: a published release says
 // CURRENT STABLE; a candidate (version-notes) must say so and never claim stability.
@@ -28,7 +28,7 @@ if(!publishedNow)assert(home.includes('CHECK PUBLICATION'),'an unpublished check
 assert(home.includes('id="walkthrough"'));
 const acceptedTour=tourSection({...tour,status:'accepted'},tour.version);
 assert(acceptedTour.includes('<video controls'));
-assert(acceptedTour.includes('screen actions 15×; narration 1×'));
+assert(acceptedTour.includes('synthetic Dom narration at 1.5×'));
 assert(acceptedTour.includes('consented synthetic Dom narration'));
 const pendingTour=tourSection({...tour,status:'pending_voice_acceptance'},tour.version);
 assert(pendingTour.includes('<strong>New narrated video is in production.</strong>'));

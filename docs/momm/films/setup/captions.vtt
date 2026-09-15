@@ -1,0 +1,169 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.040
+This is the practical setup.
+
+00:00:02.040 --> 00:00:03.880
+The website explains MOMM.
+
+00:00:03.880 --> 00:00:05.960
+The Setup Center connects your tools.
+
+00:00:05.960 --> 00:00:07.920
+The ledger records your reviews.
+
+00:00:07.920 --> 00:00:09.520
+Three different jobs.
+
+00:00:09.520 --> 00:00:11.600
+Let's get your first reviewer ready.
+
+00:00:11.600 --> 00:00:13.580
+Open the installation guide.
+
+00:00:13.580 --> 00:00:17.180
+Copy the install or upgrade prompt into the agent you use.
+
+00:00:17.180 --> 00:00:21.780
+It checks Git, Node eighteen or newer, your existing installation,
+
+00:00:21.780 --> 00:00:24.080
+and the published stable release.
+
+00:00:24.080 --> 00:00:27.080
+Choose a permanent folder outside your projects.
+
+00:00:27.080 --> 00:00:29.080
+Review the plan, then approve it.
+
+00:00:29.080 --> 00:00:32.020
+You don't need every harness, or every reviewer.
+
+00:00:32.020 --> 00:00:35.020
+Ask your agent to open MOMM's Setup Center.
+
+00:00:35.020 --> 00:00:38.989
+If you prefer the terminal, run the setup command from the skills
+
+00:00:38.989 --> 00:00:39.320
+clone.
+
+00:00:39.320 --> 00:00:43.047
+The address is local to your machine, and its port may differ from
+
+00:00:43.047 --> 00:00:43.620
+this recording.
+
+00:00:43.620 --> 00:00:48.300
+Don't paste somebody else's localhost address and expect their
+
+00:00:48.300 --> 00:00:48.820
+dashboard.
+
+00:00:48.820 --> 00:00:51.280
+Choose your current agent as the governor.
+
+00:00:51.280 --> 00:00:54.220
+That's the agent writing and testing your work.
+
+00:00:54.220 --> 00:00:56.600
+It is excluded from reviewing itself.
+
+00:00:56.600 --> 00:00:58.780
+Now pick an external reviewer.
+
+00:00:58.780 --> 00:01:00.800
+One is enough to begin.
+
+00:01:00.800 --> 00:01:04.080
+Add more when another perspective is worth the extra quota.
+
+00:01:04.080 --> 00:01:08.260
+An installed command line tool is not the same as a working account.
+
+00:01:08.260 --> 00:01:12.024
+Use its official login action and complete the browser login
+
+00:01:12.024 --> 00:01:12.400
+yourself.
+
+00:01:12.400 --> 00:01:13.840
+No API keys.
+
+00:01:13.840 --> 00:01:15.460
+Then verify the connection.
+
+00:01:15.460 --> 00:01:19.448
+Quick Setup tests detected sessions using a disclosed synthetic
+
+00:01:19.448 --> 00:01:21.220
+sentence, not your project.
+
+00:01:21.220 --> 00:01:24.271
+A successful check is evidence for now, not a promise about every
+
+00:01:24.271 --> 00:01:24.780
+future review.
+
+00:01:24.780 --> 00:01:29.456
+The maintenance panel separates installed versions from update
+
+00:01:29.456 --> 00:01:30.040
+availability.
+
+00:01:30.040 --> 00:01:31.220
+Check first.
+
+00:01:31.220 --> 00:01:33.020
+Read the proposed change.
+
+00:01:33.020 --> 00:01:35.860
+Run an update only when you choose to.
+
+00:01:35.860 --> 00:01:39.769
+MOMM's own signed updates also protect protocol changes with explicit
+
+00:01:39.769 --> 00:01:40.160
+acceptance.
+
+00:01:40.160 --> 00:01:44.710
+If you update MOMM, relaunch Setup Center so you're not looking at an
+
+00:01:44.710 --> 00:01:45.760
+older running page.
+
+00:01:45.760 --> 00:01:48.000
+Follow the actual status.
+
+00:01:48.000 --> 00:01:50.660
+Missing means install the official tool.
+
+00:01:50.660 --> 00:01:52.780
+Authentication required means complete its login.
+
+00:01:52.780 --> 00:01:57.520
+Provider unavailable means wait and retry, not re-login.
+
+00:01:57.520 --> 00:02:01.100
+Quota exhausted means deal with the provider's allowance.
+
+00:02:01.100 --> 00:02:04.307
+You can continue with another ready reviewer; don't turn a failed
+
+00:02:04.307 --> 00:02:06.640
+route into a successful one on the screen.
+
+00:02:06.640 --> 00:02:11.180
+Back in your project, approve which providers may receive the work.
+
+00:02:11.180 --> 00:02:14.600
+Ask MOMM to review your changes, investigate material findings,
+
+00:02:14.600 --> 00:02:18.780
+verify fixes, record every decision, and give you the ledger link.
+
+00:02:18.780 --> 00:02:23.048
+That completes the journey: set up once, request a review, then
+
+00:02:23.048 --> 00:02:24.212
+check what happened.
