@@ -443,6 +443,7 @@ function stripPngMetadata(buffer) {
 function stageAttachments(files) {
   if (!files.length) return { directory: null, attachments: [] };
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-attach-"));
+  try {
   const attachments = files.map((file, index) => {
     const resolved = path.resolve(file);
     if (!fs.existsSync(resolved)) throw new Error(`--attach file not found: ${file}`);
@@ -468,6 +469,23 @@ function stageAttachments(files) {
     };
   });
   return { directory, attachments };
+  } catch (error) {
+    // Ownership has not reached main yet: release partial copies here.
+    cleanupAttachments({ directory });
+    throw error;
+  }
+}
+
+function cleanupAttachments(staging) {
+  if (!staging?.directory) return;
+  try {
+    // Only the directory allocated by stageAttachments is owned by this run.
+    fs.rmSync(staging.directory, { recursive: true, force: true, maxRetries: 2, retryDelay: 50 });
+    staging.directory = null;
+  } catch {
+    // Do not echo paths or claim bounded retention when the OS refused cleanup.
+    throw new Error("Attachment cleanup failed; temporary media copies may remain.");
+  }
 }
 
 function attachmentContractSection(attachments) {
@@ -2701,6 +2719,9 @@ async function main() {
   // media with metadata stripped and re-states exactly what is being shared
   // in the dispatch event (names + hashes, never paths or bytes).
   options.staging = stageAttachments(options.attach ?? []);
+  // Own successful staging across EVERY subsequent setup/dispatch/report path,
+  // including capability, guidance and scheduler rejection before dispatch.
+  try {
   // 1.16 E7: with media (or --reviewers auto) the effective capability matrix
   // decides routing — overlay over baseline, each cell with level and blocker.
   // A plain text review never needs the registry and never loads it.
@@ -2825,8 +2846,8 @@ async function main() {
     ui.stop();
     throw error;
   } finally {
-    // Staged media copies never outlive the dispatch.
-    if (options.staging.directory) { try { fs.rmSync(options.staging.directory, { recursive: true, force: true }); } catch {} }
+    // Release promptly after dispatch; the outer guard covers earlier failures.
+    cleanupAttachments(options.staging);
   }
   const preflightEntries = await preflightPromise;
   const pieceQuorum = pieceResults ? splitQuorum(pieceResults, options.minSuccess ?? 1) : null;
@@ -3063,6 +3084,9 @@ async function main() {
     if (options.stream) emitEvent(true, { event: "quorum_failed", achieved: externalSuccesses, required: options.minSuccess });
     else process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
     process.exitCode = 3;
+  }
+  } finally {
+    cleanupAttachments(options.staging);
   }
 }
 

@@ -97,6 +97,7 @@ jobs:
           node momm/scripts/copilot-transport.test.mjs
           node momm/scripts/antigravity-transport.test.mjs
           node momm/scripts/shutdown.test.mjs
+          node momm/scripts/attachment-cleanup.test.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Guided onboarding is zero-call and rejects unknown routes
