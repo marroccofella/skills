@@ -56,10 +56,31 @@ Every non-success is a status, never a finding. Map provider text to MOMM status
 | `Not signed in`, `login`, `unauthorized` in provider output | session missing or expired | `authentication_required` + the route's login hint |
 | `requires a newer version of Codex` (models cache error) | CLI older than the configured model | `error` (1.15) — 1.14.1 misfiles it as auth; fix is upgrading the CLI (0.154.0 resolved it here on 2026-09-13) |
 | `exceeded your monthly quota` (Copilot) | billing, not auth | `error`; wait for the period or change plan |
-| `{"status":"SUCCESS","response":""}` (agy) + stderr `a tool required the "read_file" permission that headless mode cannot prompt for` | agent tried to read/run outside the temp project and was auto-denied (Gemini 3.8 Flash since 2026-09-02; see antigravity.md) | `invalid_output`; surface the stderr line, do not retry with a bigger timeout |
+| `{"status":"SUCCESS","response":""}` (agy) + a headless tool-permission refusal | agent tried to read/run outside the temp project and was auto-denied (see antigravity.md) | `invalid_output`; relay the sanitized failure class, never raw provider diagnostics or a bigger-timeout workaround |
 | Grok `stopReason: "tool_use"` / `"cancelled"` / `Error: max turns reached` | model wanted a tool turn (with `--disallowed-tools` the attempt is cancelled instead of executed) | `invalid_output` / `error`; not fixable by prompt alone |
 | `ineligible_tier` (gemini) | account tier retired | use antigravity |
 | 5xx from the vendor | outage | `provider_unavailable`, retried once |
+
+## Bounded Windows shutdown mitigation
+
+On 2026-09-16 an independent reviewer reproduced `UV_HANDLE_CLOSING` on
+Windows / Node24.15.0 after a completed public-manifest fetch followed by an
+immediate forced exit, without importing MOMM. Natural exit succeeded; four
+`setImmediate`/zero-delay controls failed. Two 100ms and two 250ms post-flush
+delay trials succeeded. See the [bounded comparison](https://github.com/marroccofella/skills/pull/4#issuecomment-5700817529).
+This is a small observed mitigation signal, not proof of a universal safe delay.
+
+The candidate dispatcher uses a 250ms Windows-only post-flush delay. The
+independent referenced 2000ms exit fallback is installed before flushing and
+survives stalled or synchronously broken output pipes. POSIX retains immediate
+post-flush exit. Owned-child tree cleanup, direct-kill backstops and signal
+handling are unchanged. A forced fallback may still encounter the runtime bug;
+bounded termination is retained rather than silently waiting forever.
+
+`shutdown.test.mjs` tests the exact production finalizer with synthetic clocks
+and real piped loopback fetches. These are not external-provider or cross-account
+tests. A passing older runtime does not establish Node24 behavior; retest the
+actual metadata wrapper and live dispatcher on the affected runtime too.
 
 ## Refreshing this folder
 

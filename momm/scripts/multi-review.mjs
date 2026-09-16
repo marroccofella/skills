@@ -3072,10 +3072,19 @@ main().catch((error) => {
 }).finally(() => {
   // Last-resort termination: sandboxed environments can leave descendants
   // alive holding stdio/child handles that pin the event loop forever, so
-  // never rely on the loop draining. Exit explicitly once queued stdout has
-  // flushed (the empty write's callback runs after all prior writes); the
-  // referenced timer covers a broken stdout pipe.
+  // never rely on the loop draining. A bounded Windows post-flush delay gives
+  // completed fetch/native handles time to close before explicit process.exit:
+  // immediate/next-turn exits reproduced Node24's UV_HANDLE_CLOSING assertion.
+  // This is a measured mitigation, not a universal drain guarantee. Keep the
+  // independent referenced deadline, even if a flush stalls or throws. Child
+  // tree cleanup and its direct-kill backstop remain in processScope's exit hook.
   const exitNow = () => process.exit(process.exitCode ?? 0);
-  process.stdout.write("", () => process.stderr.write("", exitNow));
   setTimeout(exitNow, 2000);
+  const flushed = () => process.platform === "win32" ? setTimeout(exitNow, 250) : exitNow();
+  const flushStderr = () => {
+    try { process.stderr.write("", flushed); }
+    catch { /* The stdout callback may run later; retain the same hard bound. */ }
+  };
+  try { process.stdout.write("", flushStderr); }
+  catch { /* Broken synchronous pipe: the already-installed hard bound remains. */ }
 });

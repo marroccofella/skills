@@ -19,6 +19,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [18.x, 20.x, 22.x]
+        # Reproduce the independently reported Windows fetch/forced-exit runtime.
+        include:
+          - os: windows-latest
+            node-version: '24.15.0'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -92,6 +96,7 @@ jobs:
           node scripts/momm-independent-review.test.mjs
           node momm/scripts/copilot-transport.test.mjs
           node momm/scripts/antigravity-transport.test.mjs
+          node momm/scripts/shutdown.test.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Guided onboarding is zero-call and rejects unknown routes
