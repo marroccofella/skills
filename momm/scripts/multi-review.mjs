@@ -1340,6 +1340,13 @@ async function invokeReviewer(agent, artifact, options) {
   // to us. Attached media is declared in the contract (names + hashes only).
   const contract = buildContract(agent, options) + attachmentContractSection(attachments);
 
+  let result;
+  let cleanupError = null;
+  let operationFailed = false;
+  let setupComplete = false;
+  // Own adapter-local prompts/media from allocation, not merely from launch.
+  // A failed write/copy or command lookup must not leave an orphan directory.
+  try {
   if (agent === "gemini") {
     // The multiline prompt must travel via stdin: on Windows the invocation is
     // wrapped through cmd.exe, which cannot carry newlines inside an argument.
@@ -1486,12 +1493,14 @@ async function invokeReviewer(agent, artifact, options) {
     return { agent, status: "unsupported", detail: "no reviewed adapter exists" };
   }
 
-  let result;
-  let cleanupError = null;
-  try {
+    setupComplete = true;
     // options.runProcess is a test seam only (argv binding is proven with a fake).
     result = await (options.runProcess ?? runProcess)(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd,
       onProgress: options.onProgress ? progress => options.onProgress(agent, progress) : null });
+  } catch {
+    // Unexpected filesystem/launcher exceptions are terminal route failures.
+    // Never echo raw exceptions: they may carry paths, source or credentials.
+    operationFailed = true;
   } finally {
     if (temporaryDirectory) {
       try {
@@ -1502,7 +1511,12 @@ async function invokeReviewer(agent, artifact, options) {
     }
   }
   if (cleanupError) {
-    return { agent, status: "error", detail: `temporary review artifact cleanup failed: ${clipped(cleanupError.message, 600)}` };
+    return { agent, status: "error", detail: "temporary review artifact cleanup failed; private temporary copies may remain" };
+  }
+  if (operationFailed) {
+    return { agent, status: "error", detail: setupComplete
+      ? "reviewer execution failed before a usable result; no review was accepted"
+      : "reviewer setup failed before dispatch; no provider call was made" };
   }
   if (result.code !== 0 || result.error || result.timedOut) {
     const failure = classifyFailure(result);

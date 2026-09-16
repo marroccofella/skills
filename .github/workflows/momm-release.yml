@@ -87,6 +87,7 @@ jobs:
           node momm/scripts/antigravity-transport.test.mjs
           node momm/scripts/shutdown.test.mjs
           node momm/scripts/attachment-cleanup.test.mjs
+          node momm/scripts/adapter-cleanup.test.mjs
           node myrepo/scripts/publish.mjs --self-test
           test -z "$(git status --porcelain)"
       - name: Install pinned signer in the release runner
