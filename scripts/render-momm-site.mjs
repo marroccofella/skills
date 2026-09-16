@@ -237,10 +237,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const urls = Object.keys(output).filter(f => f.endsWith('.html')).map(f =>
     'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/(^|\/)index\.html$/, '$1')).sort();
   // Sibling skill guides are maintained outside the MOMM renderer.
-  for (const entry of fs.readdirSync(path.join(root, 'docs'), {withFileTypes:true})) {
-    if (entry.isDirectory() && /^[a-z0-9-]+$/.test(entry.name)
-        && fs.existsSync(path.join(root, 'docs', entry.name, 'index.html'))) {
-      urls.push(`https://marroccofella.github.io/skills/${entry.name}/`);
+  // Explicit publication catalogue: untracked scratch directories cannot add URLs.
+  for (const name of ['evidence', 'myautoness', 'myrepo', 'myskills', 'mytravel', 'myvoice', 'yorky']) {
+    if (fs.existsSync(path.join(root, 'docs', name, 'index.html'))) {
+      urls.push(`https://marroccofella.github.io/skills/${name}/`);
     }
   }
   urls.sort();

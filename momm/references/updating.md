@@ -20,7 +20,14 @@ a candidate into temporary staging, verifies its signed tag, prints changed file
 across the shared clone and the complete protocol/dispatcher-policy diff, and
 removes staging. Installed files, refs, links and receipt stay unchanged. The third
 requires interactive confirmation; `--yes` is available for deliberate scripts.
-It cannot bypass the separate `--accept-protocol` gate. Never auto-apply.
+It cannot bypass the separate `--accept-protocol` gate. An agent must not initiate
+an update without the user's authorization.
+
+In 1.16, the separate update clock can apply updates only after the user enables
+its off-by-default automation setting. Automatic protocol acceptance is a second,
+independent setting, also off by default. Do not enable either setting on an agent's
+initiative. Signature verification, saved installation scopes and recovery checks
+remain mandatory in both manual and explicitly automated workflows.
 
 ## Installation identity
 

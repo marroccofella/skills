@@ -1,3 +1,24 @@
+// Theme: system preference by default; an explicit choice is remembered per
+// browser in localStorage (a per-viewer convenience, never sent anywhere).
+(() => {
+  const root = document.documentElement, key = "momm-setup-theme";
+  let saved = null; try { saved = localStorage.getItem(key); } catch {}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  const button = document.querySelector("#theme-toggle");
+  if (!button || !root || typeof root.getAttribute !== "function") return;
+  const isDark = () => { const explicit = root.getAttribute("data-theme"); return explicit ? explicit === "dark" : (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches); };
+  const label = () => { const el = document.querySelector("#theme-label"); if (el) el.textContent = isDark() ? "Light" : "Dark"; button.setAttribute("aria-pressed", isDark() ? "true" : "false"); };
+  label();
+  button.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    // One beat of eased colour transitions, then the class goes so hover/focus stay snappy.
+    root.classList?.add?.("theme-switching");
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch {}
+    label();
+    setTimeout(() => root.classList?.remove?.("theme-switching"), 450);
+  });
+})();
 const grid = document.querySelector("#provider-grid");
 const summary = document.querySelector("#summary");
 const statusTitle = document.querySelector("#status-title");
@@ -12,14 +33,63 @@ const maintenanceSummary = document.querySelector("#maintenance-summary");
 const maintenanceGrid = document.querySelector("#maintenance-grid");
 const closeButton = document.querySelector("#close-server");
 const toast = document.querySelector("#toast");
+const usageTable = document.querySelector("#usage-table");
+const usageSummary = document.querySelector("#usage-summary");
+const usageRefreshButton = document.querySelector("#usage-refresh");
+const guidanceEditor = document.querySelector("#guidance-editor");
+const guidanceSummary = document.querySelector("#guidance-summary");
+const guidanceError = document.querySelector("#guidance-error");
+const guidanceSaveButton = document.querySelector("#guidance-save");
+const guidanceReloadButton = document.querySelector("#guidance-reload");
+const guidanceUser = document.querySelector("#guidance-user");
+const guidanceUserCount = document.querySelector("#guidance-user-count");
+const guidancePreview = document.querySelector("#guidance-preview");
+const guidancePreviewRoute = document.querySelector("#guidance-preview-route");
+const guidancePreviewNote = document.querySelector("#guidance-preview-note");
+const capabilitiesGrid = document.querySelector("#capabilities-grid");
+const capabilitiesSummary = document.querySelector("#capabilities-summary");
+const capabilitiesPipelines = document.querySelector("#capabilities-pipelines");
+const capabilitiesRefreshButton = document.querySelector("#capabilities-refresh");
+const planForm = document.querySelector("#plan-form");
+const planIn = document.querySelector("#plan-in");
+const planOut = document.querySelector("#plan-out");
+const planResult = document.querySelector("#plan-result");
 
 let session = null;
+let capabilities = null;
+// route -> the modality probe job that owns the route's buttons until it settles.
+const capabilityJobs = new Map();
 let report = null;
 let maintenance = null;
 let refreshing = false;
 let quickSetupRunning = false;
+let usage = null;
+let guidance = null;
+let guidanceSaving = false;
+let clockState = null;
+let clockError = null;
+let clockPoll = null;
+let batchRunning = false;
+// Batch ticks live here, not in the DOM: renderMaintenance replaces the table
+// on every refresh (and between batch steps), and the checkbox is re-emitted
+// from this Set so a selection survives the re-render.
+const batchSelected = new Set();
 const liveResults = new Map();
 const updateAttempts = new Map();
+// Governor transitions: the epoch is bumped on every change, so a status poll
+// or verification job started under the previous governor is recognised as
+// stale when it answers and dropped instead of populating the new view.
+let governorEpoch = 0;
+let refreshEpoch = 0;
+let refreshAgain = false;
+// One verification per provider at a time: provider -> the job entry that owns
+// the card until it settles or is superseded.
+const runningTests = new Map();
+const TEST_POLL_MS = 1800;
+// The server's connectivity budget is 240 s (CONNECTIVITY_TIMEOUT_MS) plus a
+// report flush; a job still "running" after this is shown as timed out rather
+// than polled forever.
+const TEST_DEADLINE_MS = 300_000;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -34,10 +104,13 @@ function showToast(message) {
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  if (session?.token) headers['X-MOMM-Token'] = session.token;
+  if (session?.token) headers["X-MOMM-Token"] = session.token;
   if (options.method === "POST") {
+    // Every mutation carries the local session token. Before /api/session has
+    // answered there is none to send, so refuse with an ordinary error the
+    // callers already handle instead of a TypeError from the dereference.
+    if (!session?.token) throw new Error("The local session is not ready yet. Reload the page and try again.");
     headers["Content-Type"] = "application/json";
-    headers["X-MOMM-Token"] = session.token;
   }
   const response = await fetch(path, { ...options, headers });
   const value = await response.json();
@@ -116,7 +189,7 @@ function providerCard(route) {
     <article class="provider-card ${state === "ready" ? "ready" : state === "failed" ? "failed" : ""}" data-card="${route.agent}">
       <div class="card-top">
         <div class="provider-name"><span class="provider-icon">${escapeHtml(provider.label.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(provider.label)}</h3><small class="version">Peer reviewer</small></div></div>
-        <span class="status ${state === "detected" ? "login" : state}">${stateLabel(state)}</span>
+        <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
       </div>
       <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>
       <div class="provider-facts">
@@ -149,11 +222,16 @@ function render() {
   if (updates) remaining.push(`${updates} provider CLI update${updates === 1 ? "" : "s"}`);
   setupPercent.textContent = `${percent}%`;
   progress.style.width = `${percent}%`;
+  document.querySelector(".status-meter")?.style?.setProperty?.("--pct", String(percent));
+  const anyTesting = routes.some((route) => routeState(route) === "testing");
+  Array.from(document.querySelectorAll?.(".progress-track") ?? []).forEach((track) => track.classList?.toggle?.("running", anyTesting));
   statusTitle.textContent = percent === 100 ? "Setup complete" : `Setup ${percent}% complete`;
   summary.textContent = remaining.length ? remaining.join(" · ") : "Every reviewer is installed, connected, and verified.";
   quickSetupButton.textContent = quickSetupRunning ? "Running checks…" : verifications ? `Verify ${verifications} detected session${verifications === 1 ? "" : "s"}` : "Run Quick Setup";
   quickSetupNote.textContent = signIns ? "Verifies detected sessions automatically. Provider sign-in opens visibly and still needs you." : "Uses harmless synthetic text only—never project content.";
   grid.innerHTML = routes.map(providerCard).join("");
+  // Stagger the entrance animation in render order (motion layer reads --i).
+  Array.from(grid.children ?? []).forEach((card, index) => card.style?.setProperty?.("--i", String(index)));
 }
 
 function statusPresentation(status) {
@@ -162,7 +240,7 @@ function statusPresentation(status) {
 
 function miniStatus(status) {
   const [kind, label] = statusPresentation(status);
-  return `<span class="mini-status ${kind}">${escapeHtml(label)}</span>`;
+  return `<span class="chip chip-${kind} mini-status">${escapeHtml(label)}</span>`;
 }
 
 function skillRow(item) {
@@ -179,7 +257,10 @@ function cliRow(item) {
   const attempt = updateAttempts.get(item.agent);
   const action = !item.installed ? 'install' : item.update_command ? 'update' : null;
   const label = action === 'install' ? 'Install…' : item.agent === 'antigravity' ? 'Check / update…' : 'Update…';
-  return `<tr><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
+  // Only rows with a verified command can join a batch; package-manager-owned
+  // and missing installations get no checkbox, exactly as they get no Update button.
+  const batchable = isBatchable(item);
+  return `<tr><td class="batch-cell">${batchable ? `<input type="checkbox" data-batch="${item.agent}" aria-label="Select ${escapeHtml(provider.label)} for batch update" ${batchSelected.has(item.agent) ? 'checked' : ''} ${batchRunning ? 'disabled' : ''}>` : ''}</td><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
     <td>${escapeHtml(item.current || 'Not detected')}<small>${escapeHtml(item.installation?.kind || 'unknown')} install</small></td>
     <td>${escapeHtml(item.latest || 'Unavailable')}<small>${escapeHtml(item.source)}</small></td>
     <td>${miniStatus(item.status)}${attempt ? `<small role="status">${escapeHtml(attempt.message)}</small>` : ''}</td>
@@ -188,6 +269,7 @@ function cliRow(item) {
 
 function renderMaintenance() {
   if (!maintenance) return;
+  pruneBatchSelection();
   const skillUpdates = maintenance.skills.versions.filter((item) => item.status === "update_available");
   const modifiedSkills = maintenance.skills.versions.filter((item) => item.status === "local_newer");
   const currentSkills = maintenance.skills.versions.filter((item) => item.status === 'current');
@@ -224,10 +306,11 @@ function renderMaintenance() {
 
   maintenanceGrid.innerHTML = `
     <article class="health-card wide">
-      <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div></div>
-      <div class="cli-table-scroll"><table class="cli-table"><thead><tr><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
-      <p class="environment-note">Checks never install updates. Each update shows its command and needs your confirmation. Unknown means unverified, not current. Installation versions do not prove account access or a successful review. After an updater finishes, use Check everything to verify the detected version.</p>
+      <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div><div class="skill-actions"><button id="batch-update" class="mini-button" type="button" disabled>Update selected…</button></div></div>
+      <div class="cli-table-scroll"><table class="momm-table cli-table"><thead><tr><th><span class="sr-only">Select for batch update</span></th><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
+      <p class="environment-note">Checks never install updates. Each update shows its command and needs your confirmation. Tick several and use Update selected to see every exact command, confirm once, and run them one after another with a version re-check between. Unknown means unverified, not current. Installation versions do not prove account access or a successful review. After an updater finishes, use Check everything to verify the detected version.</p>
     </article>
+    <article id="update-clock-card" class="health-card wide"></article>
     <article class="health-card wide">
       <div class="health-card-head"><div><h3>Skills</h3><span class="health-count">Grouped by action needed</span></div><div class="skill-actions">${skillActions}</div></div>
       <div class="skill-groups">
@@ -245,6 +328,8 @@ function renderMaintenance() {
         <section class="diagnostic-block"><h4>Environment signals</h4>${environmentDetails}</section>
       </div>
     </details>`;
+  renderUpdateClock();
+  updateBatchButton();
 }
 
 async function loadMaintenance(force = false) {
@@ -258,19 +343,32 @@ async function loadMaintenance(force = false) {
     if (!records(fresh?.cli_updates) || !records(fresh?.models) || !records(fresh?.skills?.versions)
       || !fresh.environment || typeof fresh.environment !== 'object' || Array.isArray(fresh.environment)
       || !Object.values(fresh.environment).every(names => Array.isArray(names) && names.every(name => typeof name === 'string'))
-      || typeof fresh.runtime?.platform !== 'string') throw new Error('Invalid maintenance response; previous results retained.');
+      || typeof fresh.runtime?.platform !== 'string'
+      || !fresh.cli_updates.every(item => typeof item.agent === 'string' && session?.providers?.[item.agent])) throw new Error('Invalid maintenance response; previous results retained.');
+    // Validation is proven by rendering: the new state is committed only once
+    // the maintenance card was built from it, and rolled back to the last good
+    // state otherwise, so the update controls never consult a record that
+    // could not be displayed.
+    const previous = maintenance;
+    maintenance = fresh;
+    try { renderMaintenance(); }
+    catch (error) {
+      maintenance = previous;
+      if (previous) renderMaintenance();
+      throw new Error(`Invalid maintenance response (${error.message}); previous results retained.`);
+    }
     for (const item of fresh.cli_updates) {
-      const previous = maintenance?.cli_updates.find(x => x.agent === item.agent)?.current;
-      if (previous && previous !== item.current) liveResults.delete(item.agent);
+      const before = previous?.cli_updates.find(x => x.agent === item.agent)?.current;
+      if (before && before !== item.current) liveResults.delete(item.agent);
       const attempt = updateAttempts.get(item.agent);
       if (attempt && item.current && item.current !== attempt.before) {
         attempt.observed = true;
         attempt.message = `Detected ${attempt.before || 'unknown'} → ${item.current}. Verify connection again.`;
       }
     }
-    maintenance = fresh;
     renderMaintenance();
     render();
+    loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
   } catch (error) {
     maintenanceSummary.textContent = "The maintenance check could not finish. Your reviewer setup is unaffected.";
     showToast(error.message);
@@ -278,19 +376,35 @@ async function loadMaintenance(force = false) {
 }
 
 async function refresh() {
-  if (refreshing) return;
+  // A poll already in flight for the current governor is enough; one for a
+  // previous governor is stale, so a fresh poll is queued behind it.
+  if (refreshing) { if (refreshEpoch !== governorEpoch) refreshAgain = true; return; }
   refreshing = true;
+  refreshEpoch = governorEpoch;
   refreshButton.disabled = true;
   summary.textContent = "Checking this computer…";
   try {
-    report = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
+    const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
+    if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
+    report = fresh;
+    // The topbar pill links to /ledger on this origin; its tooltip names the
+    // file on disk once the ledger exists, so the page can also be opened directly.
+    const ledgerLink = document.querySelector("#ledger-link");
+    if (ledgerLink) ledgerLink.title = report.ledger_url ? `Also on disk: ${report.ledger_url}` : "Built here after your first review";
+    // A verification belongs to the session it ran against: once readiness
+    // falls, the cached success goes with it, so a returning session must be
+    // verified again instead of resurrecting the old result.
+    for (const route of report.routes || []) if (route.ready !== true && liveResults.get(route.agent)?.status === "success") liveResults.delete(route.agent);
     render();
   } catch (error) {
-    summary.textContent = "We could not check the local reviewers.";
-    showToast(error.message);
+    if (refreshEpoch === governorEpoch) {
+      summary.textContent = "We could not check the local reviewers.";
+      showToast(error.message);
+    }
   } finally {
     refreshing = false;
     refreshButton.disabled = false;
+    if (refreshAgain) { refreshAgain = false; refresh(); }
   }
 }
 
@@ -327,37 +441,55 @@ async function launchAction(provider, action) {
   } catch (error) { showToast(error.message); }
 }
 
+// One verification per provider at a time. The entry in runningTests is the
+// job's identity: a second click reuses it, a governor change clears it, and
+// an answer arriving for an entry that is no longer current is dropped rather
+// than written over whatever owns the card now.
 async function runTest(provider, notify = true) {
-  liveResults.set(provider, { status: "running" });
-  render();
-  try {
-    const job = await api("/api/test", { method: "POST", body: JSON.stringify({ provider, governor: governorSelect.value }) });
-    return await new Promise((resolve) => {
-      const poll = setInterval(async () => {
-        try {
-          const current = await api(`/api/job/${job.id}`);
-          if (current.status === "running") return;
-          clearInterval(poll);
-          liveResults.set(provider, current);
-          render();
-          if (notify) showToast(current.status === "success" ? `${session.providers[provider].label} passed the synthetic check.` : `${session.providers[provider].label}: ${current.result?.route_status || 'check failed'}. See the card for details.`);
-          resolve(current);
-        } catch (error) {
-          clearInterval(poll);
-          const failed = { status: "failed", error: error.message };
-          liveResults.set(provider, failed);
-          render();
-          if (notify) showToast(error.message);
-          resolve(failed);
-        }
-      }, 1800);
-    });
-  } catch (error) {
-    const failed = { status: "failed", error: error.message };
-    liveResults.set(provider, failed);
+  const inFlight = runningTests.get(provider);
+  if (inFlight) return inFlight.promise;
+  const entry = {};
+  runningTests.set(provider, entry);
+  const current = () => runningTests.get(provider) === entry;
+  const settle = (value, message) => {
+    if (!current()) return { status: "cancelled" };
+    runningTests.delete(provider);
+    liveResults.set(provider, value);
     render();
-    if (notify) showToast(error.message);
-    return failed;
+    if (notify && message) showToast(message);
+    return value;
+  };
+  entry.promise = verify();
+  return entry.promise;
+
+  async function verify() {
+    liveResults.set(provider, { status: "running" });
+    render();
+    try {
+      const job = await api("/api/test", { method: "POST", body: JSON.stringify({ provider, governor: governorSelect.value }) });
+      const deadline = Date.now() + TEST_DEADLINE_MS;
+      // Sequential polling: the next request goes out only after the previous
+      // one answered, so a slow answer can neither overlap the next poll nor
+      // land after the job settled. The deadline ends a job the server never
+      // reports on in a visible failed state.
+      while (current()) {
+        await sleep(TEST_POLL_MS);
+        if (!current()) break;
+        const state = await api(`/api/job/${job.id}`);
+        if (state.status !== "running") {
+          const live = current();
+          const value = settle(state, state.status === "success" ? `${providerLabel(provider)} passed the synthetic check.` : `${providerLabel(provider)}: ${state.result?.route_status || "check failed"}. See the card for details.`);
+          if (live) loadUsage(); // every verification is a sealed report; show what its CLI reported
+          return value;
+        }
+        if (Date.now() >= deadline) {
+          return settle({ status: "failed", error: "timeout", result: { route_status: "timeout", detail: `No result after ${Math.round(TEST_DEADLINE_MS / 60_000)} minutes. The check may still be finishing on this computer; retry once it has settled.` } }, `${providerLabel(provider)}: the check timed out.`);
+        }
+      }
+      return { status: "cancelled" };
+    } catch (error) {
+      return settle({ status: "failed", error: error.message }, error.message);
+    }
   }
 }
 
@@ -369,7 +501,8 @@ async function runQuickSetup() {
   try {
     await refresh();
     await loadMaintenance(false);
-    const eligible = reviewerRoutes().filter((route) => route.ready && routeState(route) !== "ready");
+    // A card already being verified is not eligible: its running job owns it.
+    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing"].includes(routeState(route)));
     if (!eligible.length) {
       const disconnected = reviewerRoutes().filter((route) => !route.ready);
       showToast(disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
@@ -388,6 +521,603 @@ async function runQuickSetup() {
   }
 }
 
+// --- Usage panel (1.16 E1) --------------------------------------------------------
+// Renders rollupUsage rows from the server. A route that reported nothing shows
+// "0 of n reported", never a zero: absence of data is not a measurement.
+function providerLabel(agent) {
+  return session?.providers?.[agent]?.label || agent;
+}
+
+function reportedCell(count, total, value) {
+  if (!count) return `<span class="not-reported">not reported</span><small>0 of ${total} reported</small>`;
+  return `${escapeHtml(value)}<small>${count} of ${total} reported</small>`;
+}
+
+function renderUsage() {
+  if (!usage) return;
+  const rows = Array.isArray(usage.rows) ? usage.rows : [];
+  const coverage = usage.coverage || {};
+  if (!rows.length) {
+    usageSummary.textContent = usage.note || "No usage recorded yet.";
+    usageTable.innerHTML = `<p class="environment-note">${escapeHtml(usage.note || "No usage recorded yet.")}</p>`;
+    return;
+  }
+  const scope = coverage.reports_available > coverage.reports_scanned ? ` (newest ${coverage.limit} of ${coverage.reports_available} reports)` : "";
+  usageSummary.textContent = `${coverage.reviews} completed review${coverage.reviews === 1 ? "" : "s"} across ${coverage.reports_scanned} report${coverage.reports_scanned === 1 ? "" : "s"}${scope}; ${coverage.reports_with_usage} report${coverage.reports_with_usage === 1 ? "" : "s"} carr${coverage.reports_with_usage === 1 ? "ies" : "y"} CLI-reported usage.`;
+  const costPerFinding = (row) => {
+    if (row.cost_per_accepted_finding === null || row.cost_per_accepted_finding === undefined) return '<span class="not-reported">not reported</span>';
+    if (typeof row.cost_per_accepted_finding === "string") return `${escapeHtml(row.cost_per_accepted_finding)}<small>total $${Number(row.total_cost_usd).toFixed(4)} beside it</small>`;
+    return `$${Number(row.cost_per_accepted_finding).toFixed(4)}<small>as reported by the CLI</small>`;
+  };
+  usageTable.innerHTML = `<table class="momm-table cli-table usage-rows"><thead><tr><th>Route</th><th>Reviews</th><th>Median total tokens</th><th>Total cost (USD, as reported)</th><th>Cost per accepted finding</th></tr></thead><tbody>${rows.map((row) => `<tr>
+    <th scope="row">${escapeHtml(providerLabel(row.agent))}</th>
+    <td>${escapeHtml(row.reviews)}</td>
+    <td>${reportedCell(row.tokens_reported, row.reviews, row.median_total_tokens === null ? "—" : Number(row.median_total_tokens).toLocaleString())}</td>
+    <td>${reportedCell(row.cost_reported, row.reviews, row.total_cost_usd === null ? "—" : `$${Number(row.total_cost_usd).toFixed(4)}`)}</td>
+    <td>${costPerFinding(row)}</td></tr>`).join("")}</tbody></table>${usage.note ? `<p class="environment-note">${escapeHtml(usage.note)}</p>` : ""}`;
+}
+
+async function loadUsage() {
+  try {
+    usage = await api("/api/usage");
+    renderUsage();
+  } catch (error) {
+    usageSummary.textContent = "Usage could not be read from the local reports.";
+    showToast(error.message);
+  }
+}
+
+// --- Standing guidance editor (1.16 E3/E4) -------------------------------------------
+// Edits the project file only. The save carries the sha256 the editor loaded so
+// a concurrent change on disk is refused (409) instead of overwritten; the
+// server validates block and route budgets before any byte is written.
+const GUIDANCE_PER_BLOCK = 2000;
+const GUIDANCE_PER_ROUTE = 6000;
+
+function guidanceBlocks() {
+  const routes = guidance?.routes || ["codex", "claude", "gemini", "antigravity", "copilot", "grok"];
+  return [
+    { key: "governor", label: "Governor", hint: "Standing instructions for the agent driving the review. Shown at the top of --pretty output and kept in the private sidecar; never written to the report." },
+    { key: "*", label: "All reviewers", hint: "Appended to every reviewer prompt for this project, after any user-level guidance." },
+    ...routes.map((route) => ({ key: route, label: providerLabel(route), hint: `Appended after the shared block, for ${providerLabel(route)} only.`, route })),
+  ];
+}
+
+function loadedBlock(source, key) {
+  if (!source) return "";
+  const value = key === "governor" ? source.governor : source.reviewers?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+// Layers that stay fixed while editing here: user-level "*" and route blocks and
+// the project's .reviewrules. Project blocks are replaced by the draft.
+function fixedLayers(route) {
+  return (guidance?.effective?.[route]?.layers || []).filter((layer) => layer.name !== "persona" && (!layer.name.startsWith("project:") || layer.name === "project:.reviewrules"));
+}
+
+function routeTotal(route, draft) {
+  const blocks = [...fixedLayers(route).map((layer) => layer.chars), ...["*", route].map((key) => draft[key]).filter((text) => typeof text === "string" && text.trim()).map((text) => text.length)];
+  return blocks.reduce((sum, chars) => sum + chars, 0) + Math.max(0, blocks.length - 1) * 2;
+}
+
+function draftValues() {
+  const values = {};
+  for (const area of guidanceEditor.querySelectorAll?.("[data-guidance]") || []) values[area.dataset.guidance] = area.value;
+  return values;
+}
+
+// Empty blocks are omitted so the file only holds what the user wrote.
+function draftGuidance() {
+  const values = draftValues();
+  const out = {};
+  if (values.governor?.trim()) out.governor = values.governor;
+  const reviewers = Object.fromEntries(Object.entries(values).filter(([key, text]) => key !== "governor" && text.trim()));
+  if (Object.keys(reviewers).length) out.reviewers = reviewers;
+  return out;
+}
+
+function updateGuidanceCounters() {
+  if (!guidance) return;
+  const values = draftValues();
+  let over = false;
+  for (const block of guidanceBlocks()) {
+    const length = (values[block.key] || "").length;
+    const counter = guidanceEditor.querySelector?.(`[data-count="${block.key}"]`);
+    if (counter) { counter.textContent = `${length.toLocaleString()} / ${GUIDANCE_PER_BLOCK}`; counter.classList.toggle("over", length > GUIDANCE_PER_BLOCK); }
+    if (length > GUIDANCE_PER_BLOCK) over = true;
+    if (block.route) {
+      const total = routeTotal(block.route, values);
+      const totalNode = guidanceEditor.querySelector?.(`[data-total="${block.key}"]`);
+      if (totalNode) { totalNode.textContent = `route total ${total.toLocaleString()} / ${GUIDANCE_PER_ROUTE}`; totalNode.classList.toggle("over", total > GUIDANCE_PER_ROUTE); }
+      if (total > GUIDANCE_PER_ROUTE) over = true;
+    }
+  }
+  guidanceSaveButton.disabled = over || guidanceSaving;
+  guidanceSaveButton.title = over ? "A block or a route stack is over its cap; trim it to save." : "";
+}
+
+function renderGuidancePreview() {
+  if (!guidance) return;
+  const routes = guidance.routes || [];
+  if (guidancePreviewRoute.options && guidancePreviewRoute.options.length !== routes.length) {
+    guidancePreviewRoute.innerHTML = routes.map((route) => `<option value="${escapeHtml(route)}">${escapeHtml(providerLabel(route))}</option>`).join("");
+  }
+  const route = routes.includes(guidancePreviewRoute.value) ? guidancePreviewRoute.value : routes[0];
+  // A guidance preview, not the effective prompt: the server builds it with a
+  // contract stub and no persona, and says so in guidance_preview_note.
+  guidancePreview.textContent = guidance.resolve_error ? `Preview unavailable: ${guidance.resolve_error}` : guidance.guidance_preview?.[route] || "";
+  if (guidancePreviewNote) guidancePreviewNote.textContent = `This preview ${guidance.guidance_preview_note || "shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here"}. The artifact is a placeholder, never source.`;
+}
+
+// `keep` holds the editor's current text when it moved on while a save was in
+// flight: the blocks are rebuilt from the loaded state, then that text is put
+// back so nothing typed during the save is lost.
+function renderGuidance({ keep = null } = {}) {
+  if (!guidance) return;
+  const project = guidance.project, user = guidance.user;
+  const state = guidance.project_error ? `Project file unreadable: ${guidance.project_error}`
+    : !project ? "No project guidance yet. Blocks you save here are written to .momm/guidance.json and trusted."
+    : guidance.trusted ? "Project guidance loaded and trusted for this project."
+    : "Project guidance is on disk but NOT trusted: runs ignore it until you save it here or trust its hash with the CLI.";
+  guidanceSummary.textContent = `${state}${guidance.notices?.length ? ` · ${guidance.notices.length} notice${guidance.notices.length === 1 ? "" : "s"} from the resolver.` : ""}${keep ? " · Text typed during the save is still here, unsaved." : ""}`;
+  guidanceEditor.innerHTML = guidanceBlocks().map((block) => `
+    <article class="guidance-block" data-block="${escapeHtml(block.key)}">
+      <label>
+        <span class="guidance-label">${escapeHtml(block.label)}<small>${escapeHtml(block.hint)}</small></span>
+        <textarea data-guidance="${escapeHtml(block.key)}" rows="4" spellcheck="false" aria-label="${escapeHtml(block.label)} guidance">${escapeHtml(loadedBlock(project, block.key))}</textarea>
+      </label>
+      <div class="guidance-meter"><small data-count="${escapeHtml(block.key)}"></small>${block.route ? `<small data-total="${escapeHtml(block.key)}" title="Includes the user-level layers and .reviewrules below plus the shared block"></small>` : ""}</div>
+    </article>`).join("");
+  if (keep) for (const area of guidanceEditor.querySelectorAll?.("[data-guidance]") || []) if (typeof keep[area.dataset.guidance] === "string") area.value = keep[area.dataset.guidance];
+  const userBlocks = guidanceBlocks().map((block) => [block, loadedBlock(user, block.key)]).filter(([, text]) => text);
+  guidanceUserCount.textContent = guidance.user_error ? "unreadable" : userBlocks.length ? `${userBlocks.length} block${userBlocks.length === 1 ? "" : "s"}` : "none";
+  guidanceUser.innerHTML = guidance.user_error ? `<p class="environment-note">${escapeHtml(guidance.user_error)}</p>`
+    : userBlocks.length ? userBlocks.map(([block, text]) => `<section class="diagnostic-block"><h4>${escapeHtml(block.label)}</h4><pre class="guidance-readonly">${escapeHtml(text)}</pre></section>`).join("")
+    : `<p class="environment-note">No user-level guidance file. Create ${escapeHtml(guidance.user_file)} by hand to apply text to every project; this page never writes outside the project.</p>`;
+  const problems = [guidance.project_error, guidance.resolve_error, ...(guidance.notices || [])].filter(Boolean);
+  guidanceError.hidden = !problems.length;
+  guidanceError.textContent = problems.join(" · ");
+  renderGuidancePreview();
+  updateGuidanceCounters();
+}
+
+async function loadGuidance() {
+  try {
+    guidance = await api("/api/guidance");
+    renderGuidance();
+  } catch (error) {
+    guidanceSummary.textContent = "Guidance could not be loaded.";
+    showToast(error.message);
+  }
+}
+
+async function saveGuidanceDraft() {
+  if (!guidance || guidanceSaving) return;
+  const submitted = draftValues();
+  const draft = draftGuidance();
+  const blocks = [...(draft.governor ? ["governor"] : []), ...Object.keys(draft.reviewers || {})];
+  const summary = blocks.length ? blocks.map((key) => `${key === "governor" ? "Governor" : key === "*" ? "All reviewers" : providerLabel(key)} (${(key === "governor" ? draft.governor : draft.reviewers[key]).length} chars)`).join("\n") : "(no blocks: the file becomes an empty object)";
+  if (!window.confirm(`Write this project's guidance file and trust exactly those bytes?\n\n${guidance.file}\n\n${summary}\n\nReviewer blocks are sent to the reviewer CLIs you select for a run in this project.`)) return;
+  guidanceSaving = true;
+  updateGuidanceCounters();
+  try {
+    guidance = await api("/api/guidance", { method: "POST", body: JSON.stringify({ expected_sha256: guidance.project_sha256, guidance: draft }) });
+    // Text typed while the POST was in flight stays in the editor as an unsaved
+    // change; the response refreshes the loaded sha, trust and preview only.
+    const typed = draftValues();
+    const edited = JSON.stringify(typed) !== JSON.stringify(submitted);
+    renderGuidance(edited ? { keep: typed } : {});
+    showToast(edited ? "Guidance saved and trusted. Text typed during the save is still in the editor, unsaved." : "Guidance saved and trusted for this project.");
+  } catch (error) {
+    guidanceError.textContent = error.message;
+    guidanceError.hidden = false;
+    showToast(error.message);
+  } finally {
+    guidanceSaving = false;
+    updateGuidanceCounters();
+  }
+}
+
+// --- Automatic updates card (1.16 E6) --------------------------------------------------
+// Off by default. Every mutation goes to /api/update-clock; the timer buttons
+// echo the exact OS command back so the server can refuse a stale page.
+function sourceLabel(name) {
+  if (name === "skill") return "MOMM skill";
+  if (name === "models") return "Model lists";
+  return name.startsWith("cli:") ? `${providerLabel(name.slice(4))} CLI` : name;
+}
+
+function formatWhen(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+}
+
+function formatInterval(ms) {
+  if (!Number.isFinite(ms)) return "—";
+  return ms >= 3_600_000 ? `${Math.round(ms / 360_000) / 10} h` : `${Math.round(ms / 60_000)} min`;
+}
+
+function updateCell(row) {
+  if (row.kind === "models") return row.new_models && Object.values(row.new_models).some((list) => list.length) ? miniStatus("update_available") : miniStatus("current");
+  if (row.update_available === true) return `${miniStatus("update_available")}${row.needs_protocol_acceptance ? '<small>Protocol changed: needs acceptance</small>' : ""}`;
+  if (row.update_available === false) return miniStatus("current");
+  return miniStatus("unknown");
+}
+
+// The outcome of the last apply pass, event-driven or from Apply now: counts,
+// then one line per applied CLI with the re-read version and the containment
+// probe verdict. Only a passing probe reads "ready"; fail, unavailable and a
+// probe that could not run read "updated, containment not verified". While the
+// switch is off the note says the event checked and applied nothing.
+function applyOutcome(activity, enabled) {
+  const last = activity.last_apply;
+  if (!last) return `<p class="environment-note">No update has been applied from this Setup Center yet${enabled ? "; the next check event (opening this page, Check everything, Check now, the timer) applies what it finds" : ""}.</p>`;
+  const when = `Last event ${escapeHtml(last.event || "—")} ${escapeHtml(formatWhen(last.at))}`;
+  if (!last.enabled) return `<p class="environment-note">${when}: ${escapeHtml(last.note || "automatic updates are off: checked only, nothing applied")}.</p>`;
+  const rows = (last.rows || []).map((row) => `<li data-apply-row="${escapeHtml(row.name)}"><strong>${escapeHtml(sourceLabel(row.name))}</strong> ${escapeHtml(row.from || "?")} → ${escapeHtml(row.version || row.to || "version unknown")}${row.probe_verdict ? ` · probe ${escapeHtml(row.probe_verdict)}` : ""} · ${escapeHtml(row.verification || "")}${row.ready === true ? " · ready" : ""}</li>`);
+  const failures = (last.failures || []).map((item) => `<li data-apply-row="${escapeHtml(item.name)}"><strong>${escapeHtml(sourceLabel(item.name))}</strong> failed: ${escapeHtml(item.reason || "unknown")}</li>`);
+  return `<p class="environment-note">${when}: applied ${Number(last.applied) || 0} / skipped ${Number(last.skipped) || 0} / failed ${Number(last.failed) || 0}${last.skipped_reason ? ` (${escapeHtml(last.skipped_reason)})` : ""}.</p>${rows.length || failures.length ? `<ul class="environment-note">${rows.join("")}${failures.join("")}</ul>` : ""}`;
+}
+
+function renderUpdateClock() {
+  const card = document.querySelector("#update-clock-card");
+  if (!card) return;
+  if (!clockState) {
+    card.innerHTML = `<div class="health-card-head"><div><h3>Automatic updates</h3><span class="health-count">Off by default</span></div></div><p class="environment-note">${escapeHtml(clockError || "Loading the update clock…")}</p>`;
+    return;
+  }
+  const auto = clockState.auto_update || {};
+  const toggle = (key, label, hint) => `<label class="switch${!auto.enabled && key !== "enabled" ? " dim" : ""}"><input type="checkbox" data-clock-setting="${key}" ${auto[key] ? "checked" : ""} ${key !== "enabled" && !auto.enabled ? "disabled" : ""}><span>${escapeHtml(label)}<small>${escapeHtml(hint)}</small></span></label>`;
+  const rows = (clockState.sources || []).map((row) => `<tr>
+    <th scope="row">${escapeHtml(sourceLabel(row.name))}${row.status === "unknown" ? "<small>No check-only command</small>" : ""}</th>
+    <td>${escapeHtml(row.installed || "—")}</td>
+    <td>${escapeHtml(row.latest || "—")}</td>
+    <td>${updateCell(row)}</td>
+    <td>${escapeHtml(formatWhen(row.last_checked_at))}</td>
+    <td>${escapeHtml(formatWhen(row.next_due_at))}</td>
+    <td>${escapeHtml(formatInterval(row.interval_ms))}</td>
+    <td class="clock-error">${escapeHtml(row.last_error || "—")}</td></tr>`).join("");
+  const timer = clockState.timer || {};
+  const activity = clockState.activity || {};
+  card.innerHTML = `
+    <div class="health-card-head"><div><h3>Automatic updates</h3><span class="health-count">${auto.enabled ? "On: signed skill updater and official CLI commands only" : "Off by default; nothing is installed without you"}</span></div>
+      <div class="skill-actions"><button class="mini-button" data-clock-action="check" ${activity.running ? "disabled" : ""}>${activity.running ? "Checking…" : "Check now"}</button>${auto.enabled ? '<button class="mini-button" data-clock-action="apply">Apply now…</button>' : ""}</div></div>
+    <div class="switch-row">
+      ${toggle("enabled", "Automatic updates", "Master switch. Applies only through the signed updater and each CLI's official command.")}
+      ${toggle("skill", "Skill", "MOMM itself, after a successful signed dry run.")}
+      ${toggle("clis", "CLIs", "Reviewer CLIs with a fixed official command; package-manager installs are skipped.")}
+      ${toggle("models", "Models", "Record new model names only; configured models never change.")}
+      ${toggle("accept_protocol", "Accept protocol changes", "Let a skill update that changes the review protocol apply without you.")}
+    </div>
+    <div class="cli-table-scroll"><table class="momm-table cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="environment-note">Estimated ${escapeHtml(clockState.overhead_estimate_per_day ?? "—")} conditional request${clockState.overhead_estimate_per_day === 1 ? "" : "s"} per day at the current intervals. Checks run only on events (review start or finish, opening this page, Check everything, the timer below); nothing polls.${activity.last_finished_at ? ` Last check ${escapeHtml(formatWhen(activity.last_finished_at))} (${escapeHtml(activity.last_event || "—")}${activity.last_result?.skipped_reason ? `, ${escapeHtml(activity.last_result.skipped_reason)}` : ""}).` : ""}${activity.last_error ? ` Last error: ${escapeHtml(activity.last_error)}.` : ""}</p>
+    <p class="environment-note">When this switch is on, every check event also applies what it found, and each updated CLI is then probed for containment: MOMM sends one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider, never project content. The re-read version and the probe verdict are shown below; a route whose probe failed or could not run is listed as updated, containment not verified, and is not ready.</p>
+    ${applyOutcome(activity, auto.enabled)}
+    <div class="timer-row">
+      <div><strong>Timer</strong><small>Runs the clock every 6 hours when no MOMM process is open. Registered only with your confirmation of the exact command.</small><code>${escapeHtml(timer.install || "")}</code></div>
+      <div class="skill-actions"><button class="mini-button" data-timer-action="install">Install…</button><button class="mini-button" data-timer-action="remove">Remove…</button></div>
+    </div>`;
+  if (activity.running && !clockPoll) clockPoll = setTimeout(() => { clockPoll = null; loadUpdateClock(); }, 4000);
+}
+
+async function loadUpdateClock() {
+  try {
+    clockState = await api("/api/update-clock");
+    clockError = null;
+  } catch (error) { clockError = error.message; }
+  renderUpdateClock();
+}
+
+async function clockPost(body) {
+  const value = await api("/api/update-clock", { method: "POST", body: JSON.stringify(body) });
+  clockState = value;
+  clockError = null;
+  renderUpdateClock();
+  return value;
+}
+
+async function setClockSetting(key, checked) {
+  if (key === "enabled" && checked && !window.confirm("Turn on automatic updates?\n\nMOMM will apply only through its signed updater (after a successful dry run) and each reviewer CLI's official update command, and only for the sources ticked below. Updates apply on the next check event (opening this page, Check everything, Check now, the timer).\n\nAfter each CLI update, a containment probe sends one synthetic sentence and one synthetic 20-line diff to that CLI's provider (never project content) and records the verdict; a CLI whose probe fails is shown as updated but not verified.\n\nYou can turn this off at any time.")) { renderUpdateClock(); return; }
+  try {
+    await clockPost({ op: "set", patch: { auto_update: { [key]: checked } } });
+    showToast(key === "enabled" ? (checked ? "Automatic updates on." : "Automatic updates off.") : "Setting saved.");
+  } catch (error) { showToast(error.message); renderUpdateClock(); }
+}
+
+async function clockAction(action) {
+  try {
+    if (action === "check") {
+      const value = await clockPost({ op: "trigger", event: "setup.check" });
+      const applied = value.result?.apply?.applied?.length || 0;
+      showToast(`${value.result?.ran ? `Checked ${value.result.results.length} source${value.result.results.length === 1 ? "" : "s"}.` : `Check skipped: ${value.result?.skipped_reason || "another check is running"}.`}${applied ? ` Applied ${applied} update${applied === 1 ? "" : "s"}; see the card for each probe verdict.` : ""}`);
+      if (applied) loadMaintenance(true);
+    } else if (action === "apply") {
+      if (!window.confirm("Apply available updates now through the signed updater and the official CLI commands, for the sources ticked above?")) return;
+      const value = await clockPost({ op: "apply" });
+      const unverified = (value.applied || []).filter((row) => row.ready === false).length;
+      showToast(value.applied?.length ? `Applied ${value.applied.length} update${value.applied.length === 1 ? "" : "s"}${unverified ? `; ${unverified} updated, containment not verified` : ""}.` : value.notices?.length ? value.notices.join(" · ") : `Nothing applied: ${value.skipped?.[0]?.reason || "nothing due"}.`);
+      loadMaintenance(true);
+    }
+  } catch (error) { showToast(error.message); }
+}
+
+async function timerAction(action) {
+  const command = clockState?.timer?.[action];
+  if (!command) { showToast("The timer command is not available yet. Refresh the update clock first."); return; }
+  if (!window.confirm(`${action === "install" ? "Register" : "Remove"} the MOMM update timer with this exact command?\n\n${command}`)) return;
+  try {
+    await clockPost({ op: "timer", action, confirm: true, expected_command: command });
+    showToast(action === "install" ? "Timer registered." : "Timer removed.");
+  } catch (error) { showToast(error.message); }
+}
+
+// --- Batch CLI update (1.16 E6) -----------------------------------------------------------
+// Same server path and same exact-command confirmation as the single buttons,
+// run one after another with a version re-check between them. Rows without a
+// verified command (package-manager owned, not installed) offer no checkbox and
+// are refused by the server if they arrive anyway.
+function isBatchable(item) {
+  return Boolean(item && item.installed && item.update_command);
+}
+
+// Drop ticks for rows that are no longer batchable (uninstalled, or now owned
+// by a package manager) so a stale selection never reaches the confirm dialog.
+function pruneBatchSelection() {
+  for (const agent of [...batchSelected]) {
+    if (!isBatchable(maintenance?.cli_updates?.find?.((item) => item.agent === agent))) batchSelected.delete(agent);
+  }
+}
+
+function selectedBatch() {
+  pruneBatchSelection();
+  return [...batchSelected];
+}
+
+function toggleBatch(agent, checked) {
+  if (checked && isBatchable(maintenance?.cli_updates?.find?.((item) => item.agent === agent))) batchSelected.add(agent);
+  else batchSelected.delete(agent);
+  updateBatchButton();
+}
+
+function updateBatchButton() {
+  const button = document.querySelector("#batch-update");
+  if (!button) return;
+  const count = selectedBatch().length;
+  button.disabled = batchRunning || !count;
+  button.textContent = batchRunning ? "Updating…" : count ? `Update ${count} selected…` : "Update selected…";
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForVersionChange(provider, before, attempts = 12) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await sleep(10_000);
+    await loadMaintenance(true);
+    const current = maintenance?.cli_updates.find((item) => item.agent === provider)?.current;
+    if (current && current !== before) return current;
+  }
+  return null;
+}
+
+async function runBatchUpdate() {
+  if (batchRunning || !maintenance) return;
+  const selected = selectedBatch().map((agent) => maintenance.cli_updates.find((item) => item.agent === agent)).filter(Boolean);
+  const runnable = selected.filter((item) => item.installed && item.update_command);
+  const refused = selected.filter((item) => !(item.installed && item.update_command));
+  if (!runnable.length) { showToast("No selected CLI has a verified update command. Package-manager installs update through their manager."); return; }
+  const list = runnable.map((item) => `${providerLabel(item.agent)}: ${item.update_command}`).join("\n");
+  if (!window.confirm(`Open a visible terminal for each of these ${runnable.length} update command${runnable.length === 1 ? "" : "s"}, one after another, re-checking the detected version after each?\n\n${list}${refused.length ? `\n\nSkipped (no verified command): ${refused.map((item) => providerLabel(item.agent)).join(", ")}` : ""}`)) return;
+  batchRunning = true;
+  updateBatchButton();
+  const outcomes = [];
+  try {
+    for (const item of runnable) {
+      const before = item.current;
+      try {
+        await api("/api/action", { method: "POST", body: JSON.stringify({ provider: item.agent, action: "update", expected_command: item.update_command }) });
+        const attempt = { before, observed: false, message: "Updater opened (batch). Waiting for the detected version to change…" };
+        updateAttempts.set(item.agent, attempt);
+        liveResults.delete(item.agent);
+        renderMaintenance(); render();
+        const after = await waitForVersionChange(item.agent, before);
+        attempt.observed = Boolean(after);
+        attempt.message = after ? `Detected ${before || "unknown"} → ${after}. Verify connection again.` : "No version change observed. Finish in the terminal, then Check everything.";
+        outcomes.push(`${providerLabel(item.agent)} ${after ? `${before || "?"} → ${after}` : "not verified"}`);
+      } catch (error) { outcomes.push(`${providerLabel(item.agent)} refused: ${error.message}`); }
+      renderMaintenance();
+    }
+  } finally {
+    batchRunning = false;
+    batchSelected.clear(); // the queue was consumed; a fresh selection starts the next batch
+    renderMaintenance(); render();
+  }
+  showToast(`Batch update finished. ${outcomes.join(" · ")}`);
+}
+
+// --- Modalities panel (1.16 E7) ----------------------------------------------------------
+// Rows are routes, columns are modalities, cells are chips at the four levels with a
+// blocker badge; the invocation and evidence sit in the chip's title, the clearing action
+// in the badge's. "Probe inputs" sends synthetic files; "Probe generation" confirms with the
+// exact disclosure the server will demand back and never sends a blocked cell. The planner
+// is pure: it shows the chain the runner WOULD take and the cells that block it.
+const CAP_LEVEL_LABEL = { verified: "verified", documented: "documented", "model-only": "model-only", no: "no" };
+
+function capBlockerInfo(route, direction, modality) {
+  return (capabilities?.blockers || []).find((b) => b.route === route && b.direction === direction && b.modality === modality) || null;
+}
+
+function capCell(route, direction, modality) {
+  const cell = capabilities?.routes?.[route]?.[direction]?.[modality];
+  if (!cell) return '<td><span class="chip cap-chip cap-no" title="No cell in the registry">—</span></td>';
+  const evidence = cell.evidence ? [cell.evidence.help_capture ? `help capture ${cell.evidence.help_capture}` : "", ...(cell.evidence.docs || []).slice(0, 1)].filter(Boolean).join(" · ") : "";
+  const title = [
+    cell.how ? `Invocation: ${cell.how}` : `Level ${cell.level}: ${capabilities.level_actions?.[cell.level] || "no path"}`,
+    cell.requires?.length ? `Requires: ${cell.requires.join(", ")}` : "",
+    evidence ? `Evidence: ${evidence}` : "",
+    cell.harvest ? `Harvest: ${cell.harvest}` : "",
+    cell.source === "overlay" ? `Set by this machine's probe${cell.overlay?.at ? ` on ${formatWhen(cell.overlay.at)}` : ""}${cell.overlay?.expires_at ? `, until ${formatWhen(cell.overlay.expires_at)}` : ""}` : "",
+  ].filter(Boolean).join("\n");
+  const info = capBlockerInfo(route, direction, modality);
+  const badge = cell.blocker ? `<span class="cap-blocker cap-blocker-${escapeHtml(cell.blocker)}" title="${escapeHtml(`${cell.reason ? `${cell.reason}\n` : ""}To clear: ${info?.clearing_action || "see the registry"}`)}">${escapeHtml(cell.blocker)}</span>` : "";
+  return `<td><span class="chip cap-chip cap-${escapeHtml(cell.level)}${cell.source === "overlay" ? " cap-probed" : ""}" title="${escapeHtml(title)}">${escapeHtml(CAP_LEVEL_LABEL[cell.level] || cell.level)}</span>${badge}</td>`;
+}
+
+function capActions(route) {
+  const running = capabilityJobs.has(route) || (capabilities.probes?.running || []).includes(route);
+  const gen = capabilities.generation?.[route];
+  const blockedGen = (gen?.cells || []).filter((c) => c.blocked);
+  const genTitle = !gen?.cells?.length ? "No generative cell at documented or verified on this route" : !gen.open ? `Every generative cell is blocked: ${blockedGen.map((c) => `${c.cell} (${c.blocker})`).join(", ")}` : `Sends ${gen.open} generation request${gen.open === 1 ? "" : "s"} after your consent${blockedGen.length ? `; skips ${blockedGen.map((c) => `${c.cell} (${c.blocker})`).join(", ")}` : ""}`;
+  const last = capabilities.probes?.last?.[route];
+  const lastText = running ? "Probing… synthetic files only." : last?.at ? `Last probe ${formatWhen(last.at)}: ${last.verdict}${last.summary ? ` (${last.summary.verified} verified, ${last.summary.failed} failed, ${last.summary.blocked} blocked)` : ""}` : "Not probed on this machine yet.";
+  return `<td class="cap-actions">
+    <button class="mini-button" data-cap-probe="inputs" data-route="${escapeHtml(route)}" ${running ? "disabled" : ""} title="Sends one synthetic PNG, PDF and tone per documented input cell; never project content">Probe inputs</button>
+    <button class="mini-button" data-cap-probe="generation" data-route="${escapeHtml(route)}" ${running || !gen?.open ? "disabled" : ""} title="${escapeHtml(genTitle)}">Probe generation…</button>
+    <small>${escapeHtml(lastText)}</small></td>`;
+}
+
+function pipelinesText() {
+  const p = capabilities?.pipelines || {};
+  const names = { image_critique: "Image critique", pdf_critique: "PDF critique", audio_critique: "Audio critique", video_critique: "Video critique", image_generation: "Image generation", video_generation: "Video generation" };
+  return Object.entries(names).map(([key, label]) => {
+    const entry = p[key] || { routes: [], blocked: [] };
+    const blocked = (entry.blocked || []).map((b) => `${providerLabel(b.route)} blocked by ${b.blocker}`).join(", ");
+    return `${label}: ${entry.routes.length ? entry.routes.map(providerLabel).join(", ") : "none"}${blocked ? ` (${blocked})` : ""}`;
+  }).join(" · ");
+}
+
+function renderCapabilities() {
+  if (!capabilities) return;
+  const routes = Object.keys(capabilities.routes || {});
+  const inputs = capabilities.input_modalities || ["image", "pdf", "audio", "video", "speech"];
+  const outputs = capabilities.output_modalities || ["image_gen", "video_gen", "speech", "code_exec", "web"];
+  const blockers = capabilities.blockers || [];
+  const overlay = capabilities.overlay || {};
+  capabilitiesSummary.textContent = `${routes.length} routes · ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} on this machine${overlay.reprobe ? ` (${overlay.reprobe} to re-probe)` : ""} · baseline captured ${capabilities.captured_at || "—"}${overlay.applied ? ` · ${overlay.applied} cell${overlay.applied === 1 ? "" : "s"} set by this machine's probes` : ""}.`;
+  capabilitiesGrid.innerHTML = `<table class="momm-table cli-table cap-table"><thead>
+    <tr><th></th><th class="cap-group" colspan="${inputs.length}">Takes in</th><th class="cap-group" colspan="${outputs.length}">Produces</th><th class="cap-group">Probes</th></tr>
+    <tr><th>Route</th>${inputs.map((m) => `<th>${escapeHtml(m)}</th>`).join("")}${outputs.map((m) => `<th>${escapeHtml(m.replace("_gen", " gen").replace("_", " "))}</th>`).join("")}<th></th></tr></thead>
+    <tbody>${routes.map((route) => `<tr><th scope="row">${escapeHtml(providerLabel(route))}<small>${escapeHtml(capabilities.routes[route].installed_version ? `installed ${capabilities.routes[route].installed_version}` : "not detected")}</small></th>${inputs.map((m) => capCell(route, "input", m)).join("")}${outputs.map((m) => capCell(route, "output", m)).join("")}${capActions(route)}</tr>`).join("")}</tbody></table>`;
+  capabilitiesPipelines.textContent = `Possible now, derived from this matrix and what each adapter binds: ${pipelinesText()}. Chips marked * were set by this machine's probes; a reprobe badge means a recorded result expired or its CLI version or login changed.`;
+}
+
+async function loadCapabilities() {
+  capabilitiesRefreshButton.disabled = true;
+  try {
+    capabilities = await api("/api/capabilities");
+    renderCapabilities();
+  } catch (error) {
+    capabilitiesSummary.textContent = `The capability registry could not be read: ${error.message}`;
+    capabilitiesGrid.innerHTML = "";
+    capabilitiesPipelines.textContent = "";
+  } finally { capabilitiesRefreshButton.disabled = false; }
+}
+
+// Polls one modality probe job. The route's buttons follow capabilityJobs OR the server's
+// probes.running, so every exit here — result, deadline, failed poll — releases this page's
+// handle (only if it still owns the route) and then re-reads the matrix: a job the server
+// still reports as running keeps the route locked, and a failed poll never leaves the
+// buttons disabled for the rest of the session.
+async function pollCapabilityJob(route, id) {
+  const deadline = Date.now() + 15 * 60_000;
+  const owns = () => capabilityJobs.get(route)?.id === id;
+  const release = () => { if (owns()) capabilityJobs.delete(route); };
+  try {
+    for (;;) {
+      await sleep(TEST_POLL_MS);
+      if (!owns()) return null;
+      const state = await api(`/api/job/${id}`);
+      if (!owns()) return null;
+      if (state.status !== "running") {
+        release();
+        const s = state.result?.summary;
+        showToast(`${providerLabel(route)} modality probe: ${state.result?.verdict || state.status}${s ? ` — ${s.verified} verified, ${s.failed} failed, ${s.blocked} blocked, ${s.skipped} skipped` : ""}${state.result?.detail ? `. ${state.result.detail}` : ""}.`);
+        await loadCapabilities();
+        return state;
+      }
+      if (Date.now() > deadline) {
+        release();
+        showToast(`${providerLabel(route)} modality probe: no result after 15 minutes. The matrix shows whether the server is still running it.`);
+        await loadCapabilities();
+        return null;
+      }
+    }
+  } catch (error) {
+    release();
+    showToast(`${providerLabel(route)} modality probe: ${error.message}`);
+    await loadCapabilities();
+    return null;
+  }
+}
+
+async function probeRoute(route, kind) {
+  if (!capabilities || capabilityJobs.has(route)) return null;
+  const body = { op: "probe", cli: route };
+  if (kind === "generation") {
+    const gen = capabilities.generation?.[route];
+    if (!gen?.open || !gen.disclosure) { showToast("Nothing to generate: every generative cell of this route is blocked or absent."); return null; }
+    const skipped = (gen.cells || []).filter((c) => c.blocked).map((c) => `${c.cell}: blocked by ${c.blocker} — ${c.clearing_action}`).join("\n");
+    if (!window.confirm(`Send this generation probe? It spends the provider's quota.\n\n${gen.disclosure}${skipped ? `\n\nSkipped (blocked, never sent):\n${skipped}` : ""}`)) return null;
+    Object.assign(body, { generate: true, consent: true, disclosure: gen.disclosure });
+  } else body.inputs = true;
+  // Own the route before the POST leaves so a second click cannot send a second probe while
+  // the first is still in flight; the placeholder is replaced by the job the server returns.
+  const pending = { id: null, pending: true };
+  capabilityJobs.set(route, pending);
+  renderCapabilities();
+  try {
+    const job = await api("/api/capabilities", { method: "POST", body: JSON.stringify(body) });
+    if (capabilityJobs.get(route) !== pending) return null;
+    capabilityJobs.set(route, job);
+    renderCapabilities();
+    return await pollCapabilityJob(route, job.id);
+  } catch (error) {
+    if (capabilityJobs.get(route) === pending) capabilityJobs.delete(route);
+    showToast(error.message);
+    renderCapabilities();
+    return null;
+  }
+}
+
+// A candidate's `how` is one invocation string for a single cell or an object keyed per
+// cell; both render as text (Object.values on a string would split it per character).
+function invocationText(how) {
+  if (typeof how === "string") return how;
+  if (how && typeof how === "object") return Object.values(how).filter((v) => typeof v === "string" && v).join("; ");
+  return "";
+}
+const PLAN_RUN_COMMAND = "node momm/scripts/modality.mjs run --plan <file> --consent";
+
+function renderPlan(planned) {
+  if (!planned) { planResult.innerHTML = ""; return; }
+  const steps = (planned.steps || []).map((step, i) => {
+    const chosen = (step.candidates || []).find((c) => c.route === step.chosen);
+    const candidates = (step.candidates || []).map((c) => `${providerLabel(c.route)}: ${c.routable ? `routable (${c.level})` : c.blocker ? `blocked by ${c.blocker}` : `level ${c.level}`}`).join(" · ");
+    const how = invocationText(chosen?.how);
+    return `<li><strong>Step ${i + 1}</strong> ${escapeHtml((step.from || []).join(" + "))} → ${escapeHtml((step.to || []).join(" + "))}: ${step.chosen ? `<span class="chip chip-good">${escapeHtml(providerLabel(step.chosen))}</span> <small>${escapeHtml(chosen?.level || "")}${how ? ` · ${escapeHtml(how)}` : ""}</small>` : '<span class="chip chip-bad">no route</span>'}<small class="plan-candidates">${escapeHtml(candidates || "no candidates")}</small></li>`;
+  }).join("");
+  const blocked = (planned.blocked_by || []).map((b) => `<li><span class="cap-blocker${b.blocker ? ` cap-blocker-${escapeHtml(b.blocker)}` : ""}">${escapeHtml(b.blocker || b.level || "no route")}</span> step ${(b.step ?? 0) + 1}${b.route ? ` · ${escapeHtml(providerLabel(b.route))}` : ""}: ${escapeHtml(b.reason || "")}${b.clearing_action ? ` — <em>${escapeHtml(b.clearing_action)}</em>` : ""}</li>`).join("");
+  // The command is text inside innerHTML: its <file> placeholder is escaped so the parser cannot swallow it as a tag.
+  planResult.innerHTML = `<p class="environment-note">${planned.possible ? `Possible: ${escapeHtml((planned.routes_used || []).map(providerLabel).join(" → "))}. Nothing was executed; running a chain is a separate command with its own consent (${escapeHtml(PLAN_RUN_COMMAND)}).` : "Not possible on this machine right now; the blockers below name what would clear each one."}</p><ol class="plan-steps">${steps}</ol>${blocked ? `<p class="environment-note">Blocked by:</p><ul class="plan-blocked">${blocked}</ul>` : ""}`;
+}
+
+async function runPlan(event) {
+  event?.preventDefault?.();
+  const list = (value) => String(value || "").split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const need = { input: list(planIn.value), output: list(planOut.value) };
+  try {
+    const result = await api("/api/capabilities", { method: "POST", body: JSON.stringify({ op: "plan", need }) });
+    renderPlan(result.plan);
+  } catch (error) { planResult.innerHTML = `<p class="guidance-error">${escapeHtml(error.message)}</p>`; }
+}
+
+capabilitiesGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-cap-probe]");
+  if (button && !button.disabled) probeRoute(button.dataset.route, button.dataset.capProbe);
+});
+capabilitiesRefreshButton.addEventListener("click", loadCapabilities);
+planForm.addEventListener("submit", runPlan);
+
 grid.addEventListener("click", (event) => {
   const actionButton = event.target.closest("[data-action]");
   const testButton = event.target.closest("[data-test]");
@@ -397,21 +1127,60 @@ grid.addEventListener("click", (event) => {
 maintenanceGrid.addEventListener("click", (event) => {
   const button = event.target.closest("[data-maint-action]");
   if (button) launchAction(button.dataset.maintProvider, button.dataset.maintAction);
+  const clockButton = event.target.closest("[data-clock-action]");
+  if (clockButton) clockAction(clockButton.dataset.clockAction);
+  const timerButton = event.target.closest("[data-timer-action]");
+  if (timerButton) timerAction(timerButton.dataset.timerAction);
+  if (event.target.closest("#batch-update")) runBatchUpdate();
 });
+maintenanceGrid.addEventListener("change", (event) => {
+  if (event.target.matches("[data-clock-setting]")) setClockSetting(event.target.dataset.clockSetting, event.target.checked);
+  if (event.target.matches("[data-batch]")) toggleBatch(event.target.dataset.batch, event.target.checked);
+});
+guidanceEditor.addEventListener("input", (event) => { if (event.target.matches("[data-guidance]")) updateGuidanceCounters(); });
+guidanceSaveButton.addEventListener("click", saveGuidanceDraft);
+guidanceReloadButton.addEventListener("click", loadGuidance);
+guidancePreviewRoute.addEventListener("change", renderGuidancePreview);
+usageRefreshButton.addEventListener("click", loadUsage);
 quickSetupButton.addEventListener("click", runQuickSetup);
 refreshButton.addEventListener("click", refresh);
 maintenanceRefreshButton.addEventListener("click", () => loadMaintenance(true));
-governorSelect.addEventListener("change", () => { liveResults.clear(); refresh(); loadMaintenance(true); });
-closeButton.addEventListener("click", async () => {
-  try { await api("/api/shutdown", { method: "POST", body: "{}" }); }
-  finally { document.body.innerHTML = '<main style="max-width:680px;margin:18vh auto;padding:30px;font-family:system-ui"><h1>Setup Center closed</h1><p>You can close this tab safely.</p></main>'; }
-});
+// Every in-flight status poll and verification job belongs to the previous
+// governor from here on: refresh() drops a stale answer, runTest() drops a
+// stale job, and a fresh poll is queued for the new selection.
+function changeGovernor() {
+  governorEpoch += 1;
+  liveResults.clear();
+  runningTests.clear();
+  refresh();
+  loadMaintenance(true);
+}
+
+// The closed page appears only after the server confirmed it is closing; a
+// refused shutdown leaves the controls in place so the user can retry.
+async function closeSetupCenter() {
+  closeButton.disabled = true;
+  try {
+    await api("/api/shutdown", { method: "POST", body: "{}" });
+    document.body.innerHTML = '<main style="max-width:680px;margin:18vh auto;padding:30px;font-family:system-ui"><h1>Setup Center closed</h1><p>You can close this tab safely.</p></main>';
+  } catch (error) {
+    closeButton.disabled = false;
+    showToast(`Setup Center is still running: ${error.message}`);
+  }
+}
+
+governorSelect.addEventListener("change", changeGovernor);
+closeButton.addEventListener("click", closeSetupCenter);
 
 (async () => {
   try {
     session = await api("/api/session");
     await refresh();
     loadMaintenance(false);
+    loadGuidance();
+    loadUsage();
+    loadUpdateClock();
+    loadCapabilities();
   } catch (error) {
     summary.textContent = "Setup Center could not start.";
     showToast(error.message);

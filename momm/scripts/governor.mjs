@@ -158,13 +158,35 @@ export function inspectCompletion(root, runId) {
     demand(successful.every(r => r.review_contract === "momm-peer-review/2" && Array.isArray(r.reviewed_scope) && r.reviewed_scope.length), "legacy/unverified reply contract; needs a fresh review");
     const required = report.gate_policy?.quorum_required ?? report.quorum?.required ?? 1;
     demand(Number.isInteger(required) && required > 0, "invalid report quorum");
-    state.quorum = { required, achieved: successful.length, met: successful.length >= required };
-    if (!state.quorum.met) state.errors.push("external review quorum not met");
-    if (report.gate_policy?.strict) {
-      const requested = report.gate_policy.requested_routes;
-      if (!Array.isArray(requested) || !requested.length || requested.some(agent => !nonempty(agent))) {
-        state.errors.push("invalid strict policy: requested_routes must name the required reviewer routes");
-      } else if (requested.some(agent => agent !== report.governor && !successful.some(r => r.agent === agent))) {
+    const requested = report.gate_policy?.requested_routes;
+    if (report.gate_policy?.strict && (!Array.isArray(requested) || !requested.length || requested.some(agent => !nonempty(agent)))) {
+      state.errors.push("invalid strict policy: requested_routes must name the required reviewer routes");
+    }
+    if (report.split) {
+      // A split run is judged per piece from the sealed piece structure, never
+      // from merged route rows (a route that timed out on one piece merges as
+      // "success, partial"). Every piece must meet quorum; aggregate metadata
+      // must agree; strict policy applies to every piece.
+      demand(Array.isArray(report.split.pieces) && Array.isArray(report.split.governor_direct), "malformed split structure");
+      const pieces = report.split.pieces;
+      demand(pieces.every(p => nonempty(p.id) && p.reviewers && typeof p.reviewers === "object"), "malformed split piece");
+      const perPiece = pieces.map(p => {
+        const ok = Object.entries(p.reviewers).filter(([agent, status]) => agent !== report.governor && status === "success").map(([agent]) => agent);
+        return { id: p.id, external_successes: ok.length, met: ok.length >= required, ok };
+      });
+      const failing = perPiece.filter(p => !p.met).map(p => p.id);
+      const achieved = perPiece.length ? Math.min(...perPiece.map(p => p.external_successes)) : 0;
+      state.quorum = { required, achieved, met: perPiece.length > 0 && failing.length === 0, pieces: perPiece.length, failing_pieces: failing, governor_direct: report.split.governor_direct.length };
+      if (!perPiece.length) state.errors.push("split run has no reviewed pieces; every hunk was governor_direct scope and no external review exists");
+      if (failing.length) state.errors.push(`external review quorum not met on piece(s): ${failing.join(", ")}`);
+      if (report.quorum && (report.quorum.met !== state.quorum.met || (report.quorum.pieces ?? pieces.length) !== pieces.length)) state.errors.push("report quorum metadata contradicts the sealed piece structure");
+      if (report.gate_policy?.strict && Array.isArray(requested)) {
+        for (const p of perPiece) for (const agent of requested) if (agent !== report.governor && !p.ok.includes(agent)) state.errors.push(`strict reviewer policy not met on ${p.id}: ${agent}`);
+      }
+    } else {
+      state.quorum = { required, achieved: successful.length, met: successful.length >= required };
+      if (!state.quorum.met) state.errors.push("external review quorum not met");
+      if (report.gate_policy?.strict && Array.isArray(requested) && requested.some(agent => agent !== report.governor && !successful.some(r => r.agent === agent))) {
         state.errors.push("strict reviewer policy not met");
       }
     }
@@ -174,11 +196,25 @@ export function inspectCompletion(root, runId) {
     };
     for (const r of successful) (r.suggested_improvements ?? []).forEach((s, i) => state.items.push(item("suggestion", r.agent, i, s)));
     report.findings.forEach((f, i) => state.items.push(item("finding", null, i, f)));
+    // Oversize scope no route reviewed is an obligation of its own: the governor
+    // must record a decision with investigation evidence covering that path.
+    for (const [i, entry] of (report.split?.governor_direct ?? []).entries()) {
+      demand(nonempty(entry.path) && entry.status === "governor_direct", "malformed governor_direct entry");
+      state.items.push(item("governor_direct", null, i, { id: entry.id, path: entry.path, hunk: entry.hunk ?? null, bytes: entry.bytes ?? null }));
+    }
     let rows = [];
     const decisionFile = path.join(root, ".ensemble_reviews/dispositions.jsonl");
     if (fs.existsSync(decisionFile)) rows = jsonl(".ensemble_reviews/dispositions.jsonl").filter(r => r.run_id === runId);
     else reads.set(".ensemble_reviews/dispositions.jsonl", null);
     const known = new Set(state.items.map(i => i.item_id));
+    // review_rating rows (ledger --rate) are the governor's opinion of how a
+    // review read; they are not decisions. Only a well-formed rating row is
+    // ignored here — anything else unknown is still an error.
+    const isRating = row => row && row.kind === "review_rating" && row.run_id === runId && nonempty(row.reviewer)
+      && Number.isInteger(row.rating) && row.rating >= 1 && row.rating <= 5 && Array.isArray(row.tags) && row.tags.every(nonempty)
+      && row.item_id === undefined && row.disposition === undefined;
+    const malformedRating = row => row && row.kind === "review_rating" && !isRating(row);
+    rows = rows.filter(row => { if (malformedRating(row)) { state.errors.push("malformed review_rating row"); return false; } return !isRating(row); });
     for (const row of rows) if (!known.has(row.item_id)) state.errors.push("unknown or legacy decision item; cannot count as validated");
     const check = (entry, obligation, phase, current) => {
       const c = JSON.parse(ref(entry));
@@ -198,7 +234,8 @@ export function inspectCompletion(root, runId) {
       }
       // A cited real project file must actually be covered by the check.
       const target = obligation.kind === 'finding'
-        ? normalizeTarget(obligation.content.target_file, report.source_snapshot.files, root) : null;
+        ? normalizeTarget(obligation.content.target_file, report.source_snapshot.files, root)
+        : obligation.kind === 'governor_direct' ? normalizeTarget(obligation.content.path, report.source_snapshot.files, root) : null;
       if (target && !names.has(target)) {
         demand(phase === "investigation" && c.absent_paths?.includes(target)
           && !path.isAbsolute(target) && !target.includes(":") && target.split("/").every(p => p && p !== "." && p !== "..")
@@ -221,9 +258,10 @@ export function inspectCompletion(root, runId) {
         const row = matching[0];
         demand(row.report_sha256 === reportSha && row.input_sha256 === report.input_sha256
           && row.governor === report.governor && nonempty(row.reason), "decision binding/reason/governor missing");
-        const sources = obligation.kind === "finding" ? obligation.content.sources : [obligation.reviewer];
+        const sources = obligation.kind === "finding" ? obligation.content.sources : obligation.kind === "governor_direct" ? [report.governor] : [obligation.reviewer];
         demand(sources?.includes(row.reviewer), "decision reviewer does not match item");
-        demand(["applied", "applied-with-modification", "rejected"].includes(row.disposition), "deferred/unknown disposition remains open");
+        // governor_direct scope may also be closed as "reviewed": the governor read it directly and found nothing to change.
+        demand(["applied", "applied-with-modification", "rejected", ...(obligation.kind === "governor_direct" ? ["reviewed"] : [])].includes(row.disposition), "deferred/unknown disposition remains open");
         if (row.disposition.startsWith("applied")) {
           const after = check(row.verification, obligation, "after", true);
           demand(after.exit_code === 0, "verification did not pass");
@@ -236,9 +274,9 @@ export function inspectCompletion(root, runId) {
               && Date.parse(before.observed_at) < Date.parse(after.observed_at), "need same test failing before and passing after");
             demand(JSON.stringify(before.artifacts.map(a => a.path).sort()) === JSON.stringify(after.artifacts.map(a => a.path).sort()), "before/after artifact scope differs");
           }
-        } else if (obligation.kind === "finding") {
+        } else if (obligation.kind === "finding" || obligation.kind === "governor_direct") {
           const investigation = check(row.verification, obligation, "investigation", true);
-          demand(investigation.exit_code === 0, "rejected finding needs completed investigation evidence");
+          demand(investigation.exit_code === 0, obligation.kind === "governor_direct" ? "governor_direct scope needs completed investigation evidence covering its path" : "rejected finding needs completed investigation evidence");
         }
       } catch (error) { state.unresolved.push({ item_id: obligation.item_id, reason: error.message }); }
     }

@@ -1,0 +1,130 @@
+{
+  "schema": "momm-capabilities/1",
+  "captured_at": "2026-09-13",
+  "notes": [
+    "Shipped, machine-independent baseline (E7). Levels come only from the --help captures under references/cli/help (verified, with evidence.help_capture and evidence.help_version) or from vendor documentation (documented, evidence.docs); nothing in this file comes from a probe on any machine, so a live probe result (for example codex image generation) stays documented here and becomes verified only in that machine's overlay.",
+    "Machine-specific blockers (auth_tier, quota, zdr, missing_flag, probe_failed, reprobe) never appear here: probes write them to ~/.momm/capabilities-<machine>.json. The one structural blocker recorded is antigravity's headless run_command allowlist, which every fresh install lacks.",
+    "Input cell `how` and `requires` are binding templates: `{file}` is repeated per staged artefact, `{dir}` is the step's private work directory; a template that starts with `-` is bound into argv, otherwise the token containing {file} is written into the prompt. Text after `(` is description only.",
+    "Input modalities: text, image, pdf, audio, video, speech (live microphone). Output modalities: text, image_gen, video_gen, speech (TTS), code_exec, web. Docs URLs are those listed in references/cli/modalities.md."
+  ],
+  "modalities": {
+    "input": ["text", "image", "pdf", "audio", "video", "speech"],
+    "output": ["text", "image_gen", "video_gen", "speech", "code_exec", "web"]
+  },
+  "routes": {
+    "codex": {
+      "input": {
+        "text": { "level": "verified", "how": "codex exec - (prompt on stdin)", "evidence": { "help_capture": "references/cli/help/codex-exec.txt:13", "help_version": "0.154.0" } },
+        "image": { "level": "verified", "how": "-i {file}", "evidence": { "help_capture": "references/cli/help/codex-exec.txt:37", "help_version": "0.154.0", "docs": ["https://codex.danielvaughan.com/2026/03/28/codex-cli-image-workflows/"] } },
+        "pdf": { "level": "no", "how": null, "evidence": { "docs": ["https://github.com/openai/codex/issues/1797"] } },
+        "audio": { "level": "no", "how": null },
+        "video": { "level": "no", "how": null },
+        "speech": { "level": "no", "how": null }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "stdout; --json (JSONL); -o <file>; --output-schema <file>", "evidence": { "help_capture": "references/cli/help/codex-exec.txt:93", "help_version": "0.154.0" } },
+        "image_gen": { "level": "documented", "how": "image_gen tool in exec mode ($imagegen skill; --sandbox workspace-write)", "harvest": "~/.codex/generated_images/**/*.png", "mime": "image/png", "evidence": { "docs": ["https://learn.chatgpt.com/docs/image-generation", "https://learn.chatgpt.com/docs/cli/reference", "https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/imagegen/SKILL.md", "https://github.com/openai/codex/pull/17153"] } },
+        "video_gen": { "level": "no", "how": null },
+        "speech": { "level": "no", "how": null },
+        "code_exec": { "level": "verified", "how": "exec_command tool under --sandbox workspace-write|danger-full-access", "evidence": { "help_capture": "references/cli/help/codex-exec.txt:53", "help_version": "0.154.0" } },
+        "web": { "level": "verified", "how": "--search (top level) or -c web_search=\"live\" for exec (web__run tool)", "evidence": { "help_capture": "references/cli/help/codex.txt:121", "help_version": "0.154.0", "docs": ["https://developers.openai.com/codex/config-reference"] } }
+      },
+      "models": { "selectable": [], "families": ["openai"], "local": "--oss --local-provider ollama|lmstudio", "evidence": { "help_capture": "references/cli/help/codex-exec.txt:43", "help_version": "0.154.0" } }
+    },
+    "claude": {
+      "input": {
+        "text": { "level": "verified", "how": "-p (prompt on stdin)", "evidence": { "help_capture": "references/cli/help/claude.txt:164", "help_version": "2.1.270" } },
+        "image": { "level": "documented", "how": "{file} in the prompt (Read tool)", "requires": ["--tools Read", "--add-dir {dir}"], "evidence": { "help_capture": "references/cli/help/claude.txt:248", "help_version": "2.1.270", "docs": ["https://code.claude.com/docs/en/tools-reference"] } },
+        "pdf": { "level": "documented", "how": "{file} in the prompt (Read tool)", "requires": ["--tools Read", "--add-dir {dir}"], "evidence": { "help_capture": "references/cli/help/claude.txt:248", "help_version": "2.1.270", "docs": ["https://code.claude.com/docs/en/tools-reference"] } },
+        "audio": { "level": "no", "how": null, "evidence": { "docs": ["https://code.claude.com/docs/en/tools-reference"] } },
+        "video": { "level": "no", "how": null },
+        "speech": { "level": "model-only", "how": "/voice dictation, interactive only (no --print path)", "evidence": { "docs": ["https://code.claude.com/docs/en/voice-dictation"] } }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "--output-format text|json|stream-json; --json-schema", "evidence": { "help_capture": "references/cli/help/claude.txt:139", "help_version": "2.1.270" } },
+        "image_gen": { "level": "no", "how": null, "evidence": { "docs": ["https://code.claude.com/docs/en/tools-reference"] } },
+        "video_gen": { "level": "no", "how": null },
+        "speech": { "level": "no", "how": null },
+        "code_exec": { "level": "verified", "how": "Bash/PowerShell tools (default in -p; removed by --restricted)", "evidence": { "help_capture": "references/cli/help/claude.txt:188", "help_version": "2.1.270", "docs": ["https://code.claude.com/docs/en/tools-reference"] } },
+        "web": { "level": "verified", "how": "WebSearch/WebFetch tools (--tools WebSearch,WebFetch; WebFetch removed by --restricted)", "evidence": { "help_capture": "references/cli/help/claude.txt:191", "help_version": "2.1.270", "docs": ["https://code.claude.com/docs/en/tools-reference"] } }
+      },
+      "models": { "selectable": [], "families": ["anthropic"], "local": null, "evidence": { "help_capture": "references/cli/help/claude.txt:44", "help_version": "2.1.270" } }
+    },
+    "antigravity": {
+      "input": {
+        "text": { "level": "verified", "how": "-p <prompt> (no stdin)", "evidence": { "help_capture": "references/cli/help/agy.txt:18", "help_version": "1.2.2" } },
+        "image": { "level": "documented", "how": "{file} in the prompt (view_file tool)", "requires": ["--new-project", "--add-dir {dir}"], "evidence": { "help_capture": "references/cli/help/agy.txt:16", "help_version": "1.2.2", "docs": ["https://antigravity.google/docs/cli/headless/", "https://antigravity.google/docs/cli/reference"] } },
+        "pdf": { "level": "documented", "how": "{file} in the prompt (view_file tool)", "requires": ["--new-project", "--add-dir {dir}"], "evidence": { "help_capture": "references/cli/help/agy.txt:16", "help_version": "1.2.2", "docs": ["https://antigravity.google/docs/cli/headless/", "https://antigravity.google/docs/cli/reference"] } },
+        "audio": { "level": "model-only", "how": "Gemini 3.x accepts audio; no CLI flag or tool path", "evidence": { "docs": ["https://antigravity.google/docs/models/"] } },
+        "video": { "level": "model-only", "how": "Gemini 3.x accepts video; no CLI flag or tool path", "evidence": { "docs": ["https://antigravity.google/docs/models/"] } },
+        "speech": { "level": "model-only", "how": "/voice (F5) dictation and agy mic-serve, interactive only (disabled in --print)", "evidence": { "help_capture": "references/cli/help/agy.txt:33", "help_version": "1.2.2", "docs": ["https://antigravity.google/docs/cli/commands/voice/"] } }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "--output-format text|json|stream-json; --json-schema", "evidence": { "help_capture": "references/cli/help/agy.txt:17", "help_version": "1.2.2" } },
+        "image_gen": { "level": "documented", "how": "generate_image tool (Nano Banana 2) in -p mode; copy the file yourself", "harvest": "~/.gemini/antigravity-cli/brain/**/*.jpg", "mime": "image/jpeg", "evidence": { "docs": ["https://antigravity.google/docs/models/", "https://dev.to/googleai/elevating-antigravity-agent-skills-part-2-image-generation-2jno"] } },
+        "video_gen": { "level": "no", "how": null },
+        "speech": { "level": "no", "how": null },
+        "code_exec": { "level": "documented", "how": "run_command tool; headless auto-denies it without a permissions.allow rule", "blocker": "allowlist", "requires": ["permissions.allow command(<target>) in ~/.gemini/antigravity-cli/settings.json"], "evidence": { "docs": ["https://antigravity.google/docs/cli/headless/"] } },
+        "web": { "level": "documented", "how": "search_web and read_url_content tools", "evidence": { "docs": ["https://antigravity.google/docs/cli/headless/", "https://antigravity.google/docs/cli/reference"] } }
+      },
+      "models": { "selectable": ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.1-pro", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"], "families": ["google", "anthropic", "openai-oss"], "local": null, "evidence": { "help_capture": "references/cli/help/agy.txt:15", "help_version": "1.2.2", "docs": ["https://antigravity.google/docs/models/"] } }
+    },
+    "gemini": {
+      "input": {
+        "text": { "level": "verified", "how": "--prompt <text> (stdin appended)", "evidence": { "help_capture": "references/cli/help/gemini.txt:19", "help_version": "0.59.0" } },
+        "image": { "level": "documented", "how": "@{file} in the prompt (read_file / read_many_files)", "evidence": { "docs": ["https://geminicli.com/docs/tools/file-system/", "https://google-gemini.github.io/gemini-cli/docs/tools/multi-file.html"] } },
+        "pdf": { "level": "documented", "how": "@{file} in the prompt (read_file / read_many_files)", "evidence": { "docs": ["https://geminicli.com/docs/tools/file-system/", "https://google-gemini.github.io/gemini-cli/docs/tools/multi-file.html"] } },
+        "audio": { "level": "documented", "how": "@{file} in the prompt (read_file; read_many_files mp3/wav)", "evidence": { "docs": ["https://geminicli.com/docs/tools/file-system/", "https://google-gemini.github.io/gemini-cli/docs/tools/multi-file.html"] } },
+        "video": { "level": "documented", "how": "@{file} in the prompt (read_many_files mp4/mov)", "evidence": { "docs": ["https://google-gemini.github.io/gemini-cli/docs/tools/multi-file.html"] } },
+        "speech": { "level": "no", "how": null }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "-o/--output-format text|json|stream-json", "evidence": { "help_capture": "references/cli/help/gemini.txt:41", "help_version": "0.59.0" } },
+        "image_gen": { "level": "no", "how": null, "evidence": { "docs": ["https://github.com/gemini-cli-extensions/nanobanana"] } },
+        "video_gen": { "level": "no", "how": null, "evidence": { "docs": ["https://anycap.ai/page/en-US/blog/gemini-cli-image-video-guide"] } },
+        "speech": { "level": "no", "how": null },
+        "code_exec": { "level": "verified", "how": "run_shell_command tool; --approval-mode yolo; -s/--sandbox", "evidence": { "help_capture": "references/cli/help/gemini.txt:25", "help_version": "0.59.0" } },
+        "web": { "level": "documented", "how": "google_web_search and google_web_fetch tools", "evidence": { "docs": ["https://geminicli.com/docs/tools/web-search/"] } }
+      },
+      "models": { "selectable": [], "families": ["google"], "local": "gemini gemma (local Gemma routing)", "evidence": { "help_capture": "references/cli/help/gemini.txt:10", "help_version": "0.59.0" } }
+    },
+    "copilot": {
+      "input": {
+        "text": { "level": "verified", "how": "-p <text> (stdin ignored)", "evidence": { "help_capture": "references/cli/help/copilot.txt:149", "help_version": "1.0.83" } },
+        "image": { "level": "verified", "how": "--attachment {file}", "evidence": { "help_capture": "references/cli/help/copilot.txt:61", "help_version": "1.0.83", "docs": ["https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview", "https://github.com/github/copilot-cli/blob/main/changelog.md"] } },
+        "pdf": { "level": "verified", "how": "--attachment {file}", "evidence": { "help_capture": "references/cli/help/copilot.txt:61", "help_version": "1.0.83", "docs": ["https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview", "https://github.com/github/copilot-cli/blob/main/changelog.md"] } },
+        "audio": { "level": "no", "how": null, "evidence": { "docs": ["https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview"] } },
+        "video": { "level": "no", "how": null },
+        "speech": { "level": "model-only", "how": "Ctrl+Space voice dictation, interactive only", "evidence": { "docs": ["https://github.com/github/copilot-cli/blob/main/changelog.md"] } }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "--output-format text|json (JSONL); -s", "evidence": { "help_capture": "references/cli/help/copilot.txt:146", "help_version": "1.0.83" } },
+        "image_gen": { "level": "no", "how": null, "evidence": { "docs": ["https://github.com/github/copilot-cli/blob/main/changelog.md", "https://github.com/github/awesome-copilot/blob/main/skills/generate-image/SKILL.md"] } },
+        "video_gen": { "level": "no", "how": null },
+        "speech": { "level": "no", "how": null },
+        "code_exec": { "level": "verified", "how": "shell tool via shell(command) permission rules; --allow-all-tools in non-interactive mode", "evidence": { "help_capture": "references/cli/help/copilot.txt:43", "help_version": "1.0.83", "docs": ["https://github.com/github/copilot-cli/blob/main/changelog.md"] } },
+        "web": { "level": "verified", "how": "web_fetch (--allow-url); web_search via the built-in GitHub MCP server", "evidence": { "help_capture": "references/cli/help/copilot.txt:51", "help_version": "1.0.83", "docs": ["https://github.com/github/copilot-cli/blob/main/changelog.md"] } }
+      },
+      "models": { "selectable": ["claude-sonnet-5", "claude-fable-5.1", "claude-fable-5", "claude-opus-5", "claude-opus-4.8", "claude-opus-4.8-fast", "claude-opus-4.7", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5-mini", "mai-code-1.1-flash", "mai-code-1-flash-picker", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "grok-4.5", "kimi-k3", "kimi-k2.7-code"], "families": ["anthropic", "openai", "google", "xai", "moonshot", "microsoft"], "local": null, "evidence": { "help_capture": "references/cli/help/copilot-help-topics.txt:382", "help_version": "1.0.83" } }
+    },
+    "grok": {
+      "input": {
+        "text": { "level": "verified", "how": "--prompt-file <file> (also -p/--single, --prompt-json)", "evidence": { "help_capture": "references/cli/help/grok.txt:93", "help_version": "1.0.30" } },
+        "image": { "level": "documented", "how": "{file} in the prompt (read_file tool)", "requires": ["--cwd {dir}"], "evidence": { "help_capture": "references/cli/help/grok.txt:25", "help_version": "1.0.30", "docs": ["https://x.ai/build/changelog", "https://toolsbase.dev/en/reference/grok-build-commands"] } },
+        "pdf": { "level": "documented", "how": "{file} in the prompt (read_file tool)", "requires": ["--cwd {dir}"], "evidence": { "help_capture": "references/cli/help/grok.txt:25", "help_version": "1.0.30", "docs": ["https://x.ai/build/changelog"] } },
+        "audio": { "level": "no", "how": null, "evidence": { "docs": ["https://x.ai/build/changelog"] } },
+        "video": { "level": "no", "how": null },
+        "speech": { "level": "model-only", "how": "/voice and Ctrl+Space speech-to-text, interactive only", "evidence": { "docs": ["https://x.ai/build/changelog", "https://cryptobriefing.com/grok-build-speech-to-text-coding/"] } }
+      },
+      "output": {
+        "text": { "level": "verified", "how": "--output-format plain|json|streaming-json|streaming-messages-json; --json-schema", "evidence": { "help_capture": "references/cli/help/grok.txt:82", "help_version": "1.0.30" } },
+        "image_gen": { "level": "documented", "how": "image_gen / image_edit tools (-p, --permission-mode acceptEdits); bundled imagine skill", "harvest": "~/.grok/sessions/**/images/*.jpg", "mime": "image/jpeg", "evidence": { "docs": ["https://x.ai/build/changelog", "https://toolsbase.dev/en/reference/grok-build-commands"] } },
+        "video_gen": { "level": "documented", "how": "image_to_video / reference_to_video tools (-p, --permission-mode acceptEdits)", "harvest": "~/.grok/sessions/**/*.mp4", "mime": "video/mp4", "evidence": { "docs": ["https://x.ai/build/changelog", "https://docs.x.ai/build/settings/zdr-video-storage"] } },
+        "speech": { "level": "no", "how": null, "evidence": { "docs": ["https://x.ai/build/changelog"] } },
+        "code_exec": { "level": "verified", "how": "run_terminal_command tool; --tools / --disallowed-tools", "evidence": { "help_capture": "references/cli/help/grok.txt:40", "help_version": "1.0.30" } },
+        "web": { "level": "verified", "how": "web_search, web_fetch, open_page, x_keyword_search, x_semantic_search, x_thread_fetch (off with --disable-web-search)", "evidence": { "help_capture": "references/cli/help/grok.txt:37", "help_version": "1.0.30" } }
+      },
+      "models": { "selectable": ["grok-4.6", "grok-4.5"], "families": ["xai"], "local": null, "evidence": { "help_capture": "references/cli/help/grok.txt:61", "help_version": "1.0.30" } }
+    }
+  }
+}
