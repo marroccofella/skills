@@ -2091,9 +2091,21 @@ async function dashboardRegression() {
       await settle(grokJob.value);
       const grokCells = grokJob.value.result?.cells ?? [];
       const videoCell = grokCells.find((c) => c.modality === "video_gen");
-      checks.capabilities_generation_skips_blocked_cells = grokJob.status === 202 && videoCell?.status === "skipped" && videoCell.blocker === "zdr" && /privacy|bucket/.test(videoCell.clearing_action)
-        && grokCalls.filter((a) => a[0] !== "--version").length === 1 && !grokCalls.some((a) => a.join(" ").includes("image_to_video")) && grokCalls.some((a) => a.join(" ").includes("image_gen tool"))
-        && grokJob.value.disclosed.some((t) => /skipped, blocker zdr/.test(t)) && grokCells.find((c) => c.modality === "image_gen")?.status === "verified";
+      // Keep the original conjunction, but expose each safe boolean: a failed harvest
+      // must not be indistinguishable from accidentally dispatching a blocked cell.
+      const generationChecks = {
+        capabilities_generation_job_admitted: grokJob.status === 202,
+        capabilities_generation_video_skipped: videoCell?.status === "skipped",
+        capabilities_generation_video_blocker_preserved: videoCell?.blocker === "zdr",
+        capabilities_generation_clearing_action_present: /privacy|bucket/.test(videoCell?.clearing_action),
+        capabilities_generation_exactly_one_request: grokCalls.filter((a) => a[0] !== "--version").length === 1,
+        capabilities_generation_no_video_request: !grokCalls.some((a) => a.join(" ").includes("image_to_video")),
+        capabilities_generation_image_request_present: grokCalls.some((a) => a.join(" ").includes("image_gen tool")),
+        capabilities_generation_skip_disclosed: grokJob.value.disclosed.some((t) => /skipped, blocker zdr/.test(t)),
+        capabilities_generation_image_harvest_verified: grokCells.find((c) => c.modality === "image_gen")?.status === "verified",
+      };
+      Object.assign(checks, generationChecks);
+      checks.capabilities_generation_skips_blocked_cells = Object.values(generationChecks).every(Boolean);
       const planned = await handleCapabilities({ op: "plan", need: { input: ["text"], output: ["image"] } }, capDeps);
       const blockedPlan = await handleCapabilities({ op: "plan", need: { chain: ["text", "image", "video"] } }, capDeps);
       const badNeed = await handleCapabilities({ op: "plan", need: { input: ["hologram"] } }, capDeps);
