@@ -9,7 +9,10 @@ const read = p => fs.readFileSync(p, 'utf8');
 if (mode === 'envelope' || mode === 'rejection') {
   const source = read('momm/scripts/multi-review.mjs');
   const helpers = source.slice(source.indexOf('function extractJsonObjects('), source.indexOf('\nfunction clipped('));
-  const classifier = source.slice(source.indexOf('  const payload = unwrapReviewPayload(result.stdout);'), source.indexOf('  const problem = result.outputLimited ?'));
+  const classifierStart = source.indexOf('  const transportOutput = agent === "copilot" ?');
+  const classifierEnd = source.indexOf('  const problem = result.outputLimited ?', classifierStart);
+  assert(classifierStart >= 0 && classifierEnd > classifierStart, 'Inspect changed classification boundaries; never test an empty extraction');
+  const classifier = source.slice(classifierStart, classifierEnd);
   const ctx = vm.createContext({ Buffer, sanitizeText: value => ({value}), result: {}, agent: 'claude' });
   vm.runInContext(helpers + '\nfunction classify(result) {' + classifier + '\nreturn {status:"success"};}', ctx);
   const review = JSON.stringify({review_status:'complete', verdict:'ACCEPT', confidence:1, findings:[], summary:'Synthetic evidence'});
@@ -58,4 +61,3 @@ if (mode === 'envelope' || mode === 'rejection') {
     console.log('PASS '+probe);
   }
 } else throw new Error('Unknown probe');
-

@@ -16,7 +16,7 @@ Google's terminal agent, successor route for consumer Google accounts after Gemi
 
 ## Non-interactive mode
 
-`agy -p/--print "<prompt>"` runs one prompt and prints the response; stdin is not the prompt, so MOMM writes the contract and artifact to a `0o600` temp file and asks the agent to read it.
+`agy -p/--print "<prompt>"` runs one prompt and prints the response; ordinary stdin does not replace that prompt argument. The 1.16 repair candidate uses the separately documented `--input-format stream-json --output-format stream-json` protocol for text-only reviews: one user event on stdin, followed by EOF. Media reviews retain the private-file path and native schema.
 
 - `--output-format text|json|stream-json`; `--json-schema <schema or path>` enforces structured output (final result only for stream-json).
 - `--mode accept-edits|plan` — MOMM uses `plan`; `--sandbox` adds terminal restrictions; `--new-project` isolates the session from any existing project.
@@ -59,4 +59,18 @@ Eight runs is a small sample, but the mechanism and the trails agree: telling th
 
 ## Adapter notes
 
-Prompt text asks the agent to read the temp file and treat its contents as data. The JSON schema passed via `--json-schema` is MOMM's review schema. Print timeout must stay below the dispatcher timeout so the dispatcher, not the CLI, records the outcome.
+The 16 September text-only transport repair is based on an independent bounded
+comparison on agy 1.2.4: removing the schema alone still timed out; direct delivery
+then completed once; stdin streaming subsequently returned a complete result.
+Restoring native schema enforcement in that stdin control returned an empty,
+partial response at the print deadline despite native exit zero and SUCCESS.
+These samples do not prove universal reliability or permanent schema failure.
+The repair retains new-project/plan/sandbox and mandatory local contract/scope
+validation, but omits the optional native schema for text-only streams. It accepts
+only the final object-valued SUCCESS result with a nonempty strict-JSON answer;
+progress, unknown events, missing results and partial-output deadline warnings
+are refused. Source stays off process arguments. Media routing is unchanged.
+See [official stdin protocol](https://antigravity.google/docs/cli/headless/#stream-prompts-from-stdin)
+and the [public diagnostic](https://github.com/marroccofella/skills/pull/4#issuecomment-5700434342).
+
+For media, prompt text asks the agent to read the private file and attached media; `--json-schema` is MOMM's review schema. For text-only input, the complete contract and artifact travel in the stdin user event. Print timeout stays below the dispatcher timeout; a native partial-output timeout is still failure even if the native exit is zero.

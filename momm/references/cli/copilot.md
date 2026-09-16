@@ -17,7 +17,7 @@ GitHub's terminal agent. MOMM route `copilot`, default persona `verifier`. Insta
 
 `copilot -p "<prompt>"` executes one prompt and exits; `-s/--silent` prints only the agent response. stdin is ignored in prompt mode, so MOMM writes `prompt.txt` into a temp dir and says "Read prompt.txt".
 
-- `--output-format text|json` (`json` = JSONL, one object per line); `--stream on|off` (1.15.0 candidate passes `off` for a single final text).
+- `--output-format text|json` (`json` = JSONL, one object per line); `--stream on|off`. The 1.16 repair candidate uses JSONL with streaming off: a completed assistant turn plus a final numeric zero-exit result are both required. Human-rendered text is not a machine JSON transport.
 - Tool visibility vs permission: `--available-tools[=tools...]` and `--excluded-tools` decide what the model can see; `--allow-tool`, `--deny-tool`, `--allow-all-tools` decide prompting. MOMM uses `--available-tools=view --allow-tool=view` so the read-only file viewer is the only tool, plus `--add-dir <tmp>` so it may read the prompt file. `--disallow-temp-dir` would break that.
 - Isolation: `--no-custom-instructions` (no AGENTS.md), `--disable-builtin-mcps` (no github-mcp-server), `--no-remote-export` (no session export or remote control), `--log-level none`, `--no-color`.
 - `--model`, `--effort none|minimal|low|medium|high|xhigh|max`, `--attachment <path>` (images/documents, non-interactive only), `--max-ai-credits` (soft cap, minimum 30).
@@ -38,5 +38,14 @@ Usage is measured in AI credits (legacy plans: premium requests). When the plan'
 - 2026-09-12 and 2026-09-13: monthly quota exhausted; every attempt returned the quota error.
 
 ## Adapter notes
+
+Independent synthetic captures on Copilot 1.0.85 (16 September 2026) found literal
+line wrapping and unescaped quotes in human text output. The malformed answer was
+correctly rejected. A direct JSONL comparison preserved parseable answer bytes;
+it was one diagnostic sample, not a reliability guarantee. The repair consumes
+only the completed assistant message, never tool output or reasoning, and keeps
+the full review-contract checks. Unknown events, missing/failing terminal results,
+truncation and non-JSON answers fail closed. Existing read-only tool restrictions
+remain unchanged. See the [public investigation](https://github.com/marroccofella/skills/pull/4#issuecomment-5700415320).
 
 Copilot occasionally returns a plan instead of the JSON when asked to "follow embedded instructions"; the 1.15.0 prompt wording ("Return the completed JSON review, not a plan") is aimed at that. GitHub 5xx responses classify as `provider_unavailable` and are retried once.
