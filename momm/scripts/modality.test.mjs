@@ -131,9 +131,9 @@ await test("globFiles: ** spans zero or more directories, * stays within a segme
   assert.deepEqual(rel(mod.globFiles(`${root}/a/*/*.jpg`)), ["a/b/w.jpg"]);
   assert.deepEqual(rel(mod.globFiles(`${root}/**/q.png`)), ["other/q.png"]);
   assert.deepEqual(mod.globFiles(`${root}/nope/**/*.png`), []);
-  assert.equal(mod.expandHome("~/.codex/generated_images/**/*.png", "C:\\Users\\me"), "C:/Users/me/.codex/generated_images/**/*.png");
-  assert.equal(mod.expandHome("~/x", "/home/u"), "/home/u/x");
-  assert.equal(mod.expandHome("/abs/x", "/home/u"), "/abs/x");
+  assert.equal(mod.expandHome("~/.codex/generated_images/**/*.png", "C:\\Users\\fixture"), "C:/Users/fixture/.codex/generated_images/**/*.png");
+  assert.equal(mod.expandHome("~/x", "/home/fixture"), "/home/fixture/x");
+  assert.equal(mod.expandHome("/abs/x", "/home/fixture"), "/abs/x");
   assert.throws(() => mod.globFiles("relative/*.png"), /absolute/);
 });
 

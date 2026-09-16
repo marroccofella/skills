@@ -2,6 +2,41 @@
 
 Status: candidate on branch `release/momm-1.16.0`, built 2026-09-13 from the 1.15.1 release. Not published. Plan: [plan-1.16.0.md](plan-1.16.0.md) (momm-reviewed twice before a line was written).
 
+## Final candidate retest (15 September 2026)
+
+Core only: the separate MOMM World project is not included. Publication, signed
+installation/upgrade/rollback proof and the exact-final cross-platform matrix
+remain release gates; this section does not claim that 1.16.0 is already stable.
+
+- Two real text → image → description chains completed through the Codex route.
+  Four earlier images and both new images were retained with prompts, run IDs
+  and SHA-256 hashes in private evidence. No images are published by this release.
+  A description alone was not counted as prompt compliance.
+- Claude and Antigravity both returned usable MODIFY reviews of the exact paired
+  images. The revision improved hat size and lighting, but both found an ear/brim
+  intersection that the governor also observed. This is not evidence of perfect
+  image generation or cross-machine provider reliability.
+- An earlier Antigravity attempt ended with a provider capacity error and did not
+  count toward quorum. Terminal error envelopes now retain their error status
+  even when followed by telemetry; nested answers in failed envelopes remain
+  rejected. Deterministic regressions cover the envelope variants.
+- The optional image-region field now agrees between the strict provider schema
+  and local validation. Malformed coordinates are refused, not silently discarded;
+  existing text reviews do not need the additive field.
+- Public-document privacy regressions discover new guide/reference files. The
+  sitemap uses an explicit sibling-guide catalogue, excluding scratch pages.
+  These checks supplement the mandatory publication secret and history scans.
+- Documentation and tests agree that automatic updates and automatic protocol
+  acceptance are separate, off-by-default settings. Neither was enabled during
+  this retest. Human permission is required before changing either.
+- Follow-up (16 September): an expired Claude OAuth session exposed a missing
+  diagnostic match. It now receives `authentication_required`, an official login
+  hint and safe recovery text instead of an echoed provider envelope. A synthetic
+  failing-before/passing-after regression preserves timeout/outage precedence.
+  The last live gate reached only 1/2 reviewers; the final two-reviewer gate and
+  exact-final CI remain outstanding. Forty-one local suites/checks passed under
+  normal Windows permissions; this is not macOS/Linux live-provider coverage.
+
 ## What a user notices
 
 - **Every review reports what it cost.** `reviewers[].usage` carries each CLI's own token and cost figures (Claude and Grok: full usage and USD; Codex: total tokens, model and CLI version from its `tokens used` line; Antigravity and Copilot: nothing, and the report says so), plus a labelled `input_estimate`. `usage_totals` is per route only; the ledger shows "k of n reported", never a zero for missing data.

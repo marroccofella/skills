@@ -236,6 +236,14 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   // or a moving Git HEAD as the last meaningful edit of every generated page.
   const urls = Object.keys(output).filter(f => f.endsWith('.html')).map(f =>
     'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/(^|\/)index\.html$/, '$1')).sort();
+  // Sibling skill guides are maintained outside the MOMM renderer.
+  // Explicit publication catalogue: untracked scratch directories cannot add URLs.
+  for (const name of ['evidence', 'myautoness', 'myrepo', 'myskills', 'mytravel', 'myvoice', 'yorky']) {
+    if (fs.existsSync(path.join(root, 'docs', name, 'index.html'))) {
+      urls.push(`https://marroccofella.github.io/skills/${name}/`);
+    }
+  }
+  urls.sort();
   const videoByUrl=new Map(videoEntries.map(entry=>[entry.match(/<loc>(.*?)<\/loc>/)[1],entry.match(/<video:video>[\s\S]*?<\/video:video>/)[0]]));
   output['docs/sitemap.xml'] = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">\n'
     + [...new Set(urls)].map(url => `  <url><loc>${esc(url)}</loc>${videoByUrl.get(url)||''}</url>`).join('\n') + '\n</urlset>\n';

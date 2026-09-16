@@ -716,6 +716,7 @@ const REVIEW_JSON_SCHEMA = {
           issue: { type: "string", maxLength: 2000 },
           rationale: { type: "string", maxLength: 2000 },
           test_suggestion: { type: ["string", "null"], maxLength: 1500 },
+          region: { type: "array", items: { type: "integer", minimum: 0 }, minItems: 4, maxItems: 4 },
         },
       },
     },
@@ -1218,10 +1219,10 @@ function classifyFailure(result) {
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
     return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
   }
-  if (/not (?:signed|logged) in|(?:please|must|need to) (?:log[ -]?in|sign[ -]?in|authenticate)|(?:authentication|authorization) (?:required|failed)|unauthenticated|(?:oauth|access|refresh) token (?:is )?(?:expired|invalid|missing)|no (?:valid )?(?:oauth|login) session/.test(combined)) {
-    // Keep the provider's own words: transient service errors can contain
-    // auth-like phrasing, and the raw text is what distinguishes them.
-    return { status: "authentication_required", detail: `complete the provider's official browser login — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+  if (/not (?:signed|logged) in|(?:please|must|need to) (?:log[ -]?in|sign[ -]?in|authenticate)|(?:authentication|authorization) (?:required|failed)|unauthenticated|(?:oauth|access|refresh) token (?:is )?(?:expired|invalid|missing)|(?:oauth|login) session (?:is )?expired|no (?:valid )?(?:oauth|login) session/.test(combined)) {
+    // Outages were classified first. Do not echo auth envelopes: they can
+    // contain device codes, URLs, account identifiers and session metadata.
+    return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
   }
   return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
 }
@@ -1414,9 +1415,21 @@ async function invokeReviewer(agent, artifact, options) {
   if (cleanupError) {
     return { agent, status: "error", detail: `temporary review artifact cleanup failed: ${clipped(cleanupError.message, 600)}` };
   }
-  if (result.code !== 0 || result.error || result.timedOut) return { agent, ...classifyFailure(result), progress: result.progress };
+  if (result.code !== 0 || result.error || result.timedOut) {
+    const failure = classifyFailure(result);
+    return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress };
+  }
   const payload = unwrapReviewPayload(result.stdout);
   if (!payload) {
+    const failedEnvelope = extractJsonObjects(stripAnsi(result.stdout)).some(envelope =>
+      envelope?.is_error === true || envelope?.error || /^(error|failed)$/i.test(envelope?.status ?? ""));
+    if (failedEnvelope) {
+      // A CLI may exit zero yet explicitly mark its envelope failed. Never
+      // accept the nested review or misdescribe this as a missing JSON schema.
+      // Do not echo the envelope: it can contain private provider diagnostics.
+      return { agent, status: "error", progress: result.progress,
+        detail: "reviewer CLI returned a terminal error envelope; any nested review was rejected. A new completed dispatch is required." };
+    }
     // Say WHAT came back, not just that it was wrong: the failure class
     // (empty reply, prose instead of JSON, truncated stream, wrapper drift)
     // must be diagnosable from the ledger without re-running the route.
@@ -2028,6 +2041,19 @@ async function selfTest(pretty) {
     nonfinal_wrapper_is_not_a_review: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "MODIFY", confidence: 0, findings: [], summary: "still loading" }), stopReason: "tool_use" })) === null,
     parses_antigravity_structured_output: parsedStructured?.verdict === "ACCEPT",
     parses_grok_text_wrapper: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" }), stopReason: "end_turn" }))?.verdict === "ACCEPT",
+    terminal_error_envelope_is_not_a_schema_failure: await (async () => {
+      const response = JSON.stringify({ verdict: "ACCEPT", confidence: 1, findings: [], summary: "not accepted after terminal failure" });
+      const envelopes = [{ status: "ERROR", response }, { status: "FAILED", response },
+        { type: "result", is_error: true, result: response }, { error: { message: "synthetic" }, response }];
+      for (const envelope of envelopes) {
+        for (const tail of ["", '\n{"event":"telemetry"}']) {
+          const result = await invokeReviewer("codex", "synthetic release check", { governor: "claude", timeoutMs: 1000,
+            runProcess: async () => ({ code: 0, stdout: JSON.stringify(envelope) + tail, stderr: "" }) });
+          if (result.status !== "error" || !/terminal error envelope/.test(result.detail) || result.verdict) return false;
+        }
+      }
+      return true;
+    })(),
     normalizes_agy_alias: normalizeAgentName("agy") === "antigravity",
     normalizes_copilot_aliases: normalizeAgentName("github-copilot") === "copilot" && normalizeAgentName("gh-copilot") === "copilot",
     login_hints_cover_all_adapters: ["codex", "claude", "antigravity", "copilot", "gemini", "grok"].every((agent) => typeof LOGIN_HINTS[agent] === "string"),
@@ -2410,6 +2436,11 @@ async function selfTest(pretty) {
     })(),
     classifies_5xx_with_auth_wording_as_outage: classifyFailure({ code: 1, stdout: "", stderr: "Error: Authentication token found but could not be validated.\n  Failed to fetch GitHub CLI user login (503): GitHub returned: No server" }).status === "provider_unavailable",
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
+    expired_session_has_safe_recovery_hint: await (async () => {
+      const failure = await invokeReviewer("codex", "synthetic auth recovery", { governor: "claude", timeoutMs: 1000,
+        runProcess: async () => ({ code: 1, stdout: JSON.stringify({ is_error: true, result: "OAuth session expired and could not be refreshed", session_id: "synthetic-private-marker" }), stderr: "" }) });
+      return failure.status === "authentication_required" && failure.login_hint === LOGIN_HINTS.codex && !failure.detail.includes("synthetic-private-marker");
+    })(),
     classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000

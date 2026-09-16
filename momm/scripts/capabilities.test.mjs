@@ -120,12 +120,12 @@ await test("projection lists only routable input cells; a blocker drops the cell
 });
 
 await test("machineId is a stable 16-hex hash of hostname, platform and home", () => {
-  const a = cap.machineId({ hostname: "h", platform: "win32", homedir: "C:/Users/x" });
+  const a = cap.machineId({ hostname: "h", platform: "win32", homedir: "C:/Users/fixture" });
   assert.match(a, /^[0-9a-f]{16}$/);
-  assert.equal(a, cap.machineId({ hostname: "h", platform: "win32", homedir: "C:/Users/x" }));
-  assert.notEqual(a, cap.machineId({ hostname: "h2", platform: "win32", homedir: "C:/Users/x" }));
-  assert.notEqual(a, cap.machineId({ hostname: "h", platform: "linux", homedir: "C:/Users/x" }));
-  assert.equal(cap.overlayPath("/home/u", "abc"), path.join("/home/u", ".momm", "capabilities-abc.json"));
+  assert.equal(a, cap.machineId({ hostname: "h", platform: "win32", homedir: "C:/Users/fixture" }));
+  assert.notEqual(a, cap.machineId({ hostname: "h2", platform: "win32", homedir: "C:/Users/fixture" }));
+  assert.notEqual(a, cap.machineId({ hostname: "h", platform: "linux", homedir: "C:/Users/fixture" }));
+  assert.equal(cap.overlayPath("/home/fixture", "abc"), path.join("/home/fixture", ".momm", "capabilities-abc.json"));
 });
 
 await test("overlay entry is written privately and atomically, bound to machine, version and hashed login, with expiry by class", () => {

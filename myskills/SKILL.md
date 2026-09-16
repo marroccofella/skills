@@ -26,6 +26,7 @@ myskills 1.2.0 returns five functional records:
 
 - `momm`
 - `myrepo`
+- `myautoness`, also invoked as `autopilot`
 - `yorkshire-pudding`, also invoked as `yorky`
 - `promptus-clone-voice`, also invoked as `myvoice`
 
@@ -37,6 +38,7 @@ An alias belongs on its canonical record; it is not another installed skill or a
 |---|---|---|
 | momm | `momm` | every bundled deterministic `--self-test` check passes |
 | myrepo | `myrepo` | zero-network `--self-test` privacy + secret gates pass; `gh_cli` and `gh_auth` readiness reported separately |
+| myautoness | `myautoness` / `autopilot` | portable deterministic self-tests; gameplay replay requires a compatible reference adapter |
 | yorkshire-pudding | `yorky` | self-tests pass **and** a live translation is verified |
 | promptus-clone-voice | `myvoice` | Promptus services (ComfyUI, Cosy, CWorker) report ready |
 

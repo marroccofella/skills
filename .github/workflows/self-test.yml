@@ -85,6 +85,10 @@ jobs:
           node scripts/momm-release-pages.test.mjs
           node scripts/public-export.test.mjs
           node scripts/doc-consistency.test.mjs
+          node scripts/momm-release-privacy.test.mjs
+          node scripts/momm-media-contract.test.mjs
+          node scripts/momm-release-regressions.test.mjs
+          node scripts/momm-auth-recovery.test.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Guided onboarding is zero-call and rejects unknown routes
