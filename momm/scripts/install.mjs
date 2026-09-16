@@ -75,8 +75,14 @@ function linkSkill(parentDir, options) {
       : { destination, status: "conflict", detail: "existing path was not changed" };
   }
   if (options.dryRun) return { destination, status: "would_link" };
-  fs.mkdirSync(parentDir, { recursive: true });
-  fs.symlinkSync(skillRoot, destination, process.platform === "win32" ? "junction" : "dir");
+  try {
+    fs.mkdirSync(parentDir, { recursive: true });
+    fs.symlinkSync(skillRoot, destination, process.platform === "win32" ? "junction" : "dir");
+  } catch (error) {
+    // A later target must not discard earlier results or their receipt scopes.
+    // Do not roll back paths that may already belong to the user.
+    return { destination, status: "error", detail: `Could not create the requested link (${error.code || "filesystem error"}). Inspect this destination and retry the explicit installation; successful links are preserved.` };
+  }
   return { destination, status: "linked" };
 }
 

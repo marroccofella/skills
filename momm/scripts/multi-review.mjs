@@ -1219,7 +1219,11 @@ function classifyFailure(result) {
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
     return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
   }
-  if (/not (?:signed|logged) in|(?:please|must|need to) (?:log[ -]?in|sign[ -]?in|authenticate)|(?:authentication|authorization) (?:required|failed)|unauthenticated|(?:oauth|access|refresh) token (?:is )?(?:expired|invalid|missing)|(?:oauth|login) session (?:is )?expired|no (?:valid )?(?:oauth|login) session/.test(combined)) {
+  // Copilot's signed-out response uses this exact line rather than "login
+  // required". Match a whole diagnostic line, not quoted source or a generic
+  // mention of an authentication file; compatibility/outage checks stay first.
+  const missingAuthentication = /(?:^|\n)[ \t]*(?:error:[ \t]*)?no authentication information found[.!]?[ \t]*(?:\n|$)/.test(combined);
+  if (missingAuthentication || /not (?:signed|logged) in|(?:please|must|need to) (?:log[ -]?in|sign[ -]?in|authenticate)|(?:authentication|authorization) (?:required|failed)|unauthenticated|(?:oauth|access|refresh) token (?:is )?(?:expired|invalid|missing)|(?:oauth|login) session (?:is )?expired|no (?:valid )?(?:oauth|login) session/.test(combined)) {
     // Outages were classified first. Do not echo auth envelopes: they can
     // contain device codes, URLs, account identifiers and session metadata.
     return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
@@ -2815,6 +2819,9 @@ async function main() {
     reviewers: results.map((result) => ({
       agent: result.agent,
       status: result.status,
+      // Keep the recovery command in the durable/stdout report, including
+      // split results and zero-exit error envelopes. Never copy peer text.
+      ...(result.status === "authentication_required" ? { login_hint: LOGIN_HINTS[result.agent] ?? null } : {}),
       attempts: result.attempts ?? 1,
       duration_ms: result.duration_ms ?? null,
       process_progress: result.progress ?? null,

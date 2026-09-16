@@ -998,7 +998,7 @@ function renderCapabilities() {
     <tr><th></th><th class="cap-group" colspan="${inputs.length}">Takes in</th><th class="cap-group" colspan="${outputs.length}">Produces</th><th class="cap-group">Probes</th></tr>
     <tr><th>Route</th>${inputs.map((m) => `<th>${escapeHtml(m)}</th>`).join("")}${outputs.map((m) => `<th>${escapeHtml(m.replace("_gen", " gen").replace("_", " "))}</th>`).join("")}<th></th></tr></thead>
     <tbody>${routes.map((route) => `<tr><th scope="row">${escapeHtml(providerLabel(route))}<small>${escapeHtml(capabilities.routes[route].installed_version ? `installed ${capabilities.routes[route].installed_version}` : "not detected")}</small></th>${inputs.map((m) => capCell(route, "input", m)).join("")}${outputs.map((m) => capCell(route, "output", m)).join("")}${capActions(route)}</tr>`).join("")}</tbody></table>`;
-  capabilitiesPipelines.textContent = `Possible now, derived from this matrix and what each adapter binds: ${pipelinesText()}. Chips marked * were set by this machine's probes; a reprobe badge means a recorded result expired or its CLI version or login changed.`;
+  capabilitiesPipelines.textContent = `Potential pipelines (adapter capability, not a readiness check): ${pipelinesText()}. Using a route requires its CLI installation, account login and any required probes; a documented cell is not a successful live test. Chips marked * were set by this machine's probes; a reprobe badge means a recorded result expired or its CLI version or login changed.`;
 }
 
 async function loadCapabilities() {

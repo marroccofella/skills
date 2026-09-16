@@ -82,6 +82,7 @@ jobs:
           node scripts/momm-media-contract.test.mjs
           node scripts/momm-release-regressions.test.mjs
           node scripts/momm-auth-recovery.test.mjs
+          node scripts/momm-independent-review.test.mjs
           node myrepo/scripts/publish.mjs --self-test
           test -z "$(git status --porcelain)"
       - name: Install pinned signer in the release runner

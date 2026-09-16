@@ -920,10 +920,10 @@ await test('a second click before the probe POST answers sends nothing, and a fa
   assert(toasts.some(t=>/already running/.test(t)));
   assert(!/data-route="codex" disabled/.test(c.node('#capabilities-grid').innerHTML),'a failed POST releases the route');
 });
-// load-error-leaves-pipelines: a failed refresh must not leave the previous "Possible now" sentence under an empty grid.
+// load-error-leaves-pipelines: a failed refresh must not leave the previous capability sentence under an empty grid.
 await test('a failed matrix refresh clears the pipelines sentence along with the grid',async()=>{
   const c=ui();c.init({platform:'win32',providers:capProviders},null);c.setCapabilities(capSnapshot);c.core.renderCapabilities();
-  assert.match(c.node('#capabilities-pipelines').textContent,/Possible now/);
+  assert.match(c.node('#capabilities-pipelines').textContent,/Potential pipelines \(adapter capability, not a readiness check\)/);
   c.setApi(async()=>{throw new Error('registry unavailable');});
   assert.equal(typeof c.core.loadCapabilities,'function');await c.core.loadCapabilities();
   assert.match(c.node('#capabilities-summary').textContent,/registry unavailable/);assert.equal(c.node('#capabilities-grid').innerHTML,'');assert.equal(c.node('#capabilities-pipelines').textContent,'');

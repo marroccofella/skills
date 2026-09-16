@@ -85,8 +85,14 @@ function linkOne(parentDir, skill, options) {
     return sameTarget(destination, source) ? { skill, destination, status: "already_linked" } : { skill, destination, status: "conflict", detail: "existing path was not changed" };
   }
   if (options.dryRun) return { skill, destination, status: "would_link" };
-  fs.mkdirSync(parentDir, { recursive: true });
-  fs.symlinkSync(source, destination, process.platform === "win32" ? "junction" : "dir");
+  try {
+    fs.mkdirSync(parentDir, { recursive: true });
+    fs.symlinkSync(source, destination, process.platform === "win32" ? "junction" : "dir");
+  } catch (error) {
+    // Preserve other successful skill/target rows for output and receipt replay.
+    // Existing paths are not ours to roll back on another target's failure.
+    return { skill, destination, status: "error", detail: `Could not create the requested link (${error.code || "filesystem error"}). Inspect this destination and retry the explicit installation; successful links are preserved.` };
+  }
   return { skill, destination, status: "linked" };
 }
 function linkAll(parentDir, skills, options) {
