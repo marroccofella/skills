@@ -9,8 +9,10 @@ Plan: [plan-1.16.0.md](plan-1.16.0.md).
 
 ## Independent-audit repair pass (17 September 2026)
 
-Credit: BAB PA's controlled tests distinguished product defects from unavailable
-accounts and test-host limitations. The following repairs still require final
+Credit: Bab PA (the independent reviewing personal agent) used controlled tests
+to distinguish product defects from unavailable accounts and test-host limitations.
+See the [independent test report](https://github.com/marroccofella/skills/pull/4#issuecomment-5713628509)
+for its exact environment, revision and limits. The following repairs still require final
 source review, independent retest and the release gates below.
 
 - An inconclusive CLI version check stays unknown, rather than reporting that the
@@ -23,11 +25,18 @@ source review, independent retest and the release gates below.
   Follow-up concurrency controls cover both scheduled/on-demand timer orders and
   requests arriving after an older rebuild has already read its inputs. Those
   later requests await a fresh rebuild, not merely the older run's completion.
+  A subsequent real-HTTP regression also covers the serving layer: late readers
+  queue behind a started rebuild rather than bypassing the watcher's barrier by
+  sharing the earlier HTTP promise. Three failure/success orderings failed before
+  the repair and passed afterward in `scripts/ledger-serving.test.mjs`.
   Setup Center reviewer-card headings and status badges wrap at narrow widths.
 - Metadata-only update commands allow natural shutdown after output flush, with
   a bounded fallback. Review and mutating-command termination are unchanged.
-  BAB PA's matched Windows controls passed for the previously observed native
-  assertion. This is scoped independent evidence, not a universal crash-free claim.
+  Bab PA's matched Windows controls passed on `da7c0ab` for the previously observed
+  native assertion (12 native cases across Node 24.18 and 24.19; linked report above).
+  Related repository checks are `scripts/information-shutdown.test.mjs` and
+  `momm/scripts/shutdown.test.mjs`. This is scoped independent evidence, not a
+  universal crash-free claim or closure of the separate modality-suite timeout.
 - Missing or malformed package seals refuse before expensive package hashing.
   This is not a valid-seal hashing performance improvement or signed-release proof.
 - The dispatcher checks project evidence-folder permissions before collecting
@@ -39,19 +48,28 @@ source review, independent retest and the release gates below.
   staging uses that verified evidence boundary rather than generic system temp.
   Checks describe access rules at inspection time, not immunity to later permission
   changes, privileged access, provider-owned caches or a compromised user account.
-  If a media run cannot save its terminal report, it explicitly reports that the
-  saved status is stale. Artifacts remain retained; the original error is available
-  privately to programmatic callers, not copied into public diagnostic output.
 - Explicit Grok cancellation no longer certifies a recognition answer or appears
   only as missing generated output. Cancellation cause remains unknown unless
   separately established. Auxiliary 429 warnings alone do not invalidate a
   completed answer, prove exhausted quota or authorize automatic retries.
   Terminal cancellation envelopes without a text field also override earlier
-  successful-looking answers.
+  successful-looking answers (`scripts/media-cancellation.test.mjs`).
 - Generated media already produced by a cancelled, timed-out or nonzero-exit step
   is retained and hashed where harvesting succeeds, without converting that step
   into success or forwarding its output to the next step. Synthetic preservation
   tests are not image-quality or live-provider evidence.
+  If a media run cannot save its terminal report, it explicitly reports that the
+  saved status is stale. Artifacts are retained; the original error is available
+  as the non-enumerable `cause` on `MOMM_MEDIA_EVIDENCE_WRITE`, not copied into
+  public diagnostic output. A distinct persistence failure is kept privately as
+  `write_cause`; public `evidence.write_error_code` uses a fixed safe vocabulary
+  (unknown codes become `unknown`). Neither private cause is JSON-serialized.
+  The refusal regressions are in `momm/scripts/modality.test.mjs`.
+  The last successful step now saves its terminal state in one checkpoint, and
+  failed steps do not rewrite an unchanged terminal report. Synthetic success
+  and failure cases each went from three saves to two (initial plus terminal).
+  Every remaining save retains its fresh permission check; no permission result
+  is cached. Independent timing acceptance is still required.
 
 All new controls use synthetic inputs. They do not substitute for retained live
 generation, independent image critique, final-source quorum, exact-head CI,

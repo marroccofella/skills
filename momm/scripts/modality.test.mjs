@@ -650,6 +650,7 @@ await test("audit: failed terminal report writes expose stale saved state withou
   finally { fs.renameSync = rename; }
   assert.equal(caught?.code, "MOMM_MEDIA_EVIDENCE_WRITE");
   assert.equal(caught.cause?.code, "EACCES", "preserve the original in-memory cause without publishing its message");
+  assert.equal(caught.evidence.write_error_code, "EACCES");
   assert(!JSON.stringify(caught.evidence).includes("synthetic write refusal"), "public diagnostic contains no raw failure text");
   assert.equal(caught.evidence.persisted, false);
   assert.equal(caught.evidence.status, "error");
@@ -657,6 +658,50 @@ await test("audit: failed terminal report writes expose stale saved state withou
   const runDir = path.join(cwd, mod.MEDIA_DIR, caught.evidence.run_id);
   assert.equal(JSON.parse(fs.readFileSync(path.join(runDir, "report.json"))).status, "running");
   assert.equal(fs.readFileSync(path.join(runDir, "step-1/out/01-response.txt"), "utf8"), "Retained answer");
+});
+
+for (const success of [true, false]) await test(`audit: no redundant terminal checkpoint (${success ? "success" : "failure"})`, async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "claude";
+  const rename = fs.renameSync;
+  let writes = 0, result;
+  fs.renameSync = function (from, to, ...rest) {
+    if (path.basename(String(to)) === "report.json") writes++;
+    return rename.call(fs, from, to, ...rest);
+  };
+  try {
+    result = await mod.run(planned, { consent: true, home, cwd, effective: m,
+      exec: async () => success ? ok(JSON.stringify({ type: "result", result: "Synthetic answer", is_error: false })) : { code: 1, stdout: "", stderr: "Synthetic failure" } });
+  } finally { fs.renameSync = rename; }
+  assert.equal(result.report.status, success ? "complete" : "failed");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(result.dir, "report.json"))).status, result.report.status);
+  assert.equal(writes, 2, "one initial and one terminal checkpoint; do not rewrite an unchanged terminal state");
+});
+
+for (const writeCode of ["ENOSPC", "synthetic-private-diagnostic"]) await test(`audit: separate run and terminal persistence errors (${writeCode})`, async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "claude";
+  const rename = fs.renameSync;
+  let deny = false, caught;
+  fs.renameSync = function (from, to, ...rest) {
+    if (deny && path.basename(String(to)) === "report.json") throw Object.assign(new Error("synthetic private write detail"), { code: writeCode });
+    return rename.call(fs, from, to, ...rest);
+  };
+  try {
+    await mod.run(planned, { consent: true, home, cwd, effective: m, exec: async () => {
+      deny = true;
+      throw Object.assign(new Error("synthetic private provider detail"), { code: "EPROVIDER" });
+    } });
+  } catch (error) { caught = error; }
+  finally { fs.renameSync = rename; }
+  assert.equal(caught?.code, "MOMM_MEDIA_EVIDENCE_WRITE");
+  assert.equal(caught.cause?.code, "EPROVIDER", "retain the original run failure privately");
+  assert.equal(caught.evidence.write_error_code, writeCode === "ENOSPC" ? "ENOSPC" : "unknown");
+  assert.equal(caught.write_cause?.code, writeCode, "retain the distinct write failure privately");
+  assert.equal(Object.prototype.propertyIsEnumerable.call(caught, "write_cause"), false);
+  assert.doesNotMatch(JSON.stringify(caught), /synthetic private|synthetic-private-diagnostic/);
 });
 
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}

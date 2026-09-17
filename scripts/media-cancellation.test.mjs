@@ -20,6 +20,8 @@ try {
     const isolated=isolateReply('grok',{code:0,stdout,stderr:''},'Synthetic terminal-envelope check');
     results.push({name,passed:isolated.isolated===false&&isolated.terminal_status==='cancelled'});
   }
+  const recovered=isolateReply('grok',{code:0,stdout:JSON.stringify({stopReason:'cancelled'})+'\n'+JSON.stringify({text:'Recovered synthetic answer',stopReason:'end_turn'}),stderr:''},'Synthetic recovered-envelope check');
+  results.push({name:'later successful envelope supersedes earlier cancellation',passed:recovered.isolated===true&&recovered.reply==='Recovered synthetic answer'});
   for(const cancelled of [true,false]) {
     const reply={code:0,stdout:JSON.stringify({text:'Red',stopReason:cancelled?'cancelled':'end_turn'}),stderr:'auxiliary HTTP 429 RESOURCE_EXHAUSTED; auxiliary HTTP 402'};
     const isolated=isolateReply('grok',reply,'Describe the image');

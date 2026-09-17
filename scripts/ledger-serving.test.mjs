@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,6 +68,10 @@ for (const scenario of ['source-only-change', 'thrown-rebuild', 'failed-child', 
 const watcherStart = source.indexOf('function createLedgerWatcher(');
 const watcherEnd = source.indexOf('function isLoopback(', watcherStart);
 assert(watcherStart >= 0 && watcherEnd > watcherStart);
+// These controlled timers deliberately assert the shipped policy. Fail loudly
+// if production changes instead of silently testing stale injected constants.
+assert.match(source, /^const LEDGER_MIN_GAP_MS = 5000;/m, 'fixture constants must match production');
+assert.match(source, /^const LEDGER_FILES = new Set\(\["review-log\.jsonl", "dispositions\.jsonl"\]\);/m, 'fixture constants must match production');
 const makeWatcher = vm.runInNewContext(source.slice(watcherStart, watcherEnd) + ';createLedgerWatcher', { fs, path, safeDetail: String, LEDGER_FILES: new Set(['review-log.jsonl', 'dispositions.jsonl']), LEDGER_MIN_GAP_MS: 5000 });
 for (const nextCode of [1, 0]) for (const order of [[0, 1], [1, 0]]) {
   const scenario = `watcher-timer-overlap-exit-${nextCode}-order-${order.join('-')}`;
@@ -107,7 +112,7 @@ for (const nextCode of [1, 0]) for (const order of [[0, 1], [1, 0]]) {
     if (nextCode === 0) assert.match(res.body, /Current snapshot/);
     results.push({ scenario, passed: true });
   } catch (error) { results.push({ scenario, passed: false, error: error.message }); }
-  finally { release?.(); await request; watcher?.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+  finally { release?.(); await Promise.allSettled([request].filter(Boolean)); watcher?.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 }
 {
   const scenario = 'late-reader-awaits-new-snapshot';
@@ -141,6 +146,58 @@ for (const nextCode of [1, 0]) for (const order of [[0, 1], [1, 0]]) {
     results.push({ scenario, passed: true });
   } catch (error) { results.push({ scenario, passed: false, error: error.message }); }
   finally { release?.(); watcher?.stop(); }
+}
+for (const [oldCode, newCode] of [[0, 1], [1, 0], [0, 0]]) {
+  const scenario = `http-late-reader-${oldCode}-then-${newCode}`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-ledger-http-'));
+  let watcher, server, release, first, second;
+  try {
+    const er = path.join(dir, '.ensemble_reviews'); fs.mkdirSync(er);
+    const file = path.join(er, 'ledger.html');
+    fs.writeFileSync(file, '<p>OLD VALIDATED SNAPSHOT</p>');
+    let revision = 'old', calls = 0, arrivals = 0, entered, secondArrived;
+    const started = new Promise(resolve => { entered = resolve; });
+    const arrived = new Promise(resolve => { secondArrived = resolve; });
+    watcher = makeWatcher({ dir: er, minGapMs: 0, debounceMs: 10000, setTimer: setTimeout, clearTimer: clearTimeout,
+      watch: () => ({ on() {}, close() {} }), run: async () => {
+        const snapshot = revision;
+        const code = ++calls === 1 ? oldCode : newCode;
+        if (calls === 1) { entered(); await new Promise(resolve => { release = resolve; }); }
+        if (code === 0) fs.writeFileSync(file, `<p>${snapshot === 'old' ? 'OLD VALIDATED SNAPSHOT' : 'CURRENT SNAPSHOT'}</p>`);
+        return { code };
+      }
+    });
+    watcher.start();
+    server = http.createServer((req, res) => {
+      const work = serve(res, { cwd: dir, rebuild: () => watcher.rebuild() });
+      if (++arrivals === 2) secondArrived();
+      work.catch(error => res.destroy(error));
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const get = () => new Promise((resolve, reject) => {
+      const req = http.get({ hostname: '127.0.0.1', port: server.address().port, path: '/ledger' }, res => {
+        let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body })); res.on('error', reject);
+      });
+      req.on('error', reject); req.setTimeout(5000, () => req.destroy(new Error('Synthetic HTTP test deadline')));
+    });
+    first = get(); first.catch(() => {}); await started;
+    revision = 'new'; watcher.notify('dispositions.jsonl');
+    second = get(); second.catch(() => {}); await arrived;
+    release();
+    const [, result] = await Promise.all([first, second]);
+    assert.equal(result.status, newCode === 0 ? 200 : 503);
+    assert.doesNotMatch(result.body, /OLD VALIDATED SNAPSHOT/);
+    if (newCode === 0) assert.match(result.body, /CURRENT SNAPSHOT/);
+    assert.equal(calls, 2, 'Late HTTP readers require one covering rebuild, not a write storm');
+    results.push({ scenario, passed: true });
+  } catch (error) { results.push({ scenario, passed: false, error: error.message }); }
+  finally {
+    release?.(); watcher?.stop();
+    await Promise.allSettled([first, second].filter(Boolean));
+    if (server?.listening) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 await new Promise(resolve => setImmediate(resolve));
 process.removeListener('unhandledRejection', onUnhandled);

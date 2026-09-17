@@ -478,22 +478,26 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
         persist();
         break;
       }
+      // Save the final successful step as terminal in the same checked write.
+      if (i === resolved.length - 1) report.status = "complete";
       persist();
       previous = files;
     }
-    if (report.status === "running") report.status = "complete";
-    persist();
   } catch (e) {
     report.status = "error"; report.error = String(e?.message ?? e).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").slice(0, 400);
     try { persist(); }
-    catch {
+    catch (writeError) {
       // Never bypass a changed permission boundary to repair the saved status.
       // Tell callers that the on-disk state is stale; preserve all artifacts.
       const error = fail(`Media run ${run_id} stopped with an error, but its terminal report could not be saved. The saved status (${lastSavedStatus ?? "none"}) is stale; retained artifacts are not proof of completion. No permissions were changed.`, "MOMM_MEDIA_EVIDENCE_WRITE");
       // Available to programmatic callers, but not enumerable or copied into
       // stdout/stderr evidence: provider failures can contain private details.
       Object.defineProperty(error, "cause", { value: e, configurable: true });
-      error.evidence = { run_id, status: "error", persisted: false, last_saved_status: lastSavedStatus };
+      Object.defineProperty(error, "write_cause", { value: writeError, configurable: true });
+      // Codes can also be arbitrary strings. Publish only this fixed vocabulary,
+      // never a provider message, path, account identifier or untrusted code.
+      const writeCode = ["EACCES", "EPERM", "ENOSPC", "EDQUOT", "EROFS", "EIO", "ENOENT", "MOMM_EVIDENCE_PERMISSIONS"].includes(writeError?.code) ? writeError.code : "unknown";
+      error.evidence = { run_id, status: "error", persisted: false, last_saved_status: lastSavedStatus, write_error_code: writeCode };
       throw error;
     }
     throw e;

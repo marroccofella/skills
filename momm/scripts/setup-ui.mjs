@@ -1284,9 +1284,9 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
     state.watching = false;
   }
   const status = () => ({ ...state });
-  // On-demand rebuild for GET /ledger. It shares the run and the minimum gap
-  // with the scheduled path: a rebuild already in flight is awaited rather than
-  // doubled, and one that would land inside the gap waits the remainder out.
+  // On-demand rebuild for GET /ledger. Same-generation readers share work and
+  // the scheduled path's minimum gap. A reader arriving after a run began needs
+  // a newer generation; it waits for the old run and any remaining gap first.
   // Independent of start()/stop(): the request wants a page, not a subscription.
   async function rebuild() {
     // A run already reading before this request may have an older snapshot.
@@ -1434,11 +1434,22 @@ async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (led
   const stale = true;
   let rebuildError = null;
   try {
-    // Coalesce simultaneous readers even before the directory watcher exists.
-    // Settled work is removed: a later request must revalidate current source.
+    // Readers arriving before a queued rebuild starts may share it. A reader
+    // arriving after its input capture began needs the next generation instead;
+    // joining any in-flight HTTP promise would bypass the watcher's barrier.
     const pending = serveLedger.pending ??= new Map();
-    if (!pending.has(file)) pending.set(file, Promise.resolve().then(rebuild).finally(() => pending.delete(file)));
-    const result = await pending.get(file);
+    let entry = pending.get(file);
+    if (!entry || entry.started) {
+      const previous = entry;
+      entry = { started: false, promise: null };
+      const queued = entry;
+      queued.promise = Promise.resolve(previous?.promise).catch(() => {}).then(() => {
+        queued.started = true;
+        return rebuild();
+      }).finally(() => { if (pending.get(file) === queued) pending.delete(file); });
+      pending.set(file, queued);
+    }
+    const result = await entry.promise;
     if (result?.last_error || (result?.code != null && result.code !== 0) || (result?.last_exit_code != null && result.last_exit_code !== 0)) rebuildError = "Ledger rebuild failed.";
   } catch { rebuildError = "Ledger rebuild failed."; }
   if (rebuildError) {
@@ -1973,7 +1984,7 @@ async function dashboardRegression() {
     rp.gone = false; rp.identity = 3; rp.callback("rename", path.basename(replacedDir)); // a straggling event after stop
     const stayedStopped = rp.attempts === 2 && replacedWatcher.status().watching === false && rp.timers.every((timer) => timer.cleared);
     checks.ledger_watcher_reattaches_when_directory_replaced = unrelatedIgnored && reattached && vanished && stayedStopped;
-    // rebuild(): GET /ledger's on-demand path awaits an in-flight run rather than doubling it, and waits out the 5 s gap.
+    // rebuild(): GET /ledger waits for a covering generation and respects the 5 s gap; late readers can require a second run.
     const rb = { runs: 0, timers: [], release: null };
     const rebuildWatcher = createLedgerWatcher({ dir: root, run: () => { rb.runs += 1; return new Promise((resolve) => { rb.release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms }; rb.timers.push(timer); return timer; }, clearTimer: () => {}, watch: () => ({ on() {}, close() {} }) });
     const rbFirst = rebuildWatcher.rebuild(); const rbSecond = rebuildWatcher.rebuild(); // same turn, before the snapshot begins
