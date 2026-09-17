@@ -84,6 +84,18 @@ source review, independent retest and the release gates below.
   and failure cases each went from three saves to two (initial plus terminal).
   Every remaining save retains its fresh permission check; no permission result
   is cached. Independent timing acceptance is still required.
+  A follow-up coalesces the initial running-report save with the first dispatch
+  boundary, after input staging and any harvest-lock wait. The native regression
+  reproduced four permission inspections for a one-step run before the repair
+  and requires three afterward: project preparation, checked pre-dispatch save,
+  and a fresh post-provider save. Both durable checkpoints remain; preparation
+  errors still enter terminal-state handling. This removes a redundant empty-run
+  inspection, not a privacy boundary. The 180-second suite budget is unchanged.
+  During preparation, before the first dispatch checkpoint, the allocated run
+  directory may not yet have `report.json`. A hard process kill in that window
+  can leave a retained preparation directory without a status record; do not
+  infer completion or delete its artifacts. Caught preparation failures still
+  write an error report. This is not crash-atomic preparation or fsync durability.
 
 All new controls use synthetic inputs. They do not substitute for retained live
 generation, independent image critique, final-source quorum, exact-head CI,

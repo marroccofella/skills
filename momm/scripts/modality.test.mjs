@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import * as mod from "./modality.mjs";
 import { loadBaseline, effective, sha256 } from "./capabilities.mjs";
@@ -31,6 +33,33 @@ const fresh = (name) => { const d = fs.mkdtempSync(path.join(tmp, `${name}-`)); 
 const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file; };
 const ok = (stdout) => ({ code: 0, stdout, stderr: "" });
 const PNG_A = Buffer.from("89504e470d0a1a0a-A-PNG-BYTES", "utf8"), MP4_B = Buffer.from("0000001c667479706d703432-B-MP4", "utf8");
+
+await test("native checkpoint budget: first running report shares the dispatch privacy inspection", async () => {
+  const cwd = fresh("checkpoint-cwd"), home = fresh("checkpoint-home"), m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "claude";
+  const original = childProcess.spawnSync;
+  const inspectedPaths = [];
+  let calls = 0, runDir;
+  try {
+    childProcess.spawnSync = function (exe, args, options) {
+      if (args?.some(arg => typeof arg === "string" && arg.includes("$stage = 'read_acl'"))) inspectedPaths.push(JSON.parse(options.input).path);
+      return original.call(childProcess, exe, args, options);
+    };
+    syncBuiltinESMExports();
+    const result = await mod.run(planned, { consent: true, cwd, home, effective: m, exec: async (_cmd, _args, options) => {
+      calls++;
+      runDir = path.resolve(options.cwd, "..");
+      const saved = JSON.parse(fs.readFileSync(path.join(runDir, "report.json"), "utf8"));
+      assert.equal(saved.status, "running", "durable running state must precede provider dispatch");
+      if (process.platform === "win32") assert.deepEqual(inspectedPaths, [path.join(cwd, ".ensemble_reviews"), runDir], "full project preparation plus full run-tree inspection, not merely the report file");
+      return ok(JSON.stringify({ type: "result", result: "Synthetic checkpoint answer", is_error: false }));
+    } });
+    assert.equal(calls, 1);
+    assert.equal(result.report.status, "complete");
+    if (process.platform === "win32") assert.deepEqual(inspectedPaths, [path.join(cwd, ".ensemble_reviews"), runDir, runDir], "terminal persistence must independently recheck the complete run tree after the provider");
+  } finally { childProcess.spawnSync = original; syncBuiltinESMExports(); }
+});
 
 await test("Claude composed output retains explicitly requested tools without changing permission mode", () => {
   const route = baseline.routes.claude;

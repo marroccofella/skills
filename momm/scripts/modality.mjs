@@ -409,11 +409,10 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
     writePrivate(path.join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
     lastSavedStatus = report.status;
   };
-  persist();
   let previous = [];
   try {
-    // Hashing the initial artefacts happens after the first persistence, so it must sit under
-    // the same terminal-state handling as every step: an unreadable input ends the run as
+    // Preparation is covered by terminal-state handling even before the first running
+    // checkpoint: an unreadable input ends the run as
     // "error", never leaves the saved report "running" (1.16 readiness audit).
     previous = inputs.map((f) => {
       const digest = hashFile(f);
@@ -439,7 +438,13 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
       try {
         for (const h of harvests) h.before = snapshotFiles(h.pattern);
         const started = Date.now();
-        requirePrivateEvidence(dir);
+        // Save the initial running state at the dispatch boundary, after staging and
+        // any asynchronous lock wait. This checked write also verifies the complete
+        // run tree immediately before exec; do not scan an empty run redundantly.
+        // Later steps still recheck here, and every terminal/step save rechecks after
+        // the provider. No cached permission result crosses a provider call or await.
+        if (i === 0) persist();
+        else requirePrivateEvidence(dir);
         result = await exec(resolveCommand(route, cmd.command), cmd.args, { input: cmd.input, cwd: stepDir, timeout });
         const timedOut = !!result.timedOut || result.error?.code === "ETIMEDOUT";
         if (timedOut) failure = "timeout";
