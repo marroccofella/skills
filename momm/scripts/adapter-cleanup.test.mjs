@@ -18,6 +18,7 @@ function context(overrides={},command=()=> 'synthetic-agent'){
   const temporary=path.join(root,String(++sequence));fs.mkdirSync(temporary);
   const ctx=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>temporary},path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
     createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(temporary,prefix)),
+    requirePrivateScratch:()=>{},
     VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
     attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
     agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},
@@ -35,6 +36,20 @@ async function invoke(c,route,{media=false,run=failure}={}){
 function clean(c){assert.deepEqual(fs.readdirSync(c.temporary),[],'adapter staging survived');}
 function safeFailure(r){assert.equal(r.status,'error');assert(!r.review);assert(!JSON.stringify(r).includes('PRIVATE_DIAGNOSTIC_SENTINEL'));}
 try{
+  for(const route of ['codex','claude','gemini','antigravity','copilot','grok'])await test(`${route} changed scratch permissions refuses the result but still removes scratch`,async()=>{
+    const c=context();c.ctx.requirePrivateScratch=failure;
+    const r=await c.ctx.invoke(route,'Synthetic input.',{governor:'other',timeoutMs:1000,runProcess:async()=>({code:1,stdout:'',stderr:'authentication required'})});
+    safeFailure(r);clean(c);assert.match(r.detail,/permissions/);
+  });
+  for(const route of ['codex','claude','gemini'])await test(`${route} runs outside the governor project and removes its scratch folder`,async()=>{
+    const c=context();let observed;
+    const r=await c.ctx.invoke(route,'Synthetic complete input only.',{governor:'other',timeoutMs:1000,
+      runProcess:async(_command,_args,options)=>{observed=options.cwd;return {code:1,stdout:'',stderr:'authentication required'};}});
+    assert(observed,'Provider was not reached');
+    assert.notEqual(path.resolve(observed),path.resolve(process.cwd()),'Provider inherited governor project');
+    assert.equal(path.dirname(observed),c.temporary,'Provider did not use its isolated scratch folder');
+    assert.equal(r.status,'authentication_required');clean(c);
+  });
   for(const route of ['antigravity','copilot','grok'])await test(`${route} partial prompt write: cleanup runs before ownership escapes`,async()=>{
     const c=context({writeFileSync:(file,bytes,opts)=>{fs.writeFileSync(file,String(bytes).slice(0,7),opts);failure();}});
     let called=false,r,error;

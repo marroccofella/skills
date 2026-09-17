@@ -357,7 +357,7 @@ await test("finding login-identity-missing-route-bypass: a supplied login map th
   assert.equal(cap.readOverlay(home, { machine: "m1", installedVersions: versions, loginIdentity: { gemini: "u" } }).invalidated[0]?.reason, "login_changed");
 });
 
-await test("finding overlay-rmw-lost-update: writes are serialised by a lock (concurrent processes, live owner waited on, dead owner cleared, held lock times out)", async () => {
+await test("overlay writes serialize; release is waited on; abandoned locks require explicit recovery", async () => {
   const home = fs.mkdtempSync(path.join(tmp, "home-"));
   const moduleUrl = pathToFileURL(path.join(here, "capabilities.mjs")).href;
   const child = (route) => new Promise((resolve) => {
@@ -369,7 +369,7 @@ await test("finding overlay-rmw-lost-update: writes are serialised by a lock (co
   const results = await Promise.all([child("codex"), child("grok")]);
   for (const r of results) assert.equal(r.status, 0, r.err);
   assert.equal(cap.readOverlay(home, { machine: "m1", installedVersions: { codex: "1.0.0", grok: "1.0.0" } }).entries.length, 24, "no entry lost to a concurrent read-modify-write");
-  // A lock whose owner is alive is waited on; one whose owner is dead is cleared; a lock never released times out.
+  // Wait for actual release, never infer release from process death.
   const lock = `${cap.overlayPath(home, "m1")}.lock`;
   // The live owner must be a process whose death this test can observe while it busy-waits:
   // a direct child that exits during the synchronous wait stays a zombie on POSIX (the event
@@ -379,14 +379,18 @@ await test("finding overlay-rmw-lost-update: writes are serialised by a lock (co
   const sleeperPid = await new Promise((resolve) => { let out = ""; launcher.stdout.on("data", (d) => { out += d; }); launcher.on("close", () => resolve(Number.parseInt(out, 10))); });
   assert.ok(Number.isInteger(sleeperPid) && sleeperPid > 0, `sleeper pid ${sleeperPid}`);
   fs.writeFileSync(lock, `${sleeperPid}\n`);
+  const releaser = spawn(process.execPath, ["-e", `setTimeout(()=>require('node:fs').unlinkSync(${JSON.stringify(lock)}),400)`], {windowsHide:true,stdio:'ignore'});
+  const released = new Promise(resolve=>releaser.on('close',resolve));
   const t0 = Date.now();
   cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "text", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1", lockTimeoutMs: 10_000 });
-  assert.ok(Date.now() - t0 >= 700, `waited on the live owner (${Date.now() - t0} ms)`);
+  assert.ok(Date.now() - t0 >= 300, `waited on actual release (${Date.now() - t0} ms)`);
+  assert.equal(await released,0);
   assert.ok(!fs.existsSync(lock));
   fs.writeFileSync(lock, "999999\n");
-  const t1 = Date.now();
-  cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "pdf", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1", lockTimeoutMs: 10_000 });
-  assert.ok(Date.now() - t1 < 500, "dead owner: lock cleared at once");
+  assert.throws(()=>cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "pdf", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1", lockTimeoutMs: 60 }),/explicit recovery/);
+  assert.equal(fs.readFileSync(lock,'utf8'),'999999\n');
+  fs.unlinkSync(lock); // Explicit recovery of this disposable fixture only.
+  cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "pdf", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1" });
   fs.writeFileSync(lock, `${process.pid}\n`);
   assert.throws(() => cap.writeOverlayEntry(home, { route: "claude", direction: "input", modality: "image", blocker: "quota", cli_version: "2.1.270" }, { machine: "m1", lockTimeoutMs: 300 }), /lock/);
   fs.unlinkSync(lock);
@@ -464,6 +468,9 @@ await test("suggestion: expiry boundary — valid just before expires_at, stale 
 });
 
 for (const [label, mutate, expected] of [
+  ["documented with help-only evidence", (b) => { b.routes.codex.input.image.level = "documented"; delete b.routes.codex.input.image.evidence.docs; }, /documented without docs/],
+  ["declared input vocabulary differs", (b) => { b.modalities.input = ["text"]; }, /modalities.input/],
+  ["declared output vocabulary duplicates", (b) => { b.modalities.output.push("text"); }, /modalities.output/],
   ["verified with docs-only evidence", (b) => { b.routes.gemini.input.image.level = "verified"; }, /verified without a help_capture/],
   ["machine blocker quota", (b) => { b.routes.codex.input.image.blocker = "quota"; }, /machine-specific blocker quota/],
   ["derived blocker reprobe", (b) => { b.routes.codex.input.image.blocker = "reprobe"; }, /machine-specific blocker reprobe/],

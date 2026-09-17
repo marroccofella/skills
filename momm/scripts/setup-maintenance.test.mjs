@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import {EventEmitter} from 'node:events';
 const source = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('function parseVersion('), end = source.indexOf('// Returns true only if a terminal');
@@ -98,6 +99,65 @@ function handler(body,token=true,extra={}) {
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
   return {serve,launches:()=>launched};
 }
+await test('private session, job and ledger routes refuse unauthenticated local clients',async()=>{
+  const testSecret=crypto.randomBytes(24).toString('hex');
+  const h=handler({},false,{sessionToken:testSecret,platformKey:()=> 'test',providers:{},jobs:new Map()});
+  for(const url of ['/api/session','/api/job/synthetic','/ledger']) {
+    const r=await h.serve({method:'GET',url,socket:{}},{});
+    assert.equal(r.status,403,url);assert(!JSON.stringify(r).includes(testSecret));
+  }
+});
+await test('malformed request target returns a bounded error rather than rejecting the server callback',async()=>{
+  const h=handler({},false);
+  for(const url of ['http://[','http://%'])assert.equal((await h.serve({method:'GET',url,socket:{}},{})).status,400);
+});
+await test('ledger navigation ticket is authenticated, expiring and single use',async()=>{
+  let now=1000,serial=0;
+  const h=handler({},false,{authorized:req=>req.headers?.['x-momm-token']==='fixture-session',Date:{now:()=>now},crypto:{randomBytes:()=>({toString:()=>String(++serial).padStart(48,'0')})}});
+  const request=(method,url,auth=false)=>h.serve({method,url,socket:{},headers:auth?{'x-momm-token':'fixture-session'}:{}},{});
+  assert.equal((await request('POST','/api/ledger-ticket')).status,403);
+  const first=await request('POST','/api/ledger-ticket',true);assert.equal(first.status,200);
+  assert.equal((await request('GET',first.value.url)).status,200);
+  assert.equal((await request('GET',first.value.url)).status,403);
+  const second=await request('POST','/api/ledger-ticket',true);now+=60001;
+  assert.equal((await request('GET',second.value.url)).status,403);
+});
+await test('browser bootstrap takes authority only from private fragment or tab storage',()=>{
+  const js=fs.readFileSync(new URL('../assets/setup-ui/app.js',import.meta.url),'utf8');
+  const a=js.indexOf('function launchToken() {'),b=js.indexOf('\n(async () =>',a);assert(a>=0&&b>a);
+  const token='a'.repeat(48),stored=new Map(),history=[];
+  const location={hash:`#momm-token=${token}`,pathname:'/',search:''};
+  const c=vm.createContext({URLSearchParams,location,sessionStorage:{getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)},history:{replaceState:(_a,_b,url)=>history.push(url)}});
+  vm.runInContext(js.slice(a,b)+';this.read=launchToken;',c);
+  assert.equal(c.read(),token);assert.deepEqual(history,['/']);
+  location.hash='';assert.equal(c.read(),token,'same-tab return from ledger retains authorization');
+  stored.clear();assert.throws(()=>c.read(),/private Setup Center launch link/);
+  location.hash='#momm-token=invalid';assert.throws(()=>c.read(),/private Setup Center launch link/);
+  assert(js.indexOf('session = { token: launchToken() }')<js.indexOf('session = await api("/api/session")'));
+  assert(js.includes('api("/api/ledger-ticket"'));assert(!js.includes('document.cookie'));
+});
+await test('real loopback HTTP refuses private reads and admits exactly one ticket navigation',async()=>{
+  const secret=crypto.randomBytes(24).toString('hex');let ledgerReads=0;
+  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
+  const h=handler({},false,{http,crypto,authorized:req=>req.headers['x-momm-token']===secret,sessionToken:secret,
+    platformKey:()=> 'synthetic',providers:{},jobs:new Map(),sendJson:json,
+    serveLedger:res=>{ledgerReads++;json(res,200,{synthetic_ledger:true});}});
+  const server=h.serve;
+  try {
+    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+    const request=(method,url,token)=>new Promise((resolve,reject)=>{
+      const req=http.request({hostname:'127.0.0.1',port:server.address().port,path:url,method,headers:token?{'X-MOMM-Token':token}:{}},res=>{
+        let body='';res.setEncoding('utf8');res.on('data',b=>{body+=b;});res.on('error',reject);res.on('end',()=>{try{resolve({status:res.statusCode,value:JSON.parse(body)});}catch(e){reject(e);}});
+      });req.on('error',reject);req.setTimeout(5000,()=>req.destroy(new Error('Synthetic HTTP deadline')));req.end();
+    });
+    for(const url of ['/api/session','/api/job/known','/ledger'])assert.equal((await request('GET',url)).status,403);
+    assert.equal((await request('GET','/api/session','wrong')).status,403);
+    assert.equal((await request('GET','/api/session',secret)).status,200);
+    const ticket=await request('POST','/api/ledger-ticket',secret);assert.equal(ticket.status,200);
+    assert.equal((await request('GET',ticket.value.url)).status,200);
+    assert.equal((await request('GET',ticket.value.url)).status,403);assert.equal(ledgerReads,1);
+  } finally {if(server.listening)await new Promise(resolve=>server.close(resolve));}
+});
 await test('update endpoint requires the exact confirmed command',async()=>{
   const h=handler({provider:'codex',action:'update'});
   const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,409);assert.equal(h.launches(),0);
@@ -118,12 +178,12 @@ await test('status carries the ledger regeneration time and ledger_url; new GET 
   const noClock=await h.serve({method:'GET',url:'/api/update-clock',socket:{}},{});assert.equal(noClock.status,503,'no clock under --self-test degrades to 503, never a crash');
   const post=await handler({op:'set',patch:{}}).serve({method:'POST',url:'/api/update-clock',socket:{}},{});assert.equal(post.status,503);
 });
-await test('the shared theme is served as CSS before styles.css, and /ledger dispatches to the ledger route without a session token',async()=>{
+await test('public shell and theme remain accessible but private ledger requires authorization',async()=>{
   const h=handler({},false);
   const theme=await h.serve({method:'GET',url:'/momm-theme.css',socket:{}},{});assert.equal(theme.asset,'momm-theme.css');assert.equal(theme.contentType,'text/css; charset=utf-8');
   const styles=await h.serve({method:'GET',url:'/styles.css',socket:{}},{});assert.equal(styles.contentType,'text/css; charset=utf-8');
   const page=await h.serve({method:'GET',url:'/',socket:{}},{});assert.equal(page.asset,'index.html');
-  const ledger=await h.serve({method:'GET',url:'/ledger',socket:{}},{});assert.equal(ledger.ledger,true,'the ledger is a page, not an API call: same-origin navigation carries no token');
+  const ledger=await h.serve({method:'GET',url:'/ledger',socket:{}},{});assert.equal(ledger.status,403);
   for(const url of ['/constructor','/__proto__','/hasOwnProperty','/ledger.html','/momm-theme.css.map']){const r=await h.serve({method:'GET',url,socket:{}},{});assert.equal(r.status,404,url);}
   const html=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
   assert(html.indexOf('href="/momm-theme.css"')>=0&&html.indexOf('href="/momm-theme.css"')<html.indexOf('href="/styles.css"'),'theme linked before the page styles');
@@ -293,20 +353,20 @@ await test('ledger watcher starts after listen succeeds and is stopped when list
   const events=[];
   const fakeServer=(fail)=>{const handlers={};return {on(name,fn){handlers[name]=fn;},listen(port,host,cb){events.push(`listen ${host}:${port}`);if(fail)handlers.error(new Error('EADDRINUSE'));else cb();},address:()=>({port:4321})};};
   const fakeWatcher=()=>({start(){events.push('watcher.start');},stop(){events.push('watcher.stop');}});
-  const run=(fail)=>{events.length=0;const c=vm.createContext({process:{stdout:{write:t=>events.push(`out ${t.trim().split('\n')[0]}`)},stderr:{write:t=>events.push(`err ${t.trim()}`)},exitCode:0},openBrowser:()=>events.push('browser'),triggerClock:()=>{events.push('clock');return Promise.resolve(null);},safeDetail:s=>String(s),Promise});
+  const run=(fail)=>{events.length=0;const c=vm.createContext({sessionToken:'fixture-session',process:{stdout:{write:t=>events.push(`out ${t.trim().split('\n')[0]}`)},stderr:{write:t=>events.push(`err ${t.trim()}`)},exitCode:0},openBrowser:()=>events.push('browser'),triggerClock:()=>{events.push('clock');return Promise.resolve(null);},safeDetail:s=>String(s),Promise});
     vm.runInContext(source.slice(a,b)+';this.start=startSetupCenter;',c);
     c.start({server:fakeServer(fail),watcher:fakeWatcher(),clock:{},port:0,browser:true});return c;};
   run(false);
   assert(events.includes('watcher.start'),'a successful bind starts the watcher: '+events.join(' | '));
   const pointerEvents=[];const pointer={write(url){pointerEvents.push(`write ${url}`);return true;},remove(){pointerEvents.push('remove');return true;}};
   {const handlers={};const server={on(name,fn){handlers[name]=fn;},listen(_p,_h,cb){cb();},address:()=>({port:4321})};
-    const c=vm.createContext({process:{stdout:{write(){}},stderr:{write(){}},exitCode:0},openBrowser(){},triggerClock:()=>Promise.resolve(null),safeDetail:s=>String(s),Promise});
+    const c=vm.createContext({sessionToken:'fixture-session',process:{stdout:{write(){}},stderr:{write(){}},exitCode:0},openBrowser(){},triggerClock:()=>Promise.resolve(null),safeDetail:s=>String(s),Promise});
     vm.runInContext(source.slice(a,b)+';this.start=startSetupCenter;',c);
     c.start({server,watcher:fakeWatcher(),clock:{},port:0,browser:false,pointer});
     assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/'],'setup-center.json is written with the bound URL once listening');
     handlers.close();assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/','remove'],'and removed when the server closes');}
   assert(events.indexOf('watcher.start')>events.indexOf('listen 127.0.0.1:0'),'watcher must not start before bind: '+events.join(' | '));
-  assert(events.includes('out MOMM Setup Center: http://127.0.0.1:4321/'));assert(events.includes('browser'));assert(events.includes('clock'));
+  assert(events.includes('out MOMM Setup Center: http://127.0.0.1:4321/#momm-token=fixture-session'));assert(events.includes('browser'));assert(events.includes('clock'));
   const c=run(true);
   assert(!events.includes('watcher.start'),'a failed bind must never start the watcher: '+events.join(' | '));
   assert(events.includes('watcher.stop'),'a failed bind stops any watcher: '+events.join(' | '));
@@ -616,6 +676,19 @@ function contrast(a,b){const [hi,lo]=[luminance(a),luminance(b)].sort((x,y)=>y-x
 function block(selector,source=css){const i=source.indexOf(selector);assert(i>=0,`missing rule ${selector}`);const open=source.indexOf('{',i),close=source.indexOf('}',open);return source.slice(open+1,close);}
 function token(body,name){const m=new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(body);assert(m,`token ${name} not declared in this palette`);return m[1].trim();}
 await test('WCAG helper sanity',()=>{assert(Math.abs(contrast('#ffffff','#000000')-21)<0.01);assert(contrast('#ffffff','#e6ffe6')<1.1,'the reported white-on-dark-ink toast really was unreadable');assert(contrast('#00c27a','#ffffff')<3,'the reported dark --green on a white button really failed AA');});
+await test('neutral chips retain 4.5:1 text contrast in every palette',()=>{
+  const chip=block('.chip-neutral,',theme),fg=/color:\s*var\((--[\w-]+)\)/.exec(chip),bg=/background:\s*var\((--[\w-]+)\)/.exec(chip);
+  assert(fg&&bg);
+  for(const selector of [':root {',':root[data-theme="dark"]',':root:not([data-theme="light"])']){
+    const palette=block(selector,theme),ratio=contrast(token(palette,fg[1]),token(palette,bg[1]));
+    assert(ratio>=4.5,`${selector} neutral chip contrast ${ratio.toFixed(2)}:1`);
+  }
+});
+await test('theme cross-fade is opt-in to no-preference motion policy',()=>{
+  const noPreference=block('@media (prefers-reduced-motion: no-preference)',theme);
+  assert.match(noPreference,/html\.theme-switching/);
+  assert.match(noPreference,/transition:/);
+});
 for(const [palette,selector] of [['light',':root {'],['dark toggle',':root[data-theme="dark"]'],['dark system',':root:not([data-theme="light"])']]){
   await test(`${palette} palette declares toast and light-button pairs with contrast >= 4.5:1`,()=>{
     const body=block(selector,theme);

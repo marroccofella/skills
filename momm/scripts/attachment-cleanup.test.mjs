@@ -42,6 +42,7 @@ function actual(f,extra){
 function stageContext(f,overrides={}){
   const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,
     createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(f.temporary,prefix)),
+    requirePrivateScratch:()=>{},
     MODALITY_BY_EXTENSION:{gif:'image'},MODALITY_MAX_BYTES:{image:8000000},modalityOfFile:()=> 'image'});
   vm.runInContext(source.slice(stageStart,stageEnd)+';this.stage=stageAttachments;',context);
   return context;

@@ -75,6 +75,9 @@ jobs:
       - name: modality registry, overlay and effective matrix (1.16 E7)
         timeout-minutes: 2
         run: node momm/scripts/capabilities.test.mjs
+      - name: existing lock ownership is never stolen
+        timeout-minutes: 2
+        run: node momm/scripts/lock-ownership.test.mjs
       - name: modality planner and step-scoped runner (1.16 E7)
         timeout-minutes: 3
         run: node momm/scripts/modality.test.mjs

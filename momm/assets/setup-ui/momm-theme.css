@@ -70,8 +70,10 @@
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 /* Theme cross-fade: the toggle adds .theme-switching for one beat so colours ease instead of snapping. */
-html.theme-switching, html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
-  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), fill var(--dur) var(--ease) !important;
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-switching, html.theme-switching *, html.theme-switching *::before, html.theme-switching *::after {
+    transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), fill var(--dur) var(--ease) !important;
+  }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
@@ -114,7 +116,7 @@ html.theme-switching, html.theme-switching *, html.theme-switching *::before, ht
 .chip-good, .chip-success, .chip-ACCEPT, .chip-applied, .chip-applied-with-modification { color: var(--green); background: var(--mint); }
 .chip-warn, .chip-timeout, .chip-MODIFY, .chip-rejected { color: var(--amber); background: var(--amber-soft); }
 .chip-bad, .chip-error, .chip-authentication_required, .chip-provider_unavailable, .chip-ineligible_tier, .chip-REJECT { color: var(--red); background: var(--red-soft); }
-.chip-neutral, .chip-deferred, .chip-unknown { color: var(--muted); background: var(--line); }
+.chip-neutral, .chip-deferred, .chip-unknown { color: var(--ink); background: var(--line); }
 .chip-self_excluded, .chip-disabled, .chip-cancelled_after_quorum, .chip-governor_direct { color: var(--muted); background: transparent; border: 1px dashed var(--line); opacity: .75; }
 .chip-mono { font-family: var(--font-mono); font-weight: 600; }
 

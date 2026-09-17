@@ -172,7 +172,9 @@ export function inspectCompletion(root, runId) {
       const pieces = report.split.pieces;
       demand(pieces.every(p => nonempty(p.id) && p.reviewers && typeof p.reviewers === "object"), "malformed split piece");
       const perPiece = pieces.map(p => {
-        const ok = Object.entries(p.reviewers).filter(([agent, status]) => agent !== report.governor && status === "success").map(([agent]) => agent);
+        const claimed = Object.entries(p.reviewers).filter(([agent, status]) => agent !== report.governor && status === "success").map(([agent]) => agent);
+        for (const agent of claimed) if (!successful.some(r => r.agent === agent)) state.errors.push(`piece reviewer success has no successful verified row: ${p.id}: ${agent}`);
+        const ok = claimed.filter(agent => successful.some(r => r.agent === agent));
         return { id: p.id, external_successes: ok.length, met: ok.length >= required, ok };
       });
       const failing = perPiece.filter(p => !p.met).map(p => p.id);

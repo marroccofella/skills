@@ -11,6 +11,7 @@ const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\
 assert(start>=0&&end>start,'Inspect changed adapter extraction boundaries');
 const context=vm.createContext({fs,os,path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
   createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(os.tmpdir(),prefix)),
+  requirePrivateScratch:()=>{},
   VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
   attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic review contract',
   agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{copilot:'copilot login'},

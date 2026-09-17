@@ -45,9 +45,23 @@ source review, independent retest and the release gates below.
   failure remains visible in the stdout report. Mode bits alone do not establish
   Windows privacy. Standalone ledger generation, completion recording and media
   execution also refuse unverified evidence storage. Reviewer prompt and attachment
-  staging uses that verified evidence boundary rather than generic system temp.
+  staging now uses a separately protected, newly allocated temporary directory,
+  outside the durable evidence tree. Windows protection is applied at creation;
+  existing workspace permissions are not reset. The scratch boundary is checked
+  again before cleanup; failed verification or cleanup prevents a successful
+  review result. A provider changing its scratch permissions therefore does not
+  contaminate the permanent ledger's permission tree. Native synthetic tests cover
+  separation, changed scratch permissions, refusal and cleanup; live-provider and
+  final cross-platform acceptance remain release gates.
   Checks describe access rules at inspection time, not immunity to later permission
   changes, privileged access, provider-owned caches or a compromised user account.
+- The Setup Center requires a private launch capability for its API, including
+  session and status reads. Open its terminal-provided private link; the browser
+  removes the fragment and retains the capability in tab-scoped session storage.
+  Ledger navigation uses a short-lived, single-use ticket. Do not share the launch
+  link. The public website and saved base dashboard URL carry no capability.
+  Loopback HTTP and browser-bootstrap regression tests cover unauthorized reads,
+  ticket reuse and malformed URLs; these are not OS-level isolation guarantees.
 - Explicit Grok cancellation no longer certifies a recognition answer or appears
   only as missing generated output. Cancellation cause remains unknown unless
   separately established. Auxiliary 429 warnings alone do not invalidate a
@@ -80,6 +94,30 @@ machine do not erase that failure; privacy checks are not skipped or cached to
 make the test pass.
 
 ## Final candidate retest (15 September 2026)
+
+### Lock recovery safety correction
+
+Capability, trust, guidance-editor and media-harvest locks no longer automatically
+delete an existing record based on a dead PID, malformed contents or age. A
+concurrent writer can replace the record between inspection and deletion; a
+second PID/inode check does not make that operation atomic. The regression covers
+dead, unpublished and malformed records across all four lock sites, positive
+acquisition controls, and bounded retries when contended records disappear.
+Normal writers still serialize and release their own locks.
+
+Final repair review also added a typed privacy refusal when Windows' system
+directory is unavailable, and made Claude media audit labels disclose their
+effective tool list without including prompts or file paths. Synthetic
+failing-before/passing-after tests cover both corrections; this is not a claim
+of live-provider or cross-platform release certification.
+
+This intentionally changes crash recovery: stop all MOMM writers (including older
+installed versions), independently confirm they are stopped, then remove only the
+specific abandoned lock identified by the diagnostic and retry. Do not delete
+the associated state, trust file or media. PID/age alone is not sufficient. Mixed
+old/new workers are not a supported upgrade state; older workers can still steal
+locks. These cooperative locks are not an OS isolation boundary against another
+process running under the same account.
 
 Core only: the separate MOMM World project is not included. Publication, signed
 installation/upgrade/rollback proof and the exact-final cross-platform matrix

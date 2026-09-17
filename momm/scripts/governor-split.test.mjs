@@ -48,6 +48,12 @@ const piece = (id, statuses) => ({ id, quorum_met: Object.values(statuses).filte
 const ok2 = { claude: "success", grok: "success" };
 
 try {
+  test("piece successes must correspond to successful contract-valid reviewer rows", () => {
+    const f = fixture("unknown_route", { pieces: [piece("piece-01", { claude: "success", absent_route: "success" })], quorum: { required: 2, achieved: 2, met: true, pieces: 1 } });
+    const r = inspectCompletion(f.dir, f.id);
+    assert.equal(r.complete, false, "a piece-only reviewer cannot supply a missing second review");
+    assert(r.errors.some(e => /piece reviewer success has no successful verified row/.test(e)), JSON.stringify(r.errors));
+  });
   test("clean split run with both pieces at quorum completes", () => {
     const f = fixture("clean", { pieces: [piece("piece-01", ok2), piece("piece-02", ok2)], quorum: { required: 2, achieved: 2, met: true, pieces: 2 } });
     const r = inspectCompletion(f.dir, f.id);

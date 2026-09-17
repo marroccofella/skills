@@ -32,6 +32,42 @@ const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: tr
 const ok = (stdout) => ({ code: 0, stdout, stderr: "" });
 const PNG_A = Buffer.from("89504e470d0a1a0a-A-PNG-BYTES", "utf8"), MP4_B = Buffer.from("0000001c667479706d703432-B-MP4", "utf8");
 
+await test("Claude composed output retains explicitly requested tools without changing permission mode", () => {
+  const route = baseline.routes.claude;
+  const dir = path.join(tmp, "composed"), input = path.join(dir, "input.png");
+  const bound = mod.bindArtefacts(route.input, [input], dir);
+  for (const [outputs, expected] of [
+    [["text"], ["Read"]],
+    [["web"], ["Read", "WebSearch", "WebFetch"]],
+    [["code_exec"], ["Read", "Bash"]],
+    [["web", "code_exec"], ["Read", "WebSearch", "WebFetch", "Bash"]],
+  ]) {
+    const cmd = mod.commandFor("claude", { prompt: PROMPT, promptFile: path.join(dir, "prompt.txt"), workDir: dir, generative: false, bound, outputs });
+    assert.equal(cmd.args.filter(a => a === "--tools").length, 1);
+    assert.deepEqual(cmd.args[cmd.args.indexOf("--tools") + 1].split(","), expected);
+    assert.ok(cmd.label.includes(`tools=${expected.join(",")}`), "Audit label must disclose the effective tool list");
+    assert.equal(cmd.args[cmd.args.indexOf("--permission-mode") + 1], "plan");
+    assert.ok(!cmd.args.includes("--dangerously-skip-permissions"));
+  }
+});
+
+await test("runner forwards requested web output to Claude tool composition", async () => {
+  const cwd = fresh("composed-cwd"), home = fresh("composed-home"), m = matrix();
+  const input = write(path.join(cwd, "input.png"), PNG_A);
+  const planned = mod.plan(m, { input: ["image"], output: ["web"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "claude";
+  let calls = 0;
+  const exec = async (_command, args) => {
+    calls++;
+    assert.equal(args[args.indexOf("--tools") + 1], "Read,WebSearch,WebFetch");
+    assert.equal(args[args.indexOf("--permission-mode") + 1], "plan");
+    return ok(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Synthetic reply; not a live web search." }));
+  };
+  const result = await mod.run(planned, { consent: true, inputs: [input], cwd, home, effective: m, exec });
+  assert.equal(calls, 1);
+  assert.equal(result.report.status, "complete");
+});
+
 // ---- planner ------------------------------------------------------------------------------------
 await test("plan: image -> text is possible; candidates carry route, level, blocker, how, clearing_action", () => {
   const p = mod.plan(matrix(), { input: ["image"], output: ["text"] }, { prompt: PROMPT });

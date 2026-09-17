@@ -1,7 +1,9 @@
-// Read-only permission inspection. Never repairs ACLs or claims protection
+// Permission inspection never repairs ACLs or claims protection
 // against the owner, administrators, malware, or a later permission change.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import {randomUUID} from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 const WINDOWS_AUDIT = String.raw`
@@ -82,6 +84,20 @@ export function requirePrivateEvidence(directory, options) {
   return result;
 }
 
+// POSIX owner-only directory traversal protects its descendants even when a
+// CLI writes mode-0644 files inside it. Windows bypass-traverse semantics need
+// the full DACL walk, including explicit grants on descendants. Neither check
+// is isolation from hostile processes running as the owner or administrators.
+export function requirePrivateScratch(directory) {
+  if (process.platform === 'win32') return requirePrivateEvidence(directory);
+  try {
+    const st = fs.lstatSync(directory);
+    if (!st.isSymbolicLink() && st.isDirectory() && st.uid === process.getuid?.() && (st.mode & 0o077) === 0) return {verified:true,basis:'posix_private_ancestor'};
+  } catch {}
+  const error = new Error('Private scratch permissions could not be verified.');
+  error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error;
+}
+
 export function preparePrivateEvidence(directory, options = {}) {
   const fsx = options.fsx ?? fs;
   try { fsx.mkdirSync(directory, { recursive: true, mode: 0o700 }); }
@@ -93,19 +109,84 @@ export function preparePrivateEvidence(directory, options = {}) {
   return requirePrivateEvidence(directory, options);
 }
 
-// Review prompts/media must not fall back to a broadly readable system temp
-// directory. Allocate inside the already verified project evidence boundary.
-// This does not change existing ACLs or expose a configurable bypass.
+// CreateDirectoryW applies the DACL at creation, and refuses an existing path.
+// No Set-Acl repair, inherited broad-access window, or caller-owned directory.
+const WINDOWS_CREATE_SCRATCH = String.raw`
+$ErrorActionPreference='Stop'
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+$target=([Console]::In.ReadToEnd() | ConvertFrom-Json).path
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MommPrivateScratch {
+  [StructLayout(LayoutKind.Sequential)] public struct Attributes {
+    public int nLength;
+    public IntPtr lpSecurityDescriptor;
+    [MarshalAs(UnmanagedType.Bool)] public bool bInheritHandle;
+  }
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool CreateDirectoryW(string path, ref Attributes attributes);
+}
+'@
+$owner=[Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl=New-Object Security.AccessControl.DirectorySecurity
+$acl.SetOwner($owner)
+$acl.SetAccessRuleProtection($true,$false)
+$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($owner,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
+[byte[]]$descriptor=$acl.GetSecurityDescriptorBinaryForm()
+$handle=[Runtime.InteropServices.GCHandle]::Alloc($descriptor,[Runtime.InteropServices.GCHandleType]::Pinned)
+try {
+  $attributes=New-Object MommPrivateScratch+Attributes
+  $attributes.nLength=[Runtime.InteropServices.Marshal]::SizeOf($attributes)
+  $attributes.lpSecurityDescriptor=$handle.AddrOfPinnedObject()
+  $attributes.bInheritHandle=$false
+  if(-not [MommPrivateScratch]::CreateDirectoryW($target,[ref]$attributes)) { throw 'Private scratch creation refused' }
+  '{"created":true}'
+} finally { $handle.Free() }
+`;
+
+// Durable evidence and provider scratch have independent permission trees.
+// Allocate a fresh, privately protected temp directory before writing input;
+// never use an unverified fallback or change any existing directory's ACL.
 export function createEvidenceWorkspace(prefix, directory = path.resolve('.ensemble_reviews')) {
   if (!/^momm-[a-z]+-$/.test(prefix)) throw new Error('Invalid review workspace prefix');
   requirePrivateEvidence(directory);
-  const staging = path.join(directory, 'staging');
-  fs.mkdirSync(staging, { recursive: true, mode: 0o700 });
-  requirePrivateEvidence(staging);
-  const created = fs.mkdtempSync(path.join(staging, prefix));
+  let parent, evidence;
+  try { parent = fs.realpathSync(os.tmpdir()); evidence = fs.realpathSync(directory); }
+  catch {
+    const error = new Error('Could not resolve a separate private scratch location. No input was staged.');
+    error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error;
+  }
+  const relative = path.relative(evidence, parent);
+  if (!relative || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))) {
+    const error = new Error('Provider scratch must be outside durable evidence; choose a separate temporary directory.');
+    error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error;
+  }
+  let created;
+  if (process.platform === 'win32') {
+    if (!process.env.SystemRoot || !path.isAbsolute(process.env.SystemRoot)) {
+      const error = new Error('Windows system directory is unavailable; private scratch creation refused. No input was staged.');
+      error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error;
+    }
+    const candidate = path.join(parent, prefix + randomUUID());
+    const exe = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const result = spawnSync(exe, ['-NoProfile','-NonInteractive','-Command',WINDOWS_CREATE_SCRATCH], {input:JSON.stringify({path:candidate}),encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:16384});
+    let confirmed = false;
+    try { confirmed = result.status === 0 && !result.error && JSON.parse(result.stdout.replace(/^\uFEFF/, '')).created === true; } catch {}
+    if (!confirmed) {
+      const error = new Error('Could not confirm creation of a private scratch directory. No input was staged and no existing permissions were changed; an empty allocation may remain.');
+      error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error;
+    }
+    created = candidate;
+  } else {
+    try { created = fs.mkdtempSync(path.join(parent, prefix)); }
+    catch { const error = new Error('Could not create private scratch storage. No input was staged.'); error.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw error; }
+  }
   try { requirePrivateEvidence(created); return created; }
   catch (error) {
-    try { fs.rmSync(created, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(created, { recursive: true, force: true }); }
+    catch { const cleanup = new Error('Private scratch verification and cleanup failed; an unused allocation may remain. No input was staged.'); cleanup.code = 'MOMM_EVIDENCE_PERMISSIONS'; throw cleanup; }
     throw error;
   }
 }

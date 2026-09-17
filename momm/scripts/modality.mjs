@@ -182,7 +182,7 @@ export function stepPrompt(prompt, { index, total, to, how, refs = [], attached 
 // antigravity and copilot read prompt.txt in the work directory, grok takes --prompt-file.
 // Generative steps get the write permission the tool needs; text steps stay read-only.
 // `label` is what the report records: no prompt, no paths.
-export function commandFor(route, { prompt, promptFile, workDir, generative, bound = { args: [], flags: [] }, timeout = 600_000 }) {
+export function commandFor(route, { prompt, promptFile, workDir, generative, bound = { args: [], flags: [] }, outputs = [], timeout = 600_000 }) {
   const seconds = `${Math.max(1, Math.ceil(timeout / 1000))}s`;
   const base = (() => {
     switch (route) {
@@ -195,11 +195,25 @@ export function commandFor(route, { prompt, promptFile, workDir, generative, bou
       default: throw fail(`no non-interactive command for route ${route}`, "MOMM_NO_COMMAND");
     }
   })();
+  // Claude media input uses an explicit Read-only tool list. Compose that list
+  // with the requested output, never with every capability the CLI advertises.
+  // Tool availability does not grant execution permission: plan mode and the
+  // non-interactive permission controls above remain unchanged.
+  let groups = bound.args;
+  if (route === "claude" && groups.some(g => g[0] === "--tools")) {
+    const names = groups.filter(g => g[0] === "--tools").flatMap(g => g.slice(1).flatMap(v => v.split(",")));
+    if (outputs.includes("web")) names.push("WebSearch", "WebFetch");
+    if (outputs.includes("code_exec")) names.push("Bash");
+    groups = [...groups.filter(g => g[0] !== "--tools"), ["--tools", [...new Set(names)].join(",")]];
+  }
   const argv = [...base.head];
   const contains = (group) => argv.some((_, i) => group.every((t, k) => argv[i + k] === t));
-  for (const group of bound.args) if (!contains(group)) argv.push(...group);
+  for (const group of groups) if (!contains(group)) argv.push(...group);
   argv.push(...base.tail);
-  return { command: base.command, args: argv, input: base.input, label: `${base.label}${bound.flags.length ? ` [bound ${bound.flags.join(" ")}]` : ""}` };
+  // Only fixed tool identifiers, never prompt/file values, enter the audit label.
+  const toolIndex = route === "claude" ? argv.indexOf("--tools") : -1;
+  const toolLabel = toolIndex >= 0 ? ` [tools=${argv[toolIndex + 1]}]` : "";
+  return { command: base.command, args: argv, input: base.input, label: `${base.label}${bound.flags.length ? ` [bound ${bound.flags.join(" ")}]` : ""}${toolLabel}` };
 }
 
 // ---- runner: glob, snapshot, harvest, locks --------------------------------------------------------------
@@ -262,7 +276,7 @@ export function harvestNew(pattern, before, startedMs) {
 // One generative step at a time per harvest glob on this machine, whatever the working
 // directory, so two concurrent chains can never claim each other's files: the lock lives under
 // ~/.momm/harvest-locks keyed by the resolved glob, names its owner pid and a private token, is
-// removed only when its owner is dead (never by age), and is released only by the holder of the
+// never automatically reclaimed, and is released only by the holder of the
 // token. Runs inside one process take turns on the same key before touching the file.
 const inProcessTurns = new Map();
 async function acquireHarvestLock(home, pattern, timeoutMs) {
@@ -281,10 +295,8 @@ async function acquireHarvestLock(home, pattern, timeoutMs) {
     try { fs.writeFileSync(lock, `${process.pid}\n${token}\n`, { flag: "wx", mode: 0o600 }); break; }
     catch (e) {
       if (!TRANSIENT.has(e?.code)) { endTurn(); throw e; }
-      let owner = NaN;
-      try { owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10); } catch (p) { if (p?.code === "ENOENT") continue; }
-      if (Number.isInteger(owner) && !pidAlive(owner)) { try { fs.unlinkSync(lock); } catch {} continue; }
-      if (Date.now() > deadline) { endTurn(); throw fail(`harvest location ${pattern} is busy: another chain step (pid ${Number.isInteger(owner) ? owner : "unknown"}) is generating into it`, "MOMM_HARVEST_BUSY"); }
+      // Never bypass the deadline because a contended lock disappeared.
+      if (Date.now() > deadline) { endTurn(); throw fail(`harvest location ${pattern} is busy or needs explicit lock recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only the corresponding harvest lock. PID or age alone does not prove safe recovery.`, "MOMM_HARVEST_BUSY"); }
       await sleep(delay);
       delay = Math.min(delay * 2, 250);
     }
@@ -419,7 +431,7 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
       const text = stepPrompt(prompt, { index: i, total: resolved.length, to: step.to, how, refs: bound.refs, attached: artefacts.length });
       const promptFile = path.join(stepDir, "prompt.txt");
       writePrivate(promptFile, text);
-      const cmd = commandFor(route, { prompt: text, promptFile, workDir: stepDir, generative, bound, timeout });
+      const cmd = commandFor(route, { prompt: text, promptFile, workDir: stepDir, generative, bound, outputs: step.to, timeout });
       const harvests = outCells.map(({ modality, cell }) => ({ modality, cell, pattern: expandHome(cell.harvest, home, env) }));
       const release = harvests.length ? await acquireHarvestLocks(home, harvests.map((h) => h.pattern), timeout) : null;
       const files = [];

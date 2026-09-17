@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews } from "./update.mjs";
+import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 await import('./update-safety.test.mjs');
@@ -245,6 +245,13 @@ try {
   const npmLatest = { "@openai%2fcodex": "0.155.0", "@anthropic-ai%2fclaude-code": "2.1.270", "@google%2fgemini-cli": "0.60.0", "@github%2fcopilot": "1.0.84" };
   const fakeFetcher = (urls = []) => async url => { urls.push(url); const m = /^https:\/\/registry\.npmjs\.org\/([^/]+)\/latest$/.exec(url); return m && npmLatest[m[1]] ? { ok: true, status: 200, text: async () => JSON.stringify({ name: decodeURIComponent(m[1]), version: npmLatest[m[1]] }) } : { ok: false, status: 404, text: async () => "" }; };
   const checkDeps = extra => ({ ...deps, env: { PATH: [voltaBin, plainBin].join(path.delimiter), LOCALAPPDATA: path.join(checkFixture, "localappdata") }, home: path.join(checkFixture, "home"), cwd: project, ...extra });
+  await test("unknown_installed_skill_version_is_not_reported_current", async () => {
+    for (const version of [null, "unknown", "broken-version"]) {
+      const report = await checkAll(installed, { channel: "stable", current: { version } }, checkDeps({ manifest: async () => ({ momm: "1.16.0" }), exec: fakeExec(), fetcher: fakeFetcher() }));
+      assert.equal(report.skill.update_available, null);
+      assert.match(checkAllTable(report).split("\n")[0], /not compared$/);
+    }
+  });
   await test("check_all_json_reports_scopes_versions_ownership_and_last_reviews_with_fakes_only", async () => {
     const calls = [], urls = [], logs = [];
     const report = await update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(calls), fetcher: fakeFetcher(urls), log: s => logs.push(s) }));

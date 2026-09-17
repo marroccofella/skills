@@ -106,9 +106,8 @@ async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (session?.token) headers["X-MOMM-Token"] = session.token;
   if (options.method === "POST") {
-    // Every mutation carries the local session token. Before /api/session has
-    // answered there is none to send, so refuse with an ordinary error the
-    // callers already handle instead of a TypeError from the dereference.
+    // Every mutation carries the private launch capability. Refuse until
+    // bootstrap establishes it; the public shell cannot mint authority.
     if (!session?.token) throw new Error("The local session is not ready yet. Reload the page and try again.");
     headers["Content-Type"] = "application/json";
   }
@@ -1176,9 +1175,29 @@ async function closeSetupCenter() {
 
 governorSelect.addEventListener("change", changeGovernor);
 closeButton.addEventListener("click", closeSetupCenter);
+document.querySelector("#ledger-link")?.addEventListener("click", async event => {
+  event.preventDefault();
+  try {
+    const ticket = await api("/api/ledger-ticket", { method: "POST", body: "{}" });
+    if (!/^\/ledger\?ticket=[a-f0-9]{48}$/.test(ticket.url)) throw new Error("Invalid ledger navigation response.");
+    location.assign(ticket.url);
+  } catch (error) { showToast(error.message); }
+});
+
+function launchToken() {
+  const key = "momm-local-session";
+  const supplied = new URLSearchParams(location.hash.slice(1)).get("momm-token");
+  let token = supplied;
+  if (!token) { try { token = sessionStorage.getItem(key); } catch {} }
+  if (!/^[a-f0-9]{48}$/.test(token ?? "")) throw new Error("Open the private Setup Center launch link printed in your terminal.");
+  try { sessionStorage.setItem(key, token); } catch {}
+  if (supplied) history.replaceState(null, "", location.pathname + location.search);
+  return token;
+}
 
 (async () => {
   try {
+    session = { token: launchToken() };
     session = await api("/api/session");
     await refresh();
     loadMaintenance(false);

@@ -143,8 +143,9 @@ const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e)
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // Serialises trust-store writers across processes: `trust.json.lock` is created
-// with O_EXCL and holds the owner's pid. A lock whose owner is gone, or older
-// than LOCK_STALE_MS, is removed; a live one is waited on up to `timeoutMs`.
+// with O_EXCL and holds the owner's pid. Age never overrides a live owner.
+// Existing records, including dead/malformed owners, are never automatically
+// removed: no filesystem compare-and-unlink primitive protects a replacement.
 function withTrustLock(home, timeoutMs, fn) {
   const lock = `${trustStorePath(home)}.lock`;
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 });
@@ -155,25 +156,7 @@ function withTrustLock(home, timeoutMs, fn) {
   for (;;) {
     try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); break; } catch (e) {
       if (!TRANSIENT.has(e?.code)) throw e;
-      // Judge staleness from one consistent snapshot, then re-check that the very
-      // same lock file (same inode and mtime) is still there before removing it:
-      // a lock that changed hands in between belongs to a live writer.
-      let snapshot = null;
-      try {
-        const st = fs.statSync(lock);
-        const owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10);
-        snapshot = { owner, ino: st.ino, mtimeMs: st.mtimeMs, age: Date.now() - st.mtimeMs };
-      } catch (probe) { if (probe?.code === "ENOENT") continue; snapshot = { owner: NaN, ino: -1, mtimeMs: -1, age: Infinity }; }
-      const dead = !Number.isInteger(snapshot.owner) || !pidAlive(snapshot.owner);
-      const stale = snapshot.age > LOCK_STALE_MS || (dead && (sleepMs(50), !Number.isInteger(snapshot.owner) || !pidAlive(snapshot.owner)));
-      if (stale) {
-        try {
-          const again = fs.statSync(lock);
-          if (again.ino === snapshot.ino && again.mtimeMs === snapshot.mtimeMs) fs.unlinkSync(lock);
-        } catch { /* already gone or replaced by a live writer */ }
-        continue;
-      }
-      if (Date.now() >= deadline) throw new Error(`Trust store lock ${lock} is held by another momm process; retry, or delete the lock if that process is gone`);
+      if (Date.now() >= deadline) throw new Error(`Trust store lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.`);
       sleepMs(20);
     }
   }

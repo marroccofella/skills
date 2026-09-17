@@ -15,7 +15,7 @@ import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSid
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
 import { createUpdateClock } from "./update-clock.mjs";
-import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace } from "./evidence-permissions.mjs";
+import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch } from "./evidence-permissions.mjs";
 
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
@@ -481,6 +481,8 @@ function stageAttachments(files) {
 
 function cleanupAttachments(staging) {
   if (!staging?.directory) return;
+  let privateBoundary = true;
+  try { requirePrivateScratch(staging.directory); } catch { privateBoundary = false; }
   try {
     // Only the directory allocated by stageAttachments is owned by this run.
     fs.rmSync(staging.directory, { recursive: true, force: true, maxRetries: 2, retryDelay: 50 });
@@ -489,6 +491,7 @@ function cleanupAttachments(staging) {
     // Do not echo paths or claim bounded retention when the OS refused cleanup.
     throw new Error("Attachment cleanup failed; temporary media copies may remain.");
   }
+  if (!privateBoundary) throw new Error("Attachment workspace permissions could not be verified after use; copies were removed and no review was accepted.");
 }
 
 function attachmentContractSection(attachments) {
@@ -1345,11 +1348,19 @@ async function invokeReviewer(agent, artifact, options) {
 
   let result;
   let cleanupError = null;
+  let privateBoundary = true;
   let operationFailed = false;
   let setupComplete = false;
   // Own adapter-local prompts/media from allocation, not merely from launch.
   // A failed write/copy or command lookup must not leave an orphan directory.
   try {
+  // Stdin-based routes must not inherit the governor's project/evidence root
+  // as their working directory. This limits ambient project discovery; it is
+  // not an OS boundary against a process running as the same account.
+  if (["gemini", "codex", "claude"].includes(agent)) {
+    temporaryDirectory = (options.runProcess && options.testWorkspace ? options.testWorkspace : createEvidenceWorkspace)("momm-review-");
+    cwd = temporaryDirectory;
+  }
   if (agent === "gemini") {
     // The multiline prompt must travel via stdin: on Windows the invocation is
     // wrapped through cmd.exe, which cannot carry newlines inside an argument.
@@ -1506,6 +1517,8 @@ async function invokeReviewer(agent, artifact, options) {
     operationFailed = true;
   } finally {
     if (temporaryDirectory) {
+      try { (options.runProcess && options.testWorkspaceCheck ? options.testWorkspaceCheck : requirePrivateScratch)(temporaryDirectory); }
+      catch { privateBoundary = false; }
       try {
         fs.rmSync(temporaryDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       } catch (error) {
@@ -1516,6 +1529,7 @@ async function invokeReviewer(agent, artifact, options) {
   if (cleanupError) {
     return { agent, status: "error", detail: "temporary review artifact cleanup failed; private temporary copies may remain" };
   }
+  if (!privateBoundary) return { agent, status: "error", detail: "review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted" };
   if (operationFailed) {
     return { agent, status: "error", detail: setupComplete
       ? "reviewer execution failed before a usable result; no review was accepted"
@@ -2165,6 +2179,8 @@ async function selfTest(pretty) {
       for (const envelope of envelopes) {
         for (const tail of ["", '\n{"event":"telemetry"}']) {
           const result = await invokeReviewer("codex", "synthetic release check", { governor: "claude", timeoutMs: 1000,
+            testWorkspace: prefix => fs.mkdtempSync(path.join(os.tmpdir(), prefix)),
+            testWorkspaceCheck: () => {},
             runProcess: async () => ({ code: 0, stdout: JSON.stringify(envelope) + tail, stderr: "" }) });
           if (result.status !== "error" || !/terminal error envelope/.test(result.detail) || result.verdict) return false;
         }
@@ -2254,7 +2270,7 @@ async function selfTest(pretty) {
         fs.writeFileSync(staged, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
         const calls = [];
         const runProcessFake = async (command, args, extra) => { calls.push({ command, args, cwd: extra.cwd }); return { code: 0, stdout: JSON.stringify({ response: "{}" }), stderr: "" }; };
-        const base = { governor: "claude", timeoutMs: 1000, staging: { directory: dir, attachments: [{ name: "shot.png", staged_path: staged, modality: "image", bytes: 4, sha256: "0".repeat(64), metadata_stripped: false }] }, capabilities: { matrix: E7_FAKE_MATRIX }, runProcess: runProcessFake, testWorkspace: prefix => fs.mkdtempSync(path.join(dir, prefix)) };
+        const base = { governor: "claude", timeoutMs: 1000, staging: { directory: dir, attachments: [{ name: "shot.png", staged_path: staged, modality: "image", bytes: 4, sha256: "0".repeat(64), metadata_stripped: false }] }, capabilities: { matrix: E7_FAKE_MATRIX }, runProcess: runProcessFake, testWorkspace: prefix => fs.mkdtempSync(path.join(dir, prefix)), testWorkspaceCheck: () => {} };
         let copiedBytes = null;
         const runProcessRecordingCopy = async (command, args, extra) => { if (calls.length === 0) { try { copiedBytes = fs.readFileSync(path.join(extra.cwd, "attachment-1.png")); } catch { copiedBytes = null; } } return runProcessFake(command, args, extra); };
         await invokeReviewer("antigravity", "diff --git a/x b/x", { ...base, runProcess: runProcessRecordingCopy });
@@ -2555,6 +2571,8 @@ async function selfTest(pretty) {
     classifies_genuine_auth_failure: classifyFailure({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status === "authentication_required",
     expired_session_has_safe_recovery_hint: await (async () => {
       const failure = await invokeReviewer("codex", "synthetic auth recovery", { governor: "claude", timeoutMs: 1000,
+        testWorkspace: prefix => fs.mkdtempSync(path.join(os.tmpdir(), prefix)),
+        testWorkspaceCheck: () => {},
         runProcess: async () => ({ code: 1, stdout: JSON.stringify({ is_error: true, result: "OAuth session expired and could not be refreshed", session_id: "synthetic-private-marker" }), stderr: "" }) });
       return failure.status === "authentication_required" && failure.login_hint === LOGIN_HINTS.codex && !failure.detail.includes("synthetic-private-marker");
     })(),

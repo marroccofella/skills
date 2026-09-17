@@ -381,23 +381,41 @@ test("cli.guidance given as a string means { '*': text } (cli-guidance-string-re
   assert.deepEqual(r.routes.grok.layers.map((l) => l.name), ["cli:arg:*"]);
   assert.throws(() => resolveGuidance({ cwd: f.cwd, home: f.home, cli: { guidance: 42 }, routes: ["codex"] }), /"reviewers" in --guidance arguments must be an object/);
 });
-test("trust store lock: a stale lock is removed, a live lock is waited on then refused (trust-store-lost-update)", () => {
+test("trust store lock: old live owners and recently unpublished owners are not stolen", () => {
+  for (const owner of [`${process.pid}\n`, ""]) {
+    const f = fixture();
+    writeJson(projectFile(f.cwd), { governor: "g" });
+    const lock = path.join(f.home, ".momm", "trust.json.lock");
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, owner);
+    if (owner) { const old = (Date.now() - 120000) / 1000; fs.utimesSync(lock, old, old); }
+    assert.throws(() => trustProject(f.cwd, { home: f.home, lockTimeoutMs: 60 }), /requires waiting or explicit recovery/);
+    assert.equal(fs.readFileSync(lock, "utf8"), owner);
+    assert.ok(!fs.existsSync(path.join(f.home, ".momm", "trust.json")));
+  }
+});
+
+test("trust store lock: abandoned and live locks are preserved until explicit recovery", () => {
   const f = fixture();
   writeJson(projectFile(f.cwd), { governor: "g" });
   const lock = path.join(f.home, ".momm", "trust.json.lock");
   fs.mkdirSync(path.dirname(lock), { recursive: true });
   const dead = spawnSync(process.execPath, ["-e", "0"]).pid;
   fs.writeFileSync(lock, `${dead}\n`);
-  assert.ok(trustProject(f.cwd, { home: f.home }).guidance_sha256);
-  assert.ok(!fs.existsSync(lock), "stale lock left behind");
+  assert.throws(()=>trustProject(f.cwd, { home: f.home,lockTimeoutMs:60 }),/explicit recovery/);
+  assert.equal(fs.readFileSync(lock,'utf8'),`${dead}\n`);
   fs.writeFileSync(lock, "garbage\n");
-  assert.ok(trustProject(f.cwd, { home: f.home }).guidance_sha256); assert.ok(!fs.existsSync(lock));
+  const oldMalformed = (Date.now() - 120000) / 1000;
+  fs.utimesSync(lock, oldMalformed, oldMalformed);
+  assert.throws(()=>trustProject(f.cwd, { home: f.home,lockTimeoutMs:60 }),/explicit recovery/);
+  assert.equal(fs.readFileSync(lock,'utf8'),'garbage\n');
   fs.writeFileSync(lock, `${process.pid}\n`);
   const started = Date.now();
-  assert.throws(() => trustProject(f.cwd, { home: f.home, lockTimeoutMs: 60 }), /Trust store lock .*trust\.json\.lock is held by another momm process/);
+  assert.throws(() => trustProject(f.cwd, { home: f.home, lockTimeoutMs: 60 }), /Trust store lock .*trust\.json\.lock requires waiting or explicit recovery/);
   assert.ok(Date.now() - started >= 50, "did not wait for the live lock");
   assert.equal(fs.readFileSync(lock, "utf8"), `${process.pid}\n`, "live lock must not be removed");
   fs.unlinkSync(lock);
+  assert.ok(trustProject(f.cwd,{home:f.home}).guidance_sha256);
 });
 await asyncTest("trust store: concurrent writers in separate processes never lose an entry (trust-store-lost-update)", async () => {
   const f = fixture();

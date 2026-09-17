@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import {inspectEvidencePermissions,requirePrivateEvidence,preparePrivateEvidence} from '../momm/scripts/evidence-permissions.mjs';
 const dir=path.resolve('synthetic-evidence');
+// Actual allocator code, isolated dependencies: a stripped Windows environment
+// must refuse with the privacy error before spawning or allocating anything.
+{
+ const source=fs.readFileSync(new URL('../momm/scripts/evidence-permissions.mjs',import.meta.url),'utf8');
+ const start=source.indexOf('export function createEvidenceWorkspace(');
+ assert(start>=0);
+ const context=vm.createContext({path,fs:{realpathSync:p=>p},os:{tmpdir:()=>path.resolve('synthetic-temp')},
+  process:{platform:'win32',env:{}},randomUUID:()=> 'synthetic',requirePrivateEvidence:()=>{},
+  spawnSync:()=>{throw Error('Must not spawn');}});
+ vm.runInContext(source.slice(start).replace('export function','function')+';this.allocate=createEvidenceWorkspace;',context);
+ assert.throws(()=>context.allocate('momm-review-',dir),error=>error.code==='MOMM_EVIDENCE_PERMISSIONS');
+}
 const stat=(options={})=>({isSymbolicLink:()=>false,isDirectory:()=>true,isFile:()=>false,uid:123,mode:0o40700,nlink:1,...options});
 const fsx={lstatSync:()=>stat(),readdirSync:()=>[]};
-let checks=0;
+let checks=1; // Includes the stripped-Windows-environment allocator regression.
 for(const [output,expected] of [
  [{verified:true,inspected:1},true],
  [{verified:true,inspected:0},false],

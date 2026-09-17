@@ -114,13 +114,19 @@ export function validateBaseline(baseline, { helpRoot = path.resolve(here, "..")
   const problems = [];
   if (!isPlainObject(baseline)) return ["baseline is not an object"];
   if (baseline.schema !== BASELINE_SCHEMA) problems.push(`schema must be ${BASELINE_SCHEMA}`);
+  for (const [direction, expected] of [["input", INPUT_MODALITIES], ["output", OUTPUT_MODALITIES]]) {
+    const declared = baseline.modalities?.[direction];
+    if (!Array.isArray(declared) || declared.length !== expected.length || new Set(declared).size !== expected.length || !expected.every(m => declared.includes(m))) {
+      problems.push(`modalities.${direction} must declare exactly the supported vocabulary`);
+    }
+  }
   if (!isPlainObject(baseline.routes) || !Object.keys(baseline.routes).length) return [...problems, "routes must be a non-empty object"];
   const captures = new Map();
   const captureLines = (file) => {
     if (!captures.has(file)) { const full = path.join(helpRoot, file); captures.set(file, fs.existsSync(full) ? fs.readFileSync(full, "utf8").split(/\r?\n/) : null); }
     return captures.get(file);
   };
-  const checkEvidence = (at, ev, { verified = false } = {}) => {
+  const checkEvidence = (at, ev, { verified = false, documented = false } = {}) => {
     const hasHelp = isPlainObject(ev) && typeof ev.help_capture === "string";
     const hasDocs = isPlainObject(ev) && Array.isArray(ev.docs) && ev.docs.length > 0 && ev.docs.every((u) => /^https?:\/\/\S+$/.test(u));
     if (!hasHelp && !hasDocs) problems.push(`${at}: needs evidence.help_capture or evidence.docs`);
@@ -136,6 +142,7 @@ export function validateBaseline(baseline, { helpRoot = path.resolve(here, "..")
     }
     // `verified` in the baseline only ever comes from a help capture (the flag is in --help).
     if (verified && !hasHelp) problems.push(`${at}: verified without a help_capture (a probe result belongs in the overlay; docs-only evidence is documented)`);
+    if (documented && !hasDocs) problems.push(`${at}: documented without docs (help-only evidence does not establish the documented level)`);
   };
   for (const [route, entry] of Object.entries(baseline.routes)) {
     if (!isPlainObject(entry)) { problems.push(`${route}: not an object`); continue; }
@@ -158,7 +165,7 @@ export function validateBaseline(baseline, { helpRoot = path.resolve(here, "..")
         }
         if (cell.level === "no") continue;
         if (typeof cell.how !== "string" || !cell.how.trim()) problems.push(`${at}: non-no cell needs a how`);
-        checkEvidence(at, cell.evidence, { verified: cell.level === "verified" });
+        checkEvidence(at, cell.evidence, { verified: cell.level === "verified", documented: cell.level === "documented" });
         if (direction === "output" && GENERATIVE_OUTPUTS.includes(modality)) {
           if (typeof cell.harvest !== "string" || !cell.harvest.includes("/")) problems.push(`${at}: generative cell needs a harvest glob`);
           if (typeof cell.mime !== "string" || !cell.mime.includes("/")) problems.push(`${at}: generative cell needs a mime type`);
@@ -197,7 +204,7 @@ function readOverlayFile(file) {
 }
 const sameCell = (a, b) => a.route === b.route && a.direction === b.direction && a.modality === b.modality;
 // Serialises overlay writers across processes (the guidance.mjs trust-lock discipline): the lock
-// holds the owner's pid; a lock whose owner is gone is removed, a live one is waited on.
+// holds the owner's pid. Never steal a lock: PID checks and unlink are not atomic.
 function withOverlayLock(file, timeoutMs, fn) {
   const lock = `${file}.lock`;
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 });
@@ -205,10 +212,8 @@ function withOverlayLock(file, timeoutMs, fn) {
   for (;;) {
     try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); break; } catch (e) {
       if (!TRANSIENT.has(e?.code)) throw e;
-      let owner = NaN;
-      try { owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10); } catch (probe) { if (probe?.code === "ENOENT") continue; }
-      if (Number.isInteger(owner) && !pidAlive(owner)) { try { fs.unlinkSync(lock); } catch { /* replaced by a live writer */ } continue; }
-      if (Date.now() >= deadline) throw new Error(`Capabilities overlay lock ${lock} is held by another momm process (pid ${Number.isInteger(owner) ? owner : "unknown"}); retry, or delete the lock if that process is gone`);
+      // Every failed acquisition observes the deadline, even during churn.
+      if (Date.now() >= deadline) throw new Error(`Capabilities overlay lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.`);
       sleepMs(20);
     }
   }

@@ -379,7 +379,11 @@ export async function checkAll(root, lock, dependencies = {}) {
     skill: { installed: lock.current?.version || null, published: null, channel: lock.channel, update_available: null, release_verified: Boolean(lock.current?.verified), error: null },
     installations: { targets: [...(lock.targets || [])], custom_dirs: [...(lock.custom_dirs || [])], scopes: (lock.installations || []).map(s => ({ target: s.target, custom_dir: s.custom_dir || null, skills: s.skills || ["momm"] })) },
     reviews: lastSuccessfulReviews([...new Set([cwd, root].map(d => path.resolve(d)))]), clis: [] };
-  try { const m = await (dependencies.manifest || manifest)(fetcher); report.skill.published = m.momm; report.skill.update_available = newer(m.momm, report.skill.installed); }
+  try {
+    const m = await (dependencies.manifest || manifest)(fetcher);
+    report.skill.published = m.momm;
+    report.skill.update_available = SEMVER.test(m.momm || "") && SEMVER.test(report.skill.installed || "") ? newer(m.momm, report.skill.installed) : null;
+  }
   catch (e) { report.skill.error = safeText(e.message).slice(0, 200); }
   const npmLatest = async cli => {
     const url = `https://registry.npmjs.org/${NPM_PACKAGES[cli].replace("/", "%2f")}/latest`;

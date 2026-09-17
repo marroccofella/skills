@@ -640,14 +640,14 @@ function guidanceBudgetProblem(candidate, effective) {
 }
 
 const GUIDANCE_STALE = "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.";
-const GUIDANCE_BUSY = "Another momm process is saving the guidance file right now. Wait a moment, reload, then save again.";
+const GUIDANCE_BUSY = "Another momm process may be saving guidance, or its lock needs explicit recovery. Wait and reload. If it persists, stop all MOMM writers, including older versions, and independently confirm none remain before removing only guidance.json.lock. Never remove a lock based only on PID or age.";
 const GUIDANCE_LOCK_STALE_MS = 30_000;
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error?.code === "EPERM"; } };
 
 // Serialises guidance writers across processes the way guidance.mjs serialises
 // the trust store: `.momm/guidance.json.lock` is created with O_EXCL and holds
-// the owner's pid. A lock whose owner is gone, or older than
-// GUIDANCE_LOCK_STALE_MS, is removed and taken over; a live one is NOT waited
+// the owner's pid. Existing locks are never stolen, even when apparently dead.
+// An existing lock is NOT waited
 // on — the caller answers 409, so a server never parks its event loop behind a
 // peer. Returns the release function, or null while a live lock is held.
 function acquireGuidanceLock(file) {
@@ -658,13 +658,7 @@ function acquireGuidanceLock(file) {
       return () => { try { fs.unlinkSync(lock); } catch { /* already gone */ } };
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
-      let stale = false;
-      try {
-        const owner = Number.parseInt(fs.readFileSync(lock, "utf8"), 10);
-        stale = Date.now() - fs.statSync(lock).mtimeMs > GUIDANCE_LOCK_STALE_MS || !Number.isInteger(owner) || !pidAlive(owner);
-      } catch (probe) { if (probe?.code === "ENOENT") continue; stale = true; }
-      if (!stale) return null;
-      try { fs.unlinkSync(lock); } catch { /* the owner released it first */ }
+      return null;
     }
   }
   return null;
@@ -1498,13 +1492,26 @@ function createSetupCenterPointer({ cwd = process.cwd(), pid = process.pid, proc
 }
 
 function createServer() {
+  // Navigation cannot send a custom header. Exchange an authenticated request
+  // for a short-lived, one-use ledger ticket, never a reusable session in a URL.
+  const ledgerTickets = new Map();
   return http.createServer(async (request, response) => {
     if (!isLoopback(request.socket.remoteAddress)) return sendJson(response, 403, { error: "Loopback access only" });
     if (!isAllowedHost(request)) return sendJson(response, 403, { error: "Invalid Host header" });
-    const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+    let requestUrl;
+    try { requestUrl = new URL(request.url || "/", "http://127.0.0.1"); }
+    catch { return sendJson(response, 400, { error: "Invalid request URL" }); }
     try {
       if (request.method === "GET" && Object.hasOwn(STATIC_ASSETS, requestUrl.pathname)) return serveAsset(response, ...STATIC_ASSETS[requestUrl.pathname]);
-      if (request.method === "GET" && requestUrl.pathname === "/ledger") return serveLedger(response);
+      if (requestUrl.pathname.startsWith("/api/") && !authorized(request)) return sendJson(response, 403, { error: "Use the private Setup Center launch link from your terminal." });
+      if (request.method === "GET" && requestUrl.pathname === "/ledger") {
+        if (!authorized(request)) {
+          const ticket = requestUrl.searchParams.get("ticket"), expires = ledgerTickets.get(ticket);
+          ledgerTickets.delete(ticket);
+          if (!expires || expires <= Date.now()) return sendJson(response, 403, { error: "Open the private ledger from your authorized Setup Center." });
+        }
+        return serveLedger(response);
+      }
       if (request.method === "GET" && requestUrl.pathname === "/api/session") {
         return sendJson(response, 200, { token: sessionToken, platform: platformKey(), providers });
       }
@@ -1537,6 +1544,14 @@ function createServer() {
       }
       if (request.method === "POST") {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        if (requestUrl.pathname === "/api/ledger-ticket") {
+          const now = Date.now();
+          for (const [ticket, expires] of ledgerTickets) if (expires <= now) ledgerTickets.delete(ticket);
+          while (ledgerTickets.size >= 32) ledgerTickets.delete(ledgerTickets.keys().next().value);
+          const ticket = crypto.randomBytes(24).toString("hex");
+          ledgerTickets.set(ticket, now + 60_000);
+          return sendJson(response, 200, { url: `/ledger?ticket=${ticket}` });
+        }
         const body = await readBody(request, requestUrl.pathname === "/api/guidance" ? GUIDANCE_BODY_LIMIT : undefined);
         if (requestUrl.pathname === "/api/guidance") {
           const saved = saveGuidance(body);
@@ -1732,18 +1747,25 @@ async function dashboardRegression() {
       && outer.status === 200 && outer.value.trusted === true && JSON.parse(fs.readFileSync(lockedFile, "utf8")).governor === "C"
       && !lockDirAfter.some((name) => name.endsWith(".lock") || name.endsWith(".tmp"));
     // A live lock left by a running peer answers 409 and leaves the file alone;
-    // a lock whose owner is gone (stale by age, or unreadable) is reclaimed.
+    // Age must never override a live owner, and a just-created empty record
+    // may belong to a writer that has not published its pid yet.
     fs.writeFileSync(lockPath, `${process.pid}\n`);
     const busySave = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
     const bytesWhileBusy = fs.readFileSync(lockedFile);
     const aged = (Date.now() - 2 * 60_000) / 1000;
     fs.utimesSync(lockPath, aged, aged);
-    const reclaimedByAge = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
+    const refusedByAge = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
+    fs.writeFileSync(lockPath, "");
+    const refusedUnpublished = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "D" } }, l);
     fs.writeFileSync(lockPath, "not-a-pid\n");
-    const reclaimedByOwner = saveGuidance({ expected_sha256: reclaimedByAge.value?.project_sha256 ?? null, guidance: { governor: "E" } }, l);
-    checks.guidance_live_lock_refused_stale_lock_reclaimed = busySave.status === 409 && /another momm process/i.test(busySave.value.error) && busySave.value.project_sha256 === outer.value.project_sha256
+    fs.utimesSync(lockPath, aged, aged);
+    const refusedMalformed = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "E" } }, l);
+    const malformedPreserved = fs.readFileSync(lockPath,'utf8') === 'not-a-pid\n';
+    fs.unlinkSync(lockPath); // Explicit recovery of this disposable self-test fixture.
+    const recovered = saveGuidance({ expected_sha256: outer.value.project_sha256, guidance: { governor: "E" } }, l);
+    checks.guidance_live_and_abandoned_locks_preserved_explicit_recovery_works = busySave.status === 409 && /another momm process/i.test(busySave.value.error) && busySave.value.project_sha256 === outer.value.project_sha256
       && JSON.parse(bytesWhileBusy.toString("utf8")).governor === "C"
-      && reclaimedByAge.status === 200 && reclaimedByOwner.status === 200 && JSON.parse(fs.readFileSync(lockedFile, "utf8")).governor === "E" && !fs.existsSync(lockPath);
+      && refusedByAge.status === 409 && refusedUnpublished.status === 409 && refusedMalformed.status === 409 && malformedPreserved && recovered.status === 200 && JSON.parse(fs.readFileSync(lockedFile, "utf8")).governor === "E" && !fs.existsSync(lockPath);
     // guidance-body-limit-unenforced: the cap applies to the file a save would
     // write, whoever assembled the body (route keys are open-ended, so the
     // per-block caps alone do not bound it); nothing reaches disk, nothing is trusted.
@@ -2261,9 +2283,13 @@ function startSetupCenter({ server, watcher, clock, port, browser, pointer }) {
   server.listen(port, "127.0.0.1", () => {
     const address = server.address();
     const url = `http://127.0.0.1:${address.port}/`;
-    process.stdout.write(`MOMM Setup Center: ${url}\n`);
+    // Fragments are not sent in HTTP requests or Referer headers. Do not put
+    // this capability into setup-center.json or a generated ledger/export.
+    const launchUrl = `${url}#momm-token=${sessionToken}`;
+    process.stdout.write(`MOMM Setup Center: ${launchUrl}\n`);
+    process.stdout.write("Private launch link: do not share it.\n");
     process.stdout.write("Local-only. No source code or credential contents are read during setup.\n");
-    if (browser) openBrowser(url);
+    if (browser) openBrowser(launchUrl);
     triggerClock(clock, "setup.open"); // fire-and-forget; due sources only; triggerClock never rejects
     pointer?.write?.(url); // the ledger links back here while this pid is alive
     watcher?.start();

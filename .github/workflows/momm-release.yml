@@ -71,6 +71,7 @@ jobs:
           node momm/scripts/probes.test.mjs
           node momm/scripts/governor-split.test.mjs
           node momm/scripts/capabilities.test.mjs
+          node momm/scripts/lock-ownership.test.mjs
           node momm/scripts/modality.test.mjs
           node momm/scripts/modality-evaluation.test.mjs
           node scripts/render-momm-site.mjs --check

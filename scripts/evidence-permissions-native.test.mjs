@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {inspectEvidencePermissions,createEvidenceWorkspace} from '../momm/scripts/evidence-permissions.mjs';
+import {inspectEvidencePermissions,createEvidenceWorkspace,requirePrivateScratch} from '../momm/scripts/evidence-permissions.mjs';
 import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
@@ -16,6 +16,7 @@ import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
 const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'momm-native-evidence-'));
 const dispatcher=fileURLToPath(new URL('../momm/scripts/multi-review.mjs',import.meta.url));
 const results=[];
+const scratchToClean=[];
 try {
   for(const kind of ['protected','broad']) {
     const project=path.join(fixture,kind), evidence=path.join(project,'.ensemble_reviews');
@@ -47,15 +48,38 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
       const start=source.indexOf('function stageAttachments('),end=source.indexOf('\nfunction attachmentContractSection(',start);
       assert(start>=0&&end>start);
       const context=vm.createContext({fs,path,os,Buffer,createHash,MODALITY_MAX_BYTES:{image:1000},MODALITY_BY_EXTENSION:{gif:'image'},modalityOfFile:()=> 'image',
-        createEvidenceWorkspace:prefix=>createEvidenceWorkspace(prefix,evidence)});
+        requirePrivateScratch,createEvidenceWorkspace:prefix=>createEvidenceWorkspace(prefix,evidence)});
       vm.runInContext(source.slice(start,end)+';this.stage=stageAttachments;this.clean=cleanupAttachments;',context);
       const staged=context.stage([input]);
-      assert.equal(path.dirname(staged.directory),path.join(evidence,'staging'));
+      assert(!path.resolve(staged.directory).startsWith(path.resolve(evidence)+path.sep),'Provider scratch must be outside durable evidence');
       assert.equal(inspectEvidencePermissions(staged.directory).verified,true);
       assert.equal(fs.readFileSync(staged.attachments[0].staged_path,'utf8'),'SYNTHETIC ATTACHMENT ONLY');
+      const scratchDirectory=staged.directory;
       context.clean(staged);
-      assert.deepEqual(fs.readdirSync(path.join(evidence,'staging')),[]);
+      assert.equal(fs.existsSync(scratchDirectory),false);
+      assert.deepEqual(fs.readdirSync(evidence),[],'Allocating scratch must not create provider-owned descendants in durable evidence');
       results.push({kind,case:'actual attachment staging stays protected and cleans up',passed:true});
+      const changed=createEvidenceWorkspace('momm-review-',evidence);
+      scratchToClean.push(changed);
+      fs.writeFileSync(path.join(changed,'synthetic.txt'),'SYNTHETIC ONLY',{mode:0o600});
+      if(process.platform==='win32') {
+        // Modify DACL access only; Set-Acl can request SACL privileges that
+        // an ordinary owner does not have. This is a fresh synthetic path.
+        const p=spawnSync(path.join(process.env.SystemRoot,'System32/icacls.exe'),[changed,'/grant','*S-1-5-32-545:(OI)(CI)RX'],{encoding:'utf8',windowsHide:true,timeout:30000});
+        assert.equal(p.status,0,'Synthetic scratch permission mutation failed: '+String(p.stderr).replaceAll(changed,'<synthetic scratch>'));
+      } else fs.chmodSync(changed,0o755);
+      assert.equal(inspectEvidencePermissions(changed).verified,false);
+      assert.equal(inspectEvidencePermissions(evidence).verified,true,'Scratch mutation must not change durable evidence privacy');
+      assert.throws(()=>context.clean({directory:changed}),/permissions could not be verified/);
+      assert.equal(fs.existsSync(changed),false,'Unsafe scratch still must be removed');
+      assert.equal(inspectEvidencePermissions(evidence).verified,true);
+      results.push({kind,case:'changed scratch permissions refuse use and clean up without poisoning durable evidence',passed:true});
+      const realpath=fs.realpathSync;
+      try {
+        fs.realpathSync=()=>{throw new Error('PRIVATE_PATH_SENTINEL');};
+        assert.throws(()=>createEvidenceWorkspace('momm-review-',evidence),error=>error.code==='MOMM_EVIDENCE_PERMISSIONS'&&!error.message.includes('PRIVATE_PATH_SENTINEL'));
+      } finally {fs.realpathSync=realpath;}
+      results.push({kind,case:'injected path-resolution failure is reported without private diagnostics',passed:true});
     } else {
       assert.throws(()=>createEvidenceWorkspace('momm-attach-',evidence),{code:'MOMM_EVIDENCE_PERMISSIONS'});
       assert.deepEqual(fs.readdirSync(evidence),[]);
@@ -100,6 +124,11 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
   }
   console.log(JSON.stringify({passed:true,scope:'native disposable storage controls; self-excluded route; no provider calls',results}));
 } finally {
+  for(const scratch of scratchToClean) {
+    assert.equal(path.dirname(scratch),fs.realpathSync(os.tmpdir()));
+    assert(path.basename(scratch).startsWith('momm-review-'));
+    fs.rmSync(scratch,{recursive:true,force:true});
+  }
   assert.equal(path.dirname(fixture),path.resolve(os.tmpdir()));
   assert(path.basename(fixture).startsWith('momm-native-evidence-'));
   fs.rmSync(fixture,{recursive:true,force:true});
