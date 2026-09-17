@@ -20,9 +20,14 @@ source review, independent retest and the release gates below.
   Damaged records and missing modern reports are visible integrity warnings;
   valid records remain available. Evidence tables have their own keyboard-focusable
   horizontal scroll region on narrow screens.
+  Follow-up concurrency controls cover both scheduled/on-demand timer orders and
+  requests arriving after an older rebuild has already read its inputs. Those
+  later requests await a fresh rebuild, not merely the older run's completion.
+  Setup Center reviewer-card headings and status badges wrap at narrow widths.
 - Metadata-only update commands allow natural shutdown after output flush, with
   a bounded fallback. Review and mutating-command termination are unchanged.
-  A local pass does not close the independently observed Windows native assertion.
+  BAB PA's matched Windows controls passed for the previously observed native
+  assertion. This is scoped independent evidence, not a universal crash-free claim.
 - Missing or malformed package seals refuse before expensive package hashing.
   This is not a valid-seal hashing performance improvement or signed-release proof.
 - The dispatcher checks project evidence-folder permissions before collecting
@@ -34,10 +39,15 @@ source review, independent retest and the release gates below.
   staging uses that verified evidence boundary rather than generic system temp.
   Checks describe access rules at inspection time, not immunity to later permission
   changes, privileged access, provider-owned caches or a compromised user account.
+  If a media run cannot save its terminal report, it explicitly reports that the
+  saved status is stale. Artifacts remain retained; the original error is available
+  privately to programmatic callers, not copied into public diagnostic output.
 - Explicit Grok cancellation no longer certifies a recognition answer or appears
   only as missing generated output. Cancellation cause remains unknown unless
   separately established. Auxiliary 429 warnings alone do not invalidate a
   completed answer, prove exhausted quota or authorize automatic retries.
+  Terminal cancellation envelopes without a text field also override earlier
+  successful-looking answers.
 - Generated media already produced by a cancelled, timed-out or nonzero-exit step
   is retained and hashed where harvesting succeeds, without converting that step
   into success or forwarding its output to the next step. Synthetic preservation
@@ -46,6 +56,10 @@ source review, independent retest and the release gates below.
 All new controls use synthetic inputs. They do not substitute for retained live
 generation, independent image critique, final-source quorum, exact-head CI,
 publication privacy scans, or signed clean-install/upgrade/rollback proof.
+The independent Windows modality-suite timeout remains open: repeated ACL
+inspection subprocesses dominated the measured runtime. Passing runs on another
+machine do not erase that failure; privacy checks are not skipped or cached to
+make the test pass.
 
 ## Final candidate retest (15 September 2026)
 

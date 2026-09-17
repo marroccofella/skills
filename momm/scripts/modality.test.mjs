@@ -11,9 +11,14 @@ import { loadBaseline, effective, sha256 } from "./capabilities.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];
+const filter = process.argv.find(arg => arg.startsWith('--filter='))?.slice('--filter='.length);
 async function test(name, fn) {
+  if (filter && !name.includes(filter)) return;
+  const started = Date.now();
+  process.stderr.write(`START ${name}\n`);
   try { await fn(); passed.push(name); }
   catch (e) { failures.push({ name, error: e.message, stack: String(e.stack ?? "").split("\n").slice(1, 4).map((l) => l.trim()) }); }
+  finally { process.stderr.write(`END ${name} (${Date.now() - started}ms)\n`); }
 }
 const baseline = loadBaseline();
 const stamp = { machine_id: "m-test", cli_version: "1.0.0", login_identity_sha256: null, at: "2026-09-13T00:00:00.000Z", expires_at: null };
@@ -626,6 +631,34 @@ await test("audit: the recorded step level comes from the live cells the run che
   assert.equal(r2.report.steps[0].level, m.routes[chosen].input.text.level); assert.equal("plan_level" in r2.report.steps[0], false);
 });
 
+await test("audit: failed terminal report writes expose stale saved state without claiming completion", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "claude";
+  const rename = fs.renameSync;
+  let deny = false, caught;
+  fs.renameSync = function (from, to, ...rest) {
+    if (deny && path.basename(String(to)) === "report.json") throw Object.assign(new Error("synthetic write refusal"), { code: "EACCES" });
+    return rename.call(fs, from, to, ...rest);
+  };
+  try {
+    await mod.run(planned, { consent: true, home, cwd, effective: m, exec: async () => {
+      deny = true;
+      return ok(JSON.stringify({ type: "result", result: "Retained answer", is_error: false }));
+    } });
+  } catch (error) { caught = error; }
+  finally { fs.renameSync = rename; }
+  assert.equal(caught?.code, "MOMM_MEDIA_EVIDENCE_WRITE");
+  assert.equal(caught.cause?.code, "EACCES", "preserve the original in-memory cause without publishing its message");
+  assert(!JSON.stringify(caught.evidence).includes("synthetic write refusal"), "public diagnostic contains no raw failure text");
+  assert.equal(caught.evidence.persisted, false);
+  assert.equal(caught.evidence.status, "error");
+  assert.equal(caught.evidence.last_saved_status, "running");
+  const runDir = path.join(cwd, mod.MEDIA_DIR, caught.evidence.run_id);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(runDir, "report.json"))).status, "running");
+  assert.equal(fs.readFileSync(path.join(runDir, "step-1/out/01-response.txt"), "utf8"), "Retained answer");
+});
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 console.log(JSON.stringify({ passed, failures }, null, 2));
-if (failures.length) process.exitCode = 1;
+if (failures.length || (filter && !passed.length)) process.exitCode = 1;

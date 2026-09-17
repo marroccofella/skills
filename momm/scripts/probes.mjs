@@ -172,8 +172,11 @@ export function isolateReply(cli, result, prompt) {
   const field = REPLY_FIELD[cli];
   if (field) {
     for (const obj of extractJsonObjects(stdout).reverse()) {
-      if (!obj || typeof obj[field] !== "string") continue;
+      if (!obj) continue;
+      // Terminal envelopes need not repeat the reply text. A final cancellation
+      // must not fall through to an earlier successful-looking answer.
       if (cli === "grok" && obj.stopReason === "cancelled") return { isolated: false, reply: "", terminal_status: "cancelled", detail: "provider ended the request as cancelled; cause not established" };
+      if (typeof obj[field] !== "string") continue;
       if (obj.is_error === true || obj.type === "error") return { isolated: false, reply: "", detail: `provider reported an error: ${clip(obj[field], 200) || "(no message)"}` };
       return { isolated: true, reply: obj[field], via: `json.${field}` };
     }

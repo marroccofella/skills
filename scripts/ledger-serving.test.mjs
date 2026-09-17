@@ -64,6 +64,84 @@ for (const scenario of ['source-only-change', 'thrown-rebuild', 'failed-child', 
   } catch (error) { results.push({ scenario: 'concurrent-rebuilds', passed: false, error: error.message }); }
   finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
+const watcherStart = source.indexOf('function createLedgerWatcher(');
+const watcherEnd = source.indexOf('function isLoopback(', watcherStart);
+assert(watcherStart >= 0 && watcherEnd > watcherStart);
+const makeWatcher = vm.runInNewContext(source.slice(watcherStart, watcherEnd) + ';createLedgerWatcher', { fs, path, safeDetail: String, LEDGER_FILES: new Set(['review-log.jsonl', 'dispositions.jsonl']), LEDGER_MIN_GAP_MS: 5000 });
+for (const nextCode of [1, 0]) for (const order of [[0, 1], [1, 0]]) {
+  const scenario = `watcher-timer-overlap-exit-${nextCode}-order-${order.join('-')}`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-ledger-overlap-'));
+  let watcher, release, request;
+  try {
+    const er = path.join(dir, '.ensemble_reviews'); fs.mkdirSync(er);
+    const page = path.join(er, 'ledger.html');
+    fs.writeFileSync(page, '<p>Old validated result</p>');
+    let time = 100000, calls = 0;
+    const timers = [];
+    const gate = new Promise(resolve => { release = resolve; });
+    watcher = makeWatcher({ dir: er, now: () => time,
+      setTimer: (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; }, clearTimer: () => {},
+      watch: () => ({ on() {}, close() {} }),
+      run: async () => {
+        if (++calls === 1) return { code: nextCode === 0 ? 1 : 0 };
+        await gate;
+        if (nextCode === 0) fs.writeFileSync(page, '<p>Current snapshot</p>');
+        return { code: nextCode };
+      }
+    });
+    watcher.start(); await watcher.rebuild();
+    time = 100100; watcher.notify('review-log.jsonl');
+    const res = { writeHead(status) { this.status = status; }, end(body) { this.body = body; } };
+    request = serve(res, { cwd: dir, rebuild: () => watcher.rebuild() });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(timers.length, 2);
+    assert(timers.every(timer => timer.delay === 4900));
+    time = 105000;
+    timers[order[0]].fn(); timers[order[1]].fn();
+    await new Promise(resolve => setImmediate(resolve));
+    const prematureStatus = res.status;
+    release(); await request;
+    assert.equal(prematureStatus, undefined, 'HTTP must wait for the rebuild that won the timer race');
+    assert.equal(res.status, nextCode === 0 ? 200 : 503);
+    assert.doesNotMatch(res.body, /Old validated result/);
+    if (nextCode === 0) assert.match(res.body, /Current snapshot/);
+    results.push({ scenario, passed: true });
+  } catch (error) { results.push({ scenario, passed: false, error: error.message }); }
+  finally { release?.(); await request; watcher?.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+}
+{
+  const scenario = 'late-reader-awaits-new-snapshot';
+  let watcher, release, reader;
+  try {
+    let time = 100000, calls = 0, revision = 'old', published;
+    const timers = [];
+    watcher = makeWatcher({ dir: '.', now: () => time,
+      setTimer: (fn, delay) => { const t = { fn, delay }; timers.push(t); return t; }, clearTimer: () => {},
+      watch: () => ({ on() {}, close() {} }), run: async () => {
+        const snapshot = revision;
+        if (++calls === 1) await new Promise(resolve => { release = resolve; });
+        published = snapshot; return { code: 0 };
+      }
+    });
+    watcher.start(); watcher.notify('review-log.jsonl');
+    const background = timers.shift().fn();
+    await new Promise(resolve => setImmediate(resolve));
+    revision = 'new'; watcher.notify('review-log.jsonl');
+    let settled = false;
+    reader = watcher.rebuild().then(() => { settled = true; });
+    release(); await background;
+    await new Promise(resolve => setImmediate(resolve));
+    const premature = settled && published === 'old';
+    time += 5000;
+    for (const timer of timers.splice(0)) await timer.fn();
+    await reader;
+    assert.equal(premature, false);
+    assert.equal(published, 'new');
+    assert.equal(calls, 2, 'queued notification and late reader share one fresh rebuild');
+    results.push({ scenario, passed: true });
+  } catch (error) { results.push({ scenario, passed: false, error: error.message }); }
+  finally { release?.(); watcher?.stop(); }
+}
 await new Promise(resolve => setImmediate(resolve));
 process.removeListener('unhandledRejection', onUnhandled);
 assert.deepEqual(unhandled, [], 'Rebuild rejection must have its handler attached before a turn elapses');

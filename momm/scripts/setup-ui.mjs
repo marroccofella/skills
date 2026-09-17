@@ -1201,13 +1201,17 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   // restored) keeps the old handle alive and silent, so identity is compared
   // whenever a rename event names anything other than a telemetry file.
   const identityOf = () => { try { const entry = stat(dir); return `${entry.dev}:${entry.ino}`; } catch { return null; } };
-  let inflight = null; // the rebuild in progress, so rebuild() can await it instead of doubling it
+  let inflight = null, generation = 0;
   function regenerate() {
-    if (state.running) { state.pending = true; return Promise.resolve(); }
-    inflight = regenerateNow().finally(() => { inflight = null; });
+    // A scheduled rebuild may beat an on-demand gap timer. Both callers must
+    // await the actual result, never read the previous run's success/failure.
+    if (inflight) { state.pending = true; return inflight; }
+    // Publish the promise before run() can reenter the watcher.
+    inflight = Promise.resolve().then(regenerateNow).finally(() => { inflight = null; });
     return inflight;
   }
   async function regenerateNow() {
+    generation++;
     state.running = true;
     lastRunAt = now();
     try {
@@ -1284,11 +1288,17 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
   // with the scheduled path: a rebuild already in flight is awaited rather than
   // doubled, and one that would land inside the gap waits the remainder out.
   // Independent of start()/stop(): the request wants a page, not a subscription.
-  function rebuild() {
-    if (inflight) return inflight.then(status);
+  async function rebuild() {
+    // A run already reading before this request may have an older snapshot.
+    // Require a run started after this request; concurrent readers share it.
+    const requiredGeneration = generation + 1;
+    if (inflight) await inflight;
+    if (generation >= requiredGeneration) return status();
     const wait = Math.max(0, lastRunAt + minGapMs - now());
-    if (wait <= 0) return regenerate().then(status);
-    return new Promise((resolve) => { const timer = setTimer(() => resolve(regenerate().then(status)), wait); timer?.unref?.(); });
+    if (wait > 0) await new Promise(resolve => { const timer = setTimer(resolve, wait); timer?.unref?.(); });
+    if (inflight) await inflight;
+    if (generation < requiredGeneration) await regenerate();
+    return status();
   }
   return { start, stop, notify, rebuild, status };
 }
@@ -1926,6 +1936,7 @@ async function dashboardRegression() {
     const stopWatcher = createLedgerWatcher({ dir: root, run: () => { stopRuns += 1; return new Promise((resolve) => { release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; stopTimers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => ({ on() {}, close() {} }) });
     stopWatcher.start(); stopWatcher.notify("review-log.jsonl");
     const inFlight = stopTimers.at(-1).fn();          // rebuild running, awaiting `release`
+    await macrotask(); // let the published promise start the rebuild
     stopWatcher.notify("dispositions.jsonl"); stopTimers.at(-1).fn(); // fires during the run: marks pending
     const pendingWhileRunning = stopWatcher.status().pending === true && stopRuns === 1;
     stopWatcher.stop();
@@ -1965,7 +1976,8 @@ async function dashboardRegression() {
     // rebuild(): GET /ledger's on-demand path awaits an in-flight run rather than doubling it, and waits out the 5 s gap.
     const rb = { runs: 0, timers: [], release: null };
     const rebuildWatcher = createLedgerWatcher({ dir: root, run: () => { rb.runs += 1; return new Promise((resolve) => { rb.release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms }; rb.timers.push(timer); return timer; }, clearTimer: () => {}, watch: () => ({ on() {}, close() {} }) });
-    const rbFirst = rebuildWatcher.rebuild(); const rbSecond = rebuildWatcher.rebuild(); // second arrives mid-run
+    const rbFirst = rebuildWatcher.rebuild(); const rbSecond = rebuildWatcher.rebuild(); // same turn, before the snapshot begins
+    await macrotask();
     const oneRunForTwoRequests = rb.runs === 1 && rebuildWatcher.status().running === true;
     rb.release(); const [firstState, secondState] = await Promise.all([rbFirst, rbSecond]);
     const bothServedByThatRun = firstState.regenerations === 1 && secondState.regenerations === 1 && rb.runs === 1 && rb.timers.length === 0;

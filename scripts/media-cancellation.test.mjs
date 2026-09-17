@@ -13,6 +13,13 @@ process.umask(0o077);
 const root=privateTestFixture('momm-cancel-regression-');
 const results=[];
 try {
+  for (const [name, stdout] of [
+    ['bare terminal cancellation without text', JSON.stringify({stopReason:'cancelled'})],
+    ['terminal cancellation without text overrides earlier answer', JSON.stringify({text:'Earlier answer',stopReason:'end_turn'})+'\n'+JSON.stringify({stopReason:'cancelled'})],
+  ]) {
+    const isolated=isolateReply('grok',{code:0,stdout,stderr:''},'Synthetic terminal-envelope check');
+    results.push({name,passed:isolated.isolated===false&&isolated.terminal_status==='cancelled'});
+  }
   for(const cancelled of [true,false]) {
     const reply={code:0,stdout:JSON.stringify({text:'Red',stopReason:cancelled?'cancelled':'end_turn'}),stderr:'auxiliary HTTP 429 RESOURCE_EXHAUSTED; auxiliary HTTP 402'};
     const isolated=isolateReply('grok',reply,'Describe the image');

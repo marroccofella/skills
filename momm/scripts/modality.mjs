@@ -391,9 +391,11 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
     try { fs.mkdirSync(dir, { mode: 0o700 }); break; } catch (e) { if (e?.code !== "EEXIST") throw e; }
   }
   const report = { schema: MEDIA_SCHEMA, run_id, at: at.toISOString(), prompt_sha256: sha256(prompt), need: planObj.need, chain: planObj.chain ?? planObj.steps.map(({ from, to }) => ({ from, to })), consent: true, status: "running", steps: [] };
+  let lastSavedStatus = null;
   const persist = () => {
     requirePrivateEvidence(dir);
     writePrivate(path.join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+    lastSavedStatus = report.status;
   };
   persist();
   let previous = [];
@@ -480,12 +482,22 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
       previous = files;
     }
     if (report.status === "running") report.status = "complete";
+    persist();
   } catch (e) {
     report.status = "error"; report.error = String(e?.message ?? e).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").slice(0, 400);
-    persist();
+    try { persist(); }
+    catch {
+      // Never bypass a changed permission boundary to repair the saved status.
+      // Tell callers that the on-disk state is stale; preserve all artifacts.
+      const error = fail(`Media run ${run_id} stopped with an error, but its terminal report could not be saved. The saved status (${lastSavedStatus ?? "none"}) is stale; retained artifacts are not proof of completion. No permissions were changed.`, "MOMM_MEDIA_EVIDENCE_WRITE");
+      // Available to programmatic callers, but not enumerable or copied into
+      // stdout/stderr evidence: provider failures can contain private details.
+      Object.defineProperty(error, "cause", { value: e, configurable: true });
+      error.evidence = { run_id, status: "error", persisted: false, last_saved_status: lastSavedStatus };
+      throw error;
+    }
     throw e;
   }
-  persist();
   return { run_id, dir, report };
 }
 
@@ -535,6 +547,7 @@ async function main(argv) {
 function isEntrypoint() { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isEntrypoint()) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (e) => {
+    if (e.code === "MOMM_MEDIA_EVIDENCE_WRITE") process.stderr.write(`${JSON.stringify({ event: "evidence_error", ...e.evidence })}\n`);
     process.stderr.write(`${e.message}\n`);
     process.exitCode = ["MOMM_CONSENT_REQUIRED", "MOMM_PROMPT_REQUIRED", "MOMM_PLAN_BLOCKED", "MOMM_STEP_BLOCKED", "MOMM_INPUT_MISSING"].includes(e.code) ? 2 : 1;
   });
