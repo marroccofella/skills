@@ -10,11 +10,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { captureSourceSnapshot, inspectCompletion, digest } from "./governor.mjs";
+import {privateTestFixture} from './private-test-fixture.mjs';
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];
 const test = (name, fn) => { try { fn(); passed.push(name); } catch (error) { failures.push({ name, error: error.message }); } };
-const base = fs.mkdtempSync(path.join(os.tmpdir(), "momm-governor-split-"));
+process.umask(0o077); // This isolated synthetic test process only.
+const base = privateTestFixture("momm-governor-split-");
 const write = (dir, p, value) => { const f = path.join(dir, p); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, typeof value === "string" ? value : JSON.stringify(value, null, 2)); };
 
 function fixture(name, { pieces, governorDirect = [], quorum, strict = false }) {

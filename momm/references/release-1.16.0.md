@@ -1,6 +1,51 @@
 # MOMM 1.16.0 — measurement, ratings, guidance, throughput, upkeep
 
-Status: candidate on branch `release/momm-1.16.0`, built 2026-09-13 from the 1.15.1 release. Not published. Plan: [plan-1.16.0.md](plan-1.16.0.md) (momm-reviewed twice before a line was written).
+Status: unreleased core candidate, originally built 2026-09-13 from 1.15.1.
+Independent-audit repairs are prepared on `fix/momm-1.16-clean-review`
+([PR #6](https://github.com/marroccofella/skills/pull/6)); the audit conversation
+remains on [PR #4](https://github.com/marroccofella/skills/pull/4).
+Neither this document nor a candidate version string establishes a stable release.
+Plan: [plan-1.16.0.md](plan-1.16.0.md).
+
+## Independent-audit repair pass (17 September 2026)
+
+Credit: BAB PA's controlled tests distinguished product defects from unavailable
+accounts and test-host limitations. The following repairs still require final
+source review, independent retest and the release gates below.
+
+- An inconclusive CLI version check stays unknown, rather than reporting that the
+  CLI is absent and suggesting reinstall or login.
+- Served ledgers revalidate on reload and return an explicit unavailable response
+  when rebuilding fails, rather than serving an old validation page as current.
+  Damaged records and missing modern reports are visible integrity warnings;
+  valid records remain available. Evidence tables have their own keyboard-focusable
+  horizontal scroll region on narrow screens.
+- Metadata-only update commands allow natural shutdown after output flush, with
+  a bounded fallback. Review and mutating-command termination are unchanged.
+  A local pass does not close the independently observed Windows native assertion.
+- Missing or malformed package seals refuse before expensive package hashing.
+  This is not a valid-seal hashing performance improvement or signed-release proof.
+- The dispatcher checks project evidence-folder permissions before collecting
+  review input and checks again before persistence. Unavailable or ambiguous
+  protection refuses without changing existing permissions. A late persistence
+  failure remains visible in the stdout report. Mode bits alone do not establish
+  Windows privacy. Standalone ledger generation, completion recording and media
+  execution also refuse unverified evidence storage. Reviewer prompt and attachment
+  staging uses that verified evidence boundary rather than generic system temp.
+  Checks describe access rules at inspection time, not immunity to later permission
+  changes, privileged access, provider-owned caches or a compromised user account.
+- Explicit Grok cancellation no longer certifies a recognition answer or appears
+  only as missing generated output. Cancellation cause remains unknown unless
+  separately established. Auxiliary 429 warnings alone do not invalidate a
+  completed answer, prove exhausted quota or authorize automatic retries.
+- Generated media already produced by a cancelled, timed-out or nonzero-exit step
+  is retained and hashed where harvesting succeeds, without converting that step
+  into success or forwarding its output to the next step. Synthetic preservation
+  tests are not image-quality or live-provider evidence.
+
+All new controls use synthetic inputs. They do not substitute for retained live
+generation, independent image critique, final-source quorum, exact-head CI,
+publication privacy scans, or signed clean-install/upgrade/rollback proof.
 
 ## Final candidate retest (15 September 2026)
 

@@ -6,7 +6,9 @@ import path from 'node:path';
 import {run,plan} from './modality.mjs';
 import {effective,loadBaseline} from './capabilities.mjs';
 const matrix=effective({baseline:loadBaseline(),overlay:{entries:[],invalidated:[],stale:[]}});
-const temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-e7-evaluation-'));
+const {privateTestFixture}=await import('./private-test-fixture.mjs');
+process.umask(0o077);
+const temp=privateTestFixture('momm-e7-evaluation-');
 const results=[];
 async function test(name,fn){try{await fn();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:e.message});}}
 const options={consent:true,effective:matrix,home:temp,cwd:temp};

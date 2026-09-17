@@ -17,6 +17,8 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion } from "./governor.mjs";
+import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { privateTestFixture } from "./private-test-fixture.mjs";
 
 // The page quotes this script by its installed path, so every command it
 // shows (rebuild, --rate) is copy-pasteable from any project directory.
@@ -374,7 +376,7 @@ function appendRating(er, args) {
   for (const t of tags) if (!CORE_TAGS.has(t) && !/^x-[a-z0-9-]{1,40}$/.test(t)) throw new Error(`unknown tag "${t}" (core: ${[...CORE_TAGS].join(", ")}; custom tags start with x-)`);
   const note = noteAt > -1 ? String(args[noteAt + 1] ?? "").slice(0, 500) : "";
   const row = { kind: "review_rating", timestamp: new Date().toISOString(), run_id: runId, reviewer, rating, tags, note };
-  fs.appendFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify(row)}\n`);
+  fs.appendFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify(row)}\n`, {mode:0o600});
   return row;
 }
 
@@ -481,7 +483,7 @@ function ledgerSelfTest() {
       return w.grok.dispatched === 1 && w.grok.completed === 1 && runsPerDay([mk(-1), mk(1)], { now }).reduce((a, c) => a + c, 0) === 1;
     })(),
     append_rating_lowercases_and_rejects_unsafe_reviewer_names: (() => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-selftest-"));
+      const dir = privateTestFixture("momm-ledger-selftest-");
       try {
         const rejects = (args) => { try { appendRating(dir, args); return false; } catch (e) { return /usage: --rate/.test(e.message); } };
         const ok = appendRating(dir, ["rev_1", "Grok", "5", "--tags", "specific"]);
@@ -525,9 +527,9 @@ function ledgerSelfTest() {
     })(),
     // The built page: shared header, the theme inlined exactly once, legacy names mapped onto shared tokens, no hex outside the theme, a live Setup Center pill for a running pid.
     built_ledger_shares_the_theme_once_with_no_stray_hex: (() => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-theme-"));
+      const dir = privateTestFixture("momm-ledger-theme-");
       try {
-        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er);
+        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er, {mode:0o700});
         fs.writeFileSync(path.join(er, "review-log.jsonl"), `${JSON.stringify({ run_id: "rev_1", timestamp: new Date().toISOString(), governor: "claude", reviewer_status: { grok: "success", codex: "timeout", claude: "self_excluded" }, findings_count: 1 })}\n`);
         fs.writeFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_1", reviewer: "grok", suggestion: "s", disposition: "applied", reason: "r" })}\n`);
         fs.mkdirSync(path.join(er, "reports")); fs.writeFileSync(path.join(er, "reports", "rev_1.json"), JSON.stringify({ run_id: "rev_1", reviewers: [{ agent: "grok", status: "success", verdict: "MODIFY", summary: "fine" }, { agent: "codex", status: "timeout" }], findings: [{ id: "f1", severity: "WARNING", sources: ["grok"], issue: "x" }] }));
@@ -551,9 +553,9 @@ function ledgerSelfTest() {
     })(),
     // End to end: --rate prints the row, then rebuilds the page in the same invocation; the page's commands quote this script's installed path.
     rate_prints_row_then_rebuilds_ledger_with_installed_path_commands: (() => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-rate-"));
+      const dir = privateTestFixture("momm-ledger-rate-");
       try {
-        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er);
+        const er = path.join(dir, ".ensemble_reviews"); fs.mkdirSync(er, {mode:0o700});
         fs.writeFileSync(path.join(er, "review-log.jsonl"), `${JSON.stringify({ run_id: "rev_1", timestamp: new Date().toISOString(), governor: "claude", reviewer_status: { grok: "success" }, findings_count: 1 })}\n`);
         fs.writeFileSync(path.join(er, "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_1", reviewer: "grok", suggestion: "s", disposition: "applied", reason: "r" })}\n`);
         const script = fileURLToPath(import.meta.url);
@@ -575,13 +577,20 @@ function ledgerSelfTest() {
   process.stdout.write(`${JSON.stringify({ passed, tests }, null, 2)}\n`);
   process.exit(passed ? 0 : 1);
 }
-if (process.argv.includes("--self-test")) ledgerSelfTest();
+if (process.argv.includes("--self-test")) {
+  // This branch exits inside ledgerSelfTest; fixture files must also be private
+  // on POSIX, independently of the caller's ordinary shell umask.
+  process.umask(0o077);
+  ledgerSelfTest();
+}
 
 const er = path.resolve(".ensemble_reviews");
 if (!fs.existsSync(er)) {
   process.stderr.write("No .ensemble_reviews here — run a momm review first, then rebuild your ledger.\n");
   process.exit(1);
 }
+try { requirePrivateEvidence(er); }
+catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 if (process.argv.includes("--rate")) {
   // Print the row, then fall through: the same invocation rebuilds the page so
   // the rating shows under "How the reviews read" straight away.
@@ -589,10 +598,21 @@ if (process.argv.includes("--rate")) {
   catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2); }
 }
 
+const integrityWarnings = [];
+const recordObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const reportErrors = new Map();
 const readJsonl = (file) => {
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).flatMap((line) => {
-    try { return [JSON.parse(line)]; } catch { return []; }
+  return fs.readFileSync(file, "utf8").split(/\r?\n/).flatMap((line, index) => {
+    if (!line.trim()) return [];
+    try {
+      const row = JSON.parse(line);
+      if (!recordObject(row)) throw new Error("invalid record shape");
+      return [row];
+    } catch {
+      integrityWarnings.push(`${path.basename(file)} line ${index + 1}: damaged record; retained on disk, not included in totals. Restore from a trusted backup before relying on completion.`);
+      return [];
+    }
   });
 };
 const runs = readJsonl(path.join(er, "review-log.jsonl")).filter((entry) => !entry.event);
@@ -612,8 +632,15 @@ if (fs.existsSync(reportsDir)) {
   for (const file of fs.readdirSync(reportsDir).filter((f) => f.endsWith(".json"))) {
     try {
       const raw = fs.readFileSync(path.join(reportsDir, file), "utf8");
-      reports[file.replace(/\.json$/, "")] = { sha256: createHash("sha256").update(raw).digest("hex"), report: JSON.parse(raw) };
-    } catch {}
+      const report = JSON.parse(raw);
+      if (!recordObject(report) || !Array.isArray(report.reviewers) || !Array.isArray(report.findings)
+        || !report.reviewers.every(r => recordObject(r) && typeof r.status === "string" && (r.suggested_improvements == null || Array.isArray(r.suggested_improvements)))
+        || !report.findings.every(f => recordObject(f) && typeof f.severity === "string" && (f.sources == null || Array.isArray(f.sources)))) throw new Error("invalid report shape");
+      reports[file.replace(/\.json$/, "")] = { sha256: createHash("sha256").update(raw).digest("hex"), report };
+    } catch {
+      reportErrors.set(file.replace(/\.json$/, ""), "Report is unreadable or corrupt; completion unverified.");
+      integrityWarnings.push(`${file}: report unreadable or corrupt. Original bytes were not modified.`);
+    }
   }
 }
 
@@ -629,6 +656,9 @@ const HARNESS = { codex: "Codex CLI · ChatGPT OAuth", claude: "Claude Code · A
 
 const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).map((run) => {
   const rpt = reports[run.run_id]?.report;
+  const evidenceProblem = reportErrors.get(run.run_id) ?? (!rpt && (run.report_sha256 || run.report_path || run.report_schema || run.evidence?.report_sha256)
+    ? "Missing sealed report; completion unverified. Restore the referenced report from a trusted backup." : null);
+  if (evidenceProblem) integrityWarnings.push(`${run.run_id}: ${evidenceProblem}`);
   const completion = rpt?.source_snapshot ? inspectCompletion(process.cwd(), run.run_id) : null;
   const completionLine = completion ? `<p class="dim">${completion.complete ? "Local completion evidence validated" : "Governor verification incomplete or stale"} · <span class="mono">${esc(completion.evidence_level)}</span>${completion.complete ? "" : ` · ${esc([...completion.errors, ...completion.unresolved.map(i => i.reason)].join("; "))}`}</p>` : "<p class=\"dim\">Historical record — completion not validated under the current protocol.</p>";
   const runDispositions = dispositionsByRun.get(run.run_id) ?? [];
@@ -651,7 +681,7 @@ const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(Strin
     ${successes.map((r) => `<div class="rev"><b>${esc(r.agent)}</b> <span class="dim">${esc(HARNESS[r.agent] ?? "")}${r.persona ? ` · persona: ${esc(r.persona)}` : ""}${r.duration_ms ? ` · <span class="mono">${(r.duration_ms / 1000).toFixed(1)}s</span>` : ""}</span><span class="chip chip-${esc(r.verdict)}">${esc(r.verdict)}</span>${r.confidence != null ? ` <span class="dim mono">conf ${r.confidence}</span>` : ""}<p>${esc(r.summary ?? "(verdict without prose — see suggestions)")}</p>${r.suggested_improvements?.length ? `<ul>${r.suggested_improvements.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
     ${rpt.findings.length ? `<h4>Findings — claims awaiting reproduction</h4>${rpt.findings.map((f) => `<div class="find f-${esc(f.severity)}"><b>${esc(f.severity)}</b> <span class="id">${esc(f.id)}</span> <span class="dim">by ${esc((f.sources ?? []).join(", "))}${f.verify_first ? " · verify first" : ""}</span><p>${esc(f.issue)}</p></div>`).join("")}` : ""}
     ${runDispositions.length ? `<h4>Your dispositions</h4><table class="momm-table"><tr><th>reviewer</th><th>suggestion</th><th>disposition</th><th>reason</th></tr>${runDispositions.map((d) => `<tr><td>${esc(d.reviewer)}</td><td class="prose">${esc(d.suggestion)}</td><td><span class="chip chip-${esc(d.disposition)}">${esc(d.disposition)}</span></td><td class="prose">${esc(d.reason)}${d.evidence ? `<br><span class="dim">evidence: ${esc(d.evidence)}</span>` : ""}</td></tr>`).join("")}</table>` : ""}
-  </details>` : `<span class="dim">summary-only record (predates sealed reports)</span>`;
+  </details>` : evidenceProblem ? `<p class="chip chip-warn">Evidence integrity warning: ${esc(evidenceProblem)}</p>` : `<span class="dim">summary-only record (predates sealed reports)</span>`;
   const narration = narrationFor(run, rpt, runDispositions);
   return `<article class="run"><header><b>${esc(subject || run.run_id)}</b><span class="meta">${esc(new Date(run.timestamp).toLocaleString())} · gov ${esc(run.governor)}${subject ? ` · ${esc(run.run_id)}` : ""}</span>${outcomeBadge}<button class="speak" type="button" data-narration="${esc(narration)}" aria-pressed="false" title="Read this run's summary aloud (local browser speech)">🔊 Read aloud</button></header><div class="chips">${statuses}</div>${detail}</article>`;
 }).join("\n");
@@ -712,6 +742,7 @@ h1 .count{display:block;margin-top:8px;color:var(--dim);font:12px var(--font-mon
 .run:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .run header{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .run header b{font:600 17px var(--font-display);letter-spacing:-.01em}
+.run,.track{min-width:0;overflow-wrap:anywhere}.run header>*{min-width:0;max-width:100%}
 .dim{color:var(--dim);font-size:12px}
 .meta{color:var(--dim);font-size:11px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
@@ -722,6 +753,7 @@ details{margin-top:10px}summary{cursor:pointer;color:var(--dim);font-size:13px}s
 .rev .chip{margin-left:8px}
 .find{border-left:3px solid var(--dim);padding:4px 12px;margin:8px 0}.f-CRITICAL{border-color:var(--crit)}.f-WARNING{border-color:var(--warn)}
 .find b{font-family:var(--font-mono)}.find .id{color:var(--dim)}.find p{margin:4px 0;max-width:70ch}
+.table-scroll{max-width:100%;overflow-x:auto}.table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .momm-table{margin-top:6px}
 h4{margin:18px 0 4px;color:var(--accent);font:800 10px/1.4 var(--font-sans);letter-spacing:.12em;text-transform:uppercase}
 .speak{margin-left:auto;cursor:pointer;border:1px solid var(--border);border-radius:999px;background:var(--pill);color:var(--dim);font:12px var(--font-sans);padding:6px 11px;transition:color var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease)}
@@ -743,8 +775,9 @@ h4{margin:18px 0 4px;color:var(--accent);font:800 10px/1.4 var(--font-sans);lett
 <h1>Private ledger<span class="count">${runs.length} runs · ${Object.keys(reports).length} sealed reports · ${dispositions.length} dispositions</span></h1>
 <p class="note">${esc(data.private_note)}</p>
 <p class="note-meta">${esc(data.projects[0].root)} · generated ${esc(data.generated)} · rebuild: <code>${esc(LEDGER_CMD)}</code></p>
-${trackPanel}
-${rows || '<p class="dim">No runs recorded yet.</p>'}
+${integrityWarnings.length ? `<section role="alert"><h2>Evidence integrity warning</h2><p>This snapshot contains missing or damaged evidence. Intact history is shown below; do not treat this page as a completion certificate.</p><ul>${integrityWarnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></section>` : ""}
+${trackPanel.replaceAll('<table class="momm-table">', '<div class="table-scroll" role="region" tabindex="0" aria-label="Review evidence table; scroll horizontally if needed"><table class="momm-table">').replaceAll('</table>', '</table></div>')}
+${rows.replaceAll('<table class="momm-table">', '<div class="table-scroll" role="region" tabindex="0" aria-label="Review evidence table; scroll horizontally if needed"><table class="momm-table">').replaceAll('</table>', '</table></div>') || '<p class="dim">No runs recorded yet.</p>'}
 <p class="foot">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>
 </main>
 </div>
@@ -754,14 +787,15 @@ ${THEME_SCRIPT}
 ${SERVED_LINK_SCRIPT}
 </script>`;
 
-// The ledger renders your reviewer transcripts — owner-only, like the reports.
+// The ledger renders reviewer transcripts. Request owner-only POSIX modes;
+// Windows privacy depends on the directory/file DACL, not these mode bits.
 // Remove any prior file first so writeFileSync always creates fresh at mode
 // 0600 (its mode arg is ignored when overwriting), leaving no world-readable
 // window between write and chmod.
 const outPath = path.join(er, "ledger.html");
+requirePrivateEvidence(er);
 try { fs.rmSync(outPath, { force: true }); } catch {}
 fs.writeFileSync(outPath, html, { mode: 0o600 });
-try { fs.chmodSync(er, 0o700); } catch {}
 process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — this file stays in .ensemble_reviews/, which the momm protocol keeps out of git.)\n`);
 if (process.argv.includes("--open")) {
   const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", outPath]] : process.platform === "darwin" ? ["open", [outPath]] : ["xdg-open", [outPath]];

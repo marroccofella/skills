@@ -5,6 +5,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { requirePrivateEvidence } from "./evidence-permissions.mjs";
 
 export const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const hash = s => typeof s === "string" && /^[a-f0-9]{64}$/.test(s);
@@ -301,11 +302,13 @@ export function inspectCompletion(root, runId) {
 }
 
 export function recordCompletion(root, runId) {
+  requirePrivateEvidence(path.join(root, '.ensemble_reviews'));
   const result = inspectCompletion(root, runId);
   if (!result.complete) return result;
   const dir = path.join(root, ".ensemble_reviews/completions");
   if (fs.existsSync(dir)) demand(!fs.lstatSync(dir).isSymbolicLink(), "completion directory symlink refused");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  requirePrivateEvidence(dir);
   const final = path.join(dir, `${runId}.json`), tmp = `${final}.${randomUUID()}.tmp`;
   try {
     const receipt = { ...result, recorded_at: new Date().toISOString(), validator_sha256: digest(fs.readFileSync(fileURLToPath(import.meta.url))) };

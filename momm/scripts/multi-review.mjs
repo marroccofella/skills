@@ -6,7 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { update, dailyCheck, updateCheckDisabled, provenance } from "./update.mjs";
+import { update, dailyCheck, updateCheckDisabled, provenance, parse as parseUpdateOptions } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import { captureSourceSnapshot } from "./governor.mjs";
 import { createProcessScope } from "./process-scope.mjs";
@@ -15,6 +15,7 @@ import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSid
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
 import { createUpdateClock } from "./update-clock.mjs";
+import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace } from "./evidence-permissions.mjs";
 
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
@@ -57,10 +58,9 @@ function clockTrigger(event, stream) {
   } catch {}
 }
 
-// Private evidence is owner-only. On a shared machine another user must not be
-// able to read your reviewer transcripts or (with --store-input) your code.
-// POSIX honors these; Windows ignores the bits but its per-user profile/temp
-// dirs already isolate users, so this is correct on both.
+// Request owner-only POSIX modes. These constants do not establish Windows
+// DACL protection, nor prove that an arbitrary project directory is private.
+// Windows protection requires a separate ACL check; profile location is not proof.
 const PRIVATE_DIR_MODE = 0o700;   // drwx------
 const PRIVATE_FILE_MODE = 0o600;  // -rw-------
 
@@ -100,7 +100,10 @@ function isEphemeralLocation(cwd) {
 
 function hardenPrivateTree(root) {
   try {
-    const stat = fs.statSync(root);
+    const stat = fs.lstatSync(root);
+    // Do not traverse junctions/symlinks into unrelated user files. This is a
+    // boundary guard, not proof that a skipped link is private evidence.
+    if (stat.isSymbolicLink()) return;
     if (stat.isDirectory()) {
       try { fs.chmodSync(root, PRIVATE_DIR_MODE); } catch {}
       for (const entry of fs.readdirSync(root)) hardenPrivateTree(path.join(root, entry));
@@ -442,7 +445,7 @@ function stripPngMetadata(buffer) {
 // modality, bytes, sha256 of what was actually sent) — never full paths.
 function stageAttachments(files) {
   if (!files.length) return { directory: null, attachments: [] };
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-attach-"));
+  const directory = createEvidenceWorkspace("momm-attach-");
   try {
   const attachments = files.map((file, index) => {
     const resolved = path.resolve(file);
@@ -1391,7 +1394,7 @@ async function invokeReviewer(agent, artifact, options) {
     // avoiding both a model tool call to read prompt.txt and source in argv.
     // Plan mode and sandbox stay enabled, not claimed as a filesystem allowlist.
     // Existing media binding stays on its independently tested file/schema path.
-    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-agy-"));
+    temporaryDirectory = (options.runProcess && options.testWorkspace ? options.testWorkspace : createEvidenceWorkspace)("momm-agy-");
     const promptPath = path.join(temporaryDirectory, "prompt.txt");
     const assembledPrompt = assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact);
     if (attachments.length) fs.writeFileSync(promptPath, assembledPrompt, { encoding: "utf8", mode: 0o600 });
@@ -1426,7 +1429,7 @@ async function invokeReviewer(agent, artifact, options) {
     // out entirely); --no-custom-instructions keeps repository AGENTS.md
     // content out of the prompt; built-in MCP servers and remote session
     // export stay disabled. Auth is the GitHub keyring login (copilot login).
-    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-copilot-"));
+    temporaryDirectory = (options.runProcess && options.testWorkspace ? options.testWorkspace : createEvidenceWorkspace)("momm-copilot-");
     // SECURITY: the contract carries repository-controlled .reviewrules text,
     // and "copilot" is not .exe-resolved so platformCommand routes it through
     // cmd.exe — which reinterprets metacharacters inside argv. Putting the
@@ -1468,7 +1471,7 @@ async function invokeReviewer(agent, artifact, options) {
     // error, which classifies as authentication_required (live-verified in
     // run rev_20260818012311_bs4c; no portable CI test exists because CI
     // runners do not carry the grok binary).
-    temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "momm-grok-"));
+    temporaryDirectory = (options.runProcess && options.testWorkspace ? options.testWorkspace : createEvidenceWorkspace)("momm-grok-");
     const promptPath = path.join(temporaryDirectory, "prompt.txt");
     fs.writeFileSync(promptPath, assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact), { encoding: "utf8", mode: 0o600 });
     command = grokCommand();
@@ -1863,9 +1866,13 @@ async function collectArtifact(options) {
 
 async function commandVersion(command) {
   const result = await runProcess(command, ["--version"], { timeoutMs: 5_000 });
-  if (result.error?.code === "ENOENT") return { installed: false };
+  if (result.error?.code === "ENOENT") return { installed: false, version_status: "missing" };
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { installed: true, status: "unsupported", detail: result.error.message };
-  return { installed: result.code === 0, version: clipped(result.stdout || result.stderr, 200) || null };
+  const version = String(result.stdout || result.stderr || "").match(/\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/)?.[0] ?? null;
+  if (result.code === 0 && !result.error && !result.timedOut && version) return { installed: true, version, version_status: "success" };
+  // Failed introspection is not proof of absence. Do not prescribe reinstall
+  // or login, and do not expose arbitrary provider diagnostics as a version.
+  return { installed: null, version: null, version_status: result.timedOut ? "timeout" : "error" };
 }
 
 // Presence-only credential evidence; never reads file contents. "present"
@@ -1896,9 +1903,10 @@ async function preflightCheck(reviewers, governor) {
     if (!knownAdapters.has(agent)) return { agent, installed: false, ready: false, auth: "n/a", note: "no reviewed adapter exists" };
     const version = await commandVersion(agent === "antigravity" ? antigravityCommand() : agent === "grok" ? grokCommand() : agent);
     if (version.status === "unsupported") return { agent, installed: true, status: "unsupported", ready: false, auth: "n/a", note: version.detail };
-    if (!version.installed) {
+    if (version.installed === false) {
       return { agent, installed: false, ready: false, auth: "n/a", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI not installed" };
     }
+    if (version.installed === null) return { agent, installed: null, version: null, version_status: version.version_status, ready: false, auth: "unknown", note: "Version check inconclusive; installation and account readiness are not established. Retry the check or explicitly verify the connection; do not reinstall or re-login solely on this result." };
     let auth = authEvidence(agent);
     if (agent === "codex") {
       const status = await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 });
@@ -2052,7 +2060,7 @@ function createUi(enabled, outStream = process.stderr) {
       }
       const failed = report.reviewers.filter((r) => r.status !== "success" && r.status !== "self_excluded");
       if (failed.length) out(`  ${color(ANSI.yellow, "⚠")} ${failed.length} route${failed.length === 1 ? "" : "s"} did not review: ${failed.map((r) => `${plain(r.agent)} (${plain(r.status)})`).join(", ")}\n`);
-      if (ledgerUrl) out(`  ${color(ANSI.green, "◆")} your private ledger: ${color(ANSI.cyan, ledgerUrl)} ${color(ANSI.dim, "(owner-only, local)")}\n`);
+      if (ledgerUrl) out(`  ${color(ANSI.green, "◆")} your private ledger: ${color(ANSI.cyan, ledgerUrl)} ${color(ANSI.dim, "(local; filesystem access rules apply)")}\n`);
       out("\n");
       api.rendered = true;
     },
@@ -2076,7 +2084,7 @@ async function doctor(pretty) {
     policy: "oauth-only",
     model_calls_made: false,
     commands,
-    install_hints_for_missing: Object.fromEntries(Object.entries(commands).filter(([, c]) => !c.installed).map(([name]) => [name, INSTALL_HINTS[name] ?? null])),
+    install_hints_for_missing: Object.fromEntries(Object.entries(commands).filter(([, c]) => c.installed === false).map(([name]) => [name, INSTALL_HINTS[name] ?? null])),
     api_key_environment_names_present: forbiddenPresent,
     oauth_evidence: {
       gemini_credential_file_present: fs.existsSync(path.join(os.homedir(), ".gemini", "oauth_creds.json")),
@@ -2246,7 +2254,7 @@ async function selfTest(pretty) {
         fs.writeFileSync(staged, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
         const calls = [];
         const runProcessFake = async (command, args, extra) => { calls.push({ command, args, cwd: extra.cwd }); return { code: 0, stdout: JSON.stringify({ response: "{}" }), stderr: "" }; };
-        const base = { governor: "claude", timeoutMs: 1000, staging: { directory: dir, attachments: [{ name: "shot.png", staged_path: staged, modality: "image", bytes: 4, sha256: "0".repeat(64), metadata_stripped: false }] }, capabilities: { matrix: E7_FAKE_MATRIX }, runProcess: runProcessFake };
+        const base = { governor: "claude", timeoutMs: 1000, staging: { directory: dir, attachments: [{ name: "shot.png", staged_path: staged, modality: "image", bytes: 4, sha256: "0".repeat(64), metadata_stripped: false }] }, capabilities: { matrix: E7_FAKE_MATRIX }, runProcess: runProcessFake, testWorkspace: prefix => fs.mkdtempSync(path.join(dir, prefix)) };
         let copiedBytes = null;
         const runProcessRecordingCopy = async (command, args, extra) => { if (calls.length === 0) { try { copiedBytes = fs.readFileSync(path.join(extra.cwd, "attachment-1.png")); } catch { copiedBytes = null; } } return runProcessFake(command, args, extra); };
         await invokeReviewer("antigravity", "diff --git a/x b/x", { ...base, runProcess: runProcessRecordingCopy });
@@ -2559,7 +2567,7 @@ async function selfTest(pretty) {
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
     slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
     every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
-    private_evidence_is_owner_only: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
+    private_evidence_modes_configured: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
     // A unanimous coalition must SCORE as unanimous: four reviewers describing
     // one defect at the same lines in four different sentences is agreement,
     // and merging only on wording used to report it as ~8%.
@@ -2718,6 +2726,7 @@ async function main() {
   if (!VALID_GOVERNORS.has(options.governor)) throw new Error("--governor is required and must be codex, gemini, claude, antigravity, copilot, grok, or other");
   if (!Number.isFinite(options.timeoutMs) || !Number.isFinite(options.maxBytes)) throw new Error("Timeout and size limits must be numbers");
 
+  const evidenceProtection = preparePrivateEvidence(path.resolve('.ensemble_reviews'));
   const rawArtifact = await collectArtifact(options);
   const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input);
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
@@ -2877,7 +2886,10 @@ async function main() {
   const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
   const guidanceSidecar = { written: false, path: null, error: null };
   if (resolvedGuidance.governor?.text || Object.values(resolvedGuidance.routes).some((entry) => entry.text)) {
-    try { guidanceSidecar.path = writeGuidanceSidecar(process.cwd(), runId, resolvedGuidance).replaceAll("\\", "/"); guidanceSidecar.written = true; }
+    try {
+      requirePrivateEvidence(path.resolve('.ensemble_reviews'));
+      guidanceSidecar.path = writeGuidanceSidecar(process.cwd(), runId, resolvedGuidance).replaceAll("\\", "/"); guidanceSidecar.written = true;
+    }
     catch (error) {
       guidanceSidecar.error = clipped(sanitizeText(error.message).value, 300);
       if (options.stream) emitEvent(true, { event: "guidance.sidecar_failed", error: guidanceSidecar.error });
@@ -2974,10 +2986,11 @@ async function main() {
   // persisted = the report file itself; log_indexed = its review-log line.
   // Tracked separately so a successfully written report is never misreported
   // when only the log append fails.
-  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS, guidance_sidecar: guidanceSidecar };
+  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS, guidance_sidecar: guidanceSidecar, permissions: evidenceProtection };
   const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
   try {
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    evidence.permissions = requirePrivateEvidence(path.resolve('.ensemble_reviews'));
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true, mode: 0o700 });
     const reportJson = `${JSON.stringify(report, null, 2)}\n`;
     try {
       fs.writeFileSync(`${reportPath}.tmp`, reportJson, { mode: PRIVATE_FILE_MODE });
@@ -3017,7 +3030,7 @@ async function main() {
       report_path: evidence.report_path,
       report_sha256: evidence.report_sha256,
       report_sha256_covers: REPORT_DIGEST_COVERS,
-    })}\n`);
+    })}\n`, { mode: PRIVATE_FILE_MODE });
     evidence.log_indexed = true;
     // One sweep tightens the current report, the log, and any legacy files.
     hardenPrivateTree(".ensemble_reviews");
@@ -3026,6 +3039,7 @@ async function main() {
     // in a git repo they must never be committable by accident. Fail-soft.
     evidence.gitignore = protectPrivateZone(process.cwd());
   } catch (error) {
+    if (error?.code === 'MOMM_EVIDENCE_PERMISSIONS') evidence.permissions = { verified: false, reason: 'recheck_failed' };
     evidence.error = clipped(error?.message ?? String(error), 300);
     evidence.failed_stage = evidence.persisted ? "review-log indexing" : "report persistence";
   }
@@ -3080,7 +3094,7 @@ async function main() {
     process.stderr.write(`\n  ▲ This run wrote its evidence under the system temp directory, which the OS will wipe.\n     Re-run momm from the project you are reviewing so the ledger and sealed reports survive.\n`);
   }
   if (evidence.ledger_url && !options.stream && !ui.rendered) {
-    process.stderr.write(`\n  ◆ Your private momm ledger (this run included, owner-only): ${evidence.ledger_url}\n\n`);
+    process.stderr.write(`\n  ◆ Your private momm ledger (this run included; filesystem access rules apply): ${evidence.ledger_url}\n\n`);
   }
   // Version confession + update awareness: the version is always in the
   // report (dispatcher_version); here it is also surfaced to humans, with an
@@ -3117,8 +3131,22 @@ main().catch((error) => {
   // independent referenced deadline, even if a flush stalls or throws. Child
   // tree cleanup and its direct-kill backstop remain in processScope's exit hook.
   const exitNow = () => process.exit(process.exitCode ?? 0);
-  setTimeout(exitNow, 2000);
-  const flushed = () => process.platform === "win32" ? setTimeout(exitNow, 250) : exitNow();
+  const hardDeadline = setTimeout(exitNow, 2000);
+  let informationOnlyUpdate = false;
+  if (process.argv[2] === "update") {
+    try {
+      const o = parseUpdateOptions(process.argv.slice(3));
+      informationOnlyUpdate = !o.apply && !o.rollback && !o.dry_run && !o.channel;
+    } catch { /* Invalid commands retain the conservative fallback. */ }
+  }
+  const flushed = () => {
+    // A healthy informational fetch must be allowed to drain its native handles.
+    // The deadline still fires if referenced work pins the loop. Until both
+    // output callbacks finish it stays referenced, including broken/stalled pipes.
+    // Review, preview and mutating paths retain their existing termination chain.
+    if (informationOnlyUpdate) { hardDeadline.unref(); return; }
+    return process.platform === "win32" ? setTimeout(exitNow, 250) : exitNow();
+  };
   const flushStderr = () => {
     try { process.stderr.write("", flushed); }
     catch { /* The stdout callback may run later; retain the same hard bound. */ }

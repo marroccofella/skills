@@ -17,6 +17,7 @@ async function test(name,fn){try{await fn();checks.push({name,passed:true});}cat
 function context(overrides={},command=()=> 'synthetic-agent'){
   const temporary=path.join(root,String(++sequence));fs.mkdirSync(temporary);
   const ctx=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>temporary},path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
+    createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(temporary,prefix)),
     VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
     attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
     agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},

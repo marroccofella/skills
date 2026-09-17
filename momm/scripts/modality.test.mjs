@@ -19,7 +19,9 @@ const baseline = loadBaseline();
 const stamp = { machine_id: "m-test", cli_version: "1.0.0", login_identity_sha256: null, at: "2026-09-13T00:00:00.000Z", expires_at: null };
 const matrix = (entries = []) => effective({ baseline, machine: "m-test", overlay: { path: null, entries: entries.map((e) => ({ ...stamp, ...e })), invalidated: [], stale: [] } });
 const PROMPT = "A red circle on a white background, flat vector style. IMMUTABLE-PROMPT-7f3a";
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "momm-modality-tests-"));
+const {privateTestFixture} = await import('./private-test-fixture.mjs');
+process.umask(0o077); // Only this synthetic test process.
+const tmp = privateTestFixture("momm-modality-tests-");
 const fresh = (name) => { const d = fs.mkdtempSync(path.join(tmp, `${name}-`)); return d; };
 const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file; };
 const ok = (stdout) => ({ code: 0, stdout, stderr: "" });

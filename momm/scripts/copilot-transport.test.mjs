@@ -10,6 +10,7 @@ const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>=0&&end>start,'Inspect changed adapter extraction boundaries');
 const context=vm.createContext({fs,os,path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
+  createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(os.tmpdir(),prefix)),
   VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
   attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic review contract',
   agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{copilot:'copilot login'},

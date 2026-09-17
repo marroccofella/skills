@@ -133,14 +133,16 @@ function routeState(route) {
   if (live?.status === "failed") return "failed";
   if (route.ready) return "detected";
   if (route.installed === false) return "install";
+  if (route.installed === null || route.version_status === "timeout" || route.version_status === "error") return "unknown";
   return "login";
 }
 
 function stateLabel(state) {
-  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Install", testing: "Verifying", failed: "Needs attention" })[state] || "Check";
+  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Install", testing: "Verifying", failed: "Needs attention", unknown: "Check inconclusive" })[state] || "Check";
 }
 
 function routeCopy(route, state) {
+  if (state === "unknown") return route.note || "The version check did not complete. Retry discovery or explicitly verify the connection; this is not proof that installation or login is needed.";
   if (state === "ready") return "Connection verified with a harmless synthetic sentence. Ready for peer review.";
   if (state === "detected") return "A local account session was found. Verify it without sending repository code.";
   if (state === "testing") return "Checking the connection with a synthetic sentence. This can take about a minute.";
@@ -174,11 +176,12 @@ function providerCard(route) {
   const state = routeState(route);
   const provider = session.providers[route.agent];
   const { cli, models } = providerMaintenance(route.agent);
-  const detectedVersion = String(cli?.current || route.version || "Not detected").split("\n")[0];
+  const detectedVersion = String(cli?.current || route.version || (route.installed === false ? "Not detected" : "Version unknown")).split("\n")[0];
   const cliText = cli?.status === "update_available" ? `${detectedVersion} → ${cli.latest}` : detectedVersion;
-  const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : route.installed === false ? "Unavailable" : "Not connected";
+  const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : state === "unknown" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
   let mainAction = "";
   if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button>`;
+  else if (state === "unknown") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify connection</button>`;
   else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}">Sign in</button>${state === 'failed' && route.ready ? `<button class="button ghost" data-test="${route.agent}">Verify again</button>` : ''}`;
   else if (state === 'failed') mainAction = `<button class="button ghost" data-test="${route.agent}">Retry check</button>`;
   else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">Verify connection</button>`;
@@ -205,7 +208,7 @@ function providerCard(route) {
 function render() {
   if (!report) return;
   const routes = reviewerRoutes();
-  const milestones = routes.reduce((count, route) => count + Number(route.installed !== false) + Number(Boolean(route.ready)) + Number(routeState(route) === "ready"), 0);
+  const milestones = routes.reduce((count, route) => count + Number(route.installed === true) + Number(Boolean(route.ready)) + Number(routeState(route) === "ready"), 0);
   const possibleMilestones = routes.length * 3;
   const percent = possibleMilestones ? Math.round((milestones / possibleMilestones) * 100) : 100;
   const verified = routes.filter((route) => routeState(route) === "ready").length;
@@ -215,6 +218,8 @@ function render() {
   const verifications = routes.filter((route) => routeState(route) === "detected").length;
   const updates = maintenance?.cli_updates.filter((item) => item.status === "update_available").length || 0;
   const remaining = [];
+  const unknownChecks = routes.filter((route) => routeState(route) === 'unknown').length;
+  if (unknownChecks) remaining.push(`${unknownChecks} inconclusive version check${unknownChecks === 1 ? '' : 's'}`);
   if (installs) remaining.push(`${installs} CLI${installs === 1 ? "" : "s"} to install`);
   if (signIns) remaining.push(`${signIns} account${signIns === 1 ? "" : "s"} to connect`);
   if (failedChecks) remaining.push(`${failedChecks} failed check${failedChecks === 1 ? '' : 's'} to investigate`);
@@ -255,13 +260,13 @@ function cliRow(item) {
   const provider = session.providers[item.agent];
   const controller = item.agent === governorSelect.value ? ' · Controller (not a reviewer)' : '';
   const attempt = updateAttempts.get(item.agent);
-  const action = !item.installed ? 'install' : item.update_command ? 'update' : null;
+  const action = item.installed === false ? 'install' : item.installed === true && item.update_command ? 'update' : null;
   const label = action === 'install' ? 'Install…' : item.agent === 'antigravity' ? 'Check / update…' : 'Update…';
   // Only rows with a verified command can join a batch; package-manager-owned
   // and missing installations get no checkbox, exactly as they get no Update button.
   const batchable = isBatchable(item);
   return `<tr><td class="batch-cell">${batchable ? `<input type="checkbox" data-batch="${item.agent}" aria-label="Select ${escapeHtml(provider.label)} for batch update" ${batchSelected.has(item.agent) ? 'checked' : ''} ${batchRunning ? 'disabled' : ''}>` : ''}</td><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
-    <td>${escapeHtml(item.current || 'Not detected')}<small>${escapeHtml(item.installation?.kind || 'unknown')} install</small></td>
+    <td>${escapeHtml(item.current || (item.installed === false ? 'Not detected' : 'Version unknown'))}<small>${escapeHtml(item.installation?.kind || 'unknown')} install</small></td>
     <td>${escapeHtml(item.latest || 'Unavailable')}<small>${escapeHtml(item.source)}</small></td>
     <td>${miniStatus(item.status)}${attempt ? `<small role="status">${escapeHtml(attempt.message)}</small>` : ''}</td>
     <td>${action ? `<button class="mini-button" data-maint-provider="${item.agent}" data-maint-action="${action}">${label}</button>` : `<a href="${escapeHtml(provider.docs)}" target="_blank" rel="noreferrer">Update guide ↗</a>`}</td></tr>`;

@@ -173,6 +173,7 @@ export function isolateReply(cli, result, prompt) {
   if (field) {
     for (const obj of extractJsonObjects(stdout).reverse()) {
       if (!obj || typeof obj[field] !== "string") continue;
+      if (cli === "grok" && obj.stopReason === "cancelled") return { isolated: false, reply: "", terminal_status: "cancelled", detail: "provider ended the request as cancelled; cause not established" };
       if (obj.is_error === true || obj.type === "error") return { isolated: false, reply: "", detail: `provider reported an error: ${clip(obj[field], 200) || "(no message)"}` };
       return { isolated: true, reply: obj[field], via: `json.${field}` };
     }
@@ -837,6 +838,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       if (blocker) { cell.status = "blocked"; cell.blocker = blocker; cell.reason = `reply named the ${blocker} gate: ${clip(text.match(BLOCKER_PATTERNS.find(([b]) => b === blocker)[1])?.[0] ?? "", 80)}`; cell.detail = clip(r.stdout || r.stderr, 300); cell.clearing_action = clearing(blocker); return r; }
       if (envReason === "timeout") { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = `timed out after ${Math.round(timeoutMs / 1000)} s`; return r; }
       const iso = isolateReply(cli, r, prompt);
+      if (iso.terminal_status) cell.terminal_status = iso.terminal_status;
       if (!iso.isolated) { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = `reply not isolated (${iso.detail}; exit ${r.code})`; cell.detail = clip(r.stdout || r.stderr, 300); return r; }
       cell.reply_sample = clip(iso.reply, 160);
       const judged = judge(iso.reply, r, started);

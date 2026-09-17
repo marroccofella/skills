@@ -7,16 +7,23 @@ import vm from 'node:vm';
 import http from 'node:http';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {parse as parseUpdateOptions} from './update.mjs';
 const source = fs.readFileSync(new URL('./multi-review.mjs', import.meta.url), 'utf8');
 const start = source.lastIndexOf('main().catch(');
 assert(start > 0, 'production finalizer boundary moved');
 const finalizer = source.slice(start);
 
-if (process.argv[2] === '--child') {
+if (process.argv[2] === '--child' || process.argv[2] === '--information-child') {
+  const information = process.argv[2] === '--information-child';
   const code = Number(process.argv[3]);
+  if (information) {
+    process.argv = [process.argv[0], process.argv[1], 'update'];
+    const originalExit = process.exit;
+    process.exit = code => { process.stderr.write('FORCED_INFORMATION_EXIT\n'); originalExit(code); };
+  }
   const main = async () => {
     const server = http.createServer((_req,res) => {
-      res.writeHead(200, {'content-type':'application/json'});
+      res.writeHead(200, {'content-type':'application/json', ...(information ? {'connection':'close'} : {})});
       res.end('{"fixture":true}');
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -26,13 +33,13 @@ if (process.argv[2] === '--child') {
     process.exitCode = code;
     process.stdout.write(JSON.stringify({fixture:true,exit_code:code})+'\n');
   };
-  vm.runInNewContext(finalizer, {main,process,setTimeout});
+  vm.runInNewContext(finalizer, {main,process,setTimeout,parseUpdateOptions});
 } else {
   const passed=[], failed=[];
   const test=(name,fn)=>{try{fn();passed.push(name);}catch(e){failed.push({name,error:e.message});}};
   function simulate({platform='win32',code=0,stdout='flush',stderr='flush',error=null}={}) {
     const timers=[], exits=[], writes=[], callbacks={};
-    const proc={platform,exitCode:code,exit:value=>exits.push(value)};
+    const proc={platform,argv:['node','fixture'],exitCode:code,exit:value=>exits.push(value)};
     function write(which,mode) {return (text,done)=>{
       writes.push({which,text,timers:timers.length});
       if(mode==='throw')throw Error('synthetic broken pipe');
@@ -83,6 +90,13 @@ if (process.argv[2] === '--child') {
       {encoding:'utf8',windowsHide:true,timeout:7000,maxBuffer:65536});
     assert.equal(r.error,undefined,r.error?.message);assert.equal(r.signal,null);
     assert.equal(r.status,code,r.stderr);assert(!/UV_HANDLE_CLOSING|Assertion failed/.test(r.stderr));
+    assert.deepEqual(JSON.parse(r.stdout),{fixture:true,exit_code:code});
+  });
+  for(const code of [0,1,3])test(`information-only fetch exits naturally with status ${code}`,()=>{
+    const r=spawnSync(process.execPath,[fileURLToPath(import.meta.url),'--information-child',String(code)],
+      {encoding:'utf8',windowsHide:true,timeout:7000,maxBuffer:65536});
+    assert.equal(r.error,undefined,r.error?.message);assert.equal(r.signal,null);
+    assert.equal(r.status,code,r.stderr);assert(!/FORCED_INFORMATION_EXIT|UV_HANDLE_CLOSING|Assertion failed/.test(r.stderr));
     assert.deepEqual(JSON.parse(r.stdout),{fixture:true,exit_code:code});
   });
   console.log(JSON.stringify({node:process.version,platform:process.platform,passed:passed.length,failed:failed.length,checks:passed,failures:failed},null,2));

@@ -80,6 +80,16 @@ jobs:
           node scripts/doc-consistency.test.mjs
           node scripts/momm-release-privacy.test.mjs
           node scripts/momm-media-contract.test.mjs
+          node scripts/ledger-integrity.test.mjs
+          node scripts/ledger-serving.test.mjs
+          node scripts/version-discovery.test.mjs
+          node scripts/private-tree-boundary.test.mjs
+          node scripts/information-shutdown.test.mjs
+          node scripts/evidence-permissions.test.mjs
+          node scripts/evidence-permissions-native.test.mjs
+          node scripts/release-seal-precheck.test.mjs
+          node scripts/media-cancellation.test.mjs
+          node scripts/media-preservation.test.mjs
           node scripts/momm-release-regressions.test.mjs
           node scripts/momm-auth-recovery.test.mjs
           node scripts/momm-independent-review.test.mjs

@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {privateTestFixture} from '../../scripts/private-test-fixture.mjs';
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');
@@ -14,7 +15,7 @@ const stageEnd=source.indexOf('\nfunction attachmentContractSection(',stageStart
 const mainStart=source.indexOf('async function main()');
 const mainEnd=source.lastIndexOf('\nmain().catch(');
 assert(stageStart>0&&stageEnd>stageStart&&mainEnd>mainStart);
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-attachment-cleanup-test-'));
+const root=privateTestFixture('momm-attachment-cleanup-test-');
 const checks=[];
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const input=Buffer.from('SYNTHETIC_MEDIA_BYTES_NO_PERSONAL_DATA');
@@ -26,7 +27,10 @@ function fixture(){
   fs.writeFileSync(path.join(cwd,'synthetic.gif'),input);
   return {cwd,temporary};
 }
-const leftovers=dir=>fs.readdirSync(dir).filter(name=>name.startsWith('momm-attach-'));
+const leftovers=dir=>{
+  const evidenceStaging=path.join(path.dirname(dir),'.ensemble_reviews','staging');
+  return [...fs.readdirSync(dir),...(fs.existsSync(evidenceStaging)?fs.readdirSync(evidenceStaging):[])].filter(name=>name.startsWith('momm-'));
+};
 async function test(name,fn){try{await fn();checks.push({name,passed:true});}catch(e){checks.push({name,passed:false,error:e.message});}}
 function actual(f,extra){
   return spawnSync(process.execPath,[dispatcher,'--governor','codex','--reviewers','codex','--input','artifact.js','--no-ui',...extra],{
@@ -37,6 +41,7 @@ function actual(f,extra){
 }
 function stageContext(f,overrides={}){
   const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,
+    createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(f.temporary,prefix)),
     MODALITY_BY_EXTENSION:{gif:'image'},MODALITY_MAX_BYTES:{image:8000000},modalityOfFile:()=> 'image'});
   vm.runInContext(source.slice(stageStart,stageEnd)+';this.stage=stageAttachments;',context);
   return context;
@@ -88,6 +93,9 @@ try{
     Object.assign(context,{process:{argv:['node','fixture'],env:{},cwd:()=>f.cwd,stderr:{write(){},isTTY:false}},
       parseArgs:()=>options,parseReviewDepth:()=>0,VALID_GOVERNORS:new Set(['codex']),collectArtifact:async()=> 'export const value=1;',
       captureSourceSnapshot:()=>({}),inputLimitFor:()=>1000,sanitizeText:s=>({value:s}),applyTier(){},effectiveTimeoutMs:()=>1000,
+      // This VM test targets staging ownership; native permission enforcement
+      // is exercised independently by evidence-permissions-native.test.mjs.
+      preparePrivateEvidence:()=>({verified:true}),
       resolveDispatchCapabilities:boundary==='capabilities'?fail:async()=>({capabilities:null,registry:null}),
       clockTrigger(){},personaFor:()=>null,resolveGuidance:boundary==='guidance'?fail:()=>({routes:{},notices:[]}),
       createUi:()=>({start(){},preflight(){},stop(){}}),emitEvent(){},preflightCheck:async()=>[],

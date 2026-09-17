@@ -28,6 +28,7 @@ import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { preparePrivateEvidence, requirePrivateEvidence } from "./evidence-permissions.mjs";
 import { loadBaseline, effective as effectiveMatrix, routable, clearingAction, levelAction, bindingProblem, sha256, GENERATIVE_OUTPUTS, INPUT_MODALITIES, OUTPUT_MODALITIES } from "./capabilities.mjs";
 
 export const PLAN_SCHEMA = "momm-plan/1";
@@ -374,6 +375,7 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
   });
   // The first step's media inputs must be supplied up front; later steps take the previous step's files.
   const firstMedia = resolved[0].step.from.filter((m) => m !== "text");
+  preparePrivateEvidence(path.join(cwd, '.ensemble_reviews'));
   if (firstMedia.length && !inputs.length) throw fail(`Refused: the first step takes ${firstMedia.join("+")} input; pass the artefact(s) with --input <file> (inputs option)`, "MOMM_INPUT_MISSING", { modalities: firstMedia });
   for (const f of inputs) if (!statOrNull(f)?.isFile()) throw fail(`Refused: initial input ${f} is not a regular file`, "MOMM_INPUT_MISSING");
   const inputTypes = inputs.map(artefactModality);
@@ -389,7 +391,10 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
     try { fs.mkdirSync(dir, { mode: 0o700 }); break; } catch (e) { if (e?.code !== "EEXIST") throw e; }
   }
   const report = { schema: MEDIA_SCHEMA, run_id, at: at.toISOString(), prompt_sha256: sha256(prompt), need: planObj.need, chain: planObj.chain ?? planObj.steps.map(({ from, to }) => ({ from, to })), consent: true, status: "running", steps: [] };
-  const persist = () => writePrivate(path.join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  const persist = () => {
+    requirePrivateEvidence(dir);
+    writePrivate(path.join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  };
   persist();
   let previous = [];
   try {
@@ -420,16 +425,28 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
       try {
         for (const h of harvests) h.before = snapshotFiles(h.pattern);
         const started = Date.now();
+        requirePrivateEvidence(dir);
         result = await exec(resolveCommand(route, cmd.command), cmd.args, { input: cmd.input, cwd: stepDir, timeout });
         const timedOut = !!result.timedOut || result.error?.code === "ETIMEDOUT";
         if (timedOut) failure = "timeout";
         else if (result.code !== 0) failure = "exit_code";
-        if (!failure) {
+        if (!failure && route === "grok") {
+          const { isolateReply } = await import("./probes.mjs");
+          const terminal = isolateReply(route, result, text);
+          if (terminal.terminal_status === "cancelled") {
+            failure = "cancelled";
+            failureDetail = terminal.detail;
+          }
+        }
+        // A cancelled/timed-out/nonzero process may already have produced files.
+        // Preserve bounded new artefacts without certifying the failed step or
+        // forwarding its outputs to a later step. Provider originals stay intact.
+        if (!failure || generative) {
           if (generative) {
             for (const h of harvests) {
               const found = harvestNew(h.pattern, h.before, started);
-              if (found.length > HARVEST_MAX_FILES) { failure = "too_many_outputs"; failureDetail = `${h.modality}: ${found.length} new files under ${h.cell.harvest} exceed the cap of ${HARVEST_MAX_FILES}; nothing staged`; files.length = 0; break; }
-              if (!found.length) { failure = "no_new_output"; failureDetail = `${h.modality}: no new file under ${h.cell.harvest} after the step`; files.length = 0; break; }
+              if (found.length > HARVEST_MAX_FILES) { if (!failure) { failure = "too_many_outputs"; failureDetail = `${h.modality}: ${found.length} new files under ${h.cell.harvest} exceed the cap of ${HARVEST_MAX_FILES}; this output set was not staged; provider originals retained`; } continue; }
+              if (!found.length) { if (!failure) { failure = "no_new_output"; failureDetail = `${h.modality}: no new file under ${h.cell.harvest} after the step`; } continue; }
               found.forEach((f) => {
                 const copy = stageCopy(f, outDir, files.length);
                 files.push({ path: posix(path.relative(cwd, copy.target)), sha256: copy.sha256, bytes: copy.bytes, mime: h.cell.mime ?? MIME_BY_EXT[path.extname(f).slice(1).toLowerCase()] ?? "application/octet-stream", modality: h.modality, harvested_from: displayPath(f, h.cell.harvest, home, env), absolute: copy.target });

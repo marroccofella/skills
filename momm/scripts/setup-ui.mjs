@@ -482,7 +482,7 @@ async function maintenanceReport(governor) {
       installation: detectInstallation(item.agent),
       update_command: actionCommand(item.agent, 'update'),
       install_command: actionCommand(item.agent, 'install'),
-      installed: route?.installed !== false && Boolean(route),
+      installed: route ? (route.installed ?? null) : null,
       status: route?.installed === false || !route ? "missing" : item.update_available === true ? "update_available" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
     };
   });
@@ -1413,19 +1413,29 @@ function ledgerHeaders(html) {
 const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>. Run a momm review from that directory first; the ledger is built from its telemetry.</p><p><a href="/">Back to the Setup Center</a></p>`;
 
 // GET /ledger — the private ledger on this origin, so the dashboard's pill needs
-// no file:// hop. Regenerated first when missing or older than the telemetry it
-// summarises, through the watcher's rebuild (the same runNode(ledger.mjs) path,
+// no file:// hop. Revalidate on every request: source bytes can change without
+// touching telemetry. Use the watcher's rebuild (the same runNode(ledger.mjs) path,
 // the same minimum gap); 404 with a short page when the project has no
 // .ensemble_reviews at all. Returns what it did, for the self-test.
 async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (ledgerWatcher ? ledgerWatcher.rebuild() : runNode(ledgerScript, [], { timeoutMs: 60_000 })), fsx = fs } = {}) {
   const dir = path.join(cwd, ".ensemble_reviews"), file = path.join(dir, "ledger.html");
   const send = (status, headers, body) => { response.writeHead(status, headers); response.end(body); };
   if (!fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd)); return { status: 404, rebuilt: false }; }
-  const mtime = (name) => { try { return fsx.statSync(path.join(dir, name)).mtimeMs; } catch { return -Infinity; } };
-  const newestTelemetry = Math.max(...[...LEDGER_FILES].map(mtime));
-  const stale = !fsx.existsSync(file) || mtime("ledger.html") < newestTelemetry;
+  const stale = true;
   let rebuildError = null;
-  if (stale) { try { await rebuild(); } catch (error) { rebuildError = safeDetail(error.message); } }
+  try {
+    // Coalesce simultaneous readers even before the directory watcher exists.
+    // Settled work is removed: a later request must revalidate current source.
+    const pending = serveLedger.pending ??= new Map();
+    if (!pending.has(file)) pending.set(file, Promise.resolve().then(rebuild).finally(() => pending.delete(file)));
+    const result = await pending.get(file);
+    if (result?.last_error || (result?.code != null && result.code !== 0) || (result?.last_exit_code != null && result.last_exit_code !== 0)) rebuildError = "Ledger rebuild failed.";
+  } catch { rebuildError = "Ledger rebuild failed."; }
+  if (rebuildError) {
+    // Never return the old certificate-looking page after a failed refresh.
+    send(503, securityHeaders("text/html; charset=utf-8"), '<!doctype html><meta charset="utf-8"><title>Ledger unavailable</title><h1>Ledger refresh failed</h1><p>Current evidence could not be validated. Any saved ledger is a historical snapshot, not a current completion result. Restore damaged evidence or rebuild locally, then retry.</p><p><a href="/">Back to the Setup Center</a></p>');
+    return { status: 503, rebuilt: true };
+  }
   let html;
   try { html = fsx.readFileSync(file, "utf8"); }
   catch {
@@ -1969,7 +1979,7 @@ async function dashboardRegression() {
     fs.mkdirSync(path.join(luFx.cwd, ".ensemble_reviews"), { recursive: true }); fs.writeFileSync(path.join(luFx.cwd, ".ensemble_reviews", "ledger.html"), "<!doctype html>");
     const luAfter = ledgerFileUrl(luFx.cwd);
     checks.status_ledger_url_is_null_then_file_url = nullBefore && typeof luAfter === "string" && luAfter.startsWith("file:///") && luAfter.endsWith("/.ensemble_reviews/ledger.html") && fileURLToPath(luAfter) === path.join(luFx.cwd, ".ensemble_reviews", "ledger.html");
-    // GET /ledger: 404 without .ensemble_reviews; serves a fresh page without rebuilding; rebuilds a missing or stale one first.
+    // GET /ledger: always revalidate; source can change with unchanged telemetry.
     const fakeResponse = () => { const r = { status: null, headers: null, body: null, writeHead(status, headers) { r.status = status; r.headers = headers; }, end(body) { r.body = String(body); } }; return r; };
     const noDir = fixture("ledger-route-none"); const none = fakeResponse();
     const noneResult = await serveLedger(none, { cwd: noDir.cwd, rebuild: async () => { throw new Error("must not rebuild without a directory"); } });
@@ -1984,13 +1994,13 @@ async function dashboardRegression() {
     const hashOf = (text) => `'sha256-${crypto.createHash("sha256").update(text, "utf8").digest("base64")}'`;
     const hashedInline = csp.includes(`style-src ${hashOf("body{color:red}")}`) && csp.includes(`script-src ${hashOf("console.log(1);")}`) && !csp.includes("unsafe-inline") && csp.includes("frame-ancestors 'none'");
     const fresh = fakeResponse(); const freshResult = await serveLedger(fresh, { cwd: lr.cwd, rebuild });
-    const freshServedAsIs = freshResult.status === 200 && freshResult.rebuilt === false && rebuilds === 1 && fresh.body.includes("ledger 1");
+    const freshServedAsIs = freshResult.status === 200 && freshResult.rebuilt === true && rebuilds === 2 && fresh.body.includes("ledger 2");
     const later = new Date(Date.now() + 10_000); fs.utimesSync(path.join(lrDir, "review-log.jsonl"), later, later); // telemetry newer than the page
     const staleRes = fakeResponse(); const staleResult = await serveLedger(staleRes, { cwd: lr.cwd, rebuild });
-    const staleRebuilt = staleResult.status === 200 && staleResult.rebuilt === true && rebuilds === 2 && staleRes.body.includes("ledger 2");
+    const staleRebuilt = staleResult.status === 200 && staleResult.rebuilt === true && rebuilds === 3 && staleRes.body.includes("ledger 3");
     const failFx = fixture("ledger-route-failing"); fs.mkdirSync(path.join(failFx.cwd, ".ensemble_reviews"), { recursive: true });
     const failed = fakeResponse(); const failedResult = await serveLedger(failed, { cwd: failFx.cwd, rebuild: async () => { throw new Error("ledger exploded"); } });
-    const failureIsA404 = failedResult.status === 404 && failed.body.includes("ledger exploded") && failed.headers["Content-Type"].startsWith("text/html");
+    const failureIsA404 = failedResult.status === 503 && failed.body.includes("Ledger refresh failed") && failed.headers["Content-Type"].startsWith("text/html");
     checks.ledger_route_serves_rebuilds_when_stale_and_404s_without_directory = missing404 && missingPageBuilt && hashedInline && freshServedAsIs && staleRebuilt && failureIsA404;
     // setup-center.json: written 0600 on start with url/pid/started_at, removed on shutdown, never written without .ensemble_reviews, never removes another pid's file.
     const sp = fixture("setup-pointer"); const spDir = path.join(sp.cwd, ".ensemble_reviews");

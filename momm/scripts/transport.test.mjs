@@ -8,6 +8,7 @@ import vm from "node:vm";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
+import {privateTestFixture} from '../../scripts/private-test-fixture.mjs';
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
 const start = source.indexOf("function platformCommand("), end = source.indexOf("function clipped(");
 assert(start >= 0 && end > start, "transport fixture boundaries moved; update the production extraction");
@@ -19,7 +20,7 @@ const { core } = context;
 for (const fn of ["platformCommand", "runProcess", "extractJsonObjects", "unwrapReviewPayload"]) assert.equal(typeof core[fn], "function", `missing production helper ${fn}`);
 const passed = [], failed = [];
 async function test(name, fn) { try { await fn(); passed.push(name); } catch (e) { failed.push({ name, error: e.message }); } }
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-transport-"));
+const fixture = privateTestFixture("momm-transport-");
 try {
   await test("default review collects a real Git diff without shell wrappers", () => {
     const repo = path.join(fixture, "git-repo"); fs.mkdirSync(repo);
