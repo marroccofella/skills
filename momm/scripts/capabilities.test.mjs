@@ -334,6 +334,33 @@ await test("CLI prints the effective matrix as JSON", () => {
   assert.match(text.stdout, /INPUT\s+text\s+image/);
 });
 
+await test("installed-version detection cannot hang when a launcher never settles", async () => {
+  const started = Date.now();
+  const versions = await cap.detectInstalledVersions(["codex"], {
+    exec: () => new Promise(() => {}),
+    resolveCommand: () => "codex",
+    timeoutMs: 25,
+  });
+  assert.deepEqual(versions, { codex: null });
+  assert.ok(Date.now() - started < 500, "caller-side deadline must settle a hung launcher");
+});
+
+await test("installed-version deadline absorbs a late launcher rejection", async () => {
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const versions = await cap.detectInstalledVersions(["codex"], {
+      exec: () => new Promise((_, reject) => setTimeout(() => reject(new Error("late launcher timeout")), 60)),
+      resolveCommand: () => "codex",
+      timeoutMs: 10,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(versions, { codex: null });
+    assert.equal(unhandled.length, 0, "a late launcher rejection must not escape the bounded probe");
+  } finally { process.off("unhandledRejection", onUnhandled); }
+});
+
 // ---- gate review rev_20260913213315_o8c2: one failing test per finding, then the fix ----------------
 await test("finding promotion-without-invocation-metadata: an overlay never raises a baseline no cell (no how/harvest/mime to route on)", () => {
   const tiny = { routes: { r: { models: {}, input: { text: { level: "documented", how: "stdin" }, image: { level: "no" } }, output: { image_gen: { level: "no" } } } } };

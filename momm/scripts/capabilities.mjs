@@ -369,9 +369,20 @@ export function autoReviewers(matrix, attachedModalities = [], { pool = null } =
 // the registry itself never depends on it) and returns { route: semver | null }.
 export async function detectInstalledVersions(routes, { exec, resolveCommand, timeoutMs = 30_000 } = {}) {
   if (!exec || !resolveCommand) { const probes = await import("./probes.mjs"); exec ??= probes.defaultExec; resolveCommand ??= probes.resolveCommand; }
+  const boundedExec = async (command, args, options) => {
+    let timer;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => exec(command, args, options)),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error("version probe deadline exceeded"), { code: "ETIMEDOUT" })), timeoutMs);
+        }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  };
   const versions = {};
   await Promise.all(routes.map(async (route) => {
-    try { const r = await exec(resolveCommand(route), ["--version"], { timeout: timeoutMs, input: "" }); versions[route] = semver(`${r.stdout ?? ""}\n${r.stderr ?? ""}`); }
+    try { const r = await boundedExec(resolveCommand(route), ["--version"], { timeout: timeoutMs, input: "" }); versions[route] = semver(`${r.stdout ?? ""}\n${r.stderr ?? ""}`); }
     catch { versions[route] = null; }
   }));
   return versions;
