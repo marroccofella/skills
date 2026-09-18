@@ -56,7 +56,7 @@ Every non-success is a status, never a finding. Map provider text to MOMM status
 | `Not signed in`, `login`, `unauthorized` in provider output | session missing or expired | `authentication_required` + the route's login hint |
 | `requires a newer version of Codex` (models cache error) | CLI older than the configured model | `error` (1.15) — 1.14.1 misfiles it as auth; fix is upgrading the CLI (0.154.0 resolved it here on 2026-09-13) |
 | `exceeded your monthly quota` (Copilot) | billing, not auth | `error`; wait for the period or change plan |
-| `{"status":"SUCCESS","response":""}` (agy) + a headless tool-permission refusal | agent tried to read/run outside the temp project and was auto-denied (see antigravity.md) | `invalid_output`; relay the sanitized failure class, never raw provider diagnostics or a bigger-timeout workaround |
+| `{"status":"SUCCESS","response":""}` (agy) with stderr containing `permission that headless mode cannot prompt for` (1.15 print mode), or a stream-json event reporting a denied tool permission with no final answer (1.16) | agent tried to read/run outside the temp project and was auto-denied (see antigravity.md) | `invalid_output`; relay the sanitized failure class, never raw provider diagnostics or a bigger-timeout workaround |
 | Grok `stopReason: "tool_use"` / `"cancelled"` / `Error: max turns reached` | model wanted a tool turn (with `--disallowed-tools` the attempt is cancelled instead of executed) | `invalid_output` / `error`; not fixable by prompt alone |
 | `ineligible_tier` (gemini) | account tier retired | use antigravity |
 | 5xx from the vendor | outage | `provider_unavailable`, retried once |
@@ -69,6 +69,8 @@ immediate forced exit, without importing MOMM. Natural exit succeeded; four
 `setImmediate`/zero-delay controls failed. Two 100ms and two 250ms post-flush
 delay trials succeeded. See the [bounded comparison](https://github.com/marroccofella/skills/pull/4#issuecomment-5700817529).
 This is a small observed mitigation signal, not proof of a universal safe delay.
+
+By command class: **review, preview (`--dry-run`) and mutating commands** flush their output and then, on Windows only, wait 250 ms before an explicit exit (POSIX exits immediately after the flush); **information-only `update` commands** (no apply, rollback, dry-run or channel change) are allowed to drain naturally after the flush. A passing information-only run therefore says nothing about review shutdown; `shutdown.test.mjs` covers the first class and `information-shutdown.test.mjs` the second.
 
 The candidate dispatcher uses a 250ms Windows-only post-flush delay. The
 independent referenced 2000ms exit fallback is installed before flushing and

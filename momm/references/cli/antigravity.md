@@ -16,7 +16,7 @@ Google's terminal agent, successor route for consumer Google accounts after Gemi
 
 ## Non-interactive mode
 
-`agy -p/--print "<prompt>"` runs one prompt and prints the response; ordinary stdin does not replace that prompt argument. The 1.16 repair candidate uses the separately documented `--input-format stream-json --output-format stream-json` protocol for text-only reviews: one user event on stdin, followed by EOF. Media reviews retain the private-file path and native schema.
+`agy -p/--print "<prompt>"` runs one prompt and prints the response; ordinary stdin does not replace that prompt argument. MOMM 1.16 uses exactly one of two invocations, never a mix. **Text-only review:** no `-p` in argv at all; argv carries `--new-project --input-format stream-json --output-format stream-json --print-timeout <s> --mode=plan --sandbox`, and stdin carries one JSON line `{"event":"user","message":{"content":"<instruction + review contract + artifact>"}}` followed by EOF, so source never travels in process arguments. **Review with media:** `-p "<short instruction naming the private prompt file and the staged media>"`, plus `--add-dir <scratch> --output-format json --json-schema <schema>`; stdin is empty and the prompt body is read from the private file.
 
 - `--output-format text|json|stream-json`; `--json-schema <schema or path>` enforces structured output (final result only for stream-json).
 - `--mode accept-edits|plan` — MOMM uses `plan`; `--sandbox` adds terminal restrictions; `--new-project` isolates the session from any existing project.

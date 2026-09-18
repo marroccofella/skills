@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {inspectEvidencePermissions,createEvidenceWorkspace,requirePrivateScratch,preparePrivateEvidence,protectEvidence} from '../momm/scripts/evidence-permissions.mjs';
+import {inspectEvidencePermissions,createEvidenceWorkspace,createPrivateDirectory,requirePrivateScratch,preparePrivateEvidence,protectEvidence} from '../momm/scripts/evidence-permissions.mjs';
 import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
@@ -158,6 +158,112 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
     assert.equal(protectEvidence(evidence).changed,false,'a second protect changes nothing');
     assert.throws(()=>protectEvidence(path.join(fixture,'broad')),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS','never a general permission tool');
     results.push({kind:'broad',case:'owner-invoked evidence --protect repairs and verifies',passed:true});
+  }
+  // Gate rev_20260918172020_ehti: a hard-linked file shares its mode/ACL with a name outside the
+  // evidence folder, and a link or junction leads outside it. evidence --protect must refuse both
+  // before changing anything. Every path here is inside this test's own disposable fixture.
+  {
+    const project=path.join(fixture,'linked'),evidence=path.join(project,'.ensemble_reviews');
+    const report=path.join(evidence,'reports','synthetic.json'),outside=path.join(project,'outside.txt'),outsideDir=path.join(project,'outside-dir');
+    fs.mkdirSync(path.join(evidence,'reports'),{recursive:true});fs.mkdirSync(outsideDir);
+    fs.writeFileSync(report,'{}');fs.writeFileSync(outside,'harmless control');fs.writeFileSync(path.join(outsideDir,'synthetic.txt'),'harmless control');
+    const inside=path.join(evidence,'zz-linked.txt');
+    fs.linkSync(outside,inside);
+    if(process.platform==='win32') {
+      const grant=spawnSync(path.join(process.env.SystemRoot,'System32/icacls.exe'),[evidence,'/grant','*S-1-5-32-545:(OI)(CI)RX'],{encoding:'utf8',windowsHide:true,timeout:30000});
+      assert.equal(grant.status,0,'Disposable broad fixture preparation failed');
+    } else for(const [entry,mode] of [[evidence,0o755],[path.join(evidence,'reports'),0o755],[report,0o644],[outside,0o644],[outsideDir,0o755]])fs.chmodSync(entry,mode);
+    // The access state of one fixture entry: the security descriptor on Windows, the mode elsewhere.
+    const access=entry=>{
+      if(process.platform!=='win32')return (fs.lstatSync(entry).mode&0o7777).toString(8);
+      const script="$ErrorActionPreference='Stop'\nImport-Module (Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop\n(Get-Acl -LiteralPath ([Console]::In.ReadToEnd() | ConvertFrom-Json).path).Sddl";
+      const read=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',script],{input:JSON.stringify({path:entry}),encoding:'utf8',windowsHide:true,timeout:30000});
+      assert.equal(read.status,0,'Could not read fixture access state');return read.stdout.trim();
+    };
+    const watched=[evidence,path.join(evidence,'reports'),report,outside,outsideDir];
+    const snapshot=()=>watched.map(access);
+    const before=snapshot();
+    assert.equal(fs.lstatSync(inside).nlink,2,'fixture must hold a real hard link');
+    assert.equal(inspectEvidencePermissions(evidence).verified,false,'fixture must start broad');
+    assert.throws(()=>protectEvidence(evidence),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/hard-linked/.test(e.message)&&/[Nn]othing was changed/.test(e.message));
+    assert.deepEqual(snapshot(),before,'a refused hard link must leave the outside name and the whole tree unchanged');
+    const cli=spawnSync(process.execPath,[dispatcher,'evidence','--protect'],{cwd:project,encoding:'utf8',timeout:120000,windowsHide:true});
+    assert.notEqual(cli.status,0,'evidence --protect must fail on a hard-linked file');
+    assert.deepEqual(snapshot(),before);
+    results.push({kind:'linked',case:'hard-linked file refused before any change; outside name untouched',passed:true});
+    fs.unlinkSync(inside);
+    // A junction (Windows) or symlink deep in the tree: refused before anything is changed.
+    const link=path.join(evidence,'reports','zz-external');
+    fs.symlinkSync(outsideDir,link,process.platform==='win32'?'junction':'dir');
+    assert.throws(()=>protectEvidence(evidence),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/link/.test(e.message)&&/[Nn]othing was changed/.test(e.message));
+    assert.deepEqual(snapshot(),before,'a refused link must leave the tree and its target unchanged');
+    if(process.platform==='win32') {
+      // The protect script repeats the link check itself, again before changing anything, so it
+      // does not depend on the Node survey. Hide the junction from the survey to reach it.
+      const blind={...fs,lstatSync:entry=>path.resolve(entry)===link?fs.statSync(entry):fs.lstatSync(entry)};
+      assert.throws(()=>protectEvidence(evidence,{fsx:blind}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS');
+      assert.deepEqual(snapshot(),before,'the protect script must refuse a junction before changing the root');
+    }
+    results.push({kind:'linked',case:'link or junction refused before any change',passed:true});
+    fs.unlinkSync(link);
+    assert.equal(fs.existsSync(path.join(outsideDir,'synthetic.txt')),true,'removing the link must not remove its target');
+    assert.equal(protectEvidence(evidence).changed,true,'a plain tree is still protected');
+    assert.equal(inspectEvidencePermissions(evidence).verified,true);
+    assert.deepEqual([access(outside),access(outsideDir)],[before[3],before[4]],'protection never reaches outside the evidence folder');
+    results.push({kind:'linked',case:'plain tree protected after links removed',passed:true});
+  }
+  // Gate rev_20260918172020_ehti: the path travels to Windows PowerShell as JSON on stdin, and
+  // [Console]::In decodes stdin with the console's OEM code page unless the machine runs the UTF-8
+  // system locale. A non-ASCII folder name (a user profile, a project) must survive that. The OEM
+  // condition is forced here so the result does not depend on this machine's locale settings.
+  if(process.platform==='win32') {
+    const oem=(exe,args,options)=>spawnSync(exe,[...args.slice(0,-1),'[Console]::InputEncoding=[Text.Encoding]::GetEncoding(850)\n'+args.at(-1)],options);
+    const project=path.join(fixture,'pro\u00f8j\u00e9ct-\u65e5\u672c');fs.mkdirSync(project);
+    const evidence=path.join(project,'.ensemble_reviews');
+    assert.equal(preparePrivateEvidence(evidence,{run:oem}).verified,true,'a non-ASCII project path must be created privately and verified under an OEM console code page');
+    assert.equal(inspectEvidencePermissions(evidence,{run:oem}).verified,true);
+    assert.equal(protectEvidence(evidence,{run:oem}).changed,false);
+    const temp=path.join(fixture,'t\u00eamp-\u00f8');fs.mkdirSync(temp);
+    const child=`const {privateTestFixture}=await import(${JSON.stringify(new URL('../momm/scripts/private-test-fixture.mjs',import.meta.url).href)});
+const {spawnSync}=await import('node:child_process');const fs=await import('node:fs');
+const oem=(exe,args,options)=>spawnSync(exe,[...args.slice(0,-1),'[Console]::InputEncoding=[Text.Encoding]::GetEncoding(850)\\n'+args.at(-1)],options);
+const made=privateTestFixture('momm-oem-fixture-',{run:oem});process.stdout.write(JSON.stringify({exists:fs.existsSync(made)}));fs.rmSync(made,{recursive:true,force:true});`;
+    const made=spawnSync(process.execPath,['--input-type=module','-e',child],{encoding:'utf8',timeout:60000,windowsHide:true,env:{...process.env,TEMP:temp,TMP:temp}});
+    assert.equal(made.status,0,'privateTestFixture must work under a non-ASCII temp directory and an OEM console code page');
+    assert.deepEqual(JSON.parse(made.stdout),{exists:true});
+    results.push({kind:'non-ascii',case:'non-ASCII paths survive an OEM console code page (inspector, private creation, test fixture)',passed:true});
+  }
+  // Provider scratch allowance (Windows): a sandboxing CLI grants its sandbox group read access to
+  // the directory it runs in. Opt-in by account name, read-only rights only, reported when used,
+  // never the default. The built-in Users group stands in for the sandbox group; its (possibly
+  // localized) account name is resolved at run time.
+  if(process.platform==='win32') {
+    const powershell=path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),icacls=path.join(process.env.SystemRoot,'System32/icacls.exe');
+    const named=spawnSync(powershell,['-NoProfile','-NonInteractive','-Command',"$n=(New-Object Security.Principal.SecurityIdentifier('S-1-5-32-545')).Translate([Security.Principal.NTAccount]).Value; $n.Substring($n.LastIndexOf('\\')+1)"],{encoding:'utf8',windowsHide:true,timeout:30000});
+    assert.equal(named.status,0,'Could not resolve the built-in Users group name');
+    const leaf=named.stdout.trim();
+    if(!/^[A-Za-z][A-Za-z0-9 _-]{0,63}$/.test(leaf)) results.push({kind:'allowance',case:'skipped: the localized Users group name is outside the accepted plain-name form',passed:true,skipped:true});
+    else {
+      const scratch=path.join(fixture,'allowance-scratch');
+      assert.equal(createPrivateDirectory(scratch),true);
+      fs.mkdirSync(path.join(scratch,'inner'));fs.writeFileSync(path.join(scratch,'inner','synthetic.txt'),'SYNTHETIC ONLY');
+      assert.equal(inspectEvidencePermissions(scratch).verified,true,'fixture must start private');
+      const grant=rights=>{const p=spawnSync(icacls,[scratch,'/grant','*S-1-5-32-545:(OI)(CI)'+rights],{encoding:'utf8',windowsHide:true,timeout:30000});assert.equal(p.status,0,'Synthetic scratch grant failed');};
+      grant('RX');
+      const allow={allowReadOnlyPrincipals:[leaf.toUpperCase()]};
+      assert.deepEqual(inspectEvidencePermissions(scratch),{verified:false,reason:'additional_principal',inspected:1},'never tolerated by default');
+      assert.throws(()=>requirePrivateScratch(scratch),{code:'MOMM_EVIDENCE_PERMISSIONS'});
+      const tolerated=inspectEvidencePermissions(scratch,allow);
+      assert.equal(tolerated.verified,true,'a named read-only rule is tolerated: '+JSON.stringify(tolerated));
+      assert.equal(tolerated.inspected,3,'the whole tree is still inspected, inherited rules included');
+      assert.deepEqual(tolerated.tolerated,[{principal:leaf.toUpperCase(),rights:'read_execute'}]);
+      assert.deepEqual(requirePrivateScratch(scratch,allow).tolerated,tolerated.tolerated);
+      assert.equal(inspectEvidencePermissions(scratch,{allowReadOnlyPrincipals:['SomeOtherGroup']}).reason,'additional_principal','only the named principal is tolerated');
+      grant('M');
+      assert.deepEqual(inspectEvidencePermissions(scratch,allow),{verified:false,reason:'additional_principal',inspected:1},'a write-capable rule for the same principal stays refused');
+      assert.throws(()=>requirePrivateScratch(scratch,allow),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='additional_principal');
+      results.push({kind:'allowance',case:'named read-only principal tolerated only on request; write-capable rule refused',passed:true});
+    }
   }
   console.log(JSON.stringify({passed:true,scope:'native disposable storage controls; self-excluded route; no provider calls',results}));
 } finally {

@@ -135,8 +135,33 @@ await test('browser bootstrap takes authority only from private fragment or tab 
   location.hash='';assert.equal(c.read(),token,'same-tab return from ledger retains authorization');
   stored.clear();assert.throws(()=>c.read(),/private Setup Center launch link/);
   location.hash='#momm-token=invalid';assert.throws(()=>c.read(),/private Setup Center launch link/);
-  assert(js.indexOf('session = { token: launchToken() }')<js.indexOf('session = await api("/api/session")'));
+  const established=js.indexOf('session = { token: launchToken() }'),sessionRead=js.indexOf('await api("/api/session")');
+  assert(established>=0&&sessionRead>established,'The launch capability must be established before the session read');
   assert(js.includes('api("/api/ledger-ticket"'));assert(!js.includes('document.cookie'));
+});
+// Gate rev_20260918172020_ehti session-token-clobber: mutations read session.token, so
+// the in-memory launch capability must survive bootstrap even when the session
+// reply does not repeat the secret.
+await test('bootstrap keeps the launch capability when the session reply omits or changes the token',async()=>{
+  const js=fs.readFileSync(new URL('../assets/setup-ui/app.js',import.meta.url),'utf8');
+  const apiStart=js.indexOf('async function api('),apiEnd=js.indexOf('\nfunction reviewerRoutes(',apiStart);
+  const bootStart=js.indexOf('function launchToken() {'),bootEnd=js.indexOf('\n// A private launch link',bootStart);
+  assert(apiStart>=0&&apiEnd>apiStart&&bootStart>=0&&bootEnd>bootStart);
+  const token='c'.repeat(48);
+  for(const reply of [{platform:'test',providers:{codex:{}}},{token:'d'.repeat(48),platform:'test',providers:{codex:{}}}]) {
+    const requests=[];let finish;const started=new Promise(resolve=>{finish=resolve;});
+    const c=vm.createContext({URLSearchParams,location:{hash:`#momm-token=${token}`,pathname:'/',search:''},
+      sessionStorage:{getItem:()=>null,setItem(){}},history:{replaceState(){}},
+      fetch:async(url,options)=>{requests.push({url,headers:options.headers});return {ok:true,json:async()=>url==='/api/session'?reply:{url:'/ledger?ticket='+'0'.repeat(48)}};},
+      refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
+      summary:{},showToast:message=>finish(message)});
+    vm.runInContext('var session=null;'+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd)+';this.call=api;this.current=()=>session;',c);
+    assert.equal(await started,null,'bootstrap must complete');
+    assert.equal(requests[0].headers['X-MOMM-Token'],token,'the session read itself carries the launch capability');
+    await c.call('/api/ledger-ticket',{method:'POST',body:'{}'});
+    assert.equal(requests.at(-1).headers['X-MOMM-Token'],token,'a later mutation must still carry the launch capability');
+    assert.equal(c.current().token,token);assert.equal(c.current().platform,'test');
+  }
 });
 await test('real loopback HTTP refuses private reads and admits exactly one ticket navigation',async()=>{
   const secret=crypto.randomBytes(24).toString('hex');let ledgerReads=0;

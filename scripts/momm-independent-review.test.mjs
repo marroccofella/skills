@@ -102,6 +102,17 @@ try {
     }
     assert(/failure\.status === "authentication_required"/.test(source), 'Authentication status must still select the route login hint');
   });
+  // Gate rev_20260918172020_ehti copilot-auth-crlf did not reproduce: provider text is
+  // split on CRLF before classification. Keep that normalisation under test.
+  test('Copilot missing-auth line is recognised with Windows CRLF line endings', () => {
+    for (const stream of ['stdout', 'stderr']) {
+      for (const text of ['error: no authentication information found\r\n', authText.replaceAll('\n', '\r\n') + '\r\n']) {
+        const result = classify({ code: 1, stdout: '', stderr: '', [stream]: text });
+        assert.equal(result.status, 'authentication_required');
+        assert(!/GITHUB_TOKEN|fixture-do-not-echo/.test(result.detail));
+      }
+    }
+  });
   test('missing-auth fix preserves outage, timeout, compatibility and non-auth precedence', () => {
     const cases = [
       [{ code: 1, stdout: '', stderr: authText + '\n503 service unavailable' }, 'provider_unavailable'],
@@ -130,6 +141,21 @@ try {
     assert.equal(reportContext.rows[2].login_hint, 'agy login   (Google account, browser flow)');
     assert.equal(reportContext.rows[3].login_hint, undefined);
     assert.equal(reportContext.rows[4].login_hint, undefined);
+  });
+
+  test('final report records a tolerated provider sandbox grant on the reviewer entry and names the route in evidence', () => {
+    const access = { tolerated: [{ principal: 'WORK\\CodexSandboxUsers', rights: 'ReadAndExecute, Synchronize' }], note: 'provider sandbox group was granted read-only access to its own scratch during execution' };
+    const reportContext = vm.createContext({
+      results: [{ agent: 'codex', status: 'success', scratch_access: access }, { agent: 'grok', status: 'success' }, { agent: 'copilot', status: 'error', detail: 'synthetic' }],
+      options: { governor: 'claude' }, personaFor: () => null,
+    });
+    vm.runInContext(extract(source, 'const LOGIN_HINTS =', '\n};') + '\n};'
+      + extract(source, 'function scratchAccessRoutes(', '\nfunction classifyFailure(')
+      + '\nconst report = {' + extract(source, 'reviewers: results.map((result) => ({', '\n    // 1.16: what the CLIs') + '}; this.rows = report.reviewers; this.routes = scratchAccessRoutes(results);', reportContext);
+    assert.equal(JSON.stringify(reportContext.rows[0].scratch_access), JSON.stringify(access));
+    assert(!('scratch_access' in reportContext.rows[1]) && !('scratch_access' in reportContext.rows[2]), 'a strictly private scratch records nothing');
+    assert.equal(JSON.stringify(reportContext.routes), JSON.stringify(['codex']));
+    assert(/const scratchRoutes = scratchAccessRoutes\(results\);/.test(source) && /\.\.\.\(scratchRoutes\.length \? \{ scratch_access_routes: scratchRoutes \} : \{\}\)/.test(source), 'evidence block must name the routes that relied on the allowance');
   });
 
   test('actual capability rendering distinguishes potential pipelines from machine readiness', () => {

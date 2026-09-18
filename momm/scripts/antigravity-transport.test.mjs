@@ -100,5 +100,32 @@ await test('media attachment transport retains existing private-file/schema bind
     assert(!invocation.args.includes('--input-format'));assert.equal(invocation.opts.input,'');assert.equal(invocation.promptFile,true);
   }finally{fs.unlinkSync(path.join(dir,'fixture.png'));fs.rmdirSync(dir)}
 });
+// Gate rev_20260918172020_ehti (antigravity-stream-mode-mismatch, agy-stream-flag-mismatch,
+// agy-media-envelope) did not reproduce: every attachment becomes a private copy, so the
+// launcher and the parser always agree. Pin that, and the documented json envelope
+// (references/cli/antigravity.md "Output envelope"), so a later divergence fails here.
+await test('launcher and parser agree for every attachment modality and for the documented json envelope',async()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'momm-agy-mode-control-'));
+  try{
+    const documented=JSON.stringify({conversation_id:'synthetic',status:'SUCCESS',response:JSON.stringify(payload),duration_seconds:3,num_turns:1,json_schema:{type:'object'}});
+    for(const [name,modality] of [['fixture.png','image'],['fixture.pdf','pdf'],['fixture.txt','text']]) {
+      const file=path.join(dir,name);fs.writeFileSync(file,'synthetic transport fixture only');
+      const options={staging:{directory:dir,attachments:[{staged_path:file,modality,name}]}};
+      const r=await invoke(documented,{},options);
+      assert.equal(r.status,'success',modality+': '+r.detail);
+      assert.equal(invocation.args[invocation.args.indexOf('--output-format')+1],'json',modality);
+      assert(invocation.args.includes('-p')&&!invocation.args.includes('--input-format'),modality);
+      // A stream-shaped reply on the single-object path is refused, never half-parsed.
+      assert.equal((await invoke(events(),{},options)).status,'invalid_output',modality);
+      // An envelope without the native SUCCESS status is not an answer.
+      assert.equal((await invoke(JSON.stringify({response:JSON.stringify(payload)}),{},options)).status,'invalid_output',modality);
+      fs.unlinkSync(file);
+    }
+    // No attachment: the stream launcher is paired with the stream parser.
+    assert.equal((await invoke()).status,'success');
+    assert.equal(invocation.args[invocation.args.indexOf('--output-format')+1],'stream-json');
+    assert.equal((await invoke(documented)).status,'invalid_output','a single json envelope is not a stream result');
+  }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
 console.log(JSON.stringify({passed:checks.filter(c=>c.passed).length,total:checks.length,checks},null,2));
 if(checks.some(c=>!c.passed))process.exitCode=1;

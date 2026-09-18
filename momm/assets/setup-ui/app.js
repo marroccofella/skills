@@ -1206,7 +1206,9 @@ function launchToken() {
 (async () => {
   try {
     session = { token: launchToken() };
-    session = await api("/api/session");
+    // The launch capability stays the one read from the private fragment or
+    // tab storage: header authority never depends on the reply repeating it.
+    session = { ...(await api("/api/session")), token: session.token };
     await refresh();
     loadMaintenance(false);
     loadGuidance();

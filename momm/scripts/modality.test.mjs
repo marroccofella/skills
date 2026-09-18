@@ -770,6 +770,45 @@ for (const writeCode of ["ENOSPC", "synthetic-private-diagnostic"]) await test(`
   assert.doesNotMatch(JSON.stringify(caught), /synthetic private|synthetic-private-diagnostic/);
 });
 
+// Gate rev_20260918172020_ehti. The cap is per output set (HARVEST_MAX_FILES: "per glob per step"),
+// and a failed step keeps a bounded, hashed inventory of what it did stage (1.16 preservation
+// decision). This pins the fail-closed parts: the step fails, the overflowing set is never staged,
+// nothing is staged without being listed, and nothing is forwarded to a later step.
+await test("gate: a two-glob step whose first set overflows fails, never stages that set, and inventories only the bounded sibling set", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const two = mod.plan(m, { input: ["text"], output: ["image", "video"] }, { prompt: PROMPT });
+  assert.deepEqual(two.steps[0].to, ["image_gen", "video_gen"]); two.steps[0].chosen = "grok";
+  let calls = 0;
+  const exec = async () => {
+    calls++;
+    for (let i = 0; i < mod.HARVEST_MAX_FILES + 1; i++) write(path.join(home, ".grok", "sessions", "s", "images", `out-${i}.jpg`), `J${i}`);
+    write(path.join(home, ".grok", "sessions", "s", "clip.mp4"), MP4_B);
+    return ok(JSON.stringify({ text: "Synthetic generation finished", stopReason: "end_turn" }));
+  };
+  const { report, dir } = await mod.run(two, { consent: true, exec, home, cwd, effective: m });
+  assert.equal(calls, 1);
+  assert.equal(report.status, "failed"); assert.equal(report.failure, "too_many_outputs"); assert.equal(report.failed_step, 1);
+  assert.match(report.failure_detail, /image_gen: \d+ new files .* this output set was not staged/);
+  const files = report.steps[0].files;
+  assert.deepEqual(files.map((f) => f.modality), ["video_gen"], "the overflowing set is not staged; the bounded sibling set is inventoried");
+  assert.equal(files[0].sha256, sha256(MP4_B));
+  const staged = fs.readdirSync(path.join(dir, "step-1", "out"));
+  assert.deepEqual(staged.map((name) => `step-1/out/${name}`), files.map((f) => f.path.split("/").slice(-3).join("/")), "nothing is staged without being listed in the report");
+  assert(staged.length <= mod.HARVEST_MAX_FILES);
+  assert.equal(fs.readdirSync(path.join(home, ".grok", "sessions", "s", "images")).length, mod.HARVEST_MAX_FILES + 1, "provider originals are retained");
+});
+
+await test("gate: a grok step that ends cancelled stops the chain; no later step is dispatched", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const planned = mod.plan(m, { chain: ["text", "image", "text"] }, { prompt: PROMPT });
+  planned.steps[0].chosen = "grok";
+  let calls = 0;
+  const { report } = await mod.run(planned, { consent: true, home, cwd, effective: m, exec: async () => { calls++; return ok(`${JSON.stringify({ text: "Earlier answer", stopReason: "end_turn" })}\n${JSON.stringify({ stopReason: "cancelled" })}`); } });
+  assert.equal(calls, 1, "the step after a cancelled step must not run");
+  assert.equal(report.status, "failed"); assert.equal(report.failure, "cancelled"); assert.equal(report.failed_step, 1);
+  assert.equal(report.steps.length, 1); assert.deepEqual(report.steps[0].files, []);
+});
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length || (filter && !passed.length)) process.exitCode = 1;

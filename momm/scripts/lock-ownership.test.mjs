@@ -17,8 +17,12 @@ for(const [file,start,end,name,kind] of cases)for(const record of ['111\n','','m
  let text=record,deleted=0,entered=false,clock=100000,reads=0;
  const fake={mkdirSync(){},writeFileSync(_p,v){if(text!==null){const e=Error('exists');e.code='EEXIST';throw e;}text=v;},readFileSync(){
    if(record==='disappearing'){clock+=100;if(++reads>40)throw Error('UNBOUNDED_RETRY');const e=Error('vanished');e.code='ENOENT';throw e;}return text;
- },statSync(){return{ino:1,mtimeMs:0};},unlinkSync(){// A new owner can replace the old record after the last observation.
-   text='222\n';deleted++;text=null;
+ },statSync(){return{ino:1,mtimeMs:0};},unlinkSync(){
+   // Releasing the record this process (pid 333) wrote frees the lock. Removing anyone else's
+   // record is the race under test: a new owner (pid 222) holds the lock straight afterwards, so
+   // a function that unlinks and then trusts what it sees can never be observed as safe.
+   if(++deleted>40)throw Error('UNBOUNDED_STEAL');
+   text=typeof text==='string'&&text.startsWith('333\n')?null:'222\n';
  }};
  const context=vm.createContext({fs:fake,path,crypto,randomBytes:crypto.randomBytes,process:{pid:333,platform:process.platform,env:{}},Number,Promise,Map,Date:{now:()=>clock+=100},
   TRANSIENT:new Set(['EEXIST']),pidAlive:()=>false,sleepMs(){},sleep:async()=>{},LOCK_STALE_MS:1,GUIDANCE_LOCK_STALE_MS:1,

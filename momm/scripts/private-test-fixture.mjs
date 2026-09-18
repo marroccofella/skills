@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-export function privateTestFixture(prefix='momm-test-') {
+export function privateTestFixture(prefix='momm-test-',{run=spawnSync}={}) {
   if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
   const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
   try {
@@ -21,8 +21,12 @@ $acl.SetAccessRuleProtection($true,$false)
 $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($owner,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
 Set-Acl -LiteralPath $directory -AclObject $acl
 `;
-      const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',script],{input:JSON.stringify({path:root}),encoding:'utf8',windowsHide:true,timeout:30000});
-      if(result.status!==0||result.error)throw Error('Could not protect disposable synthetic test directory');
+      // Windows PowerShell decodes stdin with the console's OEM code page unless the machine uses
+      // the UTF-8 system locale, so the payload is pure ASCII (JSON escapes restore the exact path).
+      const payload=JSON.stringify({path:root}).replace(/[^\x20-\x7e]/g,unit=>'\\u'+unit.charCodeAt(0).toString(16).padStart(4,'0'));
+      const result=run(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',script],{input:payload,encoding:'utf8',windowsHide:true,timeout:30000});
+      // Status and error code only: stderr can name private paths.
+      if(result.status!==0||result.error)throw Error(`Could not protect disposable synthetic test directory (status ${result.status??'none'}${result.error?.code?`, ${result.error.code}`:''})`);
     } else fs.chmodSync(root,0o700);
     return root;
   } catch(error) {
@@ -30,6 +34,8 @@ Set-Acl -LiteralPath $directory -AclObject $acl
     fs.rmSync(root,{recursive:true,force:true});throw error;
   }
 }
-if(process.argv[1]&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url))) {
+// argv[1] need not be a path (node -e ... -- argument); an unresolvable one is simply not this file.
+const isEntrypoint=()=>{try{return !!process.argv[1]&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url));}catch{return false;}};
+if(isEntrypoint()) {
   process.stdout.write(privateTestFixture(process.argv[2])+'\n');
 }

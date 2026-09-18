@@ -41,7 +41,6 @@ const CONTROL = /[\x00-\x08\x0B-\x1F]/; // anything < 0x20 except \n (0x0A) and 
 const RUN_ID = /^rev_[A-Za-z0-9_]+$/;
 const TOP_KEYS = ["governor", "reviewers"];
 const SOURCE_ORDER = ["user", "project", "cli:file", "cli:arg"];
-const LOCK_STALE_MS = 30_000;
 const LOCK_TIMEOUT_MS = 5_000;
 
 export function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
@@ -139,7 +138,6 @@ function writePrivate(file, text, dirMode) {
   fs.renameSync(tmp, file);
 }
 
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; } };
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // Serialises trust-store writers across processes: `trust.json.lock` is created

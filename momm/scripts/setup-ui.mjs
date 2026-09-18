@@ -652,8 +652,6 @@ function guidanceBudgetProblem(candidate, effective) {
 
 const GUIDANCE_STALE = "The guidance file changed on disk since this editor loaded it. Reload, review the change, then save again.";
 const GUIDANCE_BUSY = "Another momm process may be saving guidance, or its lock needs explicit recovery. Wait and reload. If it persists, stop all MOMM writers, including older versions, and independently confirm none remain before removing only guidance.json.lock. Never remove a lock based only on PID or age.";
-const GUIDANCE_LOCK_STALE_MS = 30_000;
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error?.code === "EPERM"; } };
 
 // Serialises guidance writers across processes the way guidance.mjs serialises
 // the trust store: `.momm/guidance.json.lock` is created with O_EXCL and holds
