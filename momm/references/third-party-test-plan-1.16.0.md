@@ -1,6 +1,6 @@
 # MOMM 1.16.0 candidate — independent release acceptance tests
 
-Updated 16 September 2026 following the [independent review on PR #4](https://github.com/marroccofella/skills/pull/4#issuecomment-5696156369).
+Updated 18 September 2026 (required negative controls restored after release gate `rev_20260918172020_ehti`; first revised 16 September) following the [independent review on PR #4](https://github.com/marroccofella/skills/pull/4#issuecomment-5696156369).
 This is a test plan, not certification. Core MOMM only: MOMM World and the separate legal-commercial profile are excluded.
 
 ## Freeze the subject before measuring it
@@ -99,12 +99,13 @@ Obtain two completed distinct external routes for each release-critical source b
 These are product checks, not rules for the tester, and each must be run and recorded. Release gate `rev_20260918172020_ehti` found the condensed plan had dropped them.
 
 - **Outbound secret redaction.** Put synthetic values shaped like `sk-ant-…`, `ghp_…`, `AKIA…` and a lowercase `some_api_key=…` into a synthetic diff. Inspect every staged reviewer prompt file, the stored report and the child process environment: the values must be redacted everywhere and no `*_API_KEY` variable may reach a reviewer process.
-- **Excluded work is absent, not merely out of scope.** Search the frozen candidate for `legal-commercial`, `legal-commercial.mjs`, `--profile legal-commercial` and any MOMM World entry point. Any reachable path is a finding.
+- **Excluded work is absent, not merely out of scope.** Search the frozen candidate for `legal-commercial`, `legal-commercial.mjs`, `--profile legal-commercial` and any MOMM World entry point. Search product code and entry points only (`momm/scripts/`, `momm/assets/`, `install.mjs`, `scripts/`, workflow files), not the documents that state the exclusion, this plan included. MOMM World here means the separate `feature/momm-world` work: any module, subcommand, Setup Center panel or asset whose name contains `world`. Any reachable code path or command-line option is a finding.
 - **Setup reads no credentials.** `--doctor` and the onboarding report must state `model_calls_made: false` and `credential_contents_read: false`; a signed-out route returns `authentication_required` with the provider's own login command.
 - **A review never generates.** Attach a synthetic PNG to `multi-review.mjs` without any consent flag and confirm from the staged prompts and the adapter argv that no route was asked to generate media. Generation may occur only in `modality.mjs run --consent` and consented `probes.mjs --modalities --consent`.
 - **Self-exclusion and the `--governor other` rule.** Under a named harness, `--governor <that harness>` must list its own route as `self_excluded`. Then record that `--governor other` under the same harness lets that route review its governor's work: it is valid only when the controlling harness is none of the named routes.
 - **Nested dispatch fails closed.** With `MULTI_LLM_REVIEW_DEPTH` set to `1`, `2`, `10`, `-1`, `0.5` and `garbage`, the dispatcher must exit 1 before any evidence directory is created. Only unset, empty or `0` may proceed.
 - **Evidence folder on a normally-permissioned Windows volume.** In a new project on a data drive (or any folder that inherits access for other local accounts), a first review must run and `evidence --status` must then report the folder as verified. In a project whose `.ensemble_reviews` already exists with inherited access, the review must refuse, name the reason in words and the remedy, change nothing, and succeed after the owner runs `evidence --protect`. A suite that only injects a fake inspector does not count.
+- **Setup Center local access is what the guide says.** After opening the printed launch link: call an API from a new tab on the bare `http://127.0.0.1:<port>/` with no fragment (expect refusal); reuse the old link after restarting the server (expect refusal); confirm the ledger's Setup Center pointer carries no capability; use **Private ledger** twice more than a minute apart and replay a used ticket (expect a one-use, one-minute ticket).
 - **Provider sandboxes and scratch.** On Windows, run a Codex review that makes the model execute a shell command. The Codex CLI grants its own sandbox group read access to its scratch folder; record whether the review is accepted with that access noted, and confirm that write access or any other account still voids it.
 
 ## F. Media and truthful capability claims

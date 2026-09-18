@@ -28,6 +28,8 @@ Set-Acl -LiteralPath $directory -AclObject $acl
       // Status and error code only: stderr can name private paths.
       if(result.status!==0||result.error)throw Error(`Could not protect disposable synthetic test directory (status ${result.status??'none'}${result.error?.code?`, ${result.error.code}`:''})`);
     } else fs.chmodSync(root,0o700);
+    // An entry that appeared before the access list or mode was applied keeps its own access.
+    if(fs.readdirSync(root).length)throw Error('Disposable synthetic test directory is not empty after protection; refused');
     return root;
   } catch(error) {
     // Exact freshly allocated target only, never a caller's existing directory.

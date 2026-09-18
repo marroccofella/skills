@@ -106,7 +106,8 @@ try {
   // split on CRLF before classification. Keep that normalisation under test.
   test('Copilot missing-auth line is recognised with Windows CRLF line endings', () => {
     for (const stream of ['stdout', 'stderr']) {
-      for (const text of ['error: no authentication information found\r\n', authText.replaceAll('\n', '\r\n') + '\r\n']) {
+      // The second string is the exact reproduction offered again by gate rev_20260918185005_hwu4.
+      for (const text of ['error: no authentication information found\r\n', 'error: no authentication information found.\r\n',authText.replaceAll('\n', '\r\n') + '\r\n']) {
         const result = classify({ code: 1, stdout: '', stderr: '', [stream]: text });
         assert.equal(result.status, 'authentication_required');
         assert(!/GITHUB_TOKEN|fixture-do-not-echo/.test(result.detail));
@@ -141,6 +142,25 @@ try {
     assert.equal(reportContext.rows[2].login_hint, 'agy login   (Google account, browser flow)');
     assert.equal(reportContext.rows[3].login_hint, undefined);
     assert.equal(reportContext.rows[4].login_hint, undefined);
+  });
+
+  // Gate rev_20260918185005_hwu4 [antigravity#19]: `evidence --protect` is the one command that
+  // changes permissions, so an unrecognised or contradictory flag must stop it, not be ignored.
+  test('evidence command refuses unknown or contradictory flags before inspecting or changing anything', () => {
+    const project = path.join(temp, 'evidence-flags'); fs.mkdirSync(project);
+    const dispatcher = path.join(root, 'momm/scripts/multi-review.mjs');
+    for (const args of [['--status', '--bogus'], ['--protect', '--bogus'], ['--protect', '--status'], ['--protect', '--protect'], ['protect']]) {
+      const p = run(process.execPath, [dispatcher, 'evidence', ...args], project);
+      assert.equal(p.status, 1, args.join(' '));
+      assert.equal(p.stdout.trim(), '', args.join(' '));
+      assert.match(p.stderr, /Usage: multi-review\.mjs evidence \[--status \| --protect\]/, args.join(' '));
+      assert.deepEqual(fs.readdirSync(project), [], 'nothing may be created');
+    }
+    for (const args of [[], ['--status']]) {
+      const p = run(process.execPath, [dispatcher, 'evidence', ...args], project);
+      assert.equal(p.status, 0, args.join(' '));
+      assert.equal(JSON.parse(p.stdout).exists, false);
+    }
   });
 
   test('final report records a tolerated provider sandbox grant on the reviewer entry and names the route in evidence', () => {

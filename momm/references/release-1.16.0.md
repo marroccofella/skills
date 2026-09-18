@@ -91,6 +91,21 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Gate rerun, 18 September (run `rev_20260918185005_hwu4`: the pieces that missed quorum plus every
+  file the fixes touched): quorum on 11 of 13 pieces, so the gate has still **not passed**; the two
+  misses are reviewer quotes failing the exact-quote contract, not provider or MOMM failures. No
+  Codex review was lost to the scratch check this time, and the report records `scratch_access` for
+  Codex. 23 findings and 64 suggestions, all ruled on and logged. Real and fixed with a failing
+  test first: a file swapped for a hard link between the protect survey and the change (the script
+  now holds each entry by handle, without delete sharing, across the change); a rejected launch
+  token that stayed in the Setup Center tab's storage; a ledger change during a rebuild costing
+  three rebuilds instead of two; `evidence` accepting unknown or contradictory flags; a test
+  fixture that accepted a directory which gained an entry before protection; several tests that a
+  mutant survived. Rejected with native evidence on this machine: the repeated claim that
+  `Get-Acl -LiteralPath` is unsupported under PowerShell 5.1, and two claims that the sandbox
+  allowance could not work (a single tolerated group does come back as an array, and the
+  dispatcher accepts the inspector's shape; both are now pinned by native tests). Kept by design:
+  locks are never stolen on PID or age, and recovery stays explicit.
 - Found by the gate itself: on Windows the Codex CLI grants its own `CodexSandboxUsers` group
   read access to its working folder as soon as the model runs a sandboxed command (reproduced 2 of 2;
   never with a prompt that runs nothing). The post-run scratch check then discarded the review,
@@ -159,7 +174,7 @@ source review, independent retest and the release gates below.
   infer completion or delete its artifacts. Caught preparation failures still
   write an error report. This is not crash-atomic preparation or fsync durability.
 
-All new controls use synthetic inputs. They do not substitute for retained live
+The new deterministic controls use synthetic inputs; the native inspector runs, the real-HTTP serving regression and the matched Windows shutdown controls named above are real executions and are stronger than that. They do not substitute for retained live
 generation, independent image critique, final-source quorum, exact-head CI,
 publication privacy scans, or signed clean-install/upgrade/rollback proof.
 The independent Windows modality-suite timeout remains open: repeated ACL

@@ -661,16 +661,13 @@ const GUIDANCE_BUSY = "Another momm process may be saving guidance, or its lock 
 // peer. Returns the release function, or null while a live lock is held.
 function acquireGuidanceLock(file) {
   const lock = `${file}.lock`;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
-      return () => { try { fs.unlinkSync(lock); } catch { /* already gone */ } };
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-      return null;
-    }
+  try {
+    fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
+    return () => { try { fs.unlinkSync(lock); } catch { /* already gone */ } };
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+    return null;
   }
-  return null;
 }
 
 // `beforeCommit` and `beforeRename` are test seams only. `beforeCommit` stands
@@ -1235,7 +1232,11 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
     if (stopped) return;
     if (debounce) clearTimer(debounce);
     const wait = Math.max(debounceMs, lastRunAt + minGapMs - now());
-    debounce = setTimer(() => { debounce = null; return regenerate(); }, wait);
+    // The change is covered by any run that STARTS after this point (the same
+    // rule rebuild() uses). An on-demand rebuild may start that run before this
+    // timer fires; the timer then joins it instead of queueing a redundant one.
+    const requiredGeneration = generation + 1;
+    debounce = setTimer(() => { debounce = null; return generation >= requiredGeneration ? (inflight ?? Promise.resolve()) : regenerate(); }, wait);
     debounce?.unref?.();
   }
   function notify(filename, event) {
@@ -2029,6 +2030,33 @@ async function dashboardRegression() {
     const deferred = rb.runs === 1 && rb.timers.length === 1 && rb.timers[0].ms === 3000;
     rb.timers[0].fn(); await macrotask(); rb.release(); const thirdState = await rbThird;
     checks.ledger_rebuild_awaits_inflight_and_respects_gap = oneRunForTwoRequests && bothServedByThatRun && deferred && rb.runs === 2 && thirdState.regenerations === 2;
+    // Gate rev_20260918185005_hwu4 duplicate-ledger-rebuild-race: a change notified during run 1
+    // schedules a follow-up; a GET /ledger arriving meanwhile sets its own gap timer. Whichever
+    // timer fires first starts run 2, which covers both; the other must not cause a run 3.
+    for (const onDemandFirst of [true, false]) {
+      const race = { runs: 0, timers: [], release: null };
+      const raceWatcher = createLedgerWatcher({ dir: root, run: () => { race.runs += 1; return new Promise((resolve) => { race.release = () => resolve({ code: 0, stdout: "", stderr: "" }); }); }, now: () => clockNow, setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; race.timers.push(timer); return timer; }, clearTimer: (timer) => { timer.cleared = true; }, watch: () => ({ on() {}, close() {} }) });
+      raceWatcher.start(); raceWatcher.notify("review-log.jsonl");
+      race.timers.at(-1).fn(); await macrotask(); // run 1 is reading
+      raceWatcher.notify("review-log.jsonl"); const followUp = race.timers.at(-1); // written during run 1
+      const reader = raceWatcher.rebuild(); // GET /ledger during run 1
+      race.release(); await macrotask();
+      const onDemand = race.timers.at(-1);
+      const distinctTimers = onDemand !== followUp && !followUp.cleared && race.runs === 1;
+      const [firstTimer, secondTimer] = onDemandFirst ? [onDemand, followUp] : [followUp, onDemand];
+      firstTimer.fn(); await macrotask(); const secondRunStarted = race.runs === 2;
+      const late = secondTimer.fn(); await macrotask();
+      race.release(); await macrotask(); await reader; await late;
+      // Anything still scheduled would be the redundant third generation.
+      const leftover = race.timers.filter((timer) => !timer.cleared && ![followUp, onDemand, race.timers[0]].includes(timer));
+      for (const timer of leftover) { timer.fn(); await macrotask(); if (race.runs > 2) race.release(); }
+      await macrotask();
+      checks[`ledger_change_during_a_run_costs_one_follow_up_${onDemandFirst ? "on_demand_timer_first" : "watcher_timer_first"}`] = distinctTimers && secondRunStarted && race.runs === 2 && leftover.length === 0 && raceWatcher.status().regenerations === 2 && raceWatcher.status().pending === false;
+      // A change notified AFTER run 2 began is not covered by it and still gets its own run.
+      raceWatcher.notify("dispositions.jsonl"); race.timers.at(-1).fn(); await macrotask();
+      checks[`ledger_change_after_the_covering_run_still_rebuilds_${onDemandFirst ? "a" : "b"}`] = race.runs === 3;
+      race.release(); await macrotask(); raceWatcher.stop();
+    }
     // /api/status.ledger_url: null until a ledger exists, then a file:// URL to it.
     const luFx = fixture("ledger-url");
     const nullBefore = ledgerFileUrl(luFx.cwd) === null;

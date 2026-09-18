@@ -12,11 +12,19 @@ import {inspectEvidencePermissions,createEvidenceWorkspace,createPrivateDirector
 import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
+import {privateTestFixture} from './private-test-fixture.mjs';
 
 const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'momm-native-evidence-'));
 const dispatcher=fileURLToPath(new URL('../momm/scripts/multi-review.mjs',import.meta.url));
 const results=[];
 const scratchToClean=[];
+// Containment by resolved location, not by spelling: Windows paths that differ only in drive-letter
+// or directory case name the same directory, and a string prefix test would call a nested scratch
+// directory "outside" (gate rev_20260918185005_hwu4).
+const isInside=(parent,child)=>{
+  const relative=path.relative(fs.realpathSync.native(parent),fs.realpathSync.native(child));
+  return relative!==''&&!relative.startsWith('..')&&!path.isAbsolute(relative);
+};
 try {
   for(const kind of ['protected','broad']) {
     const project=path.join(fixture,kind), evidence=path.join(project,'.ensemble_reviews');
@@ -51,7 +59,14 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
         requirePrivateScratch,createEvidenceWorkspace:prefix=>createEvidenceWorkspace(prefix,evidence)});
       vm.runInContext(source.slice(start,end)+';this.stage=stageAttachments;this.clean=cleanupAttachments;',context);
       const staged=context.stage([input]);
-      assert(!path.resolve(staged.directory).startsWith(path.resolve(evidence)+path.sep),'Provider scratch must be outside durable evidence');
+      assert(!isInside(evidence,staged.directory),'Provider scratch must be outside durable evidence');
+      {
+        // The check itself must see through a differently spelled path to a directory that IS nested.
+        const nested=path.join(project,'casefold-control','Nested');fs.mkdirSync(nested,{recursive:true});
+        const respelled=process.platform==='win32'?(nested[0]===nested[0].toLowerCase()?nested[0].toUpperCase():nested[0].toLowerCase())+nested.slice(1):path.join(project,'casefold-control','.','Nested');
+        assert.equal(isInside(path.join(project,'casefold-control'),respelled),true,'a respelled nested path must still count as inside');
+        assert.equal(isInside(evidence,path.join(project,'casefold-control')),false);
+      }
       assert.equal(inspectEvidencePermissions(staged.directory).verified,true);
       assert.equal(fs.readFileSync(staged.attachments[0].staged_path,'utf8'),'SYNTHETIC ATTACHMENT ONLY');
       const scratchDirectory=staged.directory;
@@ -211,6 +226,58 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
     assert.equal(inspectEvidencePermissions(evidence).verified,true);
     assert.deepEqual([access(outside),access(outsideDir)],[before[3],before[4]],'protection never reaches outside the evidence folder');
     results.push({kind:'linked',case:'plain tree protected after links removed',passed:true});
+    if(process.platform==='win32') {
+      // Gate rev_20260918185005_hwu4: a file replaced by a hard link AFTER the Node survey (here:
+      // just before the protect script starts) must still be refused by the script itself, and the
+      // outside name's access list must stay as it was. POSIX has the same guard on the descriptor.
+      const swapProject=path.join(fixture,'swapped'),swapEvidence=path.join(swapProject,'.ensemble_reviews');
+      const victim=path.join(swapEvidence,'reports','synthetic.json'),bystander=path.join(swapEvidence,'reports','zz-later.json'),swapOutside=path.join(swapProject,'outside.txt');
+      fs.mkdirSync(path.join(swapEvidence,'reports'),{recursive:true});
+      fs.writeFileSync(victim,'{}');fs.writeFileSync(bystander,'{}');fs.writeFileSync(swapOutside,'harmless control');
+      const broaden=spawnSync(path.join(process.env.SystemRoot,'System32/icacls.exe'),[swapEvidence,'/grant','*S-1-5-32-545:(OI)(CI)RX'],{encoding:'utf8',windowsHide:true,timeout:30000});
+      assert.equal(broaden.status,0,'Disposable broad fixture preparation failed');
+      const outsideBefore=access(swapOutside);
+      let swaps=0;
+      const swapThenRun=(exe,args,options)=>{
+        if(args.at(-1).includes('SetAccessControl')&&swaps++===0){fs.unlinkSync(victim);fs.linkSync(swapOutside,victim);}
+        return spawnSync(exe,args,options);
+      };
+      assert.throws(()=>protectEvidence(swapEvidence,{run:swapThenRun}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS');
+      assert.equal(swaps,1,'the swap must have happened after the survey and before the protect script');
+      assert.equal(fs.lstatSync(victim).nlink,2);
+      assert.equal(access(swapOutside),outsideBefore,'a file swapped for a hard link after the survey must not have its shared access list rewritten');
+      fs.unlinkSync(victim);fs.writeFileSync(victim,'{}');
+      assert.equal(protectEvidence(swapEvidence).changed,true,'the plain tree is protected once the link is gone');
+      assert.equal(inspectEvidencePermissions(swapEvidence).verified,true);
+      assert.equal(access(swapOutside),outsideBefore);
+      results.push({kind:'linked',case:'file swapped for a hard link after the survey is refused by the protect script',passed:true});
+      // The guard the protect script holds while it changes an entry must really stop that entry
+      // being renamed or deleted (an attributes-only handle would not). Production type, real files.
+      const moduleSource=fs.readFileSync(new URL('../momm/scripts/evidence-permissions.mjs',import.meta.url),'utf8');
+      const typeFrom=moduleSource.indexOf("Add-Type -TypeDefinition @'\nusing System;\nusing System.ComponentModel;"),typeTo=moduleSource.indexOf("\n'@",typeFrom);
+      assert(typeFrom>=0&&typeTo>typeFrom,'protect guard type not found');
+      const heldFile=path.join(swapProject,'held.json'),heldDir=path.join(swapProject,'held-dir');
+      fs.writeFileSync(heldFile,'{}');fs.mkdirSync(heldDir);
+      const holdScript="$ErrorActionPreference='Stop'\n"+moduleSource.slice(typeFrom,typeTo+3)+String.raw`
+$request=[Console]::In.ReadToEnd() | ConvertFrom-Json
+$out=@{}
+foreach($name in 'file','dir') {
+  $p=$request.$name
+  $facts=New-Object 'uint32[]' 2
+  $held=[MommProtectGuard]::Hold($p,$facts)
+  try {
+    $out[$name+'_links']=[int]$facts[1]
+    try { Rename-Item -LiteralPath $p -NewName ((Split-Path $p -Leaf)+'.moved'); $out[$name+'_rename']='succeeded' } catch { $out[$name+'_rename']='blocked' }
+    try { Remove-Item -LiteralPath $p -Recurse -Force; $out[$name+'_delete']='succeeded' } catch { $out[$name+'_delete']='blocked' }
+  } finally { $held.Dispose() }
+}
+$out | ConvertTo-Json -Compress`;
+      const holding=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',holdScript],{input:JSON.stringify({file:heldFile,dir:heldDir}),encoding:'utf8',windowsHide:true,timeout:60000});
+      assert.equal(holding.status,0,'guard probe failed');
+      assert.deepEqual(JSON.parse(holding.stdout.replace(/^\ufeff/,'')),{file_links:1,file_rename:'blocked',file_delete:'blocked',dir_links:1,dir_rename:'blocked',dir_delete:'blocked'});
+      assert(fs.existsSync(heldFile)&&fs.existsSync(heldDir));
+      results.push({kind:'linked',case:'an entry held by the protect guard cannot be renamed or deleted',passed:true});
+    }
   }
   // Gate rev_20260918172020_ehti: the path travels to Windows PowerShell as JSON on stdin, and
   // [Console]::In decodes stdin with the console's OEM code page unless the machine runs the UTF-8
@@ -232,6 +299,14 @@ const made=privateTestFixture('momm-oem-fixture-',{run:oem});process.stdout.writ
     assert.equal(made.status,0,'privateTestFixture must work under a non-ASCII temp directory and an OEM console code page');
     assert.deepEqual(JSON.parse(made.stdout),{exists:true});
     results.push({kind:'non-ascii',case:'non-ASCII paths survive an OEM console code page (inspector, private creation, test fixture)',passed:true});
+    // Gate rev_20260918185005_hwu4: the test fixture is created before its access list is applied. An
+    // entry that appeared in that window keeps whatever access it was created with, so the fixture
+    // must be refused (and removed) rather than handed to a test as private.
+    const plantedIn=[];
+    const planting=(exe,args,options)=>{const made=JSON.parse(options.input).path;fs.writeFileSync(path.join(made,'planted.txt'),'SYNTHETIC ONLY');plantedIn.push(made);return spawnSync(exe,args,options);};
+    assert.throws(()=>privateTestFixture('momm-planted-fixture-',{run:planting}),/not empty/);
+    assert.equal(plantedIn.length,1);assert.equal(fs.existsSync(plantedIn[0]),false,'a refused fixture is removed');
+    results.push({kind:'fixture',case:'test fixture refuses a directory that gained an entry before its access list was applied',passed:true});
   }
   // Provider scratch allowance (Windows): a sandboxing CLI grants its sandbox group read access to
   // the directory it runs in. Opt-in by account name, read-only rights only, reported when used,
@@ -259,6 +334,39 @@ const made=privateTestFixture('momm-oem-fixture-',{run:oem});process.stdout.writ
       assert.deepEqual(tolerated.tolerated,[{principal:leaf.toUpperCase(),rights:'read_execute'}]);
       assert.deepEqual(requirePrivateScratch(scratch,allow).tolerated,tolerated.tolerated);
       assert.equal(inspectEvidencePermissions(scratch,{allowReadOnlyPrincipals:['SomeOtherGroup']}).reason,'additional_principal','only the named principal is tolerated');
+      // Gate rev_20260918185005_hwu4 pins. (1) The real Windows PowerShell 5.1 inspector must emit
+      // a JSON ARRAY for exactly one tolerated principal (a single-element array must not unroll
+      // to a bare string). (2) What the inspector returns is exactly what the dispatcher's own
+      // validator accepts and records: {principal:string, rights:string}, matched on the leaf name.
+      let rawStdout=null;
+      const recording=(exe,args,options)=>{const made=spawnSync(exe,args,options);rawStdout=made.stdout;return made;};
+      const single=inspectEvidencePermissions(scratch,{...allow,run:recording});
+      const raw=JSON.parse(String(rawStdout).replace(/^\ufeff/,''));
+      assert(Array.isArray(raw.tolerated),'inspector stdout must carry tolerated as an array: '+JSON.stringify(raw.tolerated));
+      assert.equal(raw.tolerated.length,1);assert.equal(raw.tolerated[0].toLowerCase(),leaf.toLowerCase());
+      assert.equal(single.tolerated.length,1);
+      for(const entry of single.tolerated){assert.deepEqual(Object.keys(entry).sort(),['principal','rights']);assert.equal(typeof entry.principal,'string');assert.equal(typeof entry.rights,'string');}
+      const dispatcherSource=fs.readFileSync(dispatcher,'utf8');
+      const from=dispatcherSource.indexOf('function toleratedScratchAccess('),to=dispatcherSource.indexOf('\n// Routes whose accepted result',from);
+      assert(from>=0&&to>from,'dispatcher validator not found');
+      const validate=offered=>vm.runInNewContext(dispatcherSource.slice(from,to)+';toleratedScratchAccess',{PROVIDER_SANDBOX_PRINCIPALS:offered,clipped:(text,limit)=>String(text).slice(0,limit)});
+      assert.deepEqual(JSON.parse(JSON.stringify(validate({codex:[leaf.toUpperCase()]})('codex',single))),single.tolerated,'the dispatcher validator must accept and record the real inspector result unchanged');
+      assert.equal(validate({codex:['SomeOtherGroup']})('codex',single),null,'a principal the route was not offered fails closed');
+      assert.equal(validate({codex:[leaf.toUpperCase()]})('grok',single),null,'a route with no allowance fails closed');
+      // Where the real Codex sandbox group exists on this machine, repeat with the dispatcher's own table.
+      const codexScratch=path.join(fixture,'allowance-codex');
+      assert.equal(createPrivateDirectory(codexScratch),true);
+      const codexGrant=spawnSync(icacls,[codexScratch,'/grant','CodexSandboxUsers:(OI)(CI)RX'],{encoding:'utf8',windowsHide:true,timeout:30000});
+      if(codexGrant.status===0) {
+        const tableFrom=dispatcherSource.indexOf('const PROVIDER_SANDBOX_PRINCIPALS =');
+        assert(tableFrom>=0&&tableFrom<from);
+        const real=vm.runInNewContext(dispatcherSource.slice(tableFrom,to)+';({table:PROVIDER_SANDBOX_PRINCIPALS,check:toleratedScratchAccess})',{clipped:(text,limit)=>String(text).slice(0,limit)});
+        const inspected=requirePrivateScratch(codexScratch,{allowReadOnlyPrincipals:[...real.table.codex]});
+        assert.deepEqual(inspected.tolerated,[{principal:'CodexSandboxUsers',rights:'read_execute'}]);
+        assert.deepEqual(JSON.parse(JSON.stringify(real.check('codex',inspected))),[{principal:'CodexSandboxUsers',rights:'read_execute'}]);
+        results.push({kind:'allowance',case:'real CodexSandboxUsers grant: inspector result accepted by the dispatcher table and validator',passed:true});
+      } else results.push({kind:'allowance',case:'skipped: no CodexSandboxUsers group on this machine',passed:true,skipped:true});
+      results.push({kind:'allowance',case:'one tolerated principal stays a JSON array; dispatcher validator accepts the emitted shape',passed:true});
       grant('M');
       assert.deepEqual(inspectEvidencePermissions(scratch,allow),{verified:false,reason:'additional_principal',inspected:1},'a write-capable rule for the same principal stays refused');
       assert.throws(()=>requirePrivateScratch(scratch,allow),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='additional_principal');

@@ -2837,6 +2837,9 @@ async function selfTest(pretty) {
 function evidenceCommand(args) {
   const directory = path.resolve(".ensemble_reviews");
   const wants = new Set(args);
+  // --protect changes permissions: exactly one recognised flag (or none, which
+  // means --status), so a typo or a contradictory pair never reaches it.
+  if (args.length > 1 || args.some((arg) => arg !== "--status" && arg !== "--protect")) throw new Error("Usage: multi-review.mjs evidence [--status | --protect]");
   if (wants.has("--protect")) {
     const result = protectEvidence(directory);
     process.stdout.write(`${JSON.stringify({ evidence: directory, ...result }, null, 2)}\n`);

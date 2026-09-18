@@ -163,6 +163,44 @@ await test('bootstrap keeps the launch capability when the session reply omits o
     assert.equal(c.current().token,token);assert.equal(c.current().platform,'test');
   }
 });
+// Gate rev_20260918185005_hwu4 stale-launch-token: a capability the server has rejected can
+// never become valid again (each launch mints a new one), so it must not stay in tab
+// storage to be re-sent on every reload. A failure that is not a rejection keeps it.
+await test('a rejected stored launch token is forgotten; a transient failure keeps it; a new link recovers',async()=>{
+  const js=fs.readFileSync(new URL('../assets/setup-ui/app.js',import.meta.url),'utf8');
+  const apiStart=js.indexOf('async function api('),apiEnd=js.indexOf('\nfunction reviewerRoutes(',apiStart);
+  const bootStart=js.indexOf('function launchToken() {'),bootEnd=js.indexOf('\n// A private launch link',bootStart);
+  assert(apiStart>=0&&apiEnd>apiStart&&bootStart>=0&&bootEnd>bootStart);
+  const stale='a'.repeat(48),fresh='b'.repeat(48),stored=new Map([['momm-local-session',stale]]);
+  const load=async(hash,respond)=>{
+    const requests=[];let finish;const done=new Promise(resolve=>{finish=resolve;});
+    const c=vm.createContext({URLSearchParams,location:{hash,pathname:'/',search:''},
+      sessionStorage:{getItem:k=>stored.get(k)??null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},history:{replaceState(){}},
+      fetch:async(url,options)=>{requests.push(options.headers['X-MOMM-Token']);return respond(options.headers['X-MOMM-Token']);},
+      refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
+      summary:{},showToast:message=>finish(message)});
+    vm.runInContext('var session=null;'+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd),c);
+    return {message:await done,requests};
+  };
+  const server=token=>token===fresh?{ok:true,status:200,json:async()=>({platform:'test',providers:{}})}
+    :{ok:false,status:403,json:async()=>({error:'Use the private Setup Center launch link from your terminal.'})};
+  const outage=await load('',async()=>{throw new TypeError('Failed to fetch');});
+  assert.match(outage.message,/Failed to fetch/);assert.equal(stored.get('momm-local-session'),stale,'an unreachable server is not a rejection');
+  const unavailable=await load('',async()=>({ok:false,status:503,json:async()=>({error:'busy'})}));
+  assert.equal(unavailable.message,'busy');assert.equal(stored.get('momm-local-session'),stale,'only an explicit rejection forgets the token');
+  const rejected=await load('',server);
+  assert.deepEqual(rejected.requests,[stale]);assert.match(rejected.message,/private Setup Center launch link/);
+  assert.equal(stored.has('momm-local-session'),false,'a rejected token must not stay in tab storage');
+  const reloaded=await load('',server);
+  assert.deepEqual(reloaded.requests,[],'the rejected token must not be sent again on reload');
+  assert.match(reloaded.message,/private Setup Center launch link/);
+  const recovered=await load(`#momm-token=${fresh}`,server);
+  assert.equal(recovered.message,null);assert.deepEqual(recovered.requests,[fresh]);assert.equal(stored.get('momm-local-session'),fresh);
+  // A newer token stored by a fresh link is never removed by an older page's rejection.
+  stored.set('momm-local-session',stale);
+  const raced=await load('',async token=>{stored.set('momm-local-session',fresh);return server(token);});
+  assert.match(raced.message,/launch link/);assert.equal(stored.get('momm-local-session'),fresh);
+});
 await test('real loopback HTTP refuses private reads and admits exactly one ticket navigation',async()=>{
   const secret=crypto.randomBytes(24).toString('hex');let ledgerReads=0;
   const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};

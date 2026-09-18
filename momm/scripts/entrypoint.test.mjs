@@ -6,6 +6,10 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+// Entries under scripts/ belong to the repository checkout. The skill is also installed by linking or
+// copying momm/ alone, where they do not exist: there they are skipped by name, never silently.
+const repoCheckout=fs.existsSync(path.join(root,'versions.json'))&&fs.existsSync(path.join(root,'scripts'));
+const repoOnly=file=>file.startsWith('scripts/');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-entrypoint-'));
 const alias=path.join(temp,'checkout-alias');
 const failures=[],passed=[];
@@ -15,6 +19,7 @@ try {
   fs.symlinkSync(root,alias,process.platform==='win32'?'junction':'dir');
   aliasCreated=true;
   for(const [file,args,status] of [['momm/scripts/update.mjs',['--help'],0],['momm/scripts/governor.mjs',['--help'],4],['scripts/render-momm-site.mjs',['--check'],0]]) {
+    if(repoOnly(file)&&!repoCheckout){passed.push(file+' skipped: not a repository checkout');continue;}
     try {
       const a=run([path.join(root,file),...args]),b=run([path.join(alias,file),...args]);
       assert.equal(a.status,status,a.stderr);assert((a.stdout+a.stderr).trim());
@@ -41,6 +46,7 @@ try {
 }catch(e){failures.push({file:'alias cleanup',error:e.message});}
 // Importing the test fixture must never act as its command line, whatever argv[1] holds.
 for(const file of ['momm/scripts/private-test-fixture.mjs','scripts/private-test-fixture.mjs']) {
+  if(repoOnly(file)&&!repoCheckout){passed.push(file+' skipped: not a repository checkout');continue;}
   try {
     const imported=run(['--input-type=module','-e',`await import(${JSON.stringify(pathToFileURL(path.join(root,file)).href)});`,'--','nonexistent-entrypoint-fixture']);
     assert.equal(imported.status,0,imported.stderr);assert.equal(imported.stdout,'');

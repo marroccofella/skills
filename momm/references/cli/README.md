@@ -70,7 +70,7 @@ immediate forced exit, without importing MOMM. Natural exit succeeded; four
 delay trials succeeded. See the [bounded comparison](https://github.com/marroccofella/skills/pull/4#issuecomment-5700817529).
 This is a small observed mitigation signal, not proof of a universal safe delay.
 
-By command class: **review, preview (`--dry-run`) and mutating commands** flush their output and then, on Windows only, wait 250 ms before an explicit exit (POSIX exits immediately after the flush); **information-only `update` commands** (no apply, rollback, dry-run or channel change) are allowed to drain naturally after the flush. A passing information-only run therefore says nothing about review shutdown; `shutdown.test.mjs` covers the first class and `information-shutdown.test.mjs` the second.
+By command class: **review, preview (`--dry-run`) and mutating commands** flush their output and then, on Windows only, wait 250 ms before an explicit exit (POSIX exits immediately after the flush); **information-only `update` commands** (no apply, rollback, dry-run or channel change) are allowed to drain naturally after the flush. A passing information-only run therefore says nothing about review shutdown; `momm/scripts/shutdown.test.mjs` covers the first class and `scripts/information-shutdown.test.mjs` the second.
 
 The candidate dispatcher uses a 250ms Windows-only post-flush delay. The
 independent referenced 2000ms exit fallback is installed before flushing and

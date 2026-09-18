@@ -121,6 +121,14 @@ await test('launcher and parser agree for every attachment modality and for the 
       assert.equal((await invoke(JSON.stringify({response:JSON.stringify(payload)}),{},options)).status,'invalid_output',modality);
       fs.unlinkSync(file);
     }
+    // Gate rev_20260918185005_hwu4 repeated the claim with "attachments present but none
+    // copied". No such state exists: every attachment is copied or setup fails, and a
+    // `mediaCopies` option is not read. The offered reproduction never reaches a provider.
+    let reached=false;
+    const uncopied=await context.invoke('antigravity',artifact,{governor:'codex',timeoutMs:60000,mediaCopies:[],
+      staging:{directory:dir,attachments:[{modality:'pdf'}]},runProcess:async()=>{reached=true;return {code:0,stdout:encode(events()),stderr:''};}});
+    assert.equal(reached,false,'an attachment that was not copied must never launch the stream transport');
+    assert.equal(uncopied.status,'error');assert.match(uncopied.detail,/setup failed before dispatch/);
     // No attachment: the stream launcher is paired with the stream parser.
     assert.equal((await invoke()).status,'success');
     assert.equal(invocation.args[invocation.args.indexOf('--output-format')+1],'stream-json');

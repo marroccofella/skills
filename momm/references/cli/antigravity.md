@@ -18,9 +18,9 @@ Google's terminal agent, successor route for consumer Google accounts after Gemi
 
 `agy -p/--print "<prompt>"` runs one prompt and prints the response; ordinary stdin does not replace that prompt argument. MOMM 1.16 uses exactly one of two invocations, never a mix. **Text-only review:** no `-p` in argv at all; argv carries `--new-project --input-format stream-json --output-format stream-json --print-timeout <s> --mode=plan --sandbox`, and stdin carries one JSON line `{"event":"user","message":{"content":"<instruction + review contract + artifact>"}}` followed by EOF, so source never travels in process arguments. **Review with media:** `-p "<short instruction naming the private prompt file and the staged media>"`, plus `--add-dir <scratch> --output-format json --json-schema <schema>`; stdin is empty and the prompt body is read from the private file.
 
-- `--output-format text|json|stream-json`; `--json-schema <schema or path>` enforces structured output (final result only for stream-json).
+- `--output-format text|json|stream-json`; `--json-schema <schema or path>` enforces structured output with `--output-format json`. Do not add it to the text-only `stream-json` invocation: on agy 1.2.4 that combination returned an empty or partial SUCCESS at the print deadline, so MOMM omits the native schema there and validates the final answer itself.
 - `--mode accept-edits|plan` — MOMM uses `plan`; `--sandbox` adds terminal restrictions; `--new-project` isolates the session from any existing project.
-- `--print-timeout` (default 5m0s) — MOMM sets it just below its own route budget.
+- `--print-timeout` (default 5m0s; the value is a duration in seconds with the `s` suffix, for example `175s`, unlike MOMM's own millisecond timeouts) — MOMM sets it just below its own route budget.
 - `--effort low|medium|high`, `--model`, `--add-dir`, `--input-format stream-json`.
 - Never add `--dangerously-skip-permissions`; `--disable-slash-commands` conflicted with plan mode in 1.1.13.
 

@@ -265,38 +265,84 @@ $sections=[Security.AccessControl.AccessControlSections]::Access
 function Clear-ExplicitRules($acl) {
   foreach($rule in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))) { [void]$acl.RemoveAccessRuleSpecific($rule) }
 }
-# First pass changes nothing: the whole tree is listed and any link or junction refuses the run.
+# An NTFS hard link shares one security descriptor between all of its names, and the link count is
+# only available from an open handle. Hold opens the entry itself (never a link's target) WITHOUT
+# delete sharing, so while the handle is held the entry cannot be deleted, renamed or replaced, and
+# reports its attributes and link count. facts[0]=attributes, facts[1]=number of links.
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class MommProtectGuard {
+  [StructLayout(LayoutKind.Sequential)] struct Info {
+    public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh, Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+  }
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, ExactSpelling=true, SetLastError=true)]
+  static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+  [DllImport("kernel32.dll", SetLastError=true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Info info);
+  public static SafeFileHandle Hold(string path, uint[] facts) {
+    // GENERIC_READ (an attributes-only open takes no part in share checks and would block nothing);
+    // share read+write, not delete; OPEN_EXISTING; BACKUP_SEMANTICS | OPEN_REPARSE_POINT.
+    SafeFileHandle handle = CreateFileW(path, 0x80000000, 0x3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+    if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+    Info info;
+    if (!GetFileInformationByHandle(handle, out info)) { int code = Marshal.GetLastWin32Error(); handle.Dispose(); throw new Win32Exception(code); }
+    facts[0] = info.Attributes; facts[1] = info.Links;
+    return handle;
+  }
+}
+'@
+$reparse=[uint32][IO.FileAttributes]::ReparsePoint
+$directory=[uint32][IO.FileAttributes]::Directory
+function Test-Plain($facts) {
+  if($facts[0] -band $reparse) { throw 'Evidence contains a link or junction; remove it first' }
+  if(-not ($facts[0] -band $directory) -and $facts[1] -gt 1) { throw 'Evidence contains a hard-linked file; remove it first' }
+}
+# First pass changes nothing: the whole tree is listed and any link, junction or hard-linked file
+# refuses the run.
 $entries=New-Object 'System.Collections.Generic.List[string]'
 $queue=New-Object 'System.Collections.Generic.Queue[string]'
 foreach($child in Get-ChildItem -LiteralPath $root.FullName -Force) { $queue.Enqueue($child.FullName) }
 while($queue.Count -gt 0) {
   $item=Get-Item -LiteralPath $queue.Dequeue() -Force
   if($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Evidence contains a link or junction; remove it first' }
+  $facts=New-Object 'uint32[]' 2
+  $held=[MommProtectGuard]::Hold($item.FullName,$facts)
+  try { Test-Plain $facts } finally { $held.Dispose() }
   $entries.Add($item.FullName)
   if($entries.Count -ge 50000) { throw 'Evidence holds more entries than MOMM will change' }
   if($item.PSIsContainer) { foreach($child in Get-ChildItem -LiteralPath $item.FullName -Force) { $queue.Enqueue($child.FullName) } }
 }
 $dir=New-Object IO.DirectoryInfo($root.FullName)
-if($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Evidence root changed while it was being protected' }
-$acl=$dir.GetAccessControl($sections)
-$acl.SetAccessRuleProtection($true,$false)
-Clear-ExplicitRules $acl
-$acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($owner,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
-$dir.SetAccessControl($acl)
+$facts=New-Object 'uint32[]' 2
+$held=[MommProtectGuard]::Hold($root.FullName,$facts)
+try {
+  if(($facts[0] -band $reparse) -or -not ($facts[0] -band $directory)) { throw 'Evidence root changed while it was being protected' }
+  $acl=$dir.GetAccessControl($sections)
+  $acl.SetAccessRuleProtection($true,$false)
+  Clear-ExplicitRules $acl
+  $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($owner,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
+  $dir.SetAccessControl($acl)
+} finally { $held.Dispose() }
 $count=1
-# Second pass: each entry is read again immediately before its change, so an entry replaced by a
-# link or junction since the first pass stops the run instead of being followed.
+# Second pass: each entry is opened and held (so it cannot be replaced meanwhile), checked again for
+# a link, junction or second hard-link name, and only then changed. Anything that appeared since the
+# first pass stops the run instead of being followed.
 foreach($entry in $entries) {
-  $item=Get-Item -LiteralPath $entry -Force
-  if($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Evidence changed while it was being protected' }
-  $count++
-  if($item.PSIsContainer) { $info=New-Object IO.DirectoryInfo($item.FullName) } else { $info=New-Object IO.FileInfo($item.FullName) }
-  $inner=$info.GetAccessControl($sections)
-  $inner.SetAccessRuleProtection($false,$false)
-  Clear-ExplicitRules $inner
-  $info.Refresh()
-  if($info.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Evidence changed while it was being protected' }
-  $info.SetAccessControl($inner)
+  $facts=New-Object 'uint32[]' 2
+  $held=[MommProtectGuard]::Hold($entry,$facts)
+  try {
+    if(($facts[0] -band $reparse) -or (-not ($facts[0] -band $directory) -and $facts[1] -gt 1)) { throw 'Evidence changed while it was being protected' }
+    $count++
+    if($facts[0] -band $directory) { $info=New-Object IO.DirectoryInfo($entry) } else { $info=New-Object IO.FileInfo($entry) }
+    $inner=$info.GetAccessControl($sections)
+    $inner.SetAccessRuleProtection($false,$false)
+    Clear-ExplicitRules $inner
+    $info.SetAccessControl($inner)
+  } finally { $held.Dispose() }
 }
 @{ protected=$true; entries=$count } | ConvertTo-Json -Compress
 `;

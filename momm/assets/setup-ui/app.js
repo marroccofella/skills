@@ -114,7 +114,11 @@ async function api(path, options = {}) {
   }
   const response = await fetch(path, { ...options, headers });
   const value = await response.json();
-  if (!response.ok) throw new Error(value.error || "Setup Center could not complete that action.");
+  if (!response.ok) {
+    const error = new Error(value.error || "Setup Center could not complete that action.");
+    error.status = response.status;
+    throw error;
+  }
   return value;
 }
 
@@ -1203,6 +1207,14 @@ function launchToken() {
   return token;
 }
 
+// Each launch mints a new capability, so one the server has rejected can never
+// become valid again: do not keep it in tab storage to be re-sent on every
+// reload. Only that exact value is removed (a newer link's token is kept).
+function forgetLaunchToken(token) {
+  const key = "momm-local-session";
+  try { if (token && sessionStorage.getItem(key) === token) sessionStorage.removeItem(key); } catch {}
+}
+
 (async () => {
   try {
     session = { token: launchToken() };
@@ -1216,6 +1228,9 @@ function launchToken() {
     loadUpdateClock();
     loadCapabilities();
   } catch (error) {
+    // An explicit rejection retires the stored capability; an unreachable or
+    // busy server does not. Recovery is the new launch link from the terminal.
+    if (error?.status === 403) { forgetLaunchToken(session?.token); session = null; }
     summary.textContent = "Setup Center could not start.";
     showToast(error.message);
   }

@@ -116,6 +116,16 @@ await test('an error marker on any event is a terminal failure and is not echoed
     assert.equal(r.status,'error');assert(!r.review);assert(!JSON.stringify(r).includes('PRIVATE_DIAGNOSTIC'));
   }
 });
+// Gate rev_20260918185005_hwu4 [codex#8]: within one turn the LAST assistant message is the
+// answer; an earlier plausible review in the same turn is never promoted over it.
+await test('a duplicate assistant message in the same turn replaces, and never rescues, the earlier one',async()=>{
+  for(const later of ['','{bad}']){
+    const rows=events();rows.splice(16,0,event('assistant.message',{turnId:'answer-turn',content:later,toolRequests:[]}));
+    assert.equal((await invoke(rows)).status,'invalid_output');
+  }
+  const rows=events('{bad}');rows.splice(16,0,event('assistant.message',{turnId:'answer-turn',content:JSON.stringify(payload),toolRequests:[]}));
+  assert.equal((await invoke(rows)).status,'success');
+});
 await test('one JSON object instead of JSONL events is refused whatever it contains',async()=>{
   for(const text of [JSON.stringify(payload),JSON.stringify({type:'result',exitCode:0}),JSON.stringify({response:JSON.stringify(payload)})])assert.equal((await invoke(text)).status,'invalid_output');
 });

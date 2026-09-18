@@ -192,6 +192,11 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  for(const bad of [['Everyone'],'CodexSandboxUsers',[7],['CodexSandboxUsers','Everyone']])
   assert.equal(inspectEvidencePermissions(dir,{...win,...allowed,run:answer({verified:true,inspected:2,tolerated:bad})}).verified,false);
  checks++;
+ // Recorded Windows PowerShell 5.1 stdout for one tolerated group (gate rev_20260918185005_hwu4):
+ // an array of one name, accepted. A bare string in its place is not the inspector's format and
+ // stays refused (it is among the malformed answers above); the native suite pins the real output.
+ const recorded=inspectEvidencePermissions(dir,{...win,...allowed,run:()=>({status:0,stdout:'\ufeff{"tolerated":["CodexSandboxUsers"],"reason":null,"verified":true,"inspected":2}\r\n'})});
+ assert.deepEqual(recorded.tolerated,[{principal:'CodexSandboxUsers',rights:'read_execute'}]);checks++;
  // The wrappers pass the option through and keep the result.
  assert.deepEqual(requirePrivateEvidence(dir,{...win,...allowed,run:answer({verified:true,inspected:1,tolerated:['codexsandboxusers']})}).tolerated,[{principal:'CodexSandboxUsers',rights:'read_execute'}]);checks++;
  // A write-capable rule is reported by the inspector as additional_principal and stays refused.

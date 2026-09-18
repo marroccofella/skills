@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {PEER_CONTRACT,reviewProblem} from './review-contract.mjs';
 import {assemblePrompt} from './guidance.mjs';
+import {requirePrivateEvidence} from './evidence-permissions.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>0&&end>start);
@@ -94,7 +95,7 @@ try{
       runProcess:async()=>({code:0,stdout:scratchReply[route]??scratchReview,stderr:''})});
   };
   const sandboxGrant={principal:'WORK\\CodexSandboxUsers',rights:'ReadAndExecute, Synchronize'};
-  for(const seam of [false,true])await test(`codex tolerated sandbox group on its own scratch is accepted and recorded (${seam?'test seam':'production check'})`,async()=>{
+  for(const seam of [false,true])await test(`codex tolerated sandbox group on its own scratch is accepted and recorded (${seam?'testWorkspaceCheck seam':'stubbed requirePrivateScratch binding'})`,async()=>{
     const c=context(),calls=[];
     const r=await scratchInvoke(c,'codex',(...args)=>{calls.push(args);return {verified:true,basis:'windows_dacl',tolerated:[sandboxGrant]};},seam);
     assert.equal(r.status,'success',r.detail);clean(c);
@@ -128,6 +129,47 @@ try{
     assert.equal(calls.length,1);assert.equal(calls[0].length,1,'only the scratch directory may be passed');
     c=context();r=await scratchInvoke(c,route,()=>({verified:true,tolerated:[sandboxGrant]}));
     safeFailure(r);clean(c);assert.match(r.detail,/permissions could not be verified after execution/);
+  });
+  // Gate rev_20260918185005_hwu4 production-check-test-mocked: the tests above stub the
+  // inspector, so they cannot see a disagreement between what evidence-permissions.mjs
+  // returns and what the dispatcher accepts. These go through the REAL inspector (the
+  // exact call requirePrivateScratch makes on Windows) with only the PowerShell process
+  // replaced by recorded stdout, on every CI platform.
+  const recordedInspector=(stdout,seen=[])=>(dir,options)=>requirePrivateEvidence(dir,{...(options??{}),platform:'win32',
+    systemRoot:process.platform==='win32'?'C:\\Windows':'/windows',
+    run:(exe,args,spawnOptions)=>{seen.push({exe,request:JSON.parse(spawnOptions.input)});return {status:0,stdout,stderr:''};}});
+  await test('real inspector contract: its tolerated answer for the Codex group is accepted and recorded as returned',async()=>{
+    const c=context(),seen=[];
+    const r=await scratchInvoke(c,'codex',recordedInspector('{"verified":true,"inspected":3,"tolerated":["CodexSandboxUsers"]}',seen));
+    assert.equal(r.status,'success',r.detail);clean(c);
+    assert.equal(seen.length,1);assert.match(seen[0].exe,/powershell\.exe$/i);
+    assert.equal(JSON.stringify(seen[0].request.allow_read_only),JSON.stringify(['CodexSandboxUsers']));
+    assert.equal(JSON.stringify(r.scratch_access.tolerated),JSON.stringify([{principal:'CodexSandboxUsers',rights:'read_execute'}]));
+  });
+  await test('real inspector contract: a strictly private Codex scratch is accepted with nothing recorded',async()=>{
+    for(const stdout of ['{"verified":true,"inspected":3,"tolerated":[]}','{"verified":true,"inspected":3}']){
+      const c=context();const r=await scratchInvoke(c,'codex',recordedInspector(stdout));
+      assert.equal(r.status,'success',r.detail);assert(!('scratch_access' in r));clean(c);
+    }
+  });
+  await test('real inspector contract: refusals and untrusted inspector answers keep the existing refusal',async()=>{
+    for(const stdout of ['{"verified":false,"reason":"additional_principal","inspected":1}','{"verified":true,"inspected":3,"tolerated":["Everyone"]}',
+      '{"verified":true,"inspected":3,"tolerated":[{"principal":"CodexSandboxUsers"}]}','{"verified":true,"inspected":0,"tolerated":["CodexSandboxUsers"]}','not json']){
+      const c=context();const r=await scratchInvoke(c,'codex',recordedInspector(stdout));
+      safeFailure(r);clean(c);assert(!('scratch_access' in r));
+      assert.equal(r.detail,'review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted');
+    }
+  });
+  await test('real inspector contract: a route without a sandbox group never asks the inspector to tolerate anyone',async()=>{
+    for(const route of ['claude','gemini','antigravity','copilot','grok']){
+      let c=context();const seen=[];
+      let r=await scratchInvoke(c,route,recordedInspector('{"verified":true,"inspected":3,"tolerated":[]}',seen));
+      assert.equal(r.status,'success',route+': '+r.detail);clean(c);
+      assert.equal(seen.length,1);assert(!('allow_read_only' in seen[0].request),route);
+      // Even an inspector that volunteers the group is refused: it was never requested.
+      c=context();r=await scratchInvoke(c,route,recordedInspector('{"verified":true,"inspected":3,"tolerated":["CodexSandboxUsers"]}'));
+      safeFailure(r);clean(c);
+    }
   });
   await test('the scratch is still created strictly private: creation never receives the allowance',async()=>{
     const c=context(),created=[],make=c.ctx.createEvidenceWorkspace;
