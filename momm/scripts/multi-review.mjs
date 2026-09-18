@@ -15,7 +15,7 @@ import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSid
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
 import { createUpdateClock } from "./update-clock.mjs";
-import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch } from "./evidence-permissions.mjs";
+import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
 
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
@@ -786,6 +786,7 @@ function usage() {
   return `Usage:
   node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
   node scripts/multi-review.mjs --doctor
+  node scripts/multi-review.mjs evidence [--status | --protect]   Inspect, or on your explicit command restrict, this project's private evidence folder
   node scripts/multi-review.mjs --self-test
 
 Options:
@@ -2675,6 +2676,29 @@ async function selfTest(pretty) {
 // `momm guidance --trust <sha256>` records the current project guidance/.reviewrules
 // hashes as trusted; `--show` prints the resolved stack (text included: this is
 // the user's own machine). Anything else prints usage.
+// `evidence --status` inspects this project's evidence folder; `evidence --protect` is the only
+// place MOMM changes permissions, and only because the owner typed it. Zero model calls.
+function evidenceCommand(args) {
+  const directory = path.resolve(".ensemble_reviews");
+  const wants = new Set(args);
+  if (wants.has("--protect")) {
+    const result = protectEvidence(directory);
+    process.stdout.write(`${JSON.stringify({ evidence: directory, ...result }, null, 2)}\n`);
+    return;
+  }
+  if (!wants.size || wants.has("--status")) {
+    if (!fs.existsSync(directory)) {
+      process.stdout.write(`${JSON.stringify({ evidence: directory, exists: false, note: "MOMM creates this folder privately on the first review." }, null, 2)}\n`);
+      return;
+    }
+    const status = inspectEvidencePermissions(directory);
+    process.stdout.write(`${JSON.stringify({ evidence: directory, exists: true, ...status, ...(status.verified ? {} : { remediation: evidenceRemediation(directory) }) }, null, 2)}\n`);
+    if (!status.verified) process.exitCode = 1;
+    return;
+  }
+  throw new Error("Usage: multi-review.mjs evidence [--status | --protect]");
+}
+
 function guidanceCommand(args) {
   const home = os.homedir();
   if (args[0] === "--trust") {
@@ -2693,6 +2717,7 @@ function guidanceCommand(args) {
 }
 
 async function main() {
+  if (process.argv[2] === "evidence") { evidenceCommand(process.argv.slice(3)); return; }
   if (process.argv[2] === "guidance") { guidanceCommand(process.argv.slice(3)); return; }
   // Update is a separate opt-in workflow, never artifact collection or dispatch.
   if (process.argv[2] === "update") { await update(process.argv.slice(3)); return; }

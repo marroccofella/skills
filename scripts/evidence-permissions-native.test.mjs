@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {inspectEvidencePermissions,createEvidenceWorkspace,requirePrivateScratch} from '../momm/scripts/evidence-permissions.mjs';
+import {inspectEvidencePermissions,createEvidenceWorkspace,requirePrivateScratch,preparePrivateEvidence,protectEvidence} from '../momm/scripts/evidence-permissions.mjs';
 import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
@@ -121,6 +121,43 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
       }
       results.push({kind,attempt:attempt+1,passed:true});
     }
+  }
+  // Release test 2026-09-18: a project whose folder is readable by other accounts (the normal
+  // state of a Windows data drive, or a group-readable POSIX directory) must still get a private
+  // evidence folder when MOMM creates it, verified by the REAL inspector, never a fake.
+  {
+    const project=path.join(fixture,'fresh-project');
+    fs.mkdirSync(project,{recursive:true,mode:0o755});
+    if(process.platform!=='win32') fs.chmodSync(project,0o755);
+    const evidence=path.join(project,'.ensemble_reviews');
+    const prepared=preparePrivateEvidence(evidence);
+    assert.equal(prepared.verified,true,'MOMM-created evidence must verify as private');
+    fs.mkdirSync(path.join(evidence,'reports'));fs.writeFileSync(path.join(evidence,'reports','synthetic.json'),'{}');
+    assert.equal(inspectEvidencePermissions(evidence).verified,true,'entries created inside inherit the private rules');
+    const args=[dispatcher,'--governor','codex','--reviewers','codex','--no-ui'];
+    const dispatchProject=path.join(fixture,'fresh-dispatch');fs.mkdirSync(dispatchProject,{recursive:true,mode:0o755});
+    const live=spawnSync(process.execPath,args,{cwd:dispatchProject,input:'Synthetic review input only.\n',encoding:'utf8',timeout:90000,windowsHide:true,env:{...process.env,NO_UPDATE_CHECK:'1',MOMM_NO_UPDATE_CHECK:'1',DO_NOT_TRACK:'1'}});
+    assert.equal(live.status,0,'A first review in a project with no evidence folder must run: '+live.stderr);
+    assert.equal(JSON.parse(live.stdout).evidence.permissions.verified,true);
+    assert.equal(inspectEvidencePermissions(path.join(dispatchProject,'.ensemble_reviews')).verified,true);
+    results.push({kind:'fresh',case:'MOMM-created evidence is private at creation and a first review runs',passed:true});
+  }
+  // The owner-invoked protect action repairs an existing broad folder (root protected, contents
+  // inheriting), is idempotent, and is reachable through the dispatcher's evidence subcommand.
+  {
+    const evidence=path.join(fixture,'broad','.ensemble_reviews');
+    fs.mkdirSync(path.join(evidence,'reports'),{recursive:true});fs.writeFileSync(path.join(evidence,'reports','synthetic.json'),'{}');
+    if(process.platform!=='win32'){fs.chmodSync(evidence,0o755);fs.chmodSync(path.join(evidence,'reports'),0o755);fs.chmodSync(path.join(evidence,'reports','synthetic.json'),0o644);}
+    assert.equal(inspectEvidencePermissions(evidence).verified,false,'fixture must start broad');
+    const status=spawnSync(process.execPath,[dispatcher,'evidence','--status'],{cwd:path.join(fixture,'broad'),encoding:'utf8',timeout:60000,windowsHide:true});
+    assert.equal(status.status,1);assert.match(JSON.parse(status.stdout).remediation,/evidence --protect/);
+    const protectedRun=spawnSync(process.execPath,[dispatcher,'evidence','--protect'],{cwd:path.join(fixture,'broad'),encoding:'utf8',timeout:120000,windowsHide:true});
+    assert.equal(protectedRun.status,0,'evidence --protect failed: '+protectedRun.stderr);
+    assert.equal(JSON.parse(protectedRun.stdout).changed,true);
+    assert.equal(inspectEvidencePermissions(evidence).verified,true,'the whole tree verifies after protect');
+    assert.equal(protectEvidence(evidence).changed,false,'a second protect changes nothing');
+    assert.throws(()=>protectEvidence(path.join(fixture,'broad')),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS','never a general permission tool');
+    results.push({kind:'broad',case:'owner-invoked evidence --protect repairs and verifies',passed:true});
   }
   console.log(JSON.stringify({passed:true,scope:'native disposable storage controls; self-excluded route; no provider calls',results}));
 } finally {

@@ -58,6 +58,21 @@ source review, independent retest and the release gates below.
   universal crash-free claim or closure of the separate modality-suite timeout.
 - Missing or malformed package seals refuse before expensive package hashing.
   This is not a valid-seal hashing performance improvement or signed-release proof.
+- Release test, 18 September (fresh clone, Windows 11): the permission check below made the
+  candidate unusable on the test machine. `.ensemble_reviews` was created with a plain mkdir, which
+  inherits the parent's access list, and then had to be private; every project on a data drive
+  inherits access for other local accounts, and the profile temp and Documents folders carried
+  groups added by a desktop sandbox, so no directory could run a review and every existing
+  evidence folder was refused. CI stayed green because the suites injected a fake inspector.
+  Fixed: on Windows a folder MOMM creates itself now gets its private access list at creation
+  (the same CreateDirectoryW path the scratch folders use); an existing folder is still only
+  inspected, and the refusal now names the reason in words and the owner's remedy. A new explicit,
+  owner-invoked `multi-review.mjs evidence --status | --protect` restricts an existing
+  `.ensemble_reviews` (Access section only, no ownership change, never any other directory).
+  Native tests now run the real inspector against a MOMM-created folder under a broadly
+  readable project and against the protect action; eight synthetic checks cover the decisions.
+  **Upgrade note for Windows:** after moving from 1.15, run `evidence --protect` once in each
+  existing project whose evidence folder is reported as not private.
 - The dispatcher checks project evidence-folder permissions before collecting
   review input and checks again before persistence. Unavailable or ambiguous
   protection refuses without changing existing permissions. A late persistence
