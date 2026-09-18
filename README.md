@@ -24,8 +24,8 @@ Links every skill in this repo into the harness you name (`claude`, `codex`, `ge
 | [myskills](myskills/) | Check the five executable skill families in one command, with exit-code-gated functional health and separate dependency readiness. |
 | [momm](momm/) | Local multi-CLI code review with a reproduction gate (formerly multi-llm-review): dispatches a git diff, a document, or attached media to the *other* installed AI coding CLIs in parallel over your existing logins, keeps their output read-only and untrusted, and makes the driving agent reproduce a finding before it changes code. Every run is logged locally with hashes. **[Page + walkthrough →](https://marroccofella.github.io/skills/momm/)** |
 | [promptus-clone-voice](promptus-clone-voice/) | Consented local voice cloning with F5-TTS inside the Promptus desktop app: microphone capture, reference preflight, fail-closed signal and word-accuracy gates, and a recorded human listening verdict before anything is called accepted. |
-| [yorkshire-pudding](yorkshire-pudding/) | Turns owt and everything — prose, jokes, READMEs, commit messages, comments, docstrings — into authentic Yorkshire dialect at three gravy levels, wi'out ever breaking t'build: strict zone rules keep identifiers, keys, placeholders, and logic untouched. |
-| [yorky](yorky/) | Short callable name for **yorkshire-pudding** — say "yorky" to turn owt into Yorkshire dialect. |
+| [yorkshire-pudding](yorkshire-pudding/) | **Yorkie v1.1** — turns owt and everything into authentic Yorkshire dialect at three gravy levels, including long accurate documents for international and academic readers, wi'out breaking t'build. |
+| [yorky](yorky/) | Short callable name for **Yorkie v1.1** — say "yorky" to turn owt into Yorkshire dialect with protected code zones and clear, memorable writing. |
 | [myautoness](myautoness/) | Self-playing task completion by deterministic search and verified replay — classical AI (simulation-model search, planning, seeded exploration), explicitly not a neural network. `autopilot` is its legacy alias. |
 | [myrepo](myrepo/) | Publish a project to GitHub as its own repository with a live in-browser Pages site — 42.uk-themed docs, a local-path + secret-file + inline-credential + git-history privacy scan, symlink guards, and live-URL verification. Confirms visibility and previews with `--dry-run` before any public push. |
 | [myvoice](myvoice/) | Short callable name for **promptus-clone-voice** — consented local F5-TTS voice cloning in Promptus, fail-closed signal/word gates and a recorded human listening verdict before acceptance. |
@@ -304,9 +304,14 @@ Read [promptus-clone-voice/DISTRIBUTION.md](promptus-clone-voice/DISTRIBUTION.md
 sharing any output: generated speech is a clone of a real person's voice, and this repository deliberately
 contains no voice data of any kind.
 
-## yorkshire-pudding
+## yorkshire-pudding — Yorkie v1.1
 
-Turns owt and everything into Yorkshire speak — even code — wi'out breaking a single build.
+Turns owt and everything into Yorkshire speak — even extremely long documents
+and code — wi'out breaking a single build. Yorkie v1.1 keeps international and
+academic readers oriented with plain definitions, stable terminology, visible
+uncertainty, source discipline, and section-by-section continuity. Attention and
+recall principles improve focus and meaning, but never replace evidence or
+force a short form onto a document that needs room.
 
 ```
    owt at all ──────────▶ ┌─────────────────────────┐
@@ -355,12 +360,21 @@ Or, inside any harness that supports Agent Skills:
   transformation with a self-test suite; the judgement calls (rhythm,
   punchlines, register) are documented for the driving agent instead of
   faked with randomness.
+- **Long, accurate, and welcoming.** The long-form guide keeps claims,
+  citations, qualifications, names, and terminology stable across continuations
+  while avoiding unexplained idioms, cultural assumptions, and fake certainty.
+- **Attention and meaning, responsibly shaped.** Open with a useful promise,
+  give each section one anchor, resolve real curiosity, use concrete evidence,
+  and offer reader agency. Never use attention bait, fabricated proof, or
+  withheld facts as a growth trick.
 
 See [yorkshire-pudding/SKILL.md](yorkshire-pudding/SKILL.md) for the protocol,
 [references/dialect-guide.md](yorkshire-pudding/references/dialect-guide.md) for
 the lexicon and grammar, and
 [references/code-translation.md](yorkshire-pudding/references/code-translation.md)
-for the zone map that keeps builds green.
+for the zone map that keeps builds green, and
+[references/longform-guide.md](yorkshire-pudding/references/longform-guide.md)
+for international, academic, and long-document guidance.
 
 ## License
 

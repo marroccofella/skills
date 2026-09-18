@@ -20,8 +20,9 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const LEVELS = ["mild", "proper", "broad"];
+const CADENCE_MODES = ["steady", "varied"];
 
 // ---------------------------------------------------------------------------
 // Lexicon. Cumulative by level. Sources are matched case-insensitively on
@@ -146,13 +147,64 @@ function protect(text) {
 const restore = (text, stash) =>
   text.replace(/\x00(\d+)\x00/g, (_, i) => stash[Number(i)]);
 
+// A tiny non-cryptographic PRNG keeps cadence variation repeatable when the
+// caller supplies --seed, while an omitted seed still gives a fresh pass.
+function makeRng(seed) {
+  const source = seed === undefined || seed === null
+    ? `${Date.now()}-${Math.random()}`
+    : String(seed);
+  let state = 2166136261;
+  for (const char of source) {
+    state ^= char.codePointAt(0);
+    state = Math.imul(state, 16777619) >>> 0;
+  }
+  if (state === 0) state = 0x9e3779b9;
+  return () => {
+    state = Math.imul(state ^ (state >>> 15), 1 | state) >>> 0;
+    state ^= state + Math.imul(state ^ (state >>> 7), 61 | state);
+    return ((state ^ (state >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function applyCadence(text, level, rng) {
+  let out = text;
+
+  // These are optional surface forms only. They do not add claims, remove
+  // content, or touch protected sentinels and placeholders.
+  if (level !== "mild") {
+    out = out.replace(/\band\b/gi, (match) =>
+      rng() < 0.32 ? cased(match, "an'") : match);
+    out = out.replace(/\bbecause\b/gi, (match) =>
+      rng() < 0.42 ? cased(match, "'cause") : match);
+  }
+
+  // A small number of clause pauses gives longer sentences room to breathe.
+  // Only an existing comma before a conjunction is eligible.
+  out = out.replace(/,\s+(and|but)\s+/gi, (match, conjunction) =>
+    rng() < 0.28 ? ` — ${conjunction} ` : match);
+
+  return out;
+}
+
+const characterCount = (text) => Array.from(text).length;
+
 // ---------------------------------------------------------------------------
 // The transform
 // ---------------------------------------------------------------------------
 
-export function yorkshirify(text, level = "proper") {
+export function yorkshirify(text, level = "proper", options = {}) {
   if (!LEVELS.includes(level)) {
     throw new Error(`unknown level "${level}" — expected one of: ${LEVELS.join(", ")}`);
+  }
+  const cadence = options.cadence ?? "steady";
+  if (!CADENCE_MODES.includes(cadence)) {
+    throw new Error(`unknown cadence "${cadence}" — expected one of: ${CADENCE_MODES.join(", ")}`);
+  }
+  const maxChars = options.maxChars === undefined || options.maxChars === null
+    ? null
+    : Number(options.maxChars);
+  if (maxChars !== null && (!Number.isInteger(maxChars) || maxChars < 1)) {
+    throw new Error("maxChars must be a positive integer");
   }
   // NUL bytes are garbage in prose and would collide with the protect()
   // sentinels, so they are dropped up front.
@@ -196,7 +248,15 @@ export function yorkshirify(text, level = "proper") {
     }
   }
 
-  return restore(out, stash);
+  if (cadence === "varied") {
+    out = applyCadence(out, level, makeRng(options.seed));
+  }
+
+  const result = restore(out, stash);
+  if (maxChars !== null && characterCount(result) > maxChars) {
+    throw new Error(`output is ${characterCount(result)} characters; maxChars is ${maxChars}`);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +336,20 @@ const SELF_TESTS = [
     input: "I haven't seen it. Haven't you?",
     expect: "I 'aven't seen it. 'Aven't tha?",
   },
+  {
+    name: "seeded cadence is reproducible",
+    level: "proper",
+    options: { cadence: "varied", seed: "7" },
+    input: "The good thing was clear, and because the plan was simple, it worked.",
+    expect: "T'good thing were clear — and 'cause t'plan were simple, it worked.",
+  },
+  {
+    name: "varied cadence preserves protected spans",
+    level: "proper",
+    options: { cadence: "varied", seed: "7" },
+    input: "Run `the and because` at https://the-thing.example.com with ${value}, and because the plan was clear.",
+    expect: "Run `the and because` at https://the-thing.example.com wi' ${value} — and 'cause t'plan were clear.",
+  },
 ];
 
 function runSelfTest() {
@@ -283,7 +357,7 @@ function runSelfTest() {
   for (const t of SELF_TESTS) {
     let actual;
     try {
-      actual = yorkshirify(t.input, t.level);
+      actual = yorkshirify(t.input, t.level, t.options);
     } catch (err) {
       actual = `<threw: ${err.message}>`;
     }
@@ -305,7 +379,21 @@ function runSelfTest() {
   } catch {
     console.log("  ok   unknown level fails closed");
   }
-  const total = SELF_TESTS.length + 1;
+  try {
+    yorkshirify("text", "proper", { cadence: "random" });
+    failed += 1;
+    console.error("  FAIL unknown cadence should throw");
+  } catch {
+    console.log("  ok   unknown cadence fails closed");
+  }
+  try {
+    yorkshirify("The cat sat on the mat.", "proper", { maxChars: 5 });
+    failed += 1;
+    console.error("  FAIL maxChars should fail closed");
+  } catch {
+    console.log("  ok   maxChars fails closed");
+  }
+  const total = SELF_TESTS.length + 3;
   if (failed > 0) {
     console.error(`\n${failed}/${total} self-tests failed`);
     process.exit(1);
@@ -327,6 +415,9 @@ usage:
 
 options:
   --level <l>   gravy level: mild, proper (default), or broad
+  --cadence <c> cadence: steady (default) or varied
+  --seed <s>    seed varied cadence for repeatable output
+  --max-chars <n> fail if output exceeds n characters
   --input <f>   read from a file instead of stdin
   --list        print the active lexicon as JSON and exit
   --self-test   run the deterministic test suite (used by CI)
@@ -339,7 +430,7 @@ references/code-translation.md and are applied by the driving agent.`;
 
 function main() {
   const argv = process.argv.slice(2);
-  const opts = { level: "proper", input: null, selfTest: false, list: false };
+  const opts = { level: "proper", cadence: "steady", seed: undefined, maxChars: null, input: null, selfTest: false, list: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -351,6 +442,9 @@ function main() {
       return value;
     };
     if (arg === "--level") opts.level = next();
+    else if (arg === "--cadence") opts.cadence = next();
+    else if (arg === "--seed") opts.seed = next();
+    else if (arg === "--max-chars") opts.maxChars = next();
     else if (arg === "--input") opts.input = next();
     else if (arg === "--self-test") opts.selfTest = true;
     else if (arg === "--list") opts.list = true;
@@ -363,6 +457,10 @@ function main() {
 
   if (!LEVELS.includes(opts.level)) {
     console.error(`unknown level "${opts.level}" — expected one of: ${LEVELS.join(", ")}`);
+    process.exit(2);
+  }
+  if (!CADENCE_MODES.includes(opts.cadence)) {
+    console.error(`unknown cadence "${opts.cadence}" — expected one of: ${CADENCE_MODES.join(", ")}`);
     process.exit(2);
   }
 
@@ -383,7 +481,11 @@ function main() {
     process.exit(2);
   }
 
-  process.stdout.write(yorkshirify(text, opts.level));
+  process.stdout.write(yorkshirify(text, opts.level, {
+    cadence: opts.cadence,
+    seed: opts.seed,
+    maxChars: opts.maxChars,
+  }));
 }
 
 main();
