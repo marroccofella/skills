@@ -344,7 +344,7 @@ async function installedSemvers(routes = Object.keys(MODALITY_SUPPORT)) {
 }
 // The capability matrix a dispatch routes on. The registry is consulted only when
 // media is attached or --reviewers auto asked for it; text-only runs never touch it.
-async function resolveDispatchCapabilities({ attachedModalities = [], reviewersAuto = false, registry = null, installedVersions = null, home = os.homedir() } = {}) {
+async function resolveDispatchCapabilities({ attachedModalities = [], reviewersAuto = false, reviewers = null, governor = null, registry = null, installedVersions = null, home = os.homedir() } = {}) {
   const state = { attempted: false, loaded: false, error: null };
   if (!attachedModalities.length && !reviewersAuto) return { capabilities: null, registry: state };
   state.attempted = true;
@@ -353,7 +353,15 @@ async function resolveDispatchCapabilities({ attachedModalities = [], reviewersA
   if (!loaded.module) state.error = loaded.error;
   else {
     try {
-      const matrix = await registryEffective(loaded.module, { home, installedVersions: installedVersions ?? await installedSemvers() });
+      // Explicit routing must not launch unrelated CLIs (or the governor) merely
+      // to inspect their versions. Auto still binds every eligible route's overlay.
+      const pool = reviewersAuto || !Array.isArray(reviewers) ? Object.keys(MODALITY_SUPPORT) : reviewers;
+      // Automatic routing evaluates the governor cell too: its installed
+      // capability overlay can affect attachment routing even though the
+      // governor is self-excluded from peer review. Explicit reviewer lists
+      // remain self-excluding and never launch the governor just to probe it.
+      const versionRoutes = [...new Set(pool)].filter(route => (reviewersAuto || route !== governor) && Object.hasOwn(MODALITY_SUPPORT, route));
+      const matrix = await registryEffective(loaded.module, { home, installedVersions: installedVersions ?? await installedSemvers(versionRoutes) });
       if (!matrix?.routes) throw new Error("effective() returned no routes");
       capabilities = { matrix, routable: typeof loaded.module.routable === "function" ? loaded.module.routable : cellRoutable, autoReviewers: typeof loaded.module.autoReviewers === "function" ? loaded.module.autoReviewers : null };
       state.loaded = true;
@@ -2767,7 +2775,7 @@ async function main() {
   // decides routing — overlay over baseline, each cell with level and blocker.
   // A plain text review never needs the registry and never loads it.
   const attachedModalities = [...new Set(options.staging.attachments.map((a) => a.modality))];
-  const resolvedCapabilities = await resolveDispatchCapabilities({ attachedModalities, reviewersAuto: options.reviewersAuto === true });
+  const resolvedCapabilities = await resolveDispatchCapabilities({ attachedModalities, reviewersAuto: options.reviewersAuto === true, reviewers: options.reviewers, governor: options.governor });
   options.capabilities = resolvedCapabilities.capabilities;
   options.capabilitiesRegistry = resolvedCapabilities.registry;
   {

@@ -32,19 +32,28 @@ const leftovers=dir=>{
   return [...fs.readdirSync(dir),...(fs.existsSync(evidenceStaging)?fs.readdirSync(evidenceStaging):[])].filter(name=>name.startsWith('momm-'));
 };
 async function test(name,fn){try{await fn();checks.push({name,passed:true});}catch(e){checks.push({name,passed:false,error:e.message});}}
-function actual(f,extra){
+function actual(f,extra,{expectedStatus=1,expectedError=null,json=false}={}){
   const started=Date.now();
   const result=spawnSync(process.execPath,[dispatcher,'--governor','codex','--reviewers','codex','--input','artifact.js','--no-ui',...extra],{
-    cwd:f.cwd,windowsHide:true,encoding:'utf8',timeout:30000,maxBuffer:500000,
+    cwd:f.cwd,windowsHide:true,timeout:30000,maxBuffer:500000,
     env:{...process.env,TEMP:f.temporary,TMP:f.temporary,TMPDIR:f.temporary,HOME:path.join(f.cwd,'home'),USERPROFILE:path.join(f.cwd,'home'),
       MULTI_LLM_REVIEW_DEPTH:'0',NO_UPDATE_CHECK:'1',MOMM_NO_UPDATE_CHECK:'1',DO_NOT_TRACK:'1'},
   });
   const diagnostic={status:result.status,signal:result.signal,error:result.error?.code??null,elapsed_ms:Date.now()-started,timeout_ms:30000,
     stdout_bytes:Buffer.byteLength(result.stdout??''),stderr_bytes:Buffer.byteLength(result.stderr??'')};
-  // Preserve the failure class before any JSON parse or equality assertion.
-  // Never echo raw child output, argv, or fixture paths into public diagnostics.
-  if(result.error||result.signal||result.status===null)throw Error('Synthetic CLI did not settle: '+JSON.stringify(diagnostic));
-  return result;
+  // Count the original buffers, then decode privately. Never include raw child
+  // output in an assertion or JSON parser error, including ordinary exits.
+  const fail=reason=>{throw Error('Synthetic CLI '+reason+': '+JSON.stringify(diagnostic));};
+  if(result.error||result.signal||result.status===null)fail('did not settle');
+  if(result.status!==expectedStatus)fail('unexpected exit');
+  const stdout=(result.stdout??Buffer.alloc(0)).toString('utf8'),stderr=(result.stderr??Buffer.alloc(0)).toString('utf8');
+  if(expectedError&&!expectedError.test(stderr))fail('missing expected error class');
+  if(expectedStatus!==0&&stdout!=='')fail('unexpected output on rejection');
+  let report;
+  if(json){try{report=JSON.parse(stdout);if(!report||typeof report!=='object'||Array.isArray(report))throw Error();}catch{fail('invalid JSON report');}}
+  // Do not carry spawnSync's `output` array: it retains raw child buffers.
+  const {output: _rawOutput, ...safeResult}=result;
+  return {...safeResult,stdout,stderr,diagnostic,report};
 }
 function stageContext(f,overrides={}){
   const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,
@@ -55,26 +64,60 @@ function stageContext(f,overrides={}){
   return context;
 }
 try{
+  for(const [name,args,expected] of [
+    ['governor only',{reviewers:['codex'],governor:'codex'},[]],
+    ['explicit subset',{reviewers:['claude','claude','codex','unknown'],governor:'codex'},['claude']],
+    ['automatic pool',{reviewersAuto:true,reviewers:['claude'],governor:'codex'},['codex','claude','ag-cli','copilot','grok-cli','gemini']],
+    ['text without automatic selection',{attachedModalities:[],reviewers:['claude'],governor:'codex'},[]],
+  ])await test(`capability version probes respect ${name}`,async()=>{
+    const probes=[],context=vm.createContext({MODALITY_SUPPORT:{codex:1,claude:1,antigravity:1,copilot:1,grok:1,gemini:1},
+      commandVersion:async route=>{probes.push(route);return {version:'1.2.3'};},
+      antigravityCommand:()=> 'ag-cli',grokCommand:()=> 'grok-cli',semverOf:s=>s,
+      registryEffective:(_module,args)=>({routes:{codex:{input:{image:{level:'verified'}},output:{}}},observed:args}),cellRoutable:cell=>cell?.level==='verified',os:{homedir:()=>'.'},clipped:s=>s});
+    const start=source.indexOf('async function installedSemvers('),end=source.indexOf('// Report fields.',start);
+    assert(start>0&&end>start);
+    vm.runInContext(source.slice(start,end)+';this.resolve=resolveDispatchCapabilities;',context);
+    const request={registry:{module:{},error:null},...args};
+    if(!Object.hasOwn(args,'attachedModalities')) request.attachedModalities=['image'];
+    const out=await context.resolve(request);
+    assert.deepEqual(probes,expected);
+    if(name==='governor only') assert.equal(out.capabilities?.matrix.routes.codex.input.image.level,'verified');
+    if(name==='text without automatic selection') assert.equal(out.capabilities,null);
+  });
+  for(const [name,result,expectFailure,options] of [
+    ['unexpected exit',{status:2,stdout:Buffer.alloc(0),stderr:Buffer.from('PRIVATE_DIAGNOSTIC_MARKER')},true,{}],
+    ['malformed JSON',{status:0,stdout:Buffer.from('PRIVATE_DIAGNOSTIC_MARKER'),stderr:Buffer.alloc(0)},true,{expectedStatus:0,json:true}],
+    ['empty JSON',{status:0,stdout:Buffer.alloc(0),stderr:Buffer.alloc(0)},true,{expectedStatus:0,json:true}],
+    ['invalid UTF8',{status:0,stdout:Buffer.from([255]),stderr:Buffer.alloc(0)},true,{expectedStatus:0,json:true}],
+    ['timeout',{status:null,signal:'SIGTERM',error:{code:'ETIMEDOUT'},stdout:Buffer.alloc(0),stderr:Buffer.from('PRIVATE_DIAGNOSTIC_MARKER')},true,{}],
+    ['valid JSON',{status:0,stdout:Buffer.from('{"ok":true}'),stderr:Buffer.alloc(0)},false,{expectedStatus:0,json:true}],
+    ['expected negative',{status:1,stdout:Buffer.alloc(0),stderr:Buffer.from('--attach rejected')},false,{expectedError:/--attach/}],
+  ])await test(`child diagnostics ${name} stay structured and private`,()=>{
+    const context=vm.createContext({Date,Buffer,JSON,Error,process:{execPath:'node',env:{}},path,dispatcher:'synthetic',spawnSync:()=>result});
+    vm.runInContext(actual.toString()+';this.invoke=actual;',context);
+    let error=null;try{context.invoke({cwd:'.',temporary:'.'},[],options);}catch(e){error=e;}
+    if(expectFailure){assert(error,'expected safe refusal');assert.match(error.message,/elapsed_ms/);assert.match(error.message,/timeout_ms/);assert.match(error.message,/stdout_bytes/);assert(!error.message.includes('PRIVATE_DIAGNOSTIC_MARKER'));if(name==='invalid UTF8')assert.match(error.message,/"stdout_bytes":1[,}]/);}
+    else assert.equal(error,null);
+  });
   for(const [name,attachments] of [
     ['missing second file',['synthetic.gif','missing.png']],
     ['missing first file',['missing.png','synthetic.gif']],
     ['unknown second media type',['synthetic.gif','artifact.js']],
   ])await test(`actual CLI ${name}: failure leaves no attachment staging`,()=>{
-    const f=fixture(),r=actual(f,attachments.flatMap(a=>['--attach',a]));
+    const f=fixture(),r=actual(f,attachments.flatMap(a=>['--attach',a]),{expectedError:/--attach/});
     assert.equal(r.error,undefined);assert.equal(r.signal,null);assert.equal(r.status,1);
-    assert.match(r.stderr,/--attach/);assert.equal(r.stdout,'');
     assert.deepEqual(leftovers(f.temporary),[],'staged directory survived rejection');
     assert.equal(hash(fs.readFileSync(path.join(f.cwd,'synthetic.gif'))),hash(input));
   });
   await test('actual CLI missing guidance after staging still removes media',()=>{
-    const f=fixture(),r=actual(f,['--attach','synthetic.gif','--guidance-file','missing-guidance.json']);
+    const f=fixture(),r=actual(f,['--attach','synthetic.gif','--guidance-file','missing-guidance.json'],{expectedError:/guidance/});
     assert.equal(r.error,undefined);assert.equal(r.signal,null);assert.equal(r.status,1);
-    assert.match(r.stderr,/guidance/);assert.deepEqual(leftovers(f.temporary),[]);
+    assert.deepEqual(leftovers(f.temporary),[]);
   });
   await test('actual governor-self-excluded review preserves descriptors, removes copies',()=>{
-    const f=fixture(),r=actual(f,['--attach','synthetic.gif']);
-    assert.equal(r.error,undefined);assert.equal(r.signal,null);assert.equal(r.status,0,r.stderr);
-    const report=JSON.parse(r.stdout);assert.equal(report.attachments[0].sha256,hash(input));
+    const f=fixture(),r=actual(f,['--attach','synthetic.gif'],{expectedStatus:0,json:true});
+    assert.equal(r.error,undefined);assert.equal(r.signal,null);assert.equal(r.status,0);
+    const report=r.report;assert.equal(report.attachments[0].sha256,hash(input));
     assert.equal(report.reviewers[0].status,'self_excluded');assert.deepEqual(leftovers(f.temporary),[]);
     assert.equal(hash(fs.readFileSync(path.join(f.cwd,'synthetic.gif'))),hash(input));
   });
