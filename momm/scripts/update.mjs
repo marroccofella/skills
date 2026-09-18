@@ -24,7 +24,7 @@ export const safeText = value => String(value).replace(/[\x00-\x08\x0b-\x1f\x7f-
 export function run(command, args, cwd, options = {}) {
   const p = spawnSync(command, args, { cwd, encoding: "utf8", shell: false,
     windowsHide: true, timeout: 60_000, maxBuffer: 32 * 1024 * 1024, ...options });
-  if (p.error || p.status !== 0) throw new Error(`${command} failed: ${safeText(p.error?.message || p.stderr || p.stdout).slice(0, 3000)}`);
+  if (p.error || p.status !== 0) throw Object.assign(new Error(`${command} failed: ${safeText(p.error?.message || p.stderr || p.stdout).slice(0, 3000)}`), { code: p.error?.code || "command_failed" });
   return p.stdout;
 }
 export const git = (root, ...args) => run("git", args, root).trim();
@@ -58,7 +58,7 @@ export function readLock(root, required = true) {
   const file = path.join(stateDir(root), "momm.lock");
   if (!regular(file, true)) {
     if (!required) return null;
-    throw new Error("No momm.lock installation receipt. Run node momm/scripts/install.mjs --target <your-harness> first; MOMM will not guess your harness.");
+    throw Object.assign(new Error("installation_receipt_missing: this may be a new uninstalled clone or a legacy installation. Follow https://marroccofella.github.io/skills/momm/releases/bootstrap.html. Preserve any old clone and links; do not run an unverified installer or invent a receipt. A separately trusted bootstrap.mjs --check --existing <clone> identifies prerequisites without changing anything."), { code: "installation_receipt_missing" });
   }
   const lock = readJSON(file);
   if (lock.schema !== "momm-lock/1" || !["stable", "pinned", "main"].includes(lock.channel) ||
@@ -263,7 +263,13 @@ export function verifySignature(root, ref, channel) {
     run("gitsign", ["verify-tag", "--certificate-identity", SIGNER,
       "--certificate-oidc-issuer", ISSUER, "--certificate-github-workflow-repository", "marroccofella/skills",
       "--certificate-github-workflow-ref", "refs/heads/main", ref], root, { timeout: 120_000, env: signingEnv() });
-  } catch (e) { throw new Error(`Trusted release signature not verified. Install gitsign from https://github.com/sigstore/gitsign and retry; never bypass this gate. ${e.message}`); }
+  } catch (e) {
+    const missing = e.code === "ENOENT";
+    const hint = process.platform === "darwin" ? "With your approval: brew install gitsign." : "Install gitsign with your approval from https://github.com/sigstore/gitsign#installation.";
+    throw Object.assign(new Error(missing
+      ? `gitsign_missing: gitsign is unavailable; no signature check was performed. ${hint} Never bypass verification.`
+      : `signature_unverified: verification did not succeed; stop. Check the verifier diagnostic and network access, not GitHub's bad_cert/Unverified badge. That badge is not a gitsign verdict. ${e.message}`), { code: missing ? "gitsign_missing" : "signature_unverified" });
+  }
 }
 function clean(root) {
   if (git(root, "status", "--porcelain", "--untracked-files=all")) throw new Error("Checkout has local changes or untracked files. Commit or move them yourself; MOMM will not stash, overwrite or discard them.");

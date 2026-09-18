@@ -287,12 +287,14 @@ function renderMaintenance() {
   maintenanceSummary.textContent = `${runtimeIssues ? `${runtimeIssues} runtime issue${runtimeIssues === 1 ? "" : "s"}` : `Runtime dependencies healthy (Node ${maintenance.runtime.node}, Git${maintenance.runtime.powershell ? ", PowerShell" : ""})`}${totalUpdates ? ` · ${updateSummary} available` : ""}. Checked ${new Date(maintenance.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
 
   const repoDirty = maintenance.skills.repository_dirty === true;
+  const bootstrap = maintenance.skills.update_readiness;
+  const updateReady = bootstrap?.status === 'ready_to_verify' && bootstrap?.installation?.route === 'updater_preview';
   const skillActions = [
     repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="diff">Review diff</button>' : "",
     repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="commit">Commit…</button>' : "",
-    skillUpdates.length && maintenance.skills.repository_present && !repoDirty ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="update">Preview MOMM update</button>' : "",
+    skillUpdates.length && maintenance.skills.repository_present && !repoDirty && updateReady ? '<button class="mini-button" data-maint-provider="skills" data-maint-action="update">Preview MOMM update</button>' : "",
   ].join("");
-  const dirtyNote = repoDirty ? "This repository has local changes. Review and handle them before applying an update. Commit opens a guided terminal; it never stages or commits without you." : "The repository is clean. Preview a signed MOMM update, inspect its policy diff, then choose explicitly whether to apply it. Other skill updates remain separate decisions.";
+  const dirtyNote = repoDirty ? "This repository has local changes. Review and handle them before applying an update. Commit opens a guided terminal; it never stages or commits without you." : updateReady ? "The repository is clean. Preview a signed MOMM update, inspect its policy diff, then choose explicitly whether to apply it. Other skill updates remain separate decisions." : "The repository is clean, but update prerequisites or the installation receipt still need attention. Follow the bootstrap guidance below; no update was launched.";
 
   const environmentLabels = {
     api_key_names_present: "API-key variable names are present; MOMM strips them and remains OAuth-only.",
@@ -325,6 +327,11 @@ function renderMaintenance() {
         ${unknownSkills.length ? skillGroup('Not verified',unknownSkills,'') : ''}
       </div>
       <p class="environment-note">${escapeHtml(dirtyNote)}</p>
+      <h4>Signed-update readiness</h4>
+      <p>${updateReady ? 'Ready to attempt verification — no release has been verified by this check.' : 'Action needed before an update preview. Your current installation has not been changed.'}</p>
+      <p>Installation route: ${escapeHtml(bootstrap?.installation?.route || 'inspection_required')}. GitHub’s bad_cert / Unverified label is not a gitsign verification result.</p>
+      ${(bootstrap?.tools || []).map(tool => `<p><strong>${escapeHtml(tool.name)}</strong>: ${escapeHtml(tool.status)}${tool.next_step ? ` — ${escapeHtml(tool.next_step)}` : ''}</p>`).join('')}
+      <a href="https://marroccofella.github.io/skills/momm/releases/bootstrap.html" target="_blank" rel="noopener noreferrer">New installation / legacy upgrade / verification help →</a>
     </article>
     <details class="diagnostics" ${runtimeIssues || environmentWarnings.length ? "open" : ""}>
       <summary><span>System & diagnostic info</span><span class="health-count">${runtimeIssues || environmentWarnings.length ? `${runtimeIssues + environmentWarnings.length} item${runtimeIssues + environmentWarnings.length === 1 ? "" : "s"} need attention` : "Healthy · expand for details"}</span></summary>

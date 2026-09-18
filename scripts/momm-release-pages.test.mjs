@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import {fileURLToPath} from 'node:url';
 import {releasePages,inline,markdown} from './momm-release-pages.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),catalogue=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json'))),pages=releasePages(root);
-assert.equal(Object.keys(pages).length,catalogue.length+2);
+assert.equal(Object.keys(pages).length,catalogue.length+3);
+assert(pages['docs/momm/releases/bootstrap.html'].includes('gitsign_missing'));
+assert(pages['docs/momm/releases/bootstrap.html'].includes('cannot authenticate itself'));
+assert(pages['docs/momm/releases/upgrade.html'].includes('href="bootstrap.html"'));
 for(const e of catalogue){assert(pages[`docs/momm/releases/${e.version}.html`].includes(e.version));assert(pages[`docs/momm/releases/${e.version}.html`].includes(e.source_url));assert(pages['docs/momm/releases/index.html'].includes(`href="${e.version}.html"`));}
 assert(!inline('[unsafe](javascript:alert) <img src=x onerror=alert(1)>').includes('<img'));
 assert(!inline('[unsafe](javascript:alert)').includes('href='));assert(!inline('[unsafe](file:///private)').includes('href='));

@@ -34,7 +34,7 @@ function write(repo, name, data) {
 }
 function fixture(name) {
   const repo = path.join(temp, name); fs.mkdirSync(repo);
-  for (const file of ['install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs']) write(repo, file, read(file));
+  for (const file of ['install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs', 'momm/scripts/bootstrap.mjs']) write(repo, file, read(file));
   write(repo, 'versions.json', JSON.stringify({ momm: '1.16.0' }));
   write(repo, 'momm/SKILL.md', 'Synthetic protocol fixture.');
   write(repo, 'momm/scripts/multi-review.mjs', '// Hash-only fixture; never executed.');

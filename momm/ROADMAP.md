@@ -115,6 +115,30 @@ staged-files-only read grant exists. Generation never runs inside a review.
 Publication still needs the privacy scan, the signed tag and the evidence
 refresh.
 
+### Legacy bootstrap hardening — local follow-up to 1.15.1
+
+Separately trusted bootstrap and migration helpers now distinguish missing tools,
+failed signatures, missing receipts and legacy conflicts. Preparation verifies
+the release workflow identity, issuer, repository, ref, workflow commit, package
+hash and checked-out bytes before any candidate code runs. Migration previews the
+exact protocol and scope, requires the approved plan hash and separate protocol
+acceptance, and moves the old entry outside skill discovery with a rollback
+journal. Project ledgers are never copied or merged. Active or ambiguous process
+locks and changed entries fail closed; recovery is not a power-loss guarantee.
+The explicit sensitive-diagnostic hard constraint is restored. Setup Center and
+the public guide explain these routes rather than asking agents to invent them.
+
+Local Windows tests include a genuine signed 1.15.1 preparation, synthetic legacy
+installation and restoration; deterministic fixtures exercise failure paths.
+Security review also reproduced Git replacement/object substitution and competing
+rollback attempts. The candidate ignores replacement resolution, rejects modified
+Git administration, checks object integrity and holds an exclusive recovery claim.
+Windows executable shadowing has a real regression; tool paths are absolute and
+outside the inspected clone. Untracked files fail verification. Prerequisites,
+check timeouts and orphan claims have distinct diagnostics, without force repair.
+These changes are not published. Native macOS/Linux matrix results, final peer
+decisions and release verification remain required before a release claim.
+
 Final September 13 repairs: updates fetch full ancestry and verify promotion and
 Git connectivity across intervening commits; repeated explicit harness installs
 preserve matching clean verified provenance. Existing update claims fail closed

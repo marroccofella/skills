@@ -55,6 +55,8 @@ jobs:
         run: |
           node scripts/momm-release.mjs --check
           node momm/scripts/update.test.mjs
+          node momm/scripts/bootstrap.test.mjs
+          node momm/scripts/migrate-legacy.test.mjs
           node momm/scripts/multi-review.mjs --self-test
           node momm/scripts/transport.test.mjs
           node momm/scripts/process-scope.test.mjs

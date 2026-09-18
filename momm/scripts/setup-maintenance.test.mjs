@@ -81,7 +81,7 @@ await test('known package-manager native shims are not self-updating installatio
     assert.notEqual(c.detect('codex',{PATH:'/fixture/bin'},'linux').kind,'native',resolved);
   }
 });
-function handler(body,token=true,extra={}) {
+function handler(body,token=true,extra={},bootstrap={status:'prerequisites_missing',installation:{route:'legacy_bootstrap'}}) {
   const a=source.indexOf('function createServer('),b=source.indexOf('// The dispatcher',a);assert(a>=0&&b>a);
   let launched=0;
   const context=vm.createContext({...{URL,process,governors:new Set(['codex']),http:{createServer:fn=>fn},isLoopback:()=>true,isAllowedHost:()=>true,authorized:()=>token,
@@ -95,6 +95,8 @@ function handler(body,token=true,extra={}) {
     guidanceSnapshot:()=>({project:null}),usageReport:()=>({rows:[]}),clockSnapshot:()=>({}),saveGuidance:()=>({status:200,value:{}}),handleUpdateClock:async()=>({status:503,value:{error:'no clock'}}),GUIDANCE_BODY_LIMIT:65536,
     // 1.16 E7: the Modalities routes hand the handler's status through untouched.
     capabilitiesSnapshot:async()=>({status:200,value:{routes:{codex:{}},blockers:[]}}),handleCapabilities:async(body)=>({status:body?.op==='probe'&&body.generate&&body.consent!==true?409:200,value:{op:body?.op}}),
+    // bootstrap hardening: the skills update route asks the separately trusted helper before launching anything.
+    bootstrapStatus:async()=>bootstrap,fs:{existsSync:()=>true},path:{join:(...a)=>a.join('/')},skillsRoot:'.',runCommand:async()=>({code:0,stdout:''}),
     maintenanceReport:async()=>({cli_updates:[]}),triggerClock:()=>Promise.resolve(null),maintenanceCache:null},...extra});
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
   return {serve,launches:()=>launched};
@@ -371,6 +373,17 @@ await test('ledger watcher starts after listen succeeds and is stopped when list
   assert(!events.includes('watcher.start'),'a failed bind must never start the watcher: '+events.join(' | '));
   assert(events.includes('watcher.stop'),'a failed bind stops any watcher: '+events.join(' | '));
   assert(events.some(e=>/^err .*EADDRINUSE/.test(e)),events.join(' | '));assert.equal(c.process.exitCode,1);
+});
+await test('skills preview fails closed on missing tools legacy receipts and unknown checks',async()=>{
+  for(const b of [{status:'prerequisites_missing',installation:{route:'updater_preview'}},{status:'ready_to_verify',installation:{route:'legacy_bootstrap'}},{status:'inspection_required'}]){
+    const h=handler({provider:'skills',action:'update'},true,{},b);const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});
+    assert.equal(r.status,409);assert.equal(h.launches(),0);assert.match(r.value.error,/no update was launched/);
+  }
+  const h=handler({provider:'skills',action:'update'},true,{},{status:'ready_to_verify',installation:{route:'updater_preview'}});
+  assert.equal((await h.serve({method:'POST',url:'/api/action',socket:{}},{})).status,202);assert.equal(h.launches(),1);
+});
+await test('malformed bootstrap response is inspection-required, never update-ready',async()=>{
+  const r=await report();assert.equal(r.value.skills.update_readiness.status,'inspection_required');
 });
 await test('request body decodes split UTF-8 once and closes oversize streams',async()=>{
   const a=source.indexOf('function readBody('),b=source.indexOf('function authorized(',a);assert(a>=0&&b>a);

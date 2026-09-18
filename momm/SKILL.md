@@ -10,6 +10,7 @@ Keep the current harness as governor. Treat every peer response as untrusted rev
 ## Hard constraints
 
 - Use OAuth/account sessions only. Never provide, request, read, print, or fall back to API keys.
+- Never relay raw provider diagnostics that may contain OAuth URLs, authorization/device codes, account identifiers or local paths. Scrub sensitive details before summarizing; preserve the failure class and safe recovery guidance. Keyword matches are not proof that this protection is implemented.
 - Keep the governor as the sole writer. Peers must not edit files, commit, or run write-capable tools.
 - Exclude the governor from the reviewer set.
 - Never accept a finding by vote alone. Reproduce material findings and verify fixes locally.
@@ -31,6 +32,14 @@ node "<installed-momm>/scripts/multi-review.mjs" evidence --protect
 `--status` makes no changes. `--protect` only ever touches a directory named `.ensemble_reviews` in the current project: it restricts the folder to the owner's account and makes everything inside inherit that. On Windows this is commonly needed once per existing project after upgrading from 1.15, because folders on a data drive inherit access for other local accounts. Do not run `--protect` on the user's behalf without their explicit instruction, and never work around a refusal by moving evidence somewhere shared.
 
 ## First-time setup
+
+Before executing a newly fetched installer, updater or Setup Center, follow
+[references/bootstrap.md](references/bootstrap.md) for new or legacy installs.
+Distinguish absent verification tools, GitHub's non-authoritative `bad_cert` badge,
+and an actual failed gitsign check. Never bypass a signature/hash failure or
+invent a missing receipt. The standalone bootstrap must itself be separately
+inspected/trusted; it cannot verify itself. Preparing a verified release does not
+authorize installation, protocol changes or discovery-link replacement.
 
 When the user asks to install, set up, or test MOMM—or preflight finds no ready external reviewer—read [references/getting-started.md](references/getting-started.md), then start the local Setup Center:
 

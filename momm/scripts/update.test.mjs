@@ -33,7 +33,7 @@ try {
     } finally { fs.unlinkSync(alias); }
   });
   git(remote, "init");
-  for (const file of ["momm/scripts/install.mjs", "momm/scripts/update.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
+  for (const file of ["momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
   write(remote, "momm/SKILL.md", "Original protocol\n");
   write(remote, "sibling/SKILL.md", "A separately installed sibling\n");
   write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher one');\n");
@@ -87,7 +87,7 @@ try {
     assert.equal(fs.readFileSync(lockPath, "utf8"), before); assert.equal(git(installed, "show-ref"), refs); assert.equal(git(installed, "rev-parse", "HEAD"), first);
   });
   await test("unsigned_tag_fails_production_verifier", async () => {
-    await assert.rejects(update(["--repo", installed, "--apply", "--yes", "--accept-protocol"], { ...deps, verifySignature }), /signature not verified/);
+    await assert.rejects(update(["--repo", installed, "--apply", "--yes", "--accept-protocol"], { ...deps, verifySignature }), error => ['signature_unverified', 'gitsign_missing'].includes(error.code));
     assert.equal(git(installed, "rev-parse", "HEAD"), first);
   });
   await test("yes_does_not_accept_changed_protocol", async () => {
@@ -217,9 +217,11 @@ try {
   });
   await test("archive_install_links_but_reports_updater_unavailable", () => {
     const archive = path.join(fixture, "archive"), destination = path.join(fixture, "archive-harness");
-    for (const file of ["momm/SKILL.md", "momm/scripts/install.mjs", "momm/scripts/update.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
+    for (const file of ["momm/SKILL.md", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
     const output = JSON.parse(run(process.execPath, ["momm/scripts/install.mjs", "--custom-dir", destination], archive));
     assert.equal(output.installation.updater_available, false);
+    assert(['ready_to_verify', 'prerequisites_missing'].includes(output.update_readiness.status));
+    assert.equal(output.update_readiness.signature_verified, false);
     assert.equal(fs.realpathSync(path.join(destination, "momm")), fs.realpathSync(path.join(archive, "momm")));
   });
   // ---- --check-all (fakes only: no CLI launched, no network) ----

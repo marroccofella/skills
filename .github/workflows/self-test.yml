@@ -2,7 +2,7 @@ name: Skill safety suite
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/momm-bootstrap-hardening-20260914]
   pull_request:
     branches: [main]
 
@@ -48,6 +48,12 @@ jobs:
       - name: Explicit updater transaction and recovery fixtures
         timeout-minutes: 8
         run: node momm/scripts/update.test.mjs
+      - name: New and legacy install bootstrap trust boundaries (offline)
+        timeout-minutes: 2
+        run: node momm/scripts/bootstrap.test.mjs
+      - name: Legacy discovery migration and rollback (synthetic installs only)
+        timeout-minutes: 4
+        run: node momm/scripts/migrate-legacy.test.mjs
       - name: Governor review-to-decision lifecycle (offline)
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs

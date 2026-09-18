@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./update.mjs";
+import { readiness } from "./bootstrap.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
@@ -134,6 +135,7 @@ function main() {
   }
   for (const customDir of options.customDirs) results.push({ target: "custom", ...linkSkill(customDir, options) });
   const output = { source: skillRoot, results, note: "Existing paths are never overwritten. No credentials are copied." };
+  output.update_readiness = readiness();
   try { output.installation = recordInstall(path.resolve(skillRoot, ".."), "momm/scripts/install.mjs", results, { dryRun: options.dryRun }); }
   catch (error) {
     output.installation = { updater_available: false, error: error.message,

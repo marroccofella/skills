@@ -432,6 +432,15 @@ async function modelStatus(routes) {
   }));
 }
 
+async function bootstrapStatus() {
+  const result = await runCommand(process.execPath, [path.join(skillsRoot, 'momm/scripts/bootstrap.mjs'), '--check', '--existing', skillsRoot], { timeoutMs: 15_000 });
+  try {
+    const value = JSON.parse(result.stdout);
+    if (![0, 2].includes(result.code) || !['ready_to_verify', 'prerequisites_missing'].includes(value.status) || !Array.isArray(value.tools)) throw Error('unknown result');
+    return value;
+  } catch { return { status: 'inspection_required', tools: [], installation: { route: 'inspection_required' }, signature_verified: false }; }
+}
+
 async function maintenanceReport(governor) {
   if (maintenanceCache && Date.now() - maintenanceCache.cachedAt < 10 * 60_000) return maintenanceCache.value;
   // Installation inventory has no review eligibility: include the active controller too.
@@ -439,7 +448,7 @@ async function maintenanceReport(governor) {
   const routesReport = await readiness('other');
   let localVersions = {};
   try { localVersions = JSON.parse(fs.readFileSync(localVersionsFile, "utf8")); } catch {}
-  const [publishedResult, codexLatestResult, claudeLatestResult, geminiLatestResult, copilotLatestResult, grokUpdate, gitVersion, gitStatus, shellVersion, models] = await Promise.all([
+  const [publishedResult, codexLatestResult, claudeLatestResult, geminiLatestResult, copilotLatestResult, grokUpdate, gitVersion, gitStatus, shellVersion, models, bootstrap] = await Promise.all([
     fetchJson(publishedVersionsUrl).catch(() => null),
     fetchJson("https://registry.npmjs.org/@openai%2fcodex/latest").catch(() => null),
     fetchJson("https://registry.npmjs.org/@anthropic-ai%2fclaude-code/latest").catch(() => null),
@@ -453,6 +462,7 @@ async function maintenanceReport(governor) {
     // produced false failures.
     process.platform === "win32" ? runCommand("powershell.exe", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"]) : Promise.resolve({ code: 0, stdout: "not required" }),
     modelStatus(routesReport.routes || []),
+    bootstrapStatus(),
   ]);
   const routeMap = new Map((routesReport.routes || []).map((route) => [route.agent, route]));
   let grokLatest = null;
@@ -493,6 +503,7 @@ async function maintenanceReport(governor) {
       repository_present: fs.existsSync(path.join(skillsRoot, ".git")),
       repository_dirty: gitStatus.code === 0 ? Boolean(gitStatus.stdout.trim()) : null,
       versions: skillVersionReport(localVersions, publishedResult),
+      update_readiness: bootstrap,
     },
     cli_updates: cliUpdates,
     models,
@@ -1573,6 +1584,8 @@ function createServer() {
           if (!command) return sendJson(response, 400, { error: "Unsupported provider action" });
           if ((provider !== 'skills' && ['update','install'].includes(action) || body.expected_command) && body.expected_command !== command) return sendJson(response, 409, {error:'Confirm the exact command first. Refresh versions if the installation changed.'});
           if (provider === "skills" && action === "update") {
+            const bootstrap = await bootstrapStatus();
+            if (bootstrap.status !== 'ready_to_verify' || bootstrap.installation?.route !== 'updater_preview') { maintenanceCache=null; return sendJson(response, 409, { error: 'Update prerequisites or installation receipt need attention. Use the bootstrap guide; no update was launched.', guide: 'https://marroccofella.github.io/skills/momm/releases/bootstrap.html', update_readiness: bootstrap }); }
             if (!fs.existsSync(path.join(skillsRoot, ".git"))) return sendJson(response, 409, { error: "The skills source is not a Git checkout." });
             const status = await runCommand("git", ["-C", skillsRoot, "status", "--porcelain"], { timeoutMs: 10_000 });
             if (status.code !== 0) return sendJson(response, 409, { error: "Git could not verify that the skills checkout is safe to update." });
