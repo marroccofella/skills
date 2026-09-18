@@ -1288,6 +1288,35 @@ function normalizeReview(agent, payload) {
   };
 }
 
+// A provider's own sandbox may grant its local group read/execute on that
+// route's scratch while it runs (reproduced on Windows: a sandboxed Codex shell
+// command adds <machine>\CodexSandboxUsers to the Codex working directory).
+// The names below are offered ONLY to the post-run check of that route's own
+// scratch directory. The scratch is still created strictly private, durable
+// evidence (.ensemble_reviews) never receives an allowance, and the inspector,
+// not this table, decides whether the grant really is read-only.
+const PROVIDER_SANDBOX_PRINCIPALS = Object.freeze({ codex: Object.freeze(["CodexSandboxUsers"]) });
+const SCRATCH_ACCESS_NOTE = "provider sandbox group was granted read-only access to its own scratch during execution";
+// Returns the recorded grants, [] when nothing was tolerated, or null when the
+// inspector's answer names anything this route was not offered (fail closed).
+function toleratedScratchAccess(agent, inspection) {
+  const tolerated = inspection?.tolerated;
+  if (tolerated === undefined || tolerated === null) return [];
+  if (!Array.isArray(tolerated) || tolerated.length > 8) return null;
+  const offered = PROVIDER_SANDBOX_PRINCIPALS[agent] ?? [];
+  const recorded = [];
+  for (const entry of tolerated) {
+    if (!entry || typeof entry.principal !== "string" || typeof entry.rights !== "string") return null;
+    if (!offered.includes(entry.principal.split("\\").pop())) return null;
+    recorded.push({ principal: clipped(entry.principal, 120), rights: clipped(entry.rights, 120) });
+  }
+  return recorded;
+}
+// Routes whose accepted result relied on that allowance, for the evidence block.
+function scratchAccessRoutes(results) {
+  return [...new Set((results ?? []).filter((result) => result?.scratch_access?.tolerated?.length).map((result) => result.agent))];
+}
+
 function classifyFailure(result) {
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { status: "unsupported", detail: result.error.message };
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
@@ -1358,6 +1387,7 @@ async function invokeReviewer(agent, artifact, options) {
   let result;
   let cleanupError = null;
   let privateBoundary = true;
+  let scratchAccess = null;
   let operationFailed = false;
   let setupComplete = false;
   // Own adapter-local prompts/media from allocation, not merely from launch.
@@ -1526,7 +1556,16 @@ async function invokeReviewer(agent, artifact, options) {
     operationFailed = true;
   } finally {
     if (temporaryDirectory) {
-      try { (options.runProcess && options.testWorkspaceCheck ? options.testWorkspaceCheck : requirePrivateScratch)(temporaryDirectory); }
+      try {
+        const checkScratch = options.runProcess && options.testWorkspaceCheck ? options.testWorkspaceCheck : requirePrivateScratch;
+        // Only a route with a known provider sandbox group passes an allowance,
+        // and only here: after execution, for the scratch this call created.
+        const offered = PROVIDER_SANDBOX_PRINCIPALS[agent];
+        const inspection = offered?.length ? checkScratch(temporaryDirectory, { allowReadOnlyPrincipals: [...offered] }) : checkScratch(temporaryDirectory);
+        const recorded = toleratedScratchAccess(agent, inspection);
+        if (recorded === null) privateBoundary = false;
+        else if (recorded.length) scratchAccess = { tolerated: recorded, note: SCRATCH_ACCESS_NOTE };
+      }
       catch { privateBoundary = false; }
       try {
         fs.rmSync(temporaryDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
@@ -1583,8 +1622,11 @@ async function invokeReviewer(agent, artifact, options) {
   if (problem) return { agent, status: "invalid_output", detail: problem, progress: result.progress, usage: parseUsage(agent, agent === "codex" ? `${result.stdout}\n${result.stderr ?? ""}` : result.stdout) };
   // 1.16: token/cost accounting from the CLI's own envelope — never estimated
   // here; a route that reports nothing yields reported:null and coverage false.
+  // scratch_access is present only when the accepted review relied on the
+  // provider-sandbox allowance; a strictly private scratch records nothing.
   return { agent, status: "success", progress: result.progress, review: normalizeReview(agent, payload), usage: parseUsage(agent, agent === "codex" ? `${result.stdout}
-${result.stderr ?? ""}` : result.stdout) }; // codex prints its token count on stderr
+${result.stderr ?? ""}` : result.stdout), // codex prints its token count on stderr
+    ...(scratchAccess ? { scratch_access: scratchAccess } : {}) };
 }
 
 function fingerprint(finding) {
@@ -1696,6 +1738,9 @@ function mergePieceResults(pieceResults, agents, governor) {
     const worst = runs.slice().sort((a, b) => (STATUS_RANK[b.status] ?? 9) - (STATUS_RANK[a.status] ?? 9))[0];
     const usageRows = ok.map((r) => r.usage?.reported).filter(Boolean);
     const sum = (key) => usageRows.every((u) => Number.isFinite(u[key])) && usageRows.length ? usageRows.reduce((acc, u) => acc + u[key], 0) : null;
+    // Accepted pieces that relied on the provider-sandbox scratch allowance.
+    const scratchRuns = ok.filter((r) => r.scratch_access?.tolerated?.length);
+    const scratchGrants = [...new Map(scratchRuns.flatMap((r) => r.scratch_access.tolerated).map((grant) => [`${grant.principal}|${grant.rights}`, grant])).values()];
     return {
       agent,
       status: ok.length ? "success" : worst.status,
@@ -1704,6 +1749,7 @@ function mergePieceResults(pieceResults, agents, governor) {
       attempts: Math.max(...runs.map((r) => r.attempts ?? 1)),
       duration_ms: runs.reduce((acc, r) => acc + (r.duration_ms ?? 0), 0),
       ...(ok.length ? {} : { detail: worst.detail ?? null }),
+      ...(scratchRuns.length ? { scratch_access: { tolerated: scratchGrants, note: SCRATCH_ACCESS_NOTE, pieces: scratchRuns.map((r) => r.piece) } } : {}),
       ...(ok.length ? { review: {
         verdict: ok.map((r) => r.review.verdict).sort((a, b) => (VERDICT_RANK[b] ?? 0) - (VERDICT_RANK[a] ?? 0))[0],
         confidence: Math.min(...ok.map((r) => r.review.confidence ?? 1)),
@@ -1891,7 +1937,9 @@ async function commandVersion(command) {
   const result = await runProcess(command, ["--version"], { timeoutMs: 5_000 });
   if (result.error?.code === "ENOENT") return { installed: false, version_status: "missing" };
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { installed: true, status: "unsupported", detail: result.error.message };
-  const version = String(result.stdout || result.stderr || "").match(/\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/)?.[0] ?? null;
+  // A conventional "v" prefix (v1.2.3) is part of a healthy banner, never of
+  // the reported version; digits glued to any other word stay unrecognized.
+  const version = String(result.stdout || result.stderr || "").match(/(?<![\w.])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)?.[1] ?? null;
   if (result.code === 0 && !result.error && !result.timedOut && version) return { installed: true, version, version_status: "success" };
   // Failed introspection is not proof of absence. Do not prescribe reinstall
   // or login, and do not expose arbitrary provider diagnostics as a version.
@@ -2664,6 +2712,24 @@ async function selfTest(pretty) {
     timestamped_warnings_do_not_hide_provider_error: classifyFailure({ code: 1,
       stderr: "\x1b[2m2026-09-12T12:00:00Z\x1b[0m \x1b[33mWARN\x1b[0m permissions: ignored setting\nActual request refused: limit reached",
       stdout: "" }).detail === "Actual request refused: limit reached",
+    // Provider sandbox allowance: a split run keeps which pieces relied on it, and
+    // the evidence block can name the routes; a strictly private run names none.
+    scratch_access_survives_piece_merge_and_lists_routes: (() => {
+      const grant = { principal: "WORK\\CodexSandboxUsers", rights: "ReadAndExecute, Synchronize" };
+      const access = { tolerated: [grant], note: SCRATCH_ACCESS_NOTE };
+      const ok = (agent, extra = {}) => ({ agent, status: "success", review: { verdict: "ACCEPT", confidence: 1, summary: "", findings: [], improvements: [], reviewed_scope: [] }, ...extra });
+      const merged = mergePieceResults([
+        { id: "p1", results: [ok("codex", { scratch_access: access }), ok("grok")] },
+        { id: "p2", results: [ok("codex", { scratch_access: access }), ok("grok")] },
+        { id: "p3", results: [ok("codex"), ok("grok")] },
+      ], ["codex", "grok"], "claude");
+      const codex = merged.find((r) => r.agent === "codex"), grok = merged.find((r) => r.agent === "grok");
+      return JSON.stringify(codex.scratch_access) === JSON.stringify({ tolerated: [grant], note: SCRATCH_ACCESS_NOTE, pieces: ["p1", "p2"] })
+        && !("scratch_access" in grok) && scratchAccessRoutes(merged).join() === "codex"
+        && scratchAccessRoutes([ok("codex"), ok("grok")]).length === 0
+        && Object.keys(PROVIDER_SANDBOX_PRINCIPALS).join() === "codex"
+        && toleratedScratchAccess("grok", { tolerated: [grant] }) === null && toleratedScratchAccess("codex", { verified: true }).length === 0;
+    })(),
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
   };
   const passed = selfTestPassed(tests);
@@ -3007,6 +3073,9 @@ async function main() {
       suggested_improvements: result.review?.improvements ?? null,
       usage: result.usage ?? null,
       ...(result.pieces ? { pieces: result.pieces, partial: result.partial } : {}),
+      // Present only when the accepted review relied on the provider-sandbox
+      // allowance for that route's own scratch (never for durable evidence).
+      ...(result.scratch_access ? { scratch_access: result.scratch_access } : {}),
     })),
     // 1.16: what the CLIs reported (per route, never summed across routes whose
     // counts mean different things) plus the dispatcher's labelled estimate.
@@ -3037,7 +3106,11 @@ async function main() {
   // persisted = the report file itself; log_indexed = its review-log line.
   // Tracked separately so a successfully written report is never misreported
   // when only the log append fails.
-  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS, guidance_sidecar: guidanceSidecar, permissions: evidenceProtection };
+  // Additive and optional: routes whose accepted review relied on the
+  // provider-sandbox scratch allowance. `permissions` still describes the
+  // durable evidence folder, which never receives any allowance.
+  const scratchRoutes = scratchAccessRoutes(results);
+  const evidence = { persisted: false, log_indexed: false, report_path: null, report_sha256: null, report_sha256_covers: REPORT_DIGEST_COVERS, guidance_sidecar: guidanceSidecar, permissions: evidenceProtection, ...(scratchRoutes.length ? { scratch_access_routes: scratchRoutes } : {}) };
   const reportPath = path.join(".ensemble_reviews", "reports", `${runId}.json`);
   try {
     evidence.permissions = requirePrivateEvidence(path.resolve('.ensemble_reviews'));

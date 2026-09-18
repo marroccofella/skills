@@ -631,17 +631,31 @@ const reportsDir = path.join(er, "reports");
 if (fs.existsSync(reportsDir)) {
   for (const file of fs.readdirSync(reportsDir).filter((f) => f.endsWith(".json"))) {
     try {
-      const raw = fs.readFileSync(path.join(reportsDir, file), "utf8");
+      // Digest the stored bytes, exactly what the dispatcher sealed (report_sha256_covers: stored_report_bytes).
+      const bytes = fs.readFileSync(path.join(reportsDir, file));
+      const raw = bytes.toString("utf8");
       const report = JSON.parse(raw);
       if (!recordObject(report) || !Array.isArray(report.reviewers) || !Array.isArray(report.findings)
         || !report.reviewers.every(r => recordObject(r) && typeof r.status === "string" && (r.suggested_improvements == null || Array.isArray(r.suggested_improvements)))
         || !report.findings.every(f => recordObject(f) && typeof f.severity === "string" && (f.sources == null || Array.isArray(f.sources)))) throw new Error("invalid report shape");
-      reports[file.replace(/\.json$/, "")] = { sha256: createHash("sha256").update(raw).digest("hex"), report };
+      reports[file.replace(/\.json$/, "")] = { sha256: createHash("sha256").update(bytes).digest("hex"), report };
     } catch {
       reportErrors.set(file.replace(/\.json$/, ""), "Report is unreadable or corrupt; completion unverified.");
       integrityWarnings.push(`${file}: report unreadable or corrupt. Original bytes were not modified.`);
     }
   }
+}
+
+// A report is only presented as a run's transcript when its bytes still match the digest that run
+// sealed in review-log.jsonl. A well-formed but altered report is withheld and reported instead.
+// Records without a sealed digest (they predate sealing) cannot be checked and are shown as before.
+for (const run of runs) {
+  const sealed = run.report_sha256 ?? run.evidence?.report_sha256;
+  const stored = reports[run.run_id];
+  if (!stored || sealed == null) continue;
+  if (typeof sealed === "string" && /^[a-f0-9]{64}$/i.test(sealed) && sealed.toLowerCase() === stored.sha256) continue;
+  delete reports[run.run_id];
+  reportErrors.set(run.run_id, "Stored report does not match the digest sealed in its run record; its contents are not shown and completion is unverified. Restore the report from a trusted backup. Original bytes were not modified.");
 }
 
 const data = {
@@ -796,7 +810,8 @@ ${SERVED_LINK_SCRIPT}
 // 0600 (its mode arg is ignored when overwriting), leaving no world-readable
 // window between write and chmod.
 const outPath = path.join(er, "ledger.html");
-requirePrivateEvidence(er);
+try { requirePrivateEvidence(er); }
+catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 try { fs.rmSync(outPath, { force: true }); } catch {}
 fs.writeFileSync(outPath, html, { mode: 0o600 });
 process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — this file stays in .ensemble_reviews/, which the momm protocol keeps out of git.)\n`);

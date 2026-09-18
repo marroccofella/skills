@@ -39,4 +39,26 @@ try {
   }
   passed.push('failed alias setup preserves error and cleans directory with LF and CRLF');
 }catch(e){failures.push({file:'alias cleanup',error:e.message});}
+// Importing the test fixture must never act as its command line, whatever argv[1] holds.
+for(const file of ['momm/scripts/private-test-fixture.mjs','scripts/private-test-fixture.mjs']) {
+  try {
+    const imported=run(['--input-type=module','-e',`await import(${JSON.stringify(pathToFileURL(path.join(root,file)).href)});`,'--','nonexistent-entrypoint-fixture']);
+    assert.equal(imported.status,0,imported.stderr);assert.equal(imported.stdout,'');
+    passed.push(file+' imports without running');
+  }catch(e){failures.push({file,error:e.message.split('\n')[0]});}
+}
+// The skill is installed by linking or copying momm/ alone; nothing beside it exists there.
+try {
+  const skill=path.join(root,'momm'),escaping=[];
+  const scriptsDir=path.join(skill,'scripts');
+  for(const name of fs.readdirSync(scriptsDir).filter(n=>n.endsWith('.mjs'))) {
+    const text=fs.readFileSync(path.join(scriptsDir,name),'utf8');
+    for(const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\1/g)) {
+      const resolved=path.resolve(scriptsDir,m[2]);
+      if(!resolved.startsWith(skill+path.sep))escaping.push(name+' -> '+m[2]);
+    }
+  }
+  assert.deepEqual(escaping,[],'momm/scripts modules must not import from outside the installed skill directory');
+  passed.push('skill scripts import nothing outside momm/');
+}catch(e){failures.push({file:'skill self-containment',error:e.message});}
 console.log(JSON.stringify({passed,failures},null,2));if(failures.length)process.exitCode=1;

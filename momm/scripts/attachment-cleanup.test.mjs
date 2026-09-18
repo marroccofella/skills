@@ -7,7 +7,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {privateTestFixture} from '../../scripts/private-test-fixture.mjs';
+import {privateTestFixture} from './private-test-fixture.mjs';
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');

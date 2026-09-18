@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
-import {privateTestFixture} from '../../scripts/private-test-fixture.mjs';
+import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");
 // Execute production parser/normalizer/aggregation functions, not a copied algorithm.

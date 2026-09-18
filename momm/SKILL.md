@@ -28,7 +28,7 @@ node "<installed-momm>/scripts/multi-review.mjs" evidence --status
 node "<installed-momm>/scripts/multi-review.mjs" evidence --protect
 ```
 
-`--status` makes no changes. `--protect` only ever touches a directory named `.ensemble_reviews` in the current project: it restricts the folder to the owner's account and makes everything inside inherit that. On Windows this is commonly needed once per existing project after upgrading from 1.15, because folders on a data drive inherit access for other local accounts. Do not run `--protect` on the user's behalf without their explicit instruction, and never work around a refusal by moving evidence somewhere shared.
+`--status` makes no changes. `--protect` only ever touches a directory named `.ensemble_reviews` in the current project: it restricts the folder to the owner's account and makes everything inside inherit that. On Windows this is commonly needed once per existing project after upgrading from 1.15, because folders on a data drive inherit access for other local accounts. Do not run `--protect` on the user's behalf without their explicit instruction, and never work around a refusal by moving evidence somewhere shared. `--protect` refuses, before changing anything, an evidence folder that contains a hard-linked file, a link, a junction or a special file: relay that refusal and let the owner remove the entry. A reviewer entry carrying `scratch_access` means the provider's own sandbox group was granted read-only access to that route's temporary scratch copy while it ran (seen with Codex on Windows); it is a recorded fact, not a finding.
 
 ## First-time setup
 

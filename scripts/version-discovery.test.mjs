@@ -7,18 +7,26 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'momm/scripts/multi-review.mjs'), 'utf8');
 const a = source.indexOf('async function commandVersion('), b = source.indexOf('// Presence-only', a);
 const tests = [];
-for (const [name, result, installed, versionStatus] of [
+for (const [name, result, installed, versionStatus, expectedVersion] of [
   ['missing', { error: { code: 'ENOENT' } }, false, 'missing'],
   ['timeout', { code: null, timedOut: true, stdout: '' }, null, 'timeout'],
   ['nonzero', { code: 1, stderr: 'private sentinel' }, null, 'error'],
   ['empty success', { code: 0, stdout: '' }, null, 'error'],
   ['valid', { code: 0, stdout: 'Copilot 1.0.85' }, true, 'success'],
+  // Gate rev_20260918172020_ehti version-semver-strict: a healthy "v"-prefixed
+  // banner must not look like failed discovery; the prefix is never reported.
+  ['v-prefixed banner', { code: 0, stdout: 'v1.2.3\n' }, true, 'success', '1.2.3'],
+  ['v-prefixed banner after a name', { code: 0, stdout: 'example-cli v0.45.1 (build 7)' }, true, 'success', '0.45.1'],
+  ['prerelease is kept', { code: 0, stdout: 'tool 1.0.5-beta.2' }, true, 'success', '1.0.5-beta.2'],
+  ['two-part number is not a version', { code: 0, stdout: 'v1.2' }, null, 'error'],
+  ['digits glued to a word are not a version', { code: 0, stdout: 'build7.1.2.3x' }, null, 'error'],
 ]) {
   try {
     const fn = vm.runInNewContext(source.slice(a, b) + ';commandVersion', { runProcess: async () => result, clipped: (s, n) => String(s ?? '').slice(0, n) });
     const actual = await fn('copilot');
     assert.equal(actual.installed, installed);
     assert.equal(actual.version_status, versionStatus);
+    if (expectedVersion !== undefined) assert.equal(actual.version, expectedVersion);
     assert(!JSON.stringify(actual).includes('private sentinel'));
     tests.push({ name, passed: true });
   } catch (error) { tests.push({ name, passed: false, error: error.message }); }

@@ -8,7 +8,7 @@ import vm from "node:vm";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createProcessScope } from "./process-scope.mjs";
-import {privateTestFixture} from '../../scripts/private-test-fixture.mjs';
+import {privateTestFixture} from './private-test-fixture.mjs';
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
 const start = source.indexOf("function platformCommand("), end = source.indexOf("function clipped(");
 assert(start >= 0 && end > start, "transport fixture boundaries moved; update the production extraction");

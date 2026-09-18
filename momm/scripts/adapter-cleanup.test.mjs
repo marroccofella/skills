@@ -79,6 +79,62 @@ try{
     const c=context();const r=await invoke(c,route,{run:async()=>({code:1,stdout:'',stderr:'authentication required'})});
     assert.equal(r.status,'authentication_required');clean(c);
   });
+  // Provider sandbox allowance (reproduced on Windows: a sandboxed Codex shell command
+  // grants <machine>\CodexSandboxUsers read/execute on Codex's own scratch). Only the
+  // post-run check of that route's scratch may name the group; the inspector decides
+  // whether the grant is tolerable, and anything else keeps the existing refusal.
+  const scratchArtifact='export const synthetic = 1;';
+  const scratchReview=JSON.stringify({review_status:'complete',reviewed_scope:[{quote:scratchArtifact,assessment:'Synthetic exact source was inspected.'}],
+    verdict:'ACCEPT',confidence:0.8,findings:[],summary:'Synthetic complete response.',suggested_improvements:[]});
+  const scratchReply={antigravity:JSON.stringify({event:'result',result:{status:'SUCCESS',response:scratchReview}})+'\n',
+    copilot:[{type:'assistant.turn_start',data:{turnId:'t'}},{type:'assistant.message',data:{turnId:'t',content:scratchReview,toolRequests:[]}},{type:'assistant.turn_end',data:{turnId:'t'}},{type:'result',exitCode:0}].map(row=>JSON.stringify(row)).join('\n')+'\n'};
+  const scratchInvoke=(c,route,check,seam=false)=>{
+    if(!seam)c.ctx.requirePrivateScratch=check;
+    return c.ctx.invoke(route,scratchArtifact,{governor:'other',timeoutMs:1000,...(seam?{testWorkspaceCheck:check}:{}),
+      runProcess:async()=>({code:0,stdout:scratchReply[route]??scratchReview,stderr:''})});
+  };
+  const sandboxGrant={principal:'WORK\\CodexSandboxUsers',rights:'ReadAndExecute, Synchronize'};
+  for(const seam of [false,true])await test(`codex tolerated sandbox group on its own scratch is accepted and recorded (${seam?'test seam':'production check'})`,async()=>{
+    const c=context(),calls=[];
+    const r=await scratchInvoke(c,'codex',(...args)=>{calls.push(args);return {verified:true,basis:'windows_dacl',tolerated:[sandboxGrant]};},seam);
+    assert.equal(r.status,'success',r.detail);clean(c);
+    assert.equal(calls.length,1);assert.equal(calls[0].length,2);
+    assert.equal(JSON.stringify(calls[0][1]),JSON.stringify({allowReadOnlyPrincipals:['CodexSandboxUsers']}));
+    assert.equal(JSON.stringify(r.scratch_access.tolerated),JSON.stringify([sandboxGrant]));
+    assert.equal(r.scratch_access.note,'provider sandbox group was granted read-only access to its own scratch during execution');
+  });
+  await test('codex scratch that stayed strictly private records no scratch access',async()=>{
+    for(const verdict of [undefined,{verified:true},{verified:true,tolerated:[]}]){
+      const c=context();const r=await scratchInvoke(c,'codex',()=>verdict);
+      assert.equal(r.status,'success',r.detail);assert(!('scratch_access' in r));clean(c);
+    }
+  });
+  await test('codex scratch with a principal the inspector does not tolerate keeps the existing refusal',async()=>{
+    const c=context();
+    const r=await scratchInvoke(c,'codex',()=>{const e=Error('PRIVATE_DIAGNOSTIC_SENTINEL additional_principal');e.code='MOMM_EVIDENCE_PERMISSIONS';e.reason='additional_principal';throw e;});
+    safeFailure(r);clean(c);assert(!('scratch_access' in r));
+    assert.equal(r.detail,'review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted');
+  });
+  await test('a tolerated entry outside the route table, or malformed, is refused rather than recorded',async()=>{
+    for(const tolerated of [[{principal:'WORK\\Everyone',rights:'ReadAndExecute'}],[sandboxGrant,{principal:'BUILTIN\\Users',rights:'ReadAndExecute'}],[{principal:'WORK\\CodexSandboxUsersX',rights:'Read'}],[{rights:'Read'}],'CodexSandboxUsers',[null]]){
+      const c=context();const r=await scratchInvoke(c,'codex',()=>({verified:true,tolerated}));
+      safeFailure(r);clean(c);assert.match(r.detail,/permissions could not be verified after execution/);assert(!('scratch_access' in r));
+    }
+  });
+  for(const route of ['claude','gemini','antigravity','copilot','grok'])await test(`${route} never passes a sandbox allowance and cannot be granted one`,async()=>{
+    let c=context();const calls=[];
+    let r=await scratchInvoke(c,route,(...args)=>{calls.push(args);return {verified:true};});
+    assert.equal(r.status,'success',r.detail);clean(c);assert(!('scratch_access' in r));
+    assert.equal(calls.length,1);assert.equal(calls[0].length,1,'only the scratch directory may be passed');
+    c=context();r=await scratchInvoke(c,route,()=>({verified:true,tolerated:[sandboxGrant]}));
+    safeFailure(r);clean(c);assert.match(r.detail,/permissions could not be verified after execution/);
+  });
+  await test('the scratch is still created strictly private: creation never receives the allowance',async()=>{
+    const c=context(),created=[],make=c.ctx.createEvidenceWorkspace;
+    c.ctx.createEvidenceWorkspace=(...args)=>{created.push(args);return make(...args);};
+    const r=await scratchInvoke(c,'codex',()=>({verified:true,tolerated:[sandboxGrant]}));
+    assert.equal(r.status,'success',r.detail);assert.equal(JSON.stringify(created),JSON.stringify([['momm-review-']]));clean(c);
+  });
   await test('original attachment and unrelated sibling are untouched by all cleanups',()=>{
     assert.equal(fs.readFileSync(original,'utf8'),'SYNTHETIC_MEDIA_BYTES');
     assert.equal(fs.readFileSync(path.join(sibling,'keep'),'utf8'),'keep');

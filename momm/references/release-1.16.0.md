@@ -67,12 +67,40 @@ source review, independent retest and the release gates below.
   Fixed: on Windows a folder MOMM creates itself now gets its private access list at creation
   (the same CreateDirectoryW path the scratch folders use); an existing folder is still only
   inspected, and the refusal now names the reason in words and the owner's remedy. A new explicit,
-  owner-invoked `multi-review.mjs evidence --status | --protect` restricts an existing
+  owner-invoked `multi-review.mjs evidence (--status | --protect)` restricts an existing
   `.ensemble_reviews` (Access section only, no ownership change, never any other directory).
   Native tests now run the real inspector against a MOMM-created folder under a broadly
   readable project and against the protect action; eight synthetic checks cover the decisions.
   **Upgrade note for Windows:** after moving from 1.15, run `evidence --protect` once in each
   existing project whose evidence folder is reported as not private.
+- Release gate, 18 September (run `rev_20260918172020_ehti`, the 392 KB delta since the last gated
+  tree through the candidate's own dispatcher with `--split`, Codex, Antigravity and Grok, two-review
+  quorum per piece): quorum on 9 of 12 pieces, 31 findings and 67 suggestions, every one ruled on and
+  logged. Real and fixed, each with a failing test first: `evidence --protect` would have changed the
+  access list of a hard-linked file at its other location too (reproduced on Windows), so it now
+  surveys the whole tree first and refuses hard links, links, junctions and special files before
+  anything is changed, and on POSIX changes modes by verified descriptor rather than by path; the
+  ledger showed a stored report whose bytes no longer match the digest sealed in its run record, and
+  now withholds it with a warning; PowerShell helpers receive pure-ASCII JSON on stdin so a
+  non-ASCII project path survives an OEM console code page; skill tests import nothing outside
+  `momm/`, so they run from an installed skill; version banners with a `v` prefix parse; the Setup
+  Center keeps its launch capability when the session reply omits it. Rejected with evidence: two
+  "syntax error" criticals (artefacts of the diff being cut into pieces; `node --check` passes and
+  the braces match), the claim that `Get-Acl -LiteralPath` is unsupported (it is, and the native
+  suite passes), and several "untested" claims whose tests exist and fail when the rule is removed.
+  The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
+  now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
+  classes use the Windows post-flush delay.
+- Found by the gate itself: on Windows the Codex CLI grants its own `CodexSandboxUsers` group
+  read access to its working folder as soon as the model runs a sandboxed command (reproduced 2 of 2;
+  never with a prompt that runs nothing). The post-run scratch check then discarded the review,
+  which cost 4 of 12 Codex reviews and quorum on three pieces. The scratch must still start strictly
+  private; afterwards, for the Codex route only, a rule for a principal whose account name is
+  `CodexSandboxUsers` and whose rights are read-and-execute only is tolerated, the review is accepted
+  and the report records it (`scratch_access` on the reviewer entry, `scratch_access_routes` in the
+  evidence block). Write access, any other account, any other route and the durable evidence folder
+  are refused exactly as before. Matching is by account leaf name, which is the documented limit of
+  this allowance.
 - The dispatcher checks project evidence-folder permissions before collecting
   review input and checks again before persistence. Unavailable or ambiguous
   protection refuses without changing existing permissions. A late persistence

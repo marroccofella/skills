@@ -54,6 +54,19 @@ try {
     assert.equal(r.complete, false, "a piece-only reviewer cannot supply a missing second review");
     assert(r.errors.some(e => /piece reviewer success has no successful verified row/.test(e)), JSON.stringify(r.errors));
   });
+  test("a piece success is counted only against a successful verified row, not any row for that route", () => {
+    const f = fixture("unsuccessful_row", { pieces: [piece("piece-01", ok2)], quorum: { required: 2, achieved: 2, met: true, pieces: 1 } });
+    const rp = `.ensemble_reviews/reports/${f.id}.json`;
+    fs.writeFileSync(path.join(f.dir, rp), JSON.stringify({ ...f.report, reviewers: f.report.reviewers.map(r => r.agent === "grok" ? { agent: "grok", status: "timeout" } : r) }, null, 2));
+    const seal = digest(fs.readFileSync(path.join(f.dir, rp)));
+    fs.writeFileSync(path.join(f.dir, ".ensemble_reviews/review-log.jsonl"), JSON.stringify({ run_id: f.id, report_path: rp, report_sha256: seal, input_sha256: f.report.input_sha256 }) + "\n");
+    const v = JSON.parse(fs.readFileSync(path.join(f.dir, `.ensemble_reviews/verification/${f.id}.json`), "utf8")); v.report_sha256 = seal; fs.writeFileSync(path.join(f.dir, `.ensemble_reviews/verification/${f.id}.json`), JSON.stringify(v, null, 2));
+    const r = inspectCompletion(f.dir, f.id);
+    assert.equal(r.complete, false);
+    assert(r.errors.some(e => /piece reviewer success has no successful verified row: piece-01: grok/.test(e)), JSON.stringify(r.errors));
+    assert.equal(r.quorum.achieved, 1, "only the route with a successful verified row counts");
+    assert.deepEqual(r.quorum.failing_pieces, ["piece-01"]);
+  });
   test("clean split run with both pieces at quorum completes", () => {
     const f = fixture("clean", { pieces: [piece("piece-01", ok2), piece("piece-02", ok2)], quorum: { required: 2, achieved: 2, met: true, pieces: 2 } });
     const r = inspectCompletion(f.dir, f.id);

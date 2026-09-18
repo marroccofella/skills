@@ -106,5 +106,18 @@ await test('wrong scope and incomplete contract remain refused after transport s
 await test('CRLF transport preserves review content and supports matching turn IDs',async()=>{
   const r=await invoke(encode(events()).replaceAll('\n','\r\n'));assert.equal(r.status,'success',r.detail);
 });
+// Gate rev_20260918172020_ehti copilot-jsonl-untested: the transport was already covered
+// above (single object at "rendered text ... are not repaired", unknown event, nonzero
+// result). The remaining named case is an event-level error marker: it is a terminal
+// failure by design, never a schema problem and never echoed.
+await test('an error marker on any event is a terminal failure and is not echoed',async()=>{
+  for(const mark of [r=>r[7].error={message:'PRIVATE_DIAGNOSTIC'},r=>r[7].is_error=true,r=>r.at(-1).error='PRIVATE_DIAGNOSTIC']){
+    const rows=events();mark(rows);const r=await invoke(rows);
+    assert.equal(r.status,'error');assert(!r.review);assert(!JSON.stringify(r).includes('PRIVATE_DIAGNOSTIC'));
+  }
+});
+await test('one JSON object instead of JSONL events is refused whatever it contains',async()=>{
+  for(const text of [JSON.stringify(payload),JSON.stringify({type:'result',exitCode:0}),JSON.stringify({response:JSON.stringify(payload)})])assert.equal((await invoke(text)).status,'invalid_output');
+});
 console.log(JSON.stringify({passed:checks.filter(c=>c.passed).length,total:checks.length,checks},null,2));
 if(checks.some(c=>!c.passed))process.exitCode=1;

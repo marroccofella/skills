@@ -23,7 +23,7 @@ The author's [release record](release-1.16.0.md) and passing CI are inputs to in
 
 ## A. Deterministic suites and platform coverage
 
-Read the exact checkout's two workflows and discover its test inventory; do not infer completeness from a fixed historical count. Record individual assertions, suite/command counts and skips separately.
+Read every workflow file present in the exact checkout and discover its test inventory; do not infer completeness from a fixed historical count. Record individual assertions, suite/command counts and skips separately.
 
 Start with:
 
@@ -93,6 +93,19 @@ Exercise actual self-exclusion, invalid/nonzero recursion, hostile source/review
 Use read/write canaries and supervised descendants, including cancellation and timeout. Do not call plan mode or a prompt an OS sandbox. Report residual-process limitations precisely. A valid signed-out diagnostic is not a successful authenticated containment test.
 
 Obtain two completed distinct external routes for each release-critical source bundle, excluding the actual governor. Include complete change coverage and relevant surrounding code; do not substitute a tiny smoke for a release review. State actual CLI identities and only model IDs actually reported.
+
+### Required negative controls
+
+These are product checks, not rules for the tester, and each must be run and recorded. Release gate `rev_20260918172020_ehti` found the condensed plan had dropped them.
+
+- **Outbound secret redaction.** Put synthetic values shaped like `sk-ant-…`, `ghp_…`, `AKIA…` and a lowercase `some_api_key=…` into a synthetic diff. Inspect every staged reviewer prompt file, the stored report and the child process environment: the values must be redacted everywhere and no `*_API_KEY` variable may reach a reviewer process.
+- **Excluded work is absent, not merely out of scope.** Search the frozen candidate for `legal-commercial`, `legal-commercial.mjs`, `--profile legal-commercial` and any MOMM World entry point. Any reachable path is a finding.
+- **Setup reads no credentials.** `--doctor` and the onboarding report must state `model_calls_made: false` and `credential_contents_read: false`; a signed-out route returns `authentication_required` with the provider's own login command.
+- **A review never generates.** Attach a synthetic PNG to `multi-review.mjs` without any consent flag and confirm from the staged prompts and the adapter argv that no route was asked to generate media. Generation may occur only in `modality.mjs run --consent` and consented `probes.mjs --modalities --consent`.
+- **Self-exclusion and the `--governor other` rule.** Under a named harness, `--governor <that harness>` must list its own route as `self_excluded`. Then record that `--governor other` under the same harness lets that route review its governor's work: it is valid only when the controlling harness is none of the named routes.
+- **Nested dispatch fails closed.** With `MULTI_LLM_REVIEW_DEPTH` set to `1`, `2`, `10`, `-1`, `0.5` and `garbage`, the dispatcher must exit 1 before any evidence directory is created. Only unset, empty or `0` may proceed.
+- **Evidence folder on a normally-permissioned Windows volume.** In a new project on a data drive (or any folder that inherits access for other local accounts), a first review must run and `evidence --status` must then report the folder as verified. In a project whose `.ensemble_reviews` already exists with inherited access, the review must refuse, name the reason in words and the remedy, change nothing, and succeed after the owner runs `evidence --protect`. A suite that only injects a fake inspector does not count.
+- **Provider sandboxes and scratch.** On Windows, run a Codex review that makes the model execute a shell command. The Codex CLI grants its own sandbox group read access to its scratch folder; record whether the review is accepted with that access noted, and confirm that write access or any other account still voids it.
 
 ## F. Media and truthful capability claims
 
