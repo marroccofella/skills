@@ -1,6 +1,6 @@
 // Tests for split.mjs (MOMM 1.16.0 E5). Run: node momm/scripts/split.test.mjs
 import assert from "node:assert/strict";
-import { parseUnifiedDiff, splitDiff, reassemble, headerOnlyQuote } from "./split.mjs";
+import { parseUnifiedDiff, splitDiff, reassemble, headerOnlyQuote, lineSplitHunk } from "./split.mjs";
 
 const failures = [], passed = [];
 function test(name, fn) {
@@ -253,6 +253,188 @@ test("parseUnifiedDiff: git C-quoted paths are decoded and the a/ b/ prefix stri
   assert.deepEqual(r.pieces.flatMap((p) => p.files), expected);
   assert.deepEqual(reassemble(r.pieces, r.oversize).files.map((f) => f.path), expected);
   assert.equal(r.pieces.map((p) => p.text).join(""), src, "decoding never rewrites the diff text");
+});
+
+// ---- rule 2b: line-splitting an over-ceiling hunk (opt-in) --------------------
+// The defect this closes: a whole new file larger than the ceiling is ONE hunk,
+// so under rule 2 no route ever read it and full-source peer quorum could not
+// be met. With lineSplit the hunk becomes consecutive valid sub-hunks.
+const HUNK_RANGE = /^@@ -(\d+),(\d+) \+(\d+),(\d+) @@/;
+const hunkTexts = (files, path) => files.find((f) => f.path === path).hunks.map((h) => h.header + h.body);
+function newFileDiff(path, lineCount, { eol = "\n", width = 60, noFinalNewline = false } = {}) {
+  const lines = [`diff --git a/${path} b/${path}`, "new file mode 100644", "index 0000000..1111111", "--- /dev/null", `+++ b/${path}`, `@@ -0,0 +1,${lineCount} @@`];
+  for (let i = 1; i <= lineCount; i += 1) lines.push(`+line_${i}_${"z".repeat(width)}`);
+  if (noFinalNewline) lines.push("\\ No newline at end of file");
+  return lines.join(eol) + eol;
+}
+function rangesOf(piece) {
+  const hunks = parseUnifiedDiff(piece.text)[0].hunks;
+  assert.equal(hunks.length, 1, `${piece.id} carries exactly one hunk`);
+  const m = HUNK_RANGE.exec(hunks[0].header);
+  assert.ok(m, `${piece.id} has a well-formed range: ${hunks[0].header}`);
+  return { oldStart: +m[1], oldLen: +m[2], newStart: +m[3], newLen: +m[4], header: hunks[0].header, body: hunks[0].body, lines: hunks[0].body.split(/\r?\n/).filter((l) => l && !l.startsWith("\\")) };
+}
+
+test("lineSplit: a whole new file over the ceiling becomes contiguous valid sub-hunks; nothing is left governor_direct", () => {
+  const src = newFileDiff("src/big.mjs", 900);
+  assert.ok(bytes(src) > CEILING * 8);
+  const before = splitDiff(src, { ceilingBytes: CEILING });
+  assert.equal(before.oversize.length, 1, "the library default keeps rule 2: the hunk is oversize");
+  assert.equal(before.pieces.length, 0);
+  assert.equal(before.stats.lineSplitHunks, 0);
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.oversize.length, 0);
+  assert.ok(r.pieces.length >= 8);
+  assert.equal(r.stats.lineSplitHunks, 1);
+  assert.equal(r.stats.lineSplitPieces, r.pieces.length);
+  let nextNew = 1;
+  r.pieces.forEach((p, i) => {
+    assert.ok(p.bytes <= CEILING, `${p.id} is ${p.bytes} bytes`);
+    assert.equal(bytes(p.text), p.bytes, `${p.id} reports its true size`);
+    assert.ok(p.text.startsWith("diff --git a/src/big.mjs "), `${p.id} starts with the file header`);
+    assert.match(p.text, LOOKS_LIKE_DIFF);
+    assert.deepEqual({ part: p.lineSplit.part, parts: p.lineSplit.parts, path: p.lineSplit.path }, { part: i + 1, parts: r.pieces.length, path: "src/big.mjs" });
+    const g = rangesOf(p);
+    assert.deepEqual([g.oldStart, g.oldLen], [0, 0], "the old side of a new file stays empty");
+    assert.equal(g.newStart, nextNew, `${p.id} continues where the previous part ended`);
+    assert.equal(g.lines.length, g.newLen, "the header's length matches the lines it carries");
+    assert.equal(g.lines[0], `+line_${nextNew}_${"z".repeat(60)}`, "the first line is the one the header names");
+    nextNew += g.newLen;
+  });
+  assert.equal(nextNew - 1, 900, "the ranges cover 900 lines");
+  assert.deepEqual(r.pieces.flatMap((p) => rangesOf(p).lines), Array.from({ length: 900 }, (_, i) => `+line_${i + 1}_${"z".repeat(60)}`), "every line appears exactly once, in order, interior lines included");
+});
+test("lineSplit: reassemble restores the original hunk byte for byte beside untouched files", () => {
+  const src = newFileDiff("src/big.mjs", 700) + fileWithHunks("src/small.js", [hunk(3, 4, "small")]).join("\n") + "\n";
+  const original = parseUnifiedDiff(src);
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  const back = reassemble(r.pieces, r.oversize).files;
+  assert.deepEqual(back.map((f) => f.path).sort(), original.map((f) => f.path).sort());
+  for (const f of original) assert.deepEqual(hunkTexts(back, f.path), f.hunks.map((h) => h.header + h.body), f.path);
+  const shuffled = [...r.pieces].reverse();
+  assert.deepEqual(hunkTexts(reassemble(shuffled, r.oversize).files, "src/big.mjs"), hunkTexts(original, "src/big.mjs"), "part order, not arrival order, decides the body");
+});
+test("lineSplit: a modification hunk keeps both sides' counts, continuity and section heading", () => {
+  const body = [];
+  for (let i = 0; i < 300; i += 1) {
+    body.push(` ctx_${i}_${"c".repeat(30)}`);
+    if (i % 3 === 0) body.push(`-old_${i}_${"o".repeat(30)}`);
+    if (i % 4 === 0) body.push(`+new_${i}_${"n".repeat(30)}`);
+  }
+  const oldLen = body.filter((l) => l[0] !== "+").length, newLen = body.filter((l) => l[0] !== "-").length;
+  const src = [...header("src/mod.js"), `@@ -40,${oldLen} +44,${newLen} @@ function big()`, ...body].join("\n") + "\n";
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.oversize.length, 0);
+  assert.ok(r.pieces.length >= 3);
+  let oldNext = 40, newNext = 44;
+  for (const p of r.pieces) {
+    const g = rangesOf(p);
+    assert.equal(g.lines.filter((l) => l[0] !== "+").length, g.oldLen, `${p.id} old length`);
+    assert.equal(g.lines.filter((l) => l[0] !== "-").length, g.newLen, `${p.id} new length`);
+    assert.equal(g.oldLen ? g.oldStart : g.oldStart + 1, oldNext, `${p.id} old side is contiguous`);
+    assert.equal(g.newLen ? g.newStart : g.newStart + 1, newNext, `${p.id} new side is contiguous`);
+    assert.match(g.header, / @@ function big\(\)/, "the section heading rides with every part");
+    oldNext += g.oldLen; newNext += g.newLen;
+  }
+  assert.deepEqual([oldNext - 40, newNext - 44], [oldLen, newLen]);
+  assert.deepEqual(hunkTexts(reassemble(r.pieces, r.oversize).files, "src/mod.js"), hunkTexts(parseUnifiedDiff(src), "src/mod.js"));
+});
+test("lineSplit: CRLF text and a no-newline marker survive; the marker never starts a part and is never counted", () => {
+  const src = newFileDiff("src/crlf.txt", 400, { eol: "\r\n", noFinalNewline: true });
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.oversize.length, 0);
+  let total = 0;
+  for (const p of r.pieces) {
+    const g = rangesOf(p);
+    assert.ok(!g.body.startsWith("\\"), `${p.id} starts with a marker`);
+    assert.ok(g.header.endsWith("\r\n"), `${p.id} keeps the artifact's line ending in its header`);
+    assert.equal(g.lines.length, g.newLen, `${p.id} does not count the marker as a line`);
+    total += g.newLen;
+  }
+  assert.equal(total, 400);
+  const last = rangesOf(r.pieces[r.pieces.length - 1]);
+  assert.ok(last.body.endsWith("\\ No newline at end of file\r\n"));
+  assert.ok(last.body.includes("+line_400_"), "the marker stays with the line it annotates");
+  assert.deepEqual(hunkTexts(reassemble(r.pieces, r.oversize).files, "src/crlf.txt"), hunkTexts(parseUnifiedDiff(src), "src/crlf.txt"));
+});
+test("lineSplit: one line that cannot fit sends the whole hunk to oversize, never a fragment", () => {
+  const src = [...header("src/min.js"), "@@ -1,2 +1,3 @@", " keep", `+${"m".repeat(CEILING * 2)}`, " tail"].join("\n") + "\n";
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.pieces.length, 0);
+  assert.equal(r.oversize.length, 1);
+  assert.equal(r.oversize[0].text, src);
+  assert.equal(r.stats.lineSplitHunks, 0);
+  const parsed = parseUnifiedDiff(src)[0];
+  assert.equal(lineSplitHunk(parsed.header, parsed.hunks[0], CEILING), null);
+  assert.equal(lineSplitHunk("x\n", { header: "@@ not a range @@\n", body: "+a\n+b\n" }, CEILING), null, "an unparseable header is never guessed at");
+  assert.equal(lineSplitHunk("x\n", { header: "@@ -1,1 +1,2 @@\n", body: " a\n+b\n" }, CEILING), null, "a hunk that fits in one part is not a split");
+});
+test("lineSplit: siblings of a divided hunk keep their place and other files are untouched", () => {
+  const big = [];
+  for (let i = 0; i < 200; i += 1) big.push(`+big_${i}_${"b".repeat(40)}`);
+  const src = [...header("src/mix.js"), ...hunk(2, 3, "first"), `@@ -20,0 +21,${big.length} @@`, ...big, ...hunk(400, 3, "last"), ...fileWithHunks("src/other.js", [hunk(1, 2, "other")])].join("\n") + "\n";
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.oversize.length, 0);
+  assert.equal(r.stats.lineSplitHunks, 1);
+  const parts = r.pieces.filter((p) => p.lineSplit);
+  assert.ok(parts.length >= 2);
+  assert.ok(parts.every((p) => p.files.length === 1 && p.files[0] === "src/mix.js"), "a part is never packed with anything else");
+  assert.ok(parts.every((p) => p.lineSplit.hunkSeq === 1), "hunkSeq is the zero-based position in the file: the divided hunk is the second");
+  assert.ok(r.pieces.some((p) => !p.lineSplit && p.text.includes("first_ctx_0")));
+  assert.ok(r.pieces.some((p) => !p.lineSplit && p.text.includes("last_ctx_0")));
+  assert.ok(r.pieces.some((p) => !p.lineSplit && p.files.includes("src/other.js")));
+  const back = reassemble(r.pieces, r.oversize).files, original = parseUnifiedDiff(src);
+  assert.deepEqual(hunkTexts(back, "src/mix.js"), hunkTexts(original, "src/mix.js"), "first, the divided hunk, last - in source order");
+  assert.deepEqual(hunkTexts(back, "src/other.js"), hunkTexts(original, "src/other.js"));
+});
+
+// ---- review rev_20260918174726_lc1e: reproduced before each fix -----------------
+test("lineSplit: a multi-byte section heading and very large line numbers never push a part over the ceiling", () => {
+  const wide = String.fromCodePoint(0x3042).repeat(60); // 60 UTF-16 units, 180 UTF-8 bytes
+  const body = []; for (let i = 0; i < 400; i += 1) body.push(`+row_${i}_${"w".repeat(50)}`);
+  const src = [...header("src/wide.js"), `@@ -2147483000,0 +2147483001,${body.length} @@ ${wide}`, ...body].join("\n") + "\n";
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(r.oversize.length, 0);
+  assert.ok(r.pieces.length >= 2);
+  for (const p of r.pieces) { assert.ok(p.bytes <= CEILING, `${p.id} is ${p.bytes} bytes`); assert.equal(bytes(p.text), p.bytes); assert.ok(!p.text.includes(String.fromCharCode(0xFFFD)), "a clipped heading never ends in half a character"); }
+  assert.deepEqual(hunkTexts(reassemble(r.pieces, r.oversize).files, "src/wide.js"), hunkTexts(parseUnifiedDiff(src), "src/wide.js"));
+});
+test("reassemble: parts of different assemblies that share a path and position are never concatenated", () => {
+  const a = splitDiff(newFileDiff("src/same.mjs", 300), { ceilingBytes: CEILING, lineSplit: true });
+  const b = splitDiff(newFileDiff("src/same.mjs", 310, { width: 58 }), { ceilingBytes: CEILING, lineSplit: true });
+  const back = reassemble([...a.pieces, ...b.pieces], []);
+  const texts = hunkTexts(back.files, "src/same.mjs");
+  assert.equal(texts.length, 2, "two original hunks, not one merged body");
+  assert.ok(texts.some((t) => t.startsWith("@@ -0,0 +1,300 @@")) && texts.some((t) => t.startsWith("@@ -0,0 +1,310 @@")));
+  assert.deepEqual(back.incomplete, []);
+});
+test("reassemble: a missing or duplicated part is reported and never presented as the original hunk", () => {
+  const src = newFileDiff("src/gap.mjs", 500);
+  const r = splitDiff(src, { ceilingBytes: CEILING, lineSplit: true });
+  assert.ok(r.pieces.length >= 4);
+  const whole = reassemble(r.pieces, r.oversize);
+  assert.deepEqual(whole.incomplete, [], "control: a complete set reports nothing");
+  const missing = reassemble(r.pieces.filter((p) => p.lineSplit.part !== 2), r.oversize);
+  assert.deepEqual(missing.incomplete.map((x) => ({ path: x.path, missing: x.missing, duplicated: x.duplicated })), [{ path: "src/gap.mjs", missing: [2], duplicated: [] }]);
+  assert.ok(!hunkTexts(missing.files, "src/gap.mjs").some((t) => t.startsWith("@@ -0,0 +1,500 @@")), "the original header is not claimed for an incomplete body");
+  assert.equal(hunkTexts(missing.files, "src/gap.mjs").length, r.pieces.length - 1, "the fragments that did arrive stay as the valid sub-hunks they are");
+  const doubled = reassemble([...r.pieces, r.pieces[0]], r.oversize);
+  assert.deepEqual(doubled.incomplete.map((x) => ({ missing: x.missing, duplicated: x.duplicated })), [{ missing: [], duplicated: [1] }]);
+  assert.ok(!hunkTexts(doubled.files, "src/gap.mjs").some((t) => t.startsWith("@@ -0,0 +1,500 @@")));
+});
+
+// Seen live (rev_20260918174726_lc1e): greedy filling left a 1.5 KB tail after an 8 KB part,
+// a poor review unit that still costs a full dispatch per route. Parts are balanced instead.
+test("lineSplit: parts are balanced; no sliver tail", () => {
+  for (const lines of [75, 140, 333, 900]) {
+    const r = splitDiff(newFileDiff("src/even.mjs", lines), { ceilingBytes: CEILING, lineSplit: true });
+    if (!r.pieces.length) continue;
+    const sizes = r.pieces.map((p) => p.bytes), max = Math.max(...sizes), min = Math.min(...sizes);
+    assert.ok(max <= CEILING, `${lines} lines: ${max} bytes`);
+    assert.ok(min >= max * 0.6, `${lines} lines: smallest part ${min} bytes beside ${max}`);
+    const greedy = Math.ceil(r.pieces.reduce((n, p) => n + rangesOf(p).body.length, 0) / (CEILING - 300));
+    assert.ok(r.pieces.length <= greedy + 1, `${lines} lines: ${r.pieces.length} parts where about ${greedy} suffice`);
+  }
 });
 
 console.log(JSON.stringify({ passed, failures }, null, 2));

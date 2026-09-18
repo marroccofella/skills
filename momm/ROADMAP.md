@@ -92,7 +92,11 @@ token and cost accounting in reports, ledger and Setup Center; reviewer
 ratings (`ledger.mjs --rate`) with a five-run floor and 30-day route
 reliability that recommends only on ten or more runs; guidance layers behind a
 per-file trust gate (untrusted text is never sent); `--split` with per-piece
-quorum, governor-direct scope for oversize hunks and `--jobs` parallel
+quorum, over-ceiling hunks divided at line boundaries into consecutive valid
+sub-hunks so routes read every line of a whole new file (on by default in
+the dispatcher, lossless on reassembly; `--no-line-split` keeps the older
+rule; a hunk stays whole as governor-direct scope only when one of its lines
+is itself larger than the ceiling) and `--jobs` parallel
 dispatch; an event-driven update clock with conditional GETs whose
 automatic-update toggle is off by default and never enabled by an agent;
 `update --check-all`; containment probes per CLI; one design system with a

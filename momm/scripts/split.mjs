@@ -136,7 +136,95 @@ function padId(prefix, index, total) {
 // where each chunk/oversize text starts with the file header. Every chunk
 // records hunkSeqs (path -> original hunk positions) and every oversize entry
 // its hunkSeq, so reassemble() can restore the file's original hunk order.
-function splitFile(file, ceiling) {
+// Rule 2b (opt-in, `lineSplit: true`): an over-ceiling hunk is divided at line
+// boundaries into consecutive sub-hunks whose `@@` ranges are recomputed, so
+// every part is still a valid unified diff on its own and every quoted line
+// still matches the artifact literally. Without this a whole new file larger
+// than the ceiling (one hunk) was never seen by any route — it could only be
+// governor_direct scope, which is why full-source peer quorum kept failing.
+// Guarantees: nothing is dropped or duplicated; a "\ No newline at end of
+// file" marker stays with the line it annotates; a single line that alone
+// exceeds the budget makes the WHOLE hunk fall back to `oversize` (rule 2);
+// reassemble() restores the original hunk header and body byte for byte.
+// Parts are review excerpts, never patches to apply on their own: a part may
+// hold only context lines (a long unchanged stretch inside a large hunk), which
+// is what lossless coverage requires and what a reviewer needs for the context.
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+const SECTION_BYTES = 80; // a part repeats the section heading; clipped by BYTES at a character boundary
+function clipBytes(text, limit) {
+  let out = "", used = 0;
+  for (const ch of text) { const n = byteLength(ch); if (used + n > limit) break; out += ch; used += n; }
+  return out;
+}
+export function lineSplitHunk(fileHeader, hunk, ceiling) {
+  const headerText = stripEol(hunk.header);
+  const m = HUNK_HEADER.exec(headerText);
+  if (!m) return null;
+  const eol = hunk.header.endsWith("\r\n") ? "\r\n" : "\n";
+  const section = clipBytes(m[5], SECTION_BYTES);
+  // Reserve the largest header any part can have: no start or length printed
+  // in a part exceeds the end line or the total length of the original hunk.
+  const oldSpan = m[2] === undefined ? 1 : Number(m[2]), newSpan = m[4] === undefined ? 1 : Number(m[4]);
+  const widest = (start, span) => String(Number(start) + span).length + 1 + String(span).length;
+  const headerRoom = byteLength(`@@ - + @@${section}${eol}`) + widest(m[1], oldSpan) + widest(m[3], newSpan);
+  const budget = ceiling - byteLength(fileHeader) - headerRoom;
+  if (budget <= 0) return null;
+  // Groups: one diff line plus any "\ No newline…" marker that annotates it.
+  const groups = [];
+  for (const line of splitLines(hunk.body)) {
+    if (line.startsWith("\\") && groups.length) groups[groups.length - 1].text += line;
+    else groups.push({ text: line, kind: line[0] === "+" || line[0] === "-" ? line[0] : " " });
+  }
+  for (const g of groups) { g.bytes = byteLength(g.text); if (g.bytes > budget) return null; }
+  // Cursors hold the NEXT line number on each side. With a zero-length side
+  // the header names the line BEFORE the insertion point, hence the +1.
+  const oldLen0 = m[2] === undefined ? 1 : Number(m[2]), newLen0 = m[4] === undefined ? 1 : Number(m[4]);
+  let oldCursor = Number(m[1]) + (oldLen0 === 0 ? 1 : 0), newCursor = Number(m[3]) + (newLen0 === 0 ? 1 : 0);
+  const parts = [];
+  let part = null;
+  const flush = () => {
+    if (!part) return;
+    const oldStart = part.oldLen ? part.oldFirst : Math.max(0, part.oldFirst - 1);
+    const newStart = part.newLen ? part.newFirst : Math.max(0, part.newFirst - 1);
+    const header = `@@ -${oldStart},${part.oldLen} +${newStart},${part.newLen} @@${section}${eol}`;
+    parts.push({ header, body: part.body, bytes: byteLength(header) + part.bytes });
+    part = null;
+  };
+  // Balanced filling: the fewest parts the budget allows, each near the same
+  // size, so the tail is never a sliver that costs a dispatch per route and
+  // gives a reviewer almost nothing to read. The budget stays the hard limit.
+  // Cuts are planned on the running total: part k ends where the total is
+  // nearest k/n of the hunk. If any planned part would pass the budget, one
+  // more part is planned; n = groups.length always fits (checked above).
+  const totalBytes = groups.reduce((n, g) => n + g.bytes, 0);
+  if (totalBytes <= budget) return null; // fits in one part: not a split
+  let cutBefore = null;
+  for (let n = Math.ceil(totalBytes / budget); n <= groups.length && !cutBefore; n += 1) {
+    const cuts = new Set();
+    let running = 0, partBytes = 0, k = 1, fits = true;
+    groups.forEach((g, i) => {
+      if (partBytes && k < n && running + g.bytes / 2 > (k * totalBytes) / n) { cuts.add(i); partBytes = 0; k += 1; }
+      running += g.bytes; partBytes += g.bytes;
+      if (partBytes > budget) fits = false;
+    });
+    if (fits) cutBefore = cuts;
+  }
+  if (!cutBefore) return null;
+  for (const [i, g] of groups.entries()) {
+    if (part && cutBefore.has(i)) flush();
+    if (!part) part = { body: "", bytes: 0, oldFirst: oldCursor, newFirst: newCursor, oldLen: 0, newLen: 0 };
+    part.body += g.text; part.bytes += g.bytes;
+    if (g.kind !== "+") { part.oldLen += 1; oldCursor += 1; }
+    if (g.kind !== "-") { part.newLen += 1; newCursor += 1; }
+  }
+  flush();
+  // Fail safe: a part that would not fit is a bug in the arithmetic above, and
+  // the old rule (whole hunk oversize) is the honest answer, never a fat piece.
+  if (parts.some((p) => byteLength(fileHeader) + p.bytes > ceiling)) return null;
+  return parts.length >= 2 ? parts : null;
+}
+
+function splitFile(file, ceiling, { lineSplit = false } = {}) {
   const chunks = [];
   const oversize = [];
   const headerBytes = byteLength(file.header);
@@ -151,6 +239,15 @@ function splitFile(file, ceiling) {
   };
   for (const hunk of file.hunks) {
     if (headerBytes + hunk.bytes > ceiling) {
+      const parts = lineSplit ? lineSplitHunk(file.header, hunk, ceiling) : null;
+      if (parts) {
+        // Parts keep the hunk's place in the file: flush what came before, then
+        // emit each part as its own chunk in order.
+        flush();
+        parts.forEach((p, i) => chunks.push({ files: [file.path], text: file.header + p.header + p.body, bytes: headerBytes + p.bytes, order: file.order, seq: chunks.length, hunkSeqs: { [file.path]: [hunk.seq] },
+          lineSplit: { path: file.path, hunkSeq: hunk.seq, part: i + 1, parts: parts.length, originalHeader: hunk.header } }));
+        continue;
+      }
       // Sibling hunks either side of an oversize hunk keep sharing a chunk:
       // hunks stay in ascending line order, so the chunk is still a valid diff.
       oversize.push({ path: file.path, hunkHeader: stripEol(hunk.header), hunkSeq: hunk.seq, bytes: headerBytes + hunk.bytes, text: file.header + hunk.header + hunk.body });
@@ -202,7 +299,7 @@ function packUnits(units, ceiling) {
   });
 }
 
-export function splitDiff(text, { ceilingBytes, minCeilingBytes = 4096 } = {}) {
+export function splitDiff(text, { ceilingBytes, minCeilingBytes = 4096, lineSplit = false } = {}) {
   if (!Number.isFinite(ceilingBytes) || ceilingBytes <= 0) throw new TypeError("splitDiff: ceilingBytes must be a positive number");
   const ceiling = Math.max(Math.floor(ceilingBytes), Math.floor(minCeilingBytes));
   let source = String(text ?? "");
@@ -218,20 +315,22 @@ export function splitDiff(text, { ceilingBytes, minCeilingBytes = 4096 } = {}) {
   for (const file of files) {
     if (file.bytes <= ceiling) { units.push(file); continue; }
     filesOver += 1;
-    const split = splitFile(file, ceiling);
+    const split = splitFile(file, ceiling, { lineSplit });
     rawPieces.push(...split.chunks);
     oversize.push(...split.oversize.map((o) => ({ ...o, order: file.order })));
   }
   rawPieces.push(...packUnits(units, ceiling));
   rawPieces.sort((a, b) => a.order - b.order || a.seq - b.seq);
   oversize.sort((a, b) => a.order - b.order);
-  const pieces = rawPieces.map((p, i) => ({ id: padId("piece", i + 1, rawPieces.length), files: p.files, text: p.text, bytes: p.bytes, oversize: false, hunkSeqs: p.hunkSeqs }));
+  const pieces = rawPieces.map((p, i) => ({ id: padId("piece", i + 1, rawPieces.length), files: p.files, text: p.text, bytes: p.bytes, oversize: false, hunkSeqs: p.hunkSeqs, ...(p.lineSplit ? { lineSplit: p.lineSplit } : {}) }));
   const oversizeOut = oversize.map((o, i) => ({ id: padId("oversize", i + 1, oversize.length), path: o.path, hunkHeader: o.hunkHeader, hunkSeq: o.hunkSeq, bytes: o.bytes, text: o.text }));
   const hunks = files.reduce((n, f) => n + f.hunks.length, 0);
+  const lineSplitPieces = pieces.filter((p) => p.lineSplit);
   return {
     pieces,
     oversize: oversizeOut,
-    stats: { files: files.length, hunks, pieces: pieces.length, oversize: oversizeOut.length, filesOverCeiling: filesOver, ceiling },
+    stats: { files: files.length, hunks, pieces: pieces.length, oversize: oversizeOut.length, filesOverCeiling: filesOver, ceiling,
+      lineSplitPieces: lineSplitPieces.length, lineSplitHunks: new Set(lineSplitPieces.map((p) => `${p.lineSplit.path}\0${p.lineSplit.hunkSeq}`)).size },
   };
 }
 
@@ -248,21 +347,50 @@ function oldStart(hunkHeader) {
 // without that bookkeeping fall back to old-start line, then arrival order.
 export function reassemble(pieces = [], oversize = []) {
   const byPath = new Map();
+  const lineSplitParts = new Map(); // `${path}\0${hunkSeq}` -> [{ part, body, arrival, originalHeader }]
   let arrival = 0;
   for (const part of [...pieces, ...oversize]) {
     for (const file of parseUnifiedDiff(part.text)) {
       if (!byPath.has(file.path)) byPath.set(file.path, { path: file.path, header: file.header, binary: file.binary, hunks: [] });
       const entry = byPath.get(file.path);
+      // Parts of one line-split hunk are gathered and restored below as the
+      // ORIGINAL hunk: its recorded header plus the bodies in part order.
+      if (part.lineSplit && file.hunks.length === 1) {
+        const key = `${file.path}\0${part.lineSplit.hunkSeq}\0${part.lineSplit.originalHeader}`;
+        if (!lineSplitParts.has(key)) lineSplitParts.set(key, []);
+        lineSplitParts.get(key).push({ path: file.path, part: part.lineSplit.part, parts: part.lineSplit.parts, header: file.hunks[0].header, body: file.hunks[0].body, arrival: arrival++, originalHeader: part.lineSplit.originalHeader, hunkSeq: part.lineSplit.hunkSeq });
+        continue;
+      }
       const seqs = Array.isArray(part.hunkSeqs?.[file.path]) ? part.hunkSeqs[file.path] : Number.isInteger(part.hunkSeq) ? [part.hunkSeq] : [];
       file.hunks.forEach((h, i) => entry.hunks.push({ header: h.header, body: h.body, bytes: h.bytes, seq: Number.isInteger(seqs[i]) ? seqs[i] : null, arrival: arrival++ }));
     }
+  }
+  // A set is complete when parts 1..N each arrived exactly once. Anything else
+  // (a lost piece, a retried piece delivered twice) is reported in `incomplete`
+  // and its fragments stay the valid sub-hunks they are: the original header is
+  // never claimed for a body that is not the original body.
+  const incomplete = [];
+  for (const parts of lineSplitParts.values()) {
+    const ordered = parts.sort((a, b) => a.part - b.part || a.arrival - b.arrival);
+    const total = ordered[0].parts, seen = ordered.map((p) => p.part);
+    const expected = Number.isInteger(total) && total >= 2 ? Array.from({ length: total }, (_, i) => i + 1) : [];
+    const missing = expected.filter((n) => !seen.includes(n));
+    const duplicated = [...new Set(seen.filter((n, i) => seen.indexOf(n) !== i))];
+    if (!expected.length || missing.length || duplicated.length || seen.some((n) => !expected.includes(n)) || ordered.some((p) => p.parts !== total)) {
+      incomplete.push({ path: ordered[0].path, hunkSeq: ordered[0].hunkSeq, originalHeader: ordered[0].originalHeader, missing, duplicated });
+      for (const p of ordered) byPath.get(p.path).hunks.push({ header: p.header, body: p.body, bytes: byteLength(p.header) + byteLength(p.body), seq: Number.isInteger(p.hunkSeq) ? p.hunkSeq : null, arrival: p.arrival });
+      continue;
+    }
+    const body = ordered.map((p) => p.body).join("");
+    const header = ordered[0].originalHeader;
+    byPath.get(ordered[0].path).hunks.push({ header, body, bytes: byteLength(header) + byteLength(body), seq: Number.isInteger(ordered[0].hunkSeq) ? ordered[0].hunkSeq : null, arrival: ordered[0].arrival });
   }
   for (const entry of byPath.values()) {
     const known = entry.hunks.every((h) => h.seq !== null);
     entry.hunks.sort((a, b) => (known ? a.seq - b.seq : oldStart(a.header) - oldStart(b.header)) || a.arrival - b.arrival);
     entry.hunks = entry.hunks.map(({ header, body, bytes }) => ({ header, body, bytes }));
   }
-  return { files: [...byPath.values()] };
+  return { files: [...byPath.values()], incomplete };
 }
 
 // True when a candidate quote is made solely of diff header lines — the only
