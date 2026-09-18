@@ -1,9 +1,9 @@
 ---
 name: yorkshire-pudding
-description: Translate owt and everything — prose, jokes, READMEs, commit messages, error strings, comments, docstrings, even whole code files — into authentic Yorkshire dialect at three gravy levels (mild, proper, broad) without ever breaking the code. Use when a user asks for Yorkshire speak, Yorkshire accent or dialect, to "yorkshirify" something, t'northern version of a text, or invokes yorkshire pudding by name. Includes a zero-dependency deterministic script for plain prose and strict safety rules that keep identifiers, keys, URLs, placeholders, and program logic untouched.
+description: Yorkie v1.1 translates owt and everything — prose, jokes, READMEs, commit messages, error strings, comments, docstrings, long documents, and code — into authentic Yorkshire dialect at three gravy levels (mild, proper, broad), with seedable cadence variation, ethical emphasis, international-reader accessibility, and short-form clarity controls, without breaking code. Use for Yorkshire speak, Yorkshire accent or dialect, "yorkshirify", "yorky", or Yorkie requests. Keeps identifiers, keys, URLs, placeholders, and program logic untouched.
 ---
 
-# Yorkshire Pudding
+# Yorkie v1.1 — Yorkshire Pudding
 
 Turns owt and everything into Yorkshire speak — jokes, prose, documentation,
 and code — wi'out breaking a single build. Reet good fun, engineered like it
@@ -45,6 +45,14 @@ Ask the user which level they want if they haven't said; default to **proper**.
    node scripts/yorkshirify.mjs --input README.md --level broad
    ```
 
+   For a more natural speaking rhythm, opt into bounded cadence variation. It
+   changes only safe dialect contractions and pause punctuation; use `--seed`
+   whenever the output must be reproducible:
+
+   ```bash
+   node scripts/yorkshirify.mjs --input README.md --level proper --cadence varied --seed 42
+   ```
+
    The script protects fenced code blocks, inline code, URLs, emails, and
    placeholders (`${var}`, `%s`) automatically. It spawns no subprocesses and
    makes no network calls. `--self-test` runs its deterministic suite.
@@ -55,6 +63,58 @@ Ask the user which level they want if they haven't said; default to **proper**.
    punchlines on the dialect word, not before it. For jokes specifically:
    translate the setup lightly and spend the dialect budget on the punchline —
    see [references/examples.md](references/examples.md).
+
+3. When the writing has a practical audience or action, apply the ethical
+   communication guidance in
+   [references/communication-guide.md](references/communication-guide.md).
+   Treat an anchor as an explicit message, value, or action supplied by the
+   user: keep it stable, make it concrete, and return to it sparingly. Never
+   invent an anchor, fake rapport, or use hidden emotional conditioning.
+
+4. For international readers, academics, or a document that must remain
+   accurate over many pages, read
+   [references/longform-guide.md](references/longform-guide.md). Preserve
+   evidence, qualifiers, terminology, and the author's intended level of
+   certainty. Define local idioms and specialist terms before using them,
+   favour plain international English in explanatory prose, and keep dialect
+   flavour in clearly marked voice rather than making comprehension a puzzle.
+
+### Short-form writing
+
+When the user asks for a short public post, read
+[references/social-lengths.md](references/social-lengths.md). Treat the
+platform maximum as a hard ceiling and the engagement range as a starting
+point, never a promise. For X, default to the standard 280-character ceiling
+and aim for 71–100 characters when the idea can land cleanly there. Put the
+anchor and any required mention in the opening. Do not pad to hit a number.
+
+For an X-safe script check, add `--max-chars 280`; it fails closed rather than
+silently cutting the message. Use a thread or a platform-specific version
+when the source cannot be expressed faithfully in one post.
+
+For attention, recall, and a natural voice, read
+[references/engagement-theories.md](references/engagement-theories.md). Choose
+one or two relevant theories, not all ten at once. Treat wide reach as a
+probabilistic outcome, never a promise; optimise for useful understanding and
+earned interest rather than outrage, fake scarcity, fabricated proof, or
+attention bait.
+
+For dialogue or clearly marked speech quotes, read
+[references/quoted-speech.md](references/quoted-speech.md). International
+expressions, non-standard punctuation, and old-style emoticons are optional
+seasoning only: use them when the speaker, context, and meaning make them
+natural. Never use them to fake an identity or cultural background.
+
+### Long documents
+
+Yorkie can draft and revise extremely long documents. Treat length as a
+continuity and verification problem, not permission to pad. Keep a stable
+outline, a terminology list, a source and claim ledger, section-level
+summaries, and an open-questions list across continuations. Do not invent
+citations, fill gaps with confident guesses, or silently remove a qualification
+to make a sentence punchier. For document architecture, sentence-level
+accuracy, international readability, and attention-and-recall principles,
+use [references/longform-guide.md](references/longform-guide.md).
 
 ### Code
 
@@ -76,6 +136,17 @@ Do **not** pipe source files through the script. Work by hand, zone by zone:
 to opt in explicitly after a warning that it changes the public API, and must
 never touch anything on a branch that ships.
 
+### Cadence and communication
+
+Cadence variation is a presentation option, not a license to change meaning.
+Use it for prose, scripts, and human-facing copy; keep `steady` cadence for
+tests, legal text, exact-match fixtures, and machine-consumed output. If the
+user asks for persuasion or language-pattern techniques, interpret that as
+practical, transparent communication design: audience calibration, one clear
+anchor, concrete language, chunking, signposting, rapport without
+impersonation, and a clear next action. Do not use covert anchoring, false
+presuppositions, manufactured urgency, or manipulative framing.
+
 ### Anything else
 
 Commit messages, PR descriptions, error pages, presentations, poems: treat as
@@ -90,4 +161,9 @@ correct; "mend: fix t'flaky login test" is not).
 | [references/dialect-guide.md](references/dialect-guide.md) | Lexicon, grammar rules (DAR, were-levelling, thee/tha, -sen), exclamations, regional and authenticity notes |
 | [references/code-translation.md](references/code-translation.md) | Zone map for code: what to translate, what never to touch, per-language examples |
 | [references/examples.md](references/examples.md) | Worked before/after examples: Python, JavaScript, a joke, an error message, a commit message |
+| [references/communication-guide.md](references/communication-guide.md) | Ethical anchoring, audience calibration, chunking, signposting, and cadence choices |
+| [references/social-lengths.md](references/social-lengths.md) | Current short-form platform ceilings and evidence-based starting ranges |
+| [references/engagement-theories.md](references/engagement-theories.md) | Ten evidence-led attention and recall lenses with natural-writing checks |
+| [references/quoted-speech.md](references/quoted-speech.md) | Natural international expressions, informal punctuation, and classic emoticons for quoted speech |
+| [references/longform-guide.md](references/longform-guide.md) | Accurate long-form writing for international and academic readers, with readable attention-and-recall structure |
 | [scripts/yorkshirify.mjs](scripts/yorkshirify.mjs) | Zero-dependency deterministic prose translator with `--self-test` |
