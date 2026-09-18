@@ -132,7 +132,8 @@ export function preparePrivateEvidence(directory, options = {}) {
     // created with its private DACL in the same call; a folder that already exists is left alone.
     const target = path.resolve(directory);
     let exists = true;
-    try { fsx.lstatSync(target); } catch (e) { if (e?.code === 'ENOENT') exists = false; else throw refuse(); }
+    try { const st = fsx.lstatSync(target); if (st.isSymbolicLink() || !st.isDirectory()) throw refuse(); }
+    catch (e) { if (e?.code === 'ENOENT') exists = false; else throw e?.code === 'MOMM_EVIDENCE_PERMISSIONS' ? e : refuse(); }
     if (!exists) {
       try { fsx.mkdirSync(path.dirname(target), { recursive: true }); } catch { throw refuse(); }
       let created = false;

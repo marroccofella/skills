@@ -73,6 +73,8 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  const created=preparePrivateEvidence(dir,{...winBase,fsx:missingFs,createPrivate:(target)=>{privateCalls.push(target);exists=true;return true;}});
  assert.equal(created.verified,true);assert.deepEqual(privateCalls,[dir]);
  assert.deepEqual(made.map(([d])=>d),[path.dirname(dir)],'only the parent may be created with plain mkdir');checks++;
+ // A file (or link) where the folder should be: the original "cannot prepare" refusal, nothing created.
+ assert.throws(()=>preparePrivateEvidence(dir,{...winBase,fsx:{...fsx,lstatSync:()=>stat({isDirectory:()=>false,isFile:()=>true})},createPrivate:()=>{throw Error('must not create');}}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/cannot prepare its evidence directory/.test(e.message));checks++;
  // Existing folder: never re-created, only inspected.
  let touched=0;
  preparePrivateEvidence(dir,{...winBase,fsx:{...fsx,mkdirSync:()=>{touched++;}},createPrivate:()=>{touched++;return true;}});

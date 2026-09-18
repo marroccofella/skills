@@ -132,8 +132,8 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
     const evidence=path.join(project,'.ensemble_reviews');
     const prepared=preparePrivateEvidence(evidence);
     assert.equal(prepared.verified,true,'MOMM-created evidence must verify as private');
-    fs.mkdirSync(path.join(evidence,'reports'));fs.writeFileSync(path.join(evidence,'reports','synthetic.json'),'{}');
-    assert.equal(inspectEvidencePermissions(evidence).verified,true,'entries created inside inherit the private rules');
+    fs.mkdirSync(path.join(evidence,'reports'),{mode:0o700});fs.writeFileSync(path.join(evidence,'reports','synthetic.json'),'{}',{mode:0o600});
+    assert.equal(inspectEvidencePermissions(evidence).verified,true,'owner-only entries inside stay verified (Windows: they inherit the private access list)');
     const args=[dispatcher,'--governor','codex','--reviewers','codex','--no-ui'];
     const dispatchProject=path.join(fixture,'fresh-dispatch');fs.mkdirSync(dispatchProject,{recursive:true,mode:0o755});
     const live=spawnSync(process.execPath,args,{cwd:dispatchProject,input:'Synthetic review input only.\n',encoding:'utf8',timeout:90000,windowsHide:true,env:{...process.env,NO_UPDATE_CHECK:'1',MOMM_NO_UPDATE_CHECK:'1',DO_NOT_TRACK:'1'}});
