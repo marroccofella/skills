@@ -33,11 +33,18 @@ const leftovers=dir=>{
 };
 async function test(name,fn){try{await fn();checks.push({name,passed:true});}catch(e){checks.push({name,passed:false,error:e.message});}}
 function actual(f,extra){
-  return spawnSync(process.execPath,[dispatcher,'--governor','codex','--reviewers','codex','--input','artifact.js','--no-ui',...extra],{
+  const started=Date.now();
+  const result=spawnSync(process.execPath,[dispatcher,'--governor','codex','--reviewers','codex','--input','artifact.js','--no-ui',...extra],{
     cwd:f.cwd,windowsHide:true,encoding:'utf8',timeout:30000,maxBuffer:500000,
     env:{...process.env,TEMP:f.temporary,TMP:f.temporary,TMPDIR:f.temporary,HOME:path.join(f.cwd,'home'),USERPROFILE:path.join(f.cwd,'home'),
       MULTI_LLM_REVIEW_DEPTH:'0',NO_UPDATE_CHECK:'1',MOMM_NO_UPDATE_CHECK:'1',DO_NOT_TRACK:'1'},
   });
+  const diagnostic={status:result.status,signal:result.signal,error:result.error?.code??null,elapsed_ms:Date.now()-started,timeout_ms:30000,
+    stdout_bytes:Buffer.byteLength(result.stdout??''),stderr_bytes:Buffer.byteLength(result.stderr??'')};
+  // Preserve the failure class before any JSON parse or equality assertion.
+  // Never echo raw child output, argv, or fixture paths into public diagnostics.
+  if(result.error||result.signal||result.status===null)throw Error('Synthetic CLI did not settle: '+JSON.stringify(diagnostic));
+  return result;
 }
 function stageContext(f,overrides={}){
   const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,

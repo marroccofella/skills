@@ -82,6 +82,7 @@ jobs:
           node scripts/momm-release-privacy.test.mjs
           node scripts/momm-media-contract.test.mjs
           node scripts/ledger-integrity.test.mjs
+          node scripts/reviewer-ux-regressions.test.mjs
           node scripts/ledger-serving.test.mjs
           node scripts/version-discovery.test.mjs
           node scripts/private-tree-boundary.test.mjs

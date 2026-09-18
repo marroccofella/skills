@@ -7,6 +7,25 @@ remains on [PR #4](https://github.com/marroccofella/skills/pull/4).
 Neither this document nor a candidate version string establishes a stable release.
 Plan: [plan-1.16.0.md](plan-1.16.0.md).
 
+## Independent retest follow-up (18 September 2026)
+
+- Reopening a valid private Setup Center launch link in the same tab now reloads
+  through the ordinary authenticated bootstrap. It does not mint a session or
+  bypass server authorization. Unrelated and malformed fragments do not reload.
+- Private ledger tables retain readable column widths inside labelled,
+  keyboard-focusable horizontal scroll regions. Short values stay together;
+  prose can wrap. Page containment alone is not treated as proof of readability.
+- Attachment regression failures retain child status, signal, error code, elapsed
+  time, unchanged timeout and output byte counts before parsing; raw diagnostics,
+  capability values and local paths are not printed by that failure summary.
+- Media regression progress explicitly marks each completed case PASS or FAIL;
+  an END marker alone is no longer ambiguous. These are diagnostic improvements,
+  not a claim that BAB's native suite timeouts are resolved. Local passes do not
+  invalidate her failures; bounded independent retesting remains required.
+
+These changes remain candidate repairs pending exact-source peer review,
+cross-platform CI and the signed release/install lifecycle.
+
 ## Independent-audit repair pass (17 September 2026)
 
 Credit: Bab PA (the independent reviewing personal agent) used controlled tests

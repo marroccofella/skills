@@ -754,6 +754,9 @@ details{margin-top:10px}summary{cursor:pointer;color:var(--dim);font-size:13px}s
 .find{border-left:3px solid var(--dim);padding:4px 12px;margin:8px 0}.f-CRITICAL{border-color:var(--crit)}.f-WARNING{border-color:var(--warn)}
 .find b{font-family:var(--font-mono)}.find .id{color:var(--dim)}.find p{margin:4px 0;max-width:70ch}
 .table-scroll{max-width:100%;overflow-x:auto}.table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.table-scroll .momm-table{min-width:48rem;overflow-wrap:normal}
+.table-scroll .momm-table td:not(.prose){white-space:nowrap}
+.table-scroll .momm-table .prose{white-space:normal;overflow-wrap:anywhere;min-width:12rem;max-width:36rem}
 .momm-table{margin-top:6px}
 h4{margin:18px 0 4px;color:var(--accent);font:800 10px/1.4 var(--font-sans);letter-spacing:.12em;text-transform:uppercase}
 .speak{margin-left:auto;cursor:pointer;border:1px solid var(--border);border-radius:999px;background:var(--pill);color:var(--dim);font:12px var(--font-sans);padding:6px 11px;transition:color var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease)}

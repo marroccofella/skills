@@ -19,6 +19,7 @@
     setTimeout(() => root.classList?.remove?.("theme-switching"), 450);
   });
 })();
+
 const grid = document.querySelector("#provider-grid");
 const summary = document.querySelector("#summary");
 const statusTitle = document.querySelector("#status-title");
@@ -1210,3 +1211,11 @@ function launchToken() {
     showToast(error.message);
   }
 })();
+
+// A private launch link pasted into an already-open bare/expired tab changes
+// only the fragment. Restart the ordinary bootstrap, rather than minting a
+// session here or racing existing requests. The server still validates it.
+window.addEventListener("hashchange", () => {
+  const supplied = new URLSearchParams(location.hash.slice(1)).get("momm-token");
+  if (/^[a-f0-9]{48}$/.test(supplied ?? "")) location.reload();
+});

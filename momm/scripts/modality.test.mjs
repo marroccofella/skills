@@ -17,10 +17,11 @@ const filter = process.argv.find(arg => arg.startsWith('--filter='))?.slice('--f
 async function test(name, fn) {
   if (filter && !name.includes(filter)) return;
   const started = Date.now();
+  let outcome = 'FAIL';
   process.stderr.write(`START ${name}\n`);
-  try { await fn(); passed.push(name); }
+  try { await fn(); passed.push(name); outcome = 'PASS'; }
   catch (e) { failures.push({ name, error: e.message, stack: String(e.stack ?? "").split("\n").slice(1, 4).map((l) => l.trim()) }); }
-  finally { process.stderr.write(`END ${name} (${Date.now() - started}ms)\n`); }
+  finally { process.stderr.write(`END ${name} (${Date.now() - started}ms) ${outcome}\n`); }
 }
 const baseline = loadBaseline();
 const stamp = { machine_id: "m-test", cli_version: "1.0.0", login_identity_sha256: null, at: "2026-09-13T00:00:00.000Z", expires_at: null };
