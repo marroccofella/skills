@@ -17,7 +17,9 @@
         "Windows: the evidence folder is created private, `evidence --status | --protect` handles existing folders (owner-invoked), and Codex's read-only sandbox group on scratch is tolerated and recorded.",
         "Windows launch guard: a git.exe or taskkill.exe planted in the reviewed project is never started; every process-launching script guards its own process.",
         "Opt-in --retry-invalid: a review rejected as invalid output is re-sent once to the same route; off by default, validation never loosened, every retry disclosed in the report."
-      ]
+      ],
+      "sha256": "a53862f9a1c6ebc01468bbc48e6b9524e27886e89d05bc08448dd9d11e118e62",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
       "version": "1.15.1",
