@@ -9,6 +9,50 @@ Neither this document nor a candidate version string establishes a stable releas
 signed `momm-1.16.0` tag does.
 Plan: [plan-1.16.0.md](plan-1.16.0.md).
 
+## In short
+
+- **Every review reports what it cost**: tokens and cost per reviewer where the provider reports
+  them, in the report, the private ledger and the Setup Center.
+- **Reviewers get a report card**: rate a review after triage; the ledger shows ratings from five
+  runs up and 30-day route reliability from ten runs up.
+- **Big diffs no longer time out**: `--split` cuts a diff into pieces, judges quorum per piece,
+  and hands anything too large to the governor to check directly. Nothing is dropped.
+- **Standing guidance behind a trust gate**: project guidance is sent only after you trust that
+  exact file by its hash.
+- **Media goes only where it can be read**: a capability registry records which route accepts
+  images, audio or video; an expired capability is blocked until re-probed; probes send synthetic
+  material only and need consent. MOMM checks initial media types by filename extension, not file
+  contents. Malformed or mislabelled files may still proceed; downstream rejection is not guaranteed.
+- **Windows is safer**: the evidence folder is created private, and a `git.exe` or `taskkill.exe`
+  planted in the project under review is never started.
+- **Updates stay yours**: `update --check-all`, an event-driven update clock, and an
+  automatic-update setting that is off by default and that an agent never turns on.
+- **`--retry-invalid` (opt-in)**: a reviewer answer rejected as invalid output is asked for once
+  more; validation is never loosened and every retry is written into the report.
+
+Details are under [What a user notices](#what-a-user-notices) and
+[E7](#e7--modality-registry-and-capability-aware-routing).
+
+## Upgrading from 1.15
+
+- Use the [installation and upgrade prompt](https://marroccofella.github.io/skills/momm/releases/upgrade.html);
+  the signed-tag preview and explicit apply are unchanged. Logins, other skills and private
+  ledgers are preserved.
+- **Windows:** run `node "<installed-momm>/scripts/multi-review.mjs" evidence --status` in each
+  existing project; where the evidence folder is reported as not private, the owner runs
+  `evidence --protect` once. An agent never runs it for you.
+- Automatic updates remain off unless you turn them on in the Setup Center.
+
+## How it was verified, in one paragraph
+
+The candidate reviewed itself in seven gate runs through its own dispatcher (Codex, Antigravity
+and Grok, two-review quorum per piece). All 1,358 findings and suggestions were ruled on and
+logged: of 478 findings, 164 led to a fix or a stronger test (each reproduced first), 274 were
+rejected with evidence and 40 are deferred to 1.16.1. Every piece of the candidate against `main`
+reached quorum, cumulatively over reruns rather than in one run. The ten-job CI matrix (Windows,
+macOS, Linux; Node 18 to 24) is green on the reviewed head. The sections below are the dated
+record, in full, including what went wrong along the way.
+
 ## Independent retest follow-up (18 September 2026)
 
 - Reopening a valid private Setup Center launch link in the same tab now reloads
