@@ -1,283 +1,58 @@
 # MOMM Roadmap — alignment record
 
-## Homepage cinema and diagram library — September 14
+**Current release:** `versions.json` (`momm`) and the newest `references/release-*.md` are the
+only sources. Today they say **1.16.0**, signed tag `momm-1.16.0`, 19 September 2026. Nothing else
+in this file gets to say "current". Website notes live in
+[references/site-changelog.md](references/site-changelog.md).
 
-The first page presents the approved introduction with real scene thumbnails and
-exact chapter links for installation, dashboard, benefits and ledger. Seven
-expandable technical diagrams reuse the paper's source rather than diverging
-copies. The voice owner explicitly accepted the setup and trailer cuts on
-September 14. Both join the introduction as inline homepage players, with real
-posters, explicit play controls, chapter/transcript pages and a three-film sitemap.
-Chapter thumbnails seek within the homepage; playing another film pauses the first.
-Unaccepted media never becomes a public player. The separate ledger film remains
-held for audio repair. This is a website update, not a new MOMM product release.
+## Now / next / later
 
-## Technical paper and route branding — local page follow-up, September 13
+- **Now: 1.16.1, in progress.** Close the holes 1.16.0 documented, prove the lifecycle 1.16.0
+  claimed, make reruns auditable. Charter, scope, non-goals and gates:
+  [references/plan-1.16.1.md](references/plan-1.16.1.md).
+- Must ship or 1.16.1 does not tag: media type from bytes; capability expiry visible and manual;
+  completion receipts for committed-range reviews; a per-piece attempt ledger with a closed set of
+  outcomes; named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
+  drills on real machines with a published OS by Node table.
+- Not in 1.16.1: new reviewer families, automatic updates by default, a dashboard redesign, new
+  generation modalities, `--early-exit`, `--split auto`, ledger-learned caps, adaptive timeouts,
+  any change to the containment model (so Grok media stays `missing_flag`).
+- **Next: 1.17, roadmap only.** Do not start before the signed `momm-1.16.1` tag exists.
+- **Later:** the proposals under "Planned" below, each still opt-in and fail-closed.
+- Deferred 1.16.0 findings are listed by name, with what became of each:
+  [references/deferred-from-1.16.0.md](references/deferred-from-1.16.0.md).
 
-Adds seven diagrams covering responsibility layers, the governor loop, privacy,
-evidence linkage, historical successful-route counts, a hypothetical shared-error
-model and a toy latency comparison. The architecture is explicitly pinned to
-released 1.15.1, not the concurrent 1.16 candidate. Four original provider/product
-marks have public source links and hashes; unresolved logos use text, never guessed
-artwork. The teaching calculator makes zero model calls and states its assumptions;
-no customer uplift or orders-of-magnitude benefit is inferred from developer logs.
-Publication remains subject to the authorised MOMM review gate and privacy scans.
+## 1.17 (roadmap only, do not start)
 
-## Approved practical film and discovery — September 13, 2026
-
-The owner-approved 1.15.1 introduction replaces the held preview. Its public
-watch page includes captions, the complete transcript, chapter links, explicit
-sharing controls and installation guidance. Media hashes bind the approved file;
-VideoObject/Clip metadata and the video sitemap describe that same film. Sharing
-is user-initiated, without tracking or automatic posts. Setup and trailer audio
-were separately accepted on September 14; the ledger film is still held.
-Discovery improvements do not promise ranking, virality or customer
-productivity gains. Runtime and narration pace come from the approved manifest;
-the earlier 15x screen-action note below describes a superseded cut.
-
-## Public search and answer clarity — page-only follow-up
-
-The public renderer now emits page-specific titles and descriptions, unique
-canonical URLs, source-linked WebPage/SoftwareSourceCode information and visible
-breadcrumbs. Direct answers cover reviewer support, costs, privacy, setup and
-evidence limits. A generated-page regression gate keeps canonical URLs aligned
-with the sitemap and tests structured-data escaping and visible answer content.
-These changes aid discovery and comprehension; they do not establish indexing,
-search rankings, AI citations or independent product accuracy. Root crawler
-policy and webmaster-account submissions are unchanged; approved video handling
-is described above.
-
-The same page update adds scoped Promptus voice-workflow credits, a source-linked
-Professor Dominic Marrocco background section with historic appointments labeled
-as historic, and a benefits table computed from the public decision snapshot.
-The public skill's release history and earlier Promptus MoMM work stay distinct;
-a two-year origin awaits dated provenance. Recorded decisions are not unique
-bugs, customer counts or a controlled AI-alone versus AI-plus-MOMM experiment.
-
-## Public tour refresh — September 13, 2026
-
-Documentation-only follow-up to published 1.15.1: manifest-derived prominent
-release identity and patch changes; a version-bound narrated-tour slot; verified
-public CI links separate from the unchanged September 4 telemetry; five offline
-charts, explicit route-result denominators and failure categories; restored prose
-and attachment guidance, and a release-verifying new-user installation prompt.
-The new Dom narration must pass signal/word checks and the owner's listening
-verdict before public video acceptance. Screen actions are accelerated 15x;
-narration and readable holds are not. No automatic update or new dispatcher
-feature is introduced. Existing historical notes below are not current blockers.
-
-1.15.0 was published on September 13. The subsequent fresh-install check exposed
-gitsign's inability to open the updater's bare staging repository. The 1.15.1
-patch uses normal empty staging and adds real signed preview/apply to the release
-gate before stable tags are pushed. The earlier candidate notes below remain
-historical; the 1.15.0 tag is immutable. No new feature scope is introduced.
-
-Candidate 1.15.0 stabilization also covers shared installer/updater receipt exclusion,
-scope-preserving rollback, explicit downgrade selection, compatible public CSV
-columns, overlapping-source decision deduplication and ledger navigation regressions.
-These are verified local repairs; publication still requires the release gates below.
-
-Purpose: keep parallel sessions and future releases pointed the same way.
-Before proposing or building a MOMM feature, read this file; after shipping or
-rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
+Possible themes, each opt-in and fail-closed: `--early-exit` after quorum (needs in-flight
+cancellation in `runProcess`); `--split auto` only after five live runs above 100 KB with at most
+10% coverage loss; ledger-derived route caps and a higher `--jobs` ceiling; optional
+`--cross-check` for `verify_first` findings; an opt-in global ledger index (links and counts, no
+telemetry merge); a persona field on dispositions. A staged-files-only read grant so Grok can
+receive media is a 1.17 design review, not a patch.
 
 ## Released
 
-### 1.16.0 — measured, rated, guided, split, clock-driven, modality-aware
-
-Released 19 September 2026 as the signed tag `momm-1.16.0` (plan in `references/plan-1.16.0.md`,
-full record in `references/release-1.16.0.md`). It also carries Windows hardening (private
-evidence folder, tools resolved to absolute paths) and the opt-in `--retry-invalid`. The
-paragraphs below were written while it was a candidate and are kept as the design record. What it adds, all
-off-by-default where it touches the network or the user's machine: per-CLI
-token and cost accounting in reports, ledger and Setup Center; reviewer
-ratings (`ledger.mjs --rate`) with a five-run floor and 30-day route
-reliability that recommends only on ten or more runs; guidance layers behind a
-per-file trust gate (untrusted text is never sent); `--split` with per-piece
-quorum, over-ceiling hunks divided at line boundaries into consecutive valid
-sub-hunks so routes read every line of a whole new file (on by default in
-the dispatcher, lossless on reassembly; `--no-line-split` keeps the older
-rule; a hunk stays whole as governor-direct scope only when one of its lines
-is itself larger than the ceiling) and `--jobs` parallel
-dispatch; an event-driven update clock with conditional GETs whose
-automatic-update toggle is off by default and never enabled by an agent;
-`update --check-all`; containment probes per CLI; one design system with a
-theme toggle shared by the Setup Center and the private ledger.
-
-E7, the modality registry (`references/plan-1.16.0-e7-modalities.md`, two
-momm reviews): a shipped baseline `references/capabilities.json` (levels
-verified only from help captures, otherwise documented) plus a per-machine
-overlay written only by probes, with blockers that expire into `reprobe`
-rather than silently clearing; `multi-review.mjs --capabilities`; attachment
-routing and `--reviewers auto` on the effective cell (overlay over baseline)
-with `requires` bound to argv or `missing_flag`; `probes.mjs <cli>
---modalities [--consent]` with synthetic material, content assertions and a
-disclosure before any generation; `modality.mjs plan|run` for cross-route
-chains with a separate immutable creative prompt, step-scoped harvest (a step
-that produces nothing fails) and consent per run; a Setup Center Modalities
-panel. Grok media is not bound in the review adapter because its containment
-is `--deny Read`; its image and PDF cells route as `missing_flag` until a
-staged-files-only read grant exists. Generation never runs inside a review.
-Publication still needs the privacy scan, the signed tag and the evidence
-refresh.
-
-### Legacy bootstrap hardening — local follow-up to 1.15.1
-
-Separately trusted bootstrap and migration helpers now distinguish missing tools,
-failed signatures, missing receipts and legacy conflicts. Preparation verifies
-the release workflow identity, issuer, repository, ref, workflow commit, package
-hash and checked-out bytes before any candidate code runs. Migration previews the
-exact protocol and scope, requires the approved plan hash and separate protocol
-acceptance, and moves the old entry outside skill discovery with a rollback
-journal. Project ledgers are never copied or merged. Active or ambiguous process
-locks and changed entries fail closed; recovery is not a power-loss guarantee.
-The explicit sensitive-diagnostic hard constraint is restored. Setup Center and
-the public guide explain these routes rather than asking agents to invent them.
-
-Local Windows tests include a genuine signed 1.15.1 preparation, synthetic legacy
-installation and restoration; deterministic fixtures exercise failure paths.
-Security review also reproduced Git replacement/object substitution and competing
-rollback attempts. The candidate ignores replacement resolution, rejects modified
-Git administration, checks object integrity and holds an exclusive recovery claim.
-Windows executable shadowing has a real regression; tool paths are absolute and
-outside the inspected clone. Untracked files fail verification. Prerequisites,
-check timeouts and orphan claims have distinct diagnostics, without force repair.
-These changes are not published. Native macOS/Linux matrix results, final peer
-decisions and release verification remain required before a release claim.
-
-Final September 13 repairs: updates fetch full ancestry and verify promotion and
-Git connectivity across intervening commits; repeated explicit harness installs
-preserve matching clean verified provenance. Existing update claims fail closed
-instead of racy dead-PID reclamation, and receipt/journal decisions are rechecked
-inside exclusivity. A stale claim may need manual inspection before recovery.
-The hub version is stamped from the manifest; sitemap generation omits unverified
-lastmod dates. The shared prompt covers new and legacy users without broadening
-skill/harness scope. Governor locations normalize only within reviewed paths;
-protocol commands use quoted absolute paths and failed ledger builds are visible.
-
-### 1.15 — explicit updates and clearer public information
-
-Released 13 September 2026 (1.15.0, corrected by 1.15.1). The text below was written while it
-was a candidate and is kept as the design record.
-
-Implemented in the candidate: installation receipts with per-harness scopes;
-manifest-only check, signed staged preview, explicit apply, protocol acceptance,
-stable/pinned/main channels, retained offline rollback, daily opt-outs, executable
-hashes, five focused information pages, and deterministic public-data rendering.
-Publication remains gated by the OS/Node matrix, MOMM dispositions, privacy scans
-and a verified Sigstore-signed tag. Do not call this candidate released until those
-gates pass. Main-channel updates require a signed development checkpoint; an
-ordinary unsigned branch head is not eligible. Legacy unsigned tags stay intact.
-
-The candidate adds a source-linked version-history archive and an existing-user
-upgrade prompt. Published releases, tags without Release records and untagged code
-milestones are distinguished; gaps are not invented. Legacy installs must approve
-a bootstrap, preserve their prior installation and establish an actual receipt.
-Growing governor logs are streamed with full-byte hash rechecks, bounded individual
-records and selected-run memory; corruption or concurrent mutation fails closed.
-The completion command uses the absolute installed skill path from the project.
-Public export regression tests now cover validation-before-write, sparse legacy
-reports, canonical duplicate comparison and aliased preview roots. Filesystem I/O
-failure is not a multi-file atomic transaction. Current documentation distinguishes
-supervised POSIX groups from independently detached processes. CLI maintenance
-refuses known Volta/Scoop/Chocolatey/asdf/mise-managed executable paths; executable
-magic alone is not ownership proof, and unrecognized package managers remain a
-discovery limitation. Declined-update assertions include an actual API call counter
-and a positive control; exact-command endpoint checks cover successful launches.
-
-Candidate release testing also found interrupted notice claims, changed ignore
-rules stranding rollback, and browser default speech bypassing local-only voice
-selection. Each now has a regression fixture. The signing workflow can reuse
-matching verified tags on retry, and has an explicit main-checkpoint-only mode.
-Claude's text review disables customizations and tools while retaining OAuth and
-plan permissions (verified flag surface: 2.1.233); Grok preserves the supplied
-prompt with --verbatim and disables subagents (1.0.5). Live re-verification is
-still required; unsupported flags fail closed on older installations.
-Output parsing now prefers the final review and refuses explicitly non-final
-Grok envelopes; regression fixtures cover intermediate/final ordering. Copilot
-requests non-streamed final text while preserving its viewer-only tool allowlist.
-An unmet external-review quorum can no longer coexist with outstanding.complete.
-Executable hashes are captured at dispatcher startup, not retroactively from
-files changed during review; a changed installation clears verified-release status.
-
-Candidate lifecycle hardening: peer-review/2 requires explicit completion and
-artifact quotations; malformed/over-limit/error-wrapped replies fail closed before
-normalization. A governor validator checks original report/log linkage, unique
-item decisions, required before/after or refutation records, and current source,
-test and output hashes. It records completion separately and keeps stale/deferred
-work visibly open. The controlled zero-model-call regression runs real authored
-tests before/after a seeded fix and tests conflicting/missing/forged decisions.
-This validates consistency, not an agent's honesty, test adequacy or all harnesses.
-Current source capture supports local text input and exact current Git text A/M
-diffs; binary/deleted/renamed source and media lifecycle binding remain open.
-
-Candidate reviewer reliability: real source probes completed after the former
-120/180-second windows. The default base is now 180 seconds (deep: 240), with
-existing Grok 1.5x headroom and explicit timeout overrides retained. Scope prose
-is concise and useful novelty is optional; all material findings remain required.
---stream sends content-free elapsed/deadline/byte-count progress, never reasoning.
-An explicit --effort medium is supported for locally verified Claude/Grok flags;
-default leaves account settings alone. Output is decoded across UTF-8 chunks and
-bounded in bytes, malformed JSON scans linearly, and Windows uses native/verified
-npm bin launchers instead of shell argument interpretation. Transport fixtures
-run in the OS/Node matrix; local success is not a cross-machine certification.
-Grok's text adapter uses ordinary final JSON, explicit deny rules for read/search,
-shell/edit, MCP and web tool classes, and a four-turn ceiling within the unchanged
-wall-clock deadline. An empty --tools value did not disable reads in a local
-1.0.5 canary; explicit deny rules withheld its marker. This is CLI policy, not an
-OS filesystem sandbox or certification of every future binary. A 38 KB synthetic
-control completed after an earlier quotation-invalid reply; real-source quorum
-is still required. The local peer contract remains mandatory. Failed/non-final
-probes are not successful reviews.
-
-Stabilisation regressions now cover CLI/model errors versus real login failures,
-partial installation receipts, comma-separated skill names, torn update claims,
-strict-policy shape diagnostics, source text containing sample diffs, repository
-root guidance, concurrent Git-source changes, and genuine a/b source directories.
-The release seal refuses a dirty checkout; prepare requires the intended files
-staged first. The signing job pins setup-node and queries successful exact-commit
-push runs explicitly. Preview stream failures, slash redirects, copy feedback and
-restored harness snippets have offline regressions. None of this marks the
-candidate released or turns legacy decision counts into validated completion.
-
-Candidate CLI maintenance now inventories all six installations independently of
-governor self-exclusion. The dashboard shows installed/latest versions, source,
-installation type and explicit update actions. Failed checks stay unknown; AGY
-has no verified read-only latest query and needs an explicit native update.
-Native updater commands bind to the detected path; npm commands bind to the
-detected global prefix. Homebrew, project-local and unknown wrappers receive
-guidance rather than a guessed global install. A launched terminal is not an
-update success; changed versions invalidate prior live checks. Offline fixtures
-cover inventory, failed native checks, prereleases, origins and declined consent.
-Local Windows binaries were updated and re-probed on 2026-09-12; account quotas,
-tier eligibility and real-source review quorum remain separate gates.
-
-Quotation validation treats CRLF/LF as equivalent while retaining all other
-literal characters and the original input byte hashes. This repairs a reproduced
-cross-platform false rejection; it does not certify the cause of every earlier
-invalid reply. Setup update endpoints require the displayed command, readiness
-probes require the local token, and request bodies are byte-bounded and decoded
-once. Supervised POSIX children now own groups; deadlines and normal leader exit
-kill residual members. Handled shutdown signals allow nested dispatchers to
-cancel their reviewer groups before bounded escalation. Windows retains taskkill
-tree termination and a direct-child backstop. After a Windows leader exits
-normally, ordinary helpers may no longer be addressable through that leader;
-guaranteed residual cleanup needs OS job ownership, which is not implemented.
-Cross-platform policy fixtures pass
-locally; real POSIX descendant drills must pass in CI before release. This is not
-OS sandboxing: an uncatchable crash, blocked event loop or independently detached
-helper can defeat signal forwarding. Hard settlement still prevents hung pipes
-from stranding the dispatcher or Setup Center.
-
-The attached broader proposals are not silently bundled: API-key support conflicts
-with OAuth-only policy; a repository split, automatic execution of peer-authored
-tests, independent benchmarking and marketing outreach remain separate decisions.
+- **1.16.0**, 19 September 2026, tag `momm-1.16.0`: cost accounting, reviewer ratings, trusted
+  guidance, `--split` with per-piece quorum, an update clock that stays off unless the owner turns
+  it on, a modality registry with capability-aware routing, Windows hardening, opt-in
+  `--retry-invalid`. Record: [references/release-1.16.0.md](references/release-1.16.0.md).
+  Known limits carried into 1.16.1: media types are checked by filename extension only; Grok media
+  routes as `missing_flag`; quorum in the self-review was reached cumulatively across reruns;
+  install, upgrade and rollback were proven by the release workflow's isolated drill, not on real
+  machines; a first install stops to ask for the `gitsign` verifier.
+- **1.15.1** and **1.15.0**, 13 September 2026: explicit signed updates, receipts, the version
+  archive. Records: `references/release-1.15.1.md`, `references/release-1.15.0.md`.
+- Earlier versions: "Shipped" below and the [version history](https://marroccofella.github.io/skills/momm/releases/).
 
 ## Planned — later work
 
+Observations in this section date from 1.15 testing; that work shipped in 1.15.0 and 1.15.1.
+The proposals themselves are still open.
+
 ### Stronger process containment
 
-The candidate owns ordinary POSIX descendant groups and tests nested cancellation.
+Since 1.15 MOMM owns ordinary POSIX descendant groups and tests nested cancellation.
 Independent OS job/cgroup containment remains separate future work; do not claim
 group signalling contains arbitrary detached processes or survives every crash.
 
@@ -288,14 +63,14 @@ maintainer knowledge base reports headless tool-permission denials and a small,
 single-artifact A/B trial: 3/4 replies with the old prompt and 4/4 with explicit
 instructions that the prompt file is the entire input. Those counts are attributed
 to the maintainer's table; it does not link the raw eight-run evidence.
-A candidate probe also reproduced an empty response on just 714 bytes of synthetic
-input, so size alone is not an adequate explanation. The candidate now tells the
+A probe during 1.15 testing also reproduced an empty response on just 714 bytes of synthetic
+input, so size alone is not an adequate explanation. MOMM now tells the
 route not to search other files or run commands, while retaining plan/sandbox
 controls. Prompt instructions are not filesystem isolation. Repeated probes and
 representative real-source reviews remain required before claiming reliability;
 empty, invalid or timed-out replies still fail closed.
 
-The candidate's follow-up on that same 714-byte source produced two valid clean
+The follow-up on that same 714-byte source produced two valid clean
 reviews with the amended prompt; a 736-byte negative control produced a valid
 defect report identifying the seeded exclusive-bound error. These local synthetic
 controls exercise the real dispatcher and account route, not every provider/model
@@ -442,12 +217,6 @@ dispositions belong beside the review log the dispatcher wrote.
   panel); versioned skills repo checks; update awareness.
 
 ## Open items
-
-- **Fresh source-bearing release review** — the user approved the final dispatcher,
-  dashboard, public website and documentation scopes for Claude and Antigravity,
-  in addition to the previously approved updater/installer/protocol scopes.
-  Approval is not a review result; each final scope still needs source-bound
-  quorum, governor decisions and verification before publication.
 - The running Setup Center instance must be relaunched after upgrades; old
   processes serve stale UI (observed live on 1.9.x → 1.10.0).
 - Explicit timeout overrides are already honored (see 1.12.0 above); provider
@@ -468,3 +237,211 @@ dispositions belong beside the review log the dispatcher wrote.
 3. Every reviewer-facing prompt change ships with a negative control run
    (trivially-correct input must still yield zero findings).
 4. Update this file in the same commit as the feature it describes.
+5. "Current" is decided by `versions.json` and the newest `release-*.md`. A sentence written
+   before a signed tag goes under HISTORICAL when the tag exists; it is never left live.
+
+## HISTORICAL: written before the signed tags (pre-1.16.0 and pre-1.15.1)
+
+> Everything below this line was written while the version it describes was still a candidate.
+> It is kept as the design record and is **not** a statement about today. Phrases such as
+> "publication still needs", "still owed before release", "do not call this candidate released"
+> and "the candidate" were true on their dates and are no longer live: 1.15.0 and 1.15.1 were
+> released on 13 September 2026 and 1.16.0 on 19 September 2026, each as a signed tag.
+
+### 1.16.0 — measured, rated, guided, split, clock-driven, modality-aware (design record, pre-release wording)
+
+Released 19 September 2026 as the signed tag `momm-1.16.0` (plan in `references/plan-1.16.0.md`,
+full record in `references/release-1.16.0.md`). It also carries Windows hardening (private
+evidence folder, tools resolved to absolute paths) and the opt-in `--retry-invalid`. The
+paragraphs below were written while it was a candidate and are kept as the design record. What it adds, all
+off-by-default where it touches the network or the user's machine: per-CLI
+token and cost accounting in reports, ledger and Setup Center; reviewer
+ratings (`ledger.mjs --rate`) with a five-run floor and 30-day route
+reliability that recommends only on ten or more runs; guidance layers behind a
+per-file trust gate (untrusted text is never sent); `--split` with per-piece
+quorum, over-ceiling hunks divided at line boundaries into consecutive valid
+sub-hunks so routes read every line of a whole new file (on by default in
+the dispatcher, lossless on reassembly; `--no-line-split` keeps the older
+rule; a hunk stays whole as governor-direct scope only when one of its lines
+is itself larger than the ceiling) and `--jobs` parallel
+dispatch; an event-driven update clock with conditional GETs whose
+automatic-update toggle is off by default and never enabled by an agent;
+`update --check-all`; containment probes per CLI; one design system with a
+theme toggle shared by the Setup Center and the private ledger.
+
+E7, the modality registry (`references/plan-1.16.0-e7-modalities.md`, two
+momm reviews): a shipped baseline `references/capabilities.json` (levels
+verified only from help captures, otherwise documented) plus a per-machine
+overlay written only by probes, with blockers that expire into `reprobe`
+rather than silently clearing; `multi-review.mjs --capabilities`; attachment
+routing and `--reviewers auto` on the effective cell (overlay over baseline)
+with `requires` bound to argv or `missing_flag`; `probes.mjs <cli>
+--modalities [--consent]` with synthetic material, content assertions and a
+disclosure before any generation; `modality.mjs plan|run` for cross-route
+chains with a separate immutable creative prompt, step-scoped harvest (a step
+that produces nothing fails) and consent per run; a Setup Center Modalities
+panel. Grok media is not bound in the review adapter because its containment
+is `--deny Read`; its image and PDF cells route as `missing_flag` until a
+staged-files-only read grant exists. Generation never runs inside a review.
+Publication still needs the privacy scan, the signed tag and the evidence
+refresh.
+
+### Legacy bootstrap hardening — local follow-up to 1.15.1 (design record, pre-release wording)
+
+Separately trusted bootstrap and migration helpers now distinguish missing tools,
+failed signatures, missing receipts and legacy conflicts. Preparation verifies
+the release workflow identity, issuer, repository, ref, workflow commit, package
+hash and checked-out bytes before any candidate code runs. Migration previews the
+exact protocol and scope, requires the approved plan hash and separate protocol
+acceptance, and moves the old entry outside skill discovery with a rollback
+journal. Project ledgers are never copied or merged. Active or ambiguous process
+locks and changed entries fail closed; recovery is not a power-loss guarantee.
+The explicit sensitive-diagnostic hard constraint is restored. Setup Center and
+the public guide explain these routes rather than asking agents to invent them.
+
+Local Windows tests include a genuine signed 1.15.1 preparation, synthetic legacy
+installation and restoration; deterministic fixtures exercise failure paths.
+Security review also reproduced Git replacement/object substitution and competing
+rollback attempts. The candidate ignores replacement resolution, rejects modified
+Git administration, checks object integrity and holds an exclusive recovery claim.
+Windows executable shadowing has a real regression; tool paths are absolute and
+outside the inspected clone. Untracked files fail verification. Prerequisites,
+check timeouts and orphan claims have distinct diagnostics, without force repair.
+These changes are not published. Native macOS/Linux matrix results, final peer
+decisions and release verification remain required before a release claim.
+
+Final September 13 repairs: updates fetch full ancestry and verify promotion and
+Git connectivity across intervening commits; repeated explicit harness installs
+preserve matching clean verified provenance. Existing update claims fail closed
+instead of racy dead-PID reclamation, and receipt/journal decisions are rechecked
+inside exclusivity. A stale claim may need manual inspection before recovery.
+The hub version is stamped from the manifest; sitemap generation omits unverified
+lastmod dates. The shared prompt covers new and legacy users without broadening
+skill/harness scope. Governor locations normalize only within reviewed paths;
+protocol commands use quoted absolute paths and failed ledger builds are visible.
+
+### 1.15 — explicit updates and clearer public information (design record, pre-release wording)
+
+Released 13 September 2026 (1.15.0, corrected by 1.15.1). The text below was written while it
+was a candidate and is kept as the design record.
+
+Implemented in the candidate: installation receipts with per-harness scopes;
+manifest-only check, signed staged preview, explicit apply, protocol acceptance,
+stable/pinned/main channels, retained offline rollback, daily opt-outs, executable
+hashes, five focused information pages, and deterministic public-data rendering.
+Publication remains gated by the OS/Node matrix, MOMM dispositions, privacy scans
+and a verified Sigstore-signed tag. Do not call this candidate released until those
+gates pass. Main-channel updates require a signed development checkpoint; an
+ordinary unsigned branch head is not eligible. Legacy unsigned tags stay intact.
+
+The candidate adds a source-linked version-history archive and an existing-user
+upgrade prompt. Published releases, tags without Release records and untagged code
+milestones are distinguished; gaps are not invented. Legacy installs must approve
+a bootstrap, preserve their prior installation and establish an actual receipt.
+Growing governor logs are streamed with full-byte hash rechecks, bounded individual
+records and selected-run memory; corruption or concurrent mutation fails closed.
+The completion command uses the absolute installed skill path from the project.
+Public export regression tests now cover validation-before-write, sparse legacy
+reports, canonical duplicate comparison and aliased preview roots. Filesystem I/O
+failure is not a multi-file atomic transaction. Current documentation distinguishes
+supervised POSIX groups from independently detached processes. CLI maintenance
+refuses known Volta/Scoop/Chocolatey/asdf/mise-managed executable paths; executable
+magic alone is not ownership proof, and unrecognized package managers remain a
+discovery limitation. Declined-update assertions include an actual API call counter
+and a positive control; exact-command endpoint checks cover successful launches.
+
+Candidate release testing also found interrupted notice claims, changed ignore
+rules stranding rollback, and browser default speech bypassing local-only voice
+selection. Each now has a regression fixture. The signing workflow can reuse
+matching verified tags on retry, and has an explicit main-checkpoint-only mode.
+Claude's text review disables customizations and tools while retaining OAuth and
+plan permissions (verified flag surface: 2.1.233); Grok preserves the supplied
+prompt with --verbatim and disables subagents (1.0.5). Live re-verification is
+still required; unsupported flags fail closed on older installations.
+Output parsing now prefers the final review and refuses explicitly non-final
+Grok envelopes; regression fixtures cover intermediate/final ordering. Copilot
+requests non-streamed final text while preserving its viewer-only tool allowlist.
+An unmet external-review quorum can no longer coexist with outstanding.complete.
+Executable hashes are captured at dispatcher startup, not retroactively from
+files changed during review; a changed installation clears verified-release status.
+
+Candidate lifecycle hardening: peer-review/2 requires explicit completion and
+artifact quotations; malformed/over-limit/error-wrapped replies fail closed before
+normalization. A governor validator checks original report/log linkage, unique
+item decisions, required before/after or refutation records, and current source,
+test and output hashes. It records completion separately and keeps stale/deferred
+work visibly open. The controlled zero-model-call regression runs real authored
+tests before/after a seeded fix and tests conflicting/missing/forged decisions.
+This validates consistency, not an agent's honesty, test adequacy or all harnesses.
+Current source capture supports local text input and exact current Git text A/M
+diffs; binary/deleted/renamed source and media lifecycle binding remain open.
+
+Candidate reviewer reliability: real source probes completed after the former
+120/180-second windows. The default base is now 180 seconds (deep: 240), with
+existing Grok 1.5x headroom and explicit timeout overrides retained. Scope prose
+is concise and useful novelty is optional; all material findings remain required.
+--stream sends content-free elapsed/deadline/byte-count progress, never reasoning.
+An explicit --effort medium is supported for locally verified Claude/Grok flags;
+default leaves account settings alone. Output is decoded across UTF-8 chunks and
+bounded in bytes, malformed JSON scans linearly, and Windows uses native/verified
+npm bin launchers instead of shell argument interpretation. Transport fixtures
+run in the OS/Node matrix; local success is not a cross-machine certification.
+Grok's text adapter uses ordinary final JSON, explicit deny rules for read/search,
+shell/edit, MCP and web tool classes, and a four-turn ceiling within the unchanged
+wall-clock deadline. An empty --tools value did not disable reads in a local
+1.0.5 canary; explicit deny rules withheld its marker. This is CLI policy, not an
+OS filesystem sandbox or certification of every future binary. A 38 KB synthetic
+control completed after an earlier quotation-invalid reply; real-source quorum
+is still required. The local peer contract remains mandatory. Failed/non-final
+probes are not successful reviews.
+
+Stabilisation regressions now cover CLI/model errors versus real login failures,
+partial installation receipts, comma-separated skill names, torn update claims,
+strict-policy shape diagnostics, source text containing sample diffs, repository
+root guidance, concurrent Git-source changes, and genuine a/b source directories.
+The release seal refuses a dirty checkout; prepare requires the intended files
+staged first. The signing job pins setup-node and queries successful exact-commit
+push runs explicitly. Preview stream failures, slash redirects, copy feedback and
+restored harness snippets have offline regressions. None of this marks the
+candidate released or turns legacy decision counts into validated completion.
+
+Candidate CLI maintenance now inventories all six installations independently of
+governor self-exclusion. The dashboard shows installed/latest versions, source,
+installation type and explicit update actions. Failed checks stay unknown; AGY
+has no verified read-only latest query and needs an explicit native update.
+Native updater commands bind to the detected path; npm commands bind to the
+detected global prefix. Homebrew, project-local and unknown wrappers receive
+guidance rather than a guessed global install. A launched terminal is not an
+update success; changed versions invalidate prior live checks. Offline fixtures
+cover inventory, failed native checks, prereleases, origins and declined consent.
+Local Windows binaries were updated and re-probed on 2026-09-12; account quotas,
+tier eligibility and real-source review quorum remain separate gates.
+
+Quotation validation treats CRLF/LF as equivalent while retaining all other
+literal characters and the original input byte hashes. This repairs a reproduced
+cross-platform false rejection; it does not certify the cause of every earlier
+invalid reply. Setup update endpoints require the displayed command, readiness
+probes require the local token, and request bodies are byte-bounded and decoded
+once. Supervised POSIX children now own groups; deadlines and normal leader exit
+kill residual members. Handled shutdown signals allow nested dispatchers to
+cancel their reviewer groups before bounded escalation. Windows retains taskkill
+tree termination and a direct-child backstop. After a Windows leader exits
+normally, ordinary helpers may no longer be addressable through that leader;
+guaranteed residual cleanup needs OS job ownership, which is not implemented.
+Cross-platform policy fixtures pass
+locally; real POSIX descendant drills must pass in CI before release. This is not
+OS sandboxing: an uncatchable crash, blocked event loop or independently detached
+helper can defeat signal forwarding. Hard settlement still prevents hung pipes
+from stranding the dispatcher or Setup Center.
+
+The attached broader proposals are not silently bundled: API-key support conflicts
+with OAuth-only policy; a repository split, automatic execution of peer-authored
+tests, independent benchmarking and marketing outreach remain separate decisions.
+
+### Closed open item (design record, pre-release wording)
+
+- **Fresh source-bearing release review** — the user approved the final dispatcher,
+  dashboard, public website and documentation scopes for Claude and Antigravity,
+  in addition to the previously approved updater/installer/protocol scopes.
+  Approval is not a review result; each final scope still needs source-bound
+  quorum, governor decisions and verification before publication.
