@@ -81,12 +81,14 @@ Purpose: keep parallel sessions and future releases pointed the same way.
 Before proposing or building a MOMM feature, read this file; after shipping or
 rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
 
-## Candidate — not released
+## Released
 
-### 1.16.0 candidate — measured, rated, guided, split, clock-driven, modality-aware
+### 1.16.0 — measured, rated, guided, split, clock-driven, modality-aware
 
-Branch `release/momm-1.16.0` (draft PR #4; plan in `references/plan-1.16.0.md`,
-verification record in `references/release-1.16.0.md`). What it adds, all
+Released 19 September 2026 as the signed tag `momm-1.16.0` (plan in `references/plan-1.16.0.md`,
+full record in `references/release-1.16.0.md`). It also carries Windows hardening (private
+evidence folder, tools resolved to absolute paths) and the opt-in `--retry-invalid`. The
+paragraphs below were written while it was a candidate and are kept as the design record. What it adds, all
 off-by-default where it touches the network or the user's machine: per-CLI
 token and cost accounting in reports, ledger and Setup Center; reviewer
 ratings (`ledger.mjs --rate`) with a five-run floor and 30-day route
@@ -153,7 +155,10 @@ lastmod dates. The shared prompt covers new and legacy users without broadening
 skill/harness scope. Governor locations normalize only within reviewed paths;
 protocol commands use quoted absolute paths and failed ledger builds are visible.
 
-### 1.15 release candidate — explicit updates and clearer public information
+### 1.15 — explicit updates and clearer public information
+
+Released 13 September 2026 (1.15.0, corrected by 1.15.1). The text below was written while it
+was a candidate and is kept as the design record.
 
 Implemented in the candidate: installation receipts with per-harness scopes;
 manifest-only check, signed staged preview, explicit apply, protocol acceptance,

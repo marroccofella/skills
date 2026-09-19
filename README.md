@@ -8,7 +8,21 @@
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Install deliberately: verify the release first
+## Install MOMM in one line
+
+Paste this into your coding agent (Claude Code, Codex, Antigravity, Copilot or Grok). It works for a
+new installation and for an upgrade:
+
+```text
+Install MOMM for me by following https://marroccofella.github.io/skills/momm/install
+```
+
+Your agent finds your setup, verifies the signed release before running anything, shows you a dry
+run and asks before it changes anything. Your reviewer logins, other skills and private review
+ledgers are kept, and it never asks for an API key. The page behind that address is the
+[install guide](https://marroccofella.github.io/skills/momm/install).
+
+## Or install by hand: verify the release first
 
 For a new MOMM installation or an older version without an updater/receipt,
 start with the [bootstrap guide](momm/references/bootstrap.md). Check tools first,
