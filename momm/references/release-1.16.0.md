@@ -46,15 +46,23 @@ Details are under [What a user notices](#what-a-user-notices) and
   `evidence --protect` once. An agent never runs it for you.
 - Automatic updates remain off unless you turn them on in the Setup Center.
 
-## How it was verified, in one paragraph
+## How it was verified, and what was not
 
-The candidate reviewed itself in seven gate runs through its own dispatcher (Codex, Antigravity
-and Grok, two-review quorum per piece). All 1,358 findings and suggestions were ruled on and
-logged: of 478 findings, 164 led to a fix or a stronger test (each reproduced first), 274 were
-rejected with evidence and 40 are deferred to 1.16.1. Every piece of the candidate against `main`
-reached quorum, cumulatively over reruns rather than in one run. The ten-job CI matrix (Windows,
-macOS, Linux; Node 18 to 24) is green on the reviewed head. The sections below are the dated
-record, in full, including what went wrong along the way.
+The candidate reviewed itself in nine gate runs through its own dispatcher (Codex, Antigravity
+and Grok, two-review quorum per piece). All 1,376 findings and suggestions were ruled on and
+logged; 42 findings were deferred and are [listed by name](deferred-from-1.16.0.md). Every piece
+of the candidate against `main` reached quorum **cumulatively over reruns, not in one run**, and
+the reports cannot show which piece passed on which attempt. Two independent reviewers reported
+the candidate ready on Windows; a third passed every offline check and was stopped at the live
+step by a provider quota.
+
+What this release did **not** prove. The ten-job CI matrix was reported green on the reviewed
+head, but on the Windows Node 18 and 20 jobs one failing test was hidden by how a CI step reported
+results, and the defect it guarded (a planted `git.exe` being started on those runtimes) was found
+and fixed only after the go-ahead, before the tag. Install, upgrade, rollback and re-upgrade were
+exercised by the release workflow's isolated drill, not on real machines. Media types are checked
+by filename extension only. These are the debts [1.16.1](plan-1.16.1.md) exists to pay. The
+sections below are the dated record, in full, including what went wrong along the way.
 
 ## Independent retest follow-up (18 September 2026)
 
