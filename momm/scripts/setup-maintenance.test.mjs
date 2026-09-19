@@ -422,6 +422,26 @@ await test('an apply pass drops the cached installed versions; a disabled apply 
   seed();await c.trigger(fakeClock(true),'setup.check');
   assert.equal(cached(),null,'the event path applies through the same pass');
 });
+// Gate rev_20260919102005_4dn1 stale-version-scan-after-update: a version scan that began before
+// the apply pass read the pre-update binary. When it lands it must not refill the cache, and a
+// request arriving after the pass must start its own scan instead of joining the old one.
+await test('a version scan already in flight when an apply pass ends neither refills the cache nor serves later requests',async()=>{
+  const {c}=clockSlice({applyResult:()=>({applied:[{name:'cli:codex',from:'1.0.0',to:'1.1.0',probe:{status:'pass',cli_version:'1.1.0'}}],skipped:[],failed:[],notices:[]})});
+  let installed='1.0.0',scans=0,release;const gate=new Promise(r=>{release=r;});
+  Object.assign(c,{providers:{codex:{}},parseVersion:v=>/^\d+\.\d+\.\d+$/.test(String(v??''))?String(v):null,
+    readiness:async()=>{scans++;const seen=installed;await gate;return {routes:[{agent:'codex',version:seen}]};}});
+  const scan=()=>vm.runInContext('installedVersionsForRegistry()',c);
+  const early=scan(),shared=scan();await new Promise(r=>setImmediate(r));
+  assert.equal(scans,1,'control: requests before the apply still share one scan');
+  installed='1.1.0';
+  assert.equal((await c.handle({op:'apply'},fakeClock(true),{})).status,200);
+  const late=scan();release();
+  assert.equal((await early).codex,'1.0.0');assert.equal((await shared).codex,'1.0.0');
+  assert.equal((await late).codex,'1.1.0','a request after the apply must not be handed the pre-update scan');
+  assert.equal(scans,2);
+  assert.equal(vm.runInContext('installedVersionsCache.value.codex',c),'1.1.0','the pre-update scan must not refill the cache');
+  assert.equal((await scan()).codex,'1.1.0');assert.equal(scans,2,'the fresh scan is cached');
+});
 // Gate rev_20260919044643_2l49 ledger-throw-stale-exit-code: a rebuild that throws after a clean
 // one must not leave last_exit_code 0 beside the failure, and an empty message is still a failure
 // (GET /ledger reads a falsy last_error with exit code 0 as a good rebuild).

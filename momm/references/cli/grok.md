@@ -35,4 +35,4 @@ Output envelope (json): `{"text":"…","stopReason":"end_turn"|"tool_use"|"cance
 
 ## Adapter notes
 
-Grok is the route most sensitive to prompt size. Give it `--verbatim`, keep artifacts small (about 12 KB pieces worked), do not cap turns at one, and disable tools with `--disallowed-tools read_file,search_replace,…` (verified above) rather than `--tools ""` (verified ineffective on 1.0.5 and 1.0.30). Re-run the canary probe after every Grok update.
+Grok is the route most sensitive to prompt size. Give it `--verbatim`, keep artifacts small (about 12 KB pieces worked), do not cap turns at one, and disable tools with the `--deny <Name>` permission rules the dispatcher uses (verified above; the run ends `end_turn`) rather than `--tools ""` (verified ineffective on 1.0.5 and 1.0.30). `--disallowed-tools read_file,search_replace,…` also stops the read (verified above) but ends the run `cancelled`, which MOMM rejects as `invalid_output`. Re-run the canary probe after every Grok update.

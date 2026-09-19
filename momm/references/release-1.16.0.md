@@ -91,6 +91,23 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Gate rerun six, 19 September (run `rev_20260919102005_4dn1` on `076232c` with `--retry-invalid`:
+  the 6 pieces that missed quorum plus the round-five changes, 484 KB in 18 pieces, same three
+  routes, 81 minutes): **quorum on 18 of 18 pieces**, the first run in which every piece was covered.
+  19 of 54 first answers were rejected as invalid output (35%, the same rate as before); each was
+  re-sent once and 15 came back valid, so 50 of 54 reviews counted. The report lists every retry.
+  56 findings and 118 suggestions, all 174 ruled on and logged: 3 fixed, 35 rejected with evidence,
+  18 deferred to 1.16.1. Both marked critical repeat earlier rounds and were rejected again after
+  fresh checks: oversize hunks are `governor_direct` by design (the report lists each one,
+  `outstanding.complete` stays false, and `governor.mjs` refuses completion until the governor
+  records direct coverage for each; `governor-split.test.mjs` 11 of 11), and the Setup Center session
+  (measured over loopback on the real server: 403 without the token, 403 with a wrong one, 200 with
+  the launch token; the page sends the fragment token on its first request). The one code defect:
+  a version scan already running when an apply finished could refill the Setup Center cache with
+  the old versions; scans are now tied to an epoch that an apply advances. Two CLI reference
+  sentences were corrected (the Grok page recommends the `--deny` rules the dispatcher uses; the
+  1.15.0 candidate's `--tools ""` form never shipped). What remains for the review gate is the
+  small delta these three fixes create.
 - Owner decision on closing the gate, 19 September: keep the exact-quote contract strict and add an
   opt-in `--retry-invalid`. A review whose answer is rejected as invalid output is re-sent once to
   the same route; an outage was already retried once, and auth failures, retired tiers, timeouts

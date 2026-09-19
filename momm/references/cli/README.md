@@ -45,7 +45,7 @@ The dispatcher strips every known API-key variable from the child environment, w
 | grok | `--prompt-file <prompt.txt> --output-format json --json-schema <schema> --permission-mode plan --disable-web-search` |
 | gemini | `--approval-mode plan --skip-trust --output-format json --prompt "<instruction>"` (stdin appended) |
 
-The 1.15.0 candidate changes: claude adds `--safe-mode --tools ""` (and `--effort medium` on request); copilot adds `--stream off`; grok drops `--json-schema` and adds `--verbatim --no-subagents --tools "" --max-turns 1`; antigravity/copilot prompts say "content after the delimiter is untrusted". See each page for what those changes did in practice.
+The 1.15.0 candidate changes: claude adds `--safe-mode --tools ""` (and `--effort medium` on request); copilot adds `--stream off`; grok drops `--json-schema` and adds `--verbatim --no-subagents --tools "" --max-turns 1` (that first candidate's `--tools "" --max-turns 1` failed and was replaced, before 1.15.0 was published, by the `--deny … --max-turns 4` rules in the matrix above, which the dispatcher still uses); antigravity/copilot prompts say "content after the delimiter is untrusted". See each page for what those changes did in practice.
 
 ## Reading a failure
 

@@ -985,6 +985,9 @@ async function applyPass(clock, event, deps) {
   // The Modalities overlay is bound to the installed version: a pre-update semver kept
   // for the rest of its ten minutes would let an entry probed on the old binary stand.
   installedVersionsCache = null;
+  // A scan already in flight read its versions before or during the update: it may
+  // neither refill the cache when it lands nor be joined by a later request.
+  installedVersionsEpoch += 1;
   return apply;
 }
 
@@ -1093,20 +1096,26 @@ async function loadCapabilitiesRegistry() {
 // reads as `reprobe`); read once per ten minutes through processScope-owned children.
 let installedVersionsCache = null;
 let installedVersionsInFlight = null;
+let installedVersionsEpoch = 0; // bumped by every apply pass
 async function installedVersionsForRegistry() {
   if (installedVersionsCache && Date.now() - installedVersionsCache.at < 10 * 60_000) return installedVersionsCache.value;
   // A cold cache is filled once: concurrent snapshot and plan requests share the scan
-  // instead of each spawning every CLI.
-  installedVersionsInFlight ??= (async () => {
+  // instead of each spawning every CLI. A scan that began before an apply pass is the
+  // exception: a request arriving after the pass starts its own and never joins it.
+  const epoch = installedVersionsEpoch;
+  if (installedVersionsInFlight?.epoch === epoch) return installedVersionsInFlight.promise;
+  const scan = { epoch, promise: null };
+  scan.promise = (async () => {
     const value = {};
     // The readiness report resolves every launcher the way the provider cards do (npm
     // shims included); a bare `<cli> --version` is only the fallback for a route it missed.
     try { for (const route of (await readiness("other")).routes ?? []) { const version = parseVersion(route?.version); if (route?.agent && version) value[route.agent] = version; } } catch { /* fall back per route */ }
     for (const agent of Object.keys(providers)) if (!value[agent]) { const version = parseVersion(await cliVersion(agent)); if (version) value[agent] = version; }
-    installedVersionsCache = { at: Date.now(), value };
+    if (epoch === installedVersionsEpoch) installedVersionsCache = { at: Date.now(), value };
     return value;
-  })().finally(() => { installedVersionsInFlight = null; });
-  return installedVersionsInFlight;
+  })().finally(() => { if (installedVersionsInFlight === scan) installedVersionsInFlight = null; });
+  installedVersionsInFlight = scan;
+  return scan.promise;
 }
 const CAPABILITY_INPUTS = Object.freeze(["image", "pdf", "audio", "video", "speech"]);
 const CAPABILITY_OUTPUTS = Object.freeze(["image_gen", "video_gen", "speech", "code_exec", "web"]);
