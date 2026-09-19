@@ -21,6 +21,47 @@ add features.
 `references/release-*.md` is the dated record. `ROADMAP.md` opens with now, next, later. Site pages
 render from those three. Nothing else says "current".
 
+## The closed set (owner, 20 September)
+
+Required for 1.16.1 are only items that close a hole 1.16.0 documented, prove a claim 1.16.0 already
+made, or stop the tree contradicting itself. Twelve items; the sections below carry the detail and
+the "done when" for each.
+
+| # | Required addition | Section | State |
+| --- | --- | --- | --- |
+| 1 | Media type from file bytes; the extension may label, never authorize | A1 | not started |
+| 2 | Capability expiry a human can act on: expired, when, why, exact re-probe command; no auto re-probe | A2 | not started |
+| 3 | Completion receipts for committed-range reviews | A3 | range binding built; tool-made `momm-check/1` manifests and attempt ids owed |
+| 4 | Closed-set failure classification; a wrong bucket fails a test | C1 | not started |
+| 5 | Partial quorum and retry as first-class evidence, per piece and per attempt | C2 | not started |
+| 6 | Attempt evidence persisted beside the run; a rerun appends, never rewrites | C3 | not started |
+| 7 | Real lifecycle drills on Windows, macOS and Linux, Node 18 and 24 at least | B | not started (last in the work order) |
+| 8 | Named security regressions as tests | E | not started |
+| 9 | One live image review on the final tree, with the checklist in `references/` | A4, gates | not started |
+| 10 | ROADMAP tells the truth | D | **done** |
+| 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | not started |
+| 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | not started |
+
+**Constraints that are required non-additions:** the governor remains the only writer; account
+logins only, no API-key routes; automatic updates stay off and an agent never enables them;
+`evidence --protect` is owner-invoked only; no new reviewer families; no dashboard redesign; no new
+generation modalities; no Grok media binding (containment stays `--deny Read`, so Grok image and
+PDF cells stay `missing_flag`).
+
+**To 1.17 by name, not into this release:** `--early-exit`, `--split auto`, a higher `--jobs`
+ceiling, ledger-learned caps, CRLF handling in guidance, `Object.create(null)` lookup maps, the
+guidance sidecar `0o700` mode, synthetic hunk counts, recognising one observation across finding
+ids.
+
+**One item needs the owner to reconcile.** On the same day the owner also asked that 1.16.1 make
+duplicate installations and precedence explicit (section F). F is not in the closed set above.
+F1, the read-only `--doctor --versions` inventory, is built and is how drill 7 proves which
+version a harness loads after an upgrade, so it stays as drill tooling. F2 (never call an upgrade
+complete while an older copy is active) stops a false claim and fits the set's own rule. F3 to F8
+(choosing one active copy, migration preview, rollback command, version banner, fresh-session
+verification, duplicate protection) change links or add surfaces; by the closed set's rule they
+belong in 1.17 unless the owner says otherwise. They are not started.
+
 ## In scope: must ship, or 1.16.1 does not tag
 
 ### A. Documented 1.16.0 follow-ups
