@@ -65,6 +65,7 @@ jobs:
           node momm/scripts/setup-ui.mjs --self-test
           node momm/scripts/setup-maintenance.test.mjs
           node momm/scripts/governor.test.mjs
+          node momm/scripts/installations.test.mjs
           node momm/scripts/usage.test.mjs
           node momm/scripts/guidance.test.mjs
           node momm/scripts/split.test.mjs

@@ -12,7 +12,8 @@ in this file gets to say "current". Website notes live in
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
 - Must ship or 1.16.1 does not tag: media type from bytes; capability expiry visible and manual;
   completion receipts for committed-range reviews; a per-piece attempt ledger with a closed set of
-  outcomes; named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
+  outcomes; "installed somewhere" separated from "the version this harness loads"
+  (`--doctor --versions`, conflict refusal, one chosen active copy, rollback); named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
   drills on real machines with a published OS by Node table.
 - Not in 1.16.1: new reviewer families, automatic updates by default, a dashboard redesign, new
   generation modalities, `--early-exit`, `--split auto`, ledger-learned caps, adaptive timeouts,

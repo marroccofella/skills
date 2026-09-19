@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { update, dailyCheck, updateCheckDisabled, provenance, parse as parseUpdateOptions } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import { captureSourceSnapshot } from "./governor.mjs";
+import { inventory as installationsInventory } from "./installations.mjs";
 import { createProcessScope } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
 import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
@@ -816,6 +817,7 @@ function usage() {
   return `Usage:
   node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
   node scripts/multi-review.mjs --doctor
+  node scripts/multi-review.mjs --doctor --versions [--expect <version>]   Every MOMM copy a harness can find, its version, and whether they agree (read-only; exit 1 on a conflict)
   node scripts/multi-review.mjs evidence [--status | --protect]   Inspect, or on your explicit command restrict, this project's private evidence folder
   node scripts/multi-review.mjs --self-test
 
@@ -921,6 +923,8 @@ function parseArgs(argv) {
     else if (arg === "--stream") options.stream = true;
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
+    else if (arg === "--versions") options.versions = true;
+    else if (arg === "--expect") { options.expectVersion = next(); if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(options.expectVersion)) throw new Error("--expect needs a version such as 1.16.1"); }
     else if (arg === "--preflight") options.preflight = true;
     else if (arg === "--stats") options.stats = true;
     else if (arg === "--tier") {
@@ -2257,6 +2261,18 @@ function createUi(enabled, outStream = process.stderr) {
   return api;
 }
 
+// "Installed somewhere" is not "the version this harness loads": list every copy a harness can find,
+// which version each declares, and whether the active discovery paths agree. Read-only; other copies
+// are read, never executed. Exit 1 on a conflict, duplicate copies, or an unmet --expect.
+function doctorVersions(options) {
+  const report = installationsInventory({ runningSkillRoot: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..") });
+  const expectation = options.expectVersion ? report.upgrade_complete_for(options.expectVersion) : null;
+  process.stdout.write(`${JSON.stringify({ dispatcher_version: MOMM_VERSION, model_calls_made: false, ...report, ...(expectation ? { expected: options.expectVersion, upgrade: expectation } : {}) }, null, options.pretty ? 2 : 0)}\n`);
+  if (!report.verdict.consistent) process.stderr.write(`MOMM installations (${report.verdict.status}): ${report.verdict.detail}\n`);
+  if (expectation && !expectation.complete) process.stderr.write(`Upgrade to ${options.expectVersion} is not complete: ${expectation.reason}\n`);
+  if (!report.verdict.consistent || (expectation && !expectation.complete)) process.exitCode = 1;
+}
+
 async function doctor(pretty) {
   const commands = {};
   for (const name of ["codex", "gemini", "claude", "antigravity", "copilot", "grok"]) {
@@ -3080,6 +3096,8 @@ async function main() {
     return;
   }
   if (options.stats) { process.stdout.write(renderStats(loadTrackRecord())); return; }
+  if (options.doctor && options.versions) { doctorVersions(options); return; }
+  if (options.versions || options.expectVersion) throw new Error("--versions and --expect belong to --doctor: use --doctor --versions [--expect <version>]");
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
     const entries = await preflightCheck(options.reviewers, options.governor);

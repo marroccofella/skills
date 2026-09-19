@@ -94,6 +94,37 @@ a junction, a symlink or an 8.3 short name; a PATH entry that cannot be resolved
 junctions and hard links under the evidence folder, with `evidence --protect` refusing a
 hard-linked file that has another path.
 
+### F. Installed somewhere is not what the harness loads (owner addition, 20 September)
+
+On the owner's machine after the 1.16.0 release, five harness discovery folders still loaded 1.15.1
+from one clone while the 1.16.0 copy that had been run all week was linked from none. Nothing said
+so. 1.16.1 separates "installed somewhere" from "the version this harness loads" and reports and
+verifies both.
+
+1. **`--doctor --versions`** lists every MOMM copy a harness can find: path, link target, the
+   version that copy's own source declares, and which copy each harness would load. Read-only; other
+   copies are read, never executed. *Built first; the rest depends on it.*
+2. **Conflict warning.** No command claims an upgrade is complete while an older copy remains on
+   another active discovery path. The installer and updater end with the inventory and exit non-zero
+   on a conflict.
+3. **Canonical-path selection.** The owner chooses one active installation. Older copies are kept
+   only as rollback backups, outside every discovery folder.
+4. **Version banner.** The Setup Center and every review report show the loaded MOMM version and
+   the folder it was loaded from.
+5. **Safe migration preview.** Before any link changes: old path, new path, backup path and the
+   resulting precedence, then an explicit yes.
+6. **Fresh-session verification.** From a new harness session, confirm the selected version is the
+   one discovered. MOMM can read the folders a harness searches; it cannot see inside the harness,
+   so where one harness has two folders on different copies precedence is reported as undetermined,
+   never invented.
+7. **Rollback command.** Restore the previous link and receipt without deleting the newer clone.
+8. **Duplicate protection.** Two active links never silently point at different MOMM versions:
+   the installer refuses to add a second active copy without the selection step in 3.
+
+*Done when* each numbered line has a test on real folders (junctions on Windows, symlinks
+elsewhere), the lifecycle drills in B end with `--doctor --versions --expect <version>` exiting 0,
+and the owner's five-folder case above is reproduced as a fixture.
+
 ## Explicitly out of 1.16.1
 
 New reviewer families. Automatic updates on by default, or any path by which an agent enables
@@ -133,6 +164,8 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
 2. Receipts, media type from bytes, capability expiry (A3, A1, A2).
 3. Outcome classification and the attempt ledger (C).
 4. Named security regressions (E).
-5. Lifecycle drills (B), last, because they certify the rest.
+5. Installations and precedence (F): the read-only inventory first (it is also the last step of
+   every drill in B), then the conflict refusal, selection, preview, rollback and banner.
+6. Lifecycle drills (B), last, because they certify the rest.
 
 No 1.17 item starts before the signed `momm-1.16.1` tag exists.

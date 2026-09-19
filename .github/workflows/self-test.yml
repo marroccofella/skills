@@ -54,6 +54,9 @@ jobs:
       - name: Legacy discovery migration and rollback (synthetic installs only)
         timeout-minutes: 4
         run: node momm/scripts/migrate-legacy.test.mjs
+      - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
+        timeout-minutes: 2
+        run: node momm/scripts/installations.test.mjs
       - name: Governor review-to-decision lifecycle (offline)
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs
