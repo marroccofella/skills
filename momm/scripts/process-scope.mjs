@@ -2,10 +2,46 @@
 // POSIX groups contain ordinary descendants, not helpers that detach themselves.
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
+import nodeFs from 'node:fs';
+import nodePath from 'node:path';
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
 if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
+
+// Windows tool resolution. The variable above is honoured by cmd.exe and by the libuv in Node 22 and
+// later; Node 18 and Node 20 ignore it, so on those runtimes a bare command name handed to spawn is
+// looked up in the child's working directory first, and a git.exe planted in a reviewed project was
+// started (CI run 35459186774, windows-latest, Node 20.20.2). A bare name is therefore never handed
+// to spawn on Windows. System tools come from System32; anything else is searched for on the absolute
+// PATH entries that lie outside the working directory; a name found nowhere becomes an absolute path
+// that cannot exist, so the launch fails as an ordinary ENOENT instead of finding a planted file.
+const SYSTEM_TOOLS = new Map([['cmd', 'cmd.exe'], ['cmd.exe', 'cmd.exe'], ['taskkill.exe', 'taskkill.exe'], ['tasklist.exe', 'tasklist.exe'],
+  ['schtasks.exe', 'schtasks.exe'], ['where.exe', 'where.exe'], ['icacls.exe', 'icacls.exe'],
+  ['powershell.exe', 'WindowsPowerShell\\v1.0\\powershell.exe'], ['powershell', 'WindowsPowerShell\\v1.0\\powershell.exe']]);
+export function windowsTool(command, { env = process.env, cwd = process.cwd(), platform = process.platform, fs: files = nodeFs } = {}) {
+  const name = String(command);
+  if (platform !== 'win32' || /[\\/]/.test(name)) return command;
+  const win = nodePath.win32, value = key => Object.entries(env ?? {}).find(([k]) => k.toLowerCase() === key)?.[1];
+  const system32 = win.join(value('systemroot') || value('windir') || 'C:\\Windows', 'System32');
+  const system = SYSTEM_TOOLS.get(name.toLowerCase());
+  if (system) return win.join(system32, system);
+  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return win.resolve(p); } };
+  const inside = (root, p) => { const rel = win.relative(root, p); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
+  const root = real(win.resolve(String(cwd || '.'))).toLowerCase();
+  const extensions = win.extname(name) ? [''] : ['.exe', '.com'];
+  for (const entry of String(value('path') ?? '').split(';').map(d => d.replace(/^"|"$/g, '')).filter(d => d && win.isAbsolute(d))) {
+    for (const extension of extensions) {
+      const candidate = win.join(entry, name + extension);
+      try {
+        if (!files.statSync(candidate).isFile()) continue;
+        if (inside(root, real(candidate).toLowerCase())) continue;
+        return candidate;
+      } catch { /* not here */ }
+    }
+  }
+  return win.join(system32, 'momm-tool-not-found', name + (win.extname(name) ? '' : '.exe'));
+}
 
 export function createProcessScope(deps = {}) {
   const proc = deps.process ?? process, launch = deps.spawn ?? spawn;
@@ -88,6 +124,14 @@ export function createProcessScope(deps = {}) {
   return {
     spawn(command, args, options = {}) {
       if (stopping) throw Object.assign(new Error('MOMM is stopping; refusing a new subprocess'), {code:'MOMM_STOPPING'});
+      if (proc.platform === 'win32') {
+        // The child's own environment decides its PATH; the guard variable rides along for cmd.exe
+        // (which honours it on every Windows) and for newer runtimes.
+        const env = { ...(options.env ?? proc.env), NoDefaultCurrentDirectoryInExePath: '1' };
+        const where = { env, cwd: options.cwd ?? proc.cwd?.(), platform: 'win32', fs: deps.fs ?? nodeFs };
+        if (options.shell) options = { ...options, env, shell: windowsTool(typeof options.shell === 'string' ? options.shell : 'cmd.exe', where) };
+        else { command = windowsTool(command, where); options = { ...options, env }; }
+      }
       const child = launch(command, args, {...options,detached:proc.platform !== 'win32'});
       owned.set(child, {timer:null,terminating:false});
       child.once('exit', () => release(child));

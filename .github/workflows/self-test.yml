@@ -94,7 +94,11 @@ jobs:
         timeout-minutes: 2
         run: node scripts/launch-guard.test.mjs
       - name: Public information is deterministic and internally linked
-        timeout-minutes: 2
+        # bash on every OS: it stops at the first failing command. Under the Windows default
+        # (PowerShell) only the LAST command's exit code counted, so a failing suite in the middle of
+        # this list was reported green (found at the 1.16.0 release halt, run 35459186774).
+        shell: bash
+        timeout-minutes: 8
         run: |
           node scripts/render-momm-site.mjs --check
           node scripts/check-momm-site.mjs

@@ -83,8 +83,8 @@ if(scopeModule) {
   await test('Windows final cleanup shares a fresh two-second budget across children',()=>{
     const f=fixture('win32'),budgets=[];let now=9000;
     const source=fs.readFileSync(moduleUrl,'utf8');
-    const create=vm.runInNewContext(source.slice(source.indexOf('export function')).replace('export function','function')+'\ncreateProcessScope',
-      {Date:{now:()=>now},setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout});
+    const create=vm.runInNewContext(source.slice(source.indexOf('export function createProcessScope')).replace('export function','function')+'\ncreateProcessScope',
+      {Date:{now:()=>now},setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout,windowsTool:scopeModule.windowsTool,nodeFs:fs});
     const scope=create({process:f.proc,spawn:f.spawn,spawnSync:(_c,_a,options)=>{budgets.push(options.timeout);now+=1500;return {status:0};}});
     scope.spawn('one',[]);scope.spawn('two',[]);const third=scope.spawn('three',[]);
     now=50000;scope.force();assert.deepEqual(budgets,[2000,500]);
@@ -135,6 +135,58 @@ if(scopeModule) {
       } finally {scope.force();for(const p of pids)try{process.kill(p,'SIGKILL')}catch{}}
     });
   }
+}
+// Windows tool resolution (release halt, 19 September 2026): Node 18 and Node 20 ignore
+// NoDefaultCurrentDirectoryInExePath, so on those runtimes a bare command name handed to spawn is looked
+// up in the child's working directory first and a git.exe planted in the reviewed project was started
+// (CI run 35459186774, windows-latest, Node 20.20.2). MOMM therefore never hands a bare name to spawn on
+// Windows: it resolves the name itself against absolute PATH entries outside the working directory.
+if(scopeModule) {
+  const W=(files)=>({statSync:p=>{if(files.includes(String(p).toLowerCase()))return{isFile:()=>true};throw Object.assign(new Error('ENOENT'),{code:'ENOENT'});},realpathSync:{native:p=>p}});
+  const env={Path:'C:\\proj;.;relative\\bin;;"C:\\Program Files\\Git\\cmd";C:\\tools',SystemRoot:'C:\\Windows'};
+  const opts=(files,extra={})=>({env,cwd:'C:\\proj',platform:'win32',fs:W(files),...extra});
+  await test('windows tool: a name planted in the working directory is never chosen, PATH outside it is',()=>{
+    const files=['c:\\proj\\git.exe','c:\\program files\\git\\cmd\\git.exe'];
+    assert.equal(scopeModule.windowsTool('git',opts(files)),'C:\\Program Files\\Git\\cmd\\git.exe');
+    assert.equal(scopeModule.windowsTool('git.exe',opts(files)),'C:\\Program Files\\Git\\cmd\\git.exe');
+  });
+  await test('windows tool: only a copy inside the working directory means not found, as an absolute path that cannot exist',()=>{
+    const missing=scopeModule.windowsTool('git',opts(['c:\\proj\\git.exe']));
+    assert.equal(missing,'C:\\Windows\\System32\\momm-tool-not-found\\git.exe');
+    assert.equal(scopeModule.windowsTool('codex',opts([])),'C:\\Windows\\System32\\momm-tool-not-found\\codex.exe');
+  });
+  await test('windows tool: a PATH entry below the working directory is skipped too',()=>{
+    const e={Path:'C:\\proj\\node_modules\\.bin;C:\\tools',SystemRoot:'C:\\Windows'};
+    assert.equal(scopeModule.windowsTool('grok',{env:e,cwd:'C:\\proj',platform:'win32',fs:W(['c:\\proj\\node_modules\\.bin\\grok.exe','c:\\tools\\grok.exe'])}),'C:\\tools\\grok.exe');
+  });
+  await test('windows tool: system tools come from System32 whatever PATH says',()=>{
+    const files=['c:\\tools\\cmd.exe','c:\\tools\\powershell.exe'];
+    assert.equal(scopeModule.windowsTool('cmd.exe',opts(files)),'C:\\Windows\\System32\\cmd.exe');
+    assert.equal(scopeModule.windowsTool('cmd',opts(files)),'C:\\Windows\\System32\\cmd.exe');
+    assert.equal(scopeModule.windowsTool('taskkill.exe',opts(files)),'C:\\Windows\\System32\\taskkill.exe');
+    assert.equal(scopeModule.windowsTool('powershell.exe',opts(files)),'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  });
+  await test('windows tool: a command that already names a location, and every POSIX command, is left alone',()=>{
+    assert.equal(scopeModule.windowsTool('C:\\x\\y.exe',opts([])),'C:\\x\\y.exe');
+    assert.equal(scopeModule.windowsTool('.\\local.exe',opts([])),'.\\local.exe');
+    assert.equal(scopeModule.windowsTool('git',{env:{PATH:'/usr/bin'},cwd:'/proj',platform:'linux',fs:W([])}),'git');
+  });
+  await test('windows scope.spawn resolves the name, guards the child environment and names cmd.exe absolutely',()=>{
+    const f=fixture('win32');f.proc.env={Path:'C:\\tools',SystemRoot:'C:\\Windows'};f.proc.cwd=()=>'C:\\proj';
+    const seen=[];const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push({c,o});return f.spawn(c,a,o);},spawnSync:()=>({status:0}),fs:W(['c:\\tools\\git.exe','c:\\proj\\git.exe']),...f.clock});
+    scope.spawn('git.exe',['diff'],{cwd:'C:\\proj',env:{Path:'C:\\tools',SystemRoot:'C:\\Windows'}});
+    assert.equal(seen[0].c,'C:\\tools\\git.exe');
+    assert.equal(seen[0].o.env.NoDefaultCurrentDirectoryInExePath,'1','cmd.exe and newer runtimes honour this; it rides along');
+    scope.spawn('npm',['view','x'],{cwd:'C:\\proj',shell:true,env:{Path:'C:\\tools',SystemRoot:'C:\\Windows'}});
+    assert.equal(seen[1].c,'npm','with a shell the command line is cmd.exe\'s to parse');
+    assert.equal(seen[1].o.shell,'C:\\Windows\\System32\\cmd.exe');
+    assert.equal(seen[1].o.env.NoDefaultCurrentDirectoryInExePath,'1');
+  });
+  await test('POSIX scope.spawn passes the command and options through untouched',()=>{
+    const f=fixture('linux');const seen=[];const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push({c,o});return f.spawn(c,a,o);},spawnSync:()=>({status:0}),...f.clock});
+    const env={PATH:'/usr/bin'};scope.spawn('git',['diff'],{env});
+    assert.equal(seen[0].c,'git');assert.equal(seen[0].o.env,env);assert.equal('NoDefaultCurrentDirectoryInExePath' in seen[0].o.env,false);
+  });
 }
 console.log(JSON.stringify({passed:results.length,checks:results,failures,posix_integration:process.platform==='win32'?'not run on Windows':'executed'},null,2));
 if(failures.length)process.exitCode=1;

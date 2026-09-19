@@ -1032,7 +1032,8 @@ function platformCommand(command, args, env = process.env) {
   const packages = { codex: "@openai/codex", claude: "@anthropic-ai/claude-code", copilot: "@github/copilot", gemini: "@google/gemini-cli" };
   const name = path.basename(command).replace(/\.(cmd|bat)$/i, "");
   const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
-  const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, ""));
+  // Absolute PATH entries only: a relative entry or "." would resolve inside the project under review.
+  const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p));
   const dirs = path.dirname(command) !== "." ? [path.dirname(path.resolve(command))] : pathDirs;
   for (const dir of dirs) {
     const native = path.join(dir, `${name}.exe`);

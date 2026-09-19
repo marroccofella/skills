@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProcessScope } from "./process-scope.mjs";
+import { createProcessScope, windowsTool } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
 import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
@@ -539,7 +539,7 @@ function launchTerminal(command) {
   try {
     let child;
     if (process.platform === "win32") {
-      child = spawn("powershell.exe", ["-NoExit", "-NoProfile", "-Command", command], { detached: true, shell: false, stdio: "ignore", windowsHide: false });
+      child = spawn(windowsTool("powershell.exe"), ["-NoExit", "-NoProfile", "-Command", command], { detached: true, shell: false, stdio: "ignore", windowsHide: false });
     } else if (process.platform === "darwin") {
       const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
       child = spawn("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`], { detached: true, shell: false, stdio: "ignore" });
@@ -554,7 +554,7 @@ function launchTerminal(command) {
 
 function openBrowser(url) {
   const invocation = process.platform === "win32"
-    ? ["cmd.exe", ["/d", "/s", "/c", "start", "", url]]
+    ? [windowsTool("cmd.exe"), ["/d", "/s", "/c", "start", "", url]]
     : process.platform === "darwin"
       ? ["open", [url]]
       : ["xdg-open", [url]];
