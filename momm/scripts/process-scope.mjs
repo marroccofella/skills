@@ -16,8 +16,8 @@ if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExeP
 // to spawn on Windows. System tools come from System32; anything else is searched for on the absolute
 // PATH entries that lie outside the working directory; a name found nowhere becomes an absolute path
 // that cannot exist, so the launch fails as an ordinary ENOENT instead of finding a planted file.
-const SYSTEM_TOOLS = new Map([['cmd', 'cmd.exe'], ['cmd.exe', 'cmd.exe'], ['taskkill.exe', 'taskkill.exe'], ['tasklist.exe', 'tasklist.exe'],
-  ['schtasks.exe', 'schtasks.exe'], ['where.exe', 'where.exe'], ['icacls.exe', 'icacls.exe'],
+const SYSTEM_TOOLS = new Map([['cmd', 'cmd.exe'], ['cmd.exe', 'cmd.exe'],
+  ...['taskkill', 'tasklist', 'schtasks', 'where', 'icacls'].flatMap(n => [[n, n + '.exe'], [n + '.exe', n + '.exe']]),
   ['powershell.exe', 'WindowsPowerShell\\v1.0\\powershell.exe'], ['powershell', 'WindowsPowerShell\\v1.0\\powershell.exe']]);
 export function windowsTool(command, { env = process.env, cwd = process.cwd(), platform = process.platform, fs: files = nodeFs } = {}) {
   const name = String(command);
@@ -41,6 +41,23 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
     }
   }
   return win.join(system32, 'momm-tool-not-found', name + (win.extname(name) ? '' : '.exe'));
+}
+
+// The child's PATH, without relative entries and without entries inside the working directory. The
+// guard variable only stops cmd.exe's implicit working-directory search; an explicit "." or an in-project
+// entry would still let cmd.exe, or a grandchild on an older runtime, pick a planted file.
+export function windowsChildEnv(sourceEnv, { cwd = process.cwd(), fs: files = nodeFs } = {}) {
+  const win = nodePath.win32, env = { ...(sourceEnv ?? {}), NoDefaultCurrentDirectoryInExePath: '1' };
+  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return win.resolve(p); } };
+  const root = real(win.resolve(String(cwd || '.'))).toLowerCase();
+  const inside = p => { const rel = win.relative(root, real(p).toLowerCase()); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
+  const keys = Object.keys(env).filter(k => k.toLowerCase() === 'path');
+  if (keys.length) {
+    const cleaned = keys.flatMap(k => String(env[k] ?? '').split(';')).filter(d => { const bare = d.replace(/^"|"$/g, ''); return bare && win.isAbsolute(bare) && !inside(bare); }).join(';');
+    for (const k of keys.slice(1)) delete env[k];
+    env[keys[0]] = cleaned;
+  }
+  return env;
 }
 
 export function createProcessScope(deps = {}) {
@@ -127,8 +144,9 @@ export function createProcessScope(deps = {}) {
       if (proc.platform === 'win32') {
         // The child's own environment decides its PATH; the guard variable rides along for cmd.exe
         // (which honours it on every Windows) and for newer runtimes.
-        const env = { ...(options.env ?? proc.env), NoDefaultCurrentDirectoryInExePath: '1' };
-        const where = { env, cwd: options.cwd ?? proc.cwd?.(), platform: 'win32', fs: deps.fs ?? nodeFs };
+        const cwd = options.cwd ?? proc.cwd?.(), files = deps.fs ?? nodeFs;
+        const env = windowsChildEnv(options.env ?? proc.env, { cwd, fs: files });
+        const where = { env, cwd, platform: 'win32', fs: files };
         if (options.shell) options = { ...options, env, shell: windowsTool(typeof options.shell === 'string' ? options.shell : 'cmd.exe', where) };
         else { command = windowsTool(command, where); options = { ...options, env }; }
       }

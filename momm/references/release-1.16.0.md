@@ -156,7 +156,13 @@ source review, independent retest and the release gates below.
   `cmd.exe` honours on every Windows. The direct launch sites got the same treatment (the governor's
   `git`, the Setup Center's terminal and browser openers, the ledger opener, the update clock), the
   dispatcher's PATH search ignores relative entries, and the CI step now runs under `bash`, which
-  stops at the first failing suite. The guard variable stays as a second layer.
+  stops at the first failing suite. The guard variable stays as a second layer. The fix went through its own
+  delta review (run `rev_20260919182102_p7hw`, three valid reviews): Codex and Grok both raised one
+  real gap, that a PATH entry of `.`, a relative entry, or an entry inside the project would still
+  let `cmd.exe` choose a planted file for shell launches; every child now gets a PATH without such
+  entries. One finding was wrong (the fixture does define `realpathSync.native`; the suite passes
+  here and in CI). CI run 35460503759 shows the planted-`git.exe` test passing on Windows Node 18
+  and Node 20, read from the job logs rather than the badge.
 - Final delta, 19 September (run `rev_20260919104506_po1k` on `b8cef55`: the three round-six fixes,
   10 KB, one piece, `--retry-invalid` on): Codex ACCEPT, Antigravity ACCEPT, Grok ACCEPT, no
   findings, no retry needed. Five suggestions ruled on and logged, none applied, so the reviewed

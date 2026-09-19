@@ -1033,7 +1033,8 @@ function platformCommand(command, args, env = process.env) {
   const name = path.basename(command).replace(/\.(cmd|bat)$/i, "");
   const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
   // Absolute PATH entries only: a relative entry or "." would resolve inside the project under review.
-  const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p));
+  const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p))
+    .filter(p => { const rel = path.relative(process.cwd(), p); return !(rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel))); }); // nor entries inside the project
   const dirs = path.dirname(command) !== "." ? [path.dirname(path.resolve(command))] : pathDirs;
   for (const dir of dirs) {
     const native = path.join(dir, `${name}.exe`);

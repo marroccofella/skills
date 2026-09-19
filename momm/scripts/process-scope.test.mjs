@@ -84,7 +84,7 @@ if(scopeModule) {
     const f=fixture('win32'),budgets=[];let now=9000;
     const source=fs.readFileSync(moduleUrl,'utf8');
     const create=vm.runInNewContext(source.slice(source.indexOf('export function createProcessScope')).replace('export function','function')+'\ncreateProcessScope',
-      {Date:{now:()=>now},setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout,windowsTool:scopeModule.windowsTool,nodeFs:fs});
+      {Date:{now:()=>now},setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout,windowsTool:scopeModule.windowsTool,windowsChildEnv:scopeModule.windowsChildEnv,nodeFs:fs});
     const scope=create({process:f.proc,spawn:f.spawn,spawnSync:(_c,_a,options)=>{budgets.push(options.timeout);now+=1500;return {status:0};}});
     scope.spawn('one',[]);scope.spawn('two',[]);const third=scope.spawn('three',[]);
     now=50000;scope.force();assert.deepEqual(budgets,[2000,500]);
@@ -181,6 +181,21 @@ if(scopeModule) {
     assert.equal(seen[1].c,'npm','with a shell the command line is cmd.exe\'s to parse');
     assert.equal(seen[1].o.shell,'C:\\Windows\\System32\\cmd.exe');
     assert.equal(seen[1].o.env.NoDefaultCurrentDirectoryInExePath,'1');
+  });
+  // Delta review rev_20260919182102_p7hw shell-relative-path-bypass (Codex and Grok): the guard variable
+  // only stops cmd.exe's IMPLICIT working-directory search. A PATH entry of ".", any relative entry, or an
+  // absolute entry inside the project would still let cmd.exe (or a grandchild) pick a planted file.
+  await test('windows scope.spawn gives every child a PATH without relative or in-project entries',()=>{
+    const f=fixture('win32');f.proc.env={};f.proc.cwd=()=>'C:\\proj';
+    const seen=[];const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push({c,o});return f.spawn(c,a,o);},spawnSync:()=>({status:0}),fs:W(['c:\\tools\\git.exe']),...f.clock});
+    const dirty={PATH:'.;C:\\proj;C:\\proj\\node_modules\\.bin;relative\\bin;;"C:\\Program Files\\Git\\cmd";C:\\tools',SystemRoot:'C:\\Windows'};
+    scope.spawn('npm',['view','x'],{cwd:'C:\\proj',shell:true,env:dirty});
+    scope.spawn('git',['diff'],{cwd:'C:\\proj',env:dirty});
+    for(const s of seen){assert.equal(s.o.env.PATH,'"C:\\Program Files\\Git\\cmd";C:\\tools','kept entries keep their original spelling, quotes included');assert.equal(Object.keys(s.o.env).filter(k=>k.toLowerCase()==='path').length,1,'one PATH key, original spelling kept');}
+    assert.equal(dirty.PATH.startsWith('.;'),true,'the caller\'s object is never mutated');
+  });
+  await test('windows tool: system tools are recognised with or without the extension',()=>{
+    for(const n of ['taskkill','tasklist','schtasks','where','icacls']) assert.equal(scopeModule.windowsTool(n,opts([])),'C:\\Windows\\System32\\'+n+'.exe');
   });
   await test('POSIX scope.spawn passes the command and options through untouched',()=>{
     const f=fixture('linux');const seen=[];const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push({c,o});return f.spawn(c,a,o);},spawnSync:()=>({status:0}),...f.clock});

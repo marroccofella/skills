@@ -252,7 +252,7 @@ try {
     const artifact='diff --git a/x.txt b/x.txt\n';
     const fakeFs={realpathSync:legacy,statSync:()=>({isFile:()=>true,size:8}),readFileSync:()=>Buffer.from('fixture\n')};
     const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replace('export function','function')+';captureSourceSnapshot',
-      {fs:fakeFs,path:path.win32,process:{platform:'win32',env:{Path:'Q:\\git\\cmd'}},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>({status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
+      {fs:fakeFs,path:path.win32,process:{platform:'win32',env:{Path:'Q:\\git\\cmd'}},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>(assert.equal(_cmd,'Q:\\git\\cmd\\git.exe','Git is launched by its absolute PATH location, never by bare name'),{status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
     const result=capture('Q:\\RUNNER~1\\repo',artifact);assert.equal(result.complete,true,result.reason);
     assert.match(capture('Q:\\RUNNER~1\\repo\\child',artifact).reason,/repository root/);
   });
