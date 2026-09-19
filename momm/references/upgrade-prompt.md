@@ -22,8 +22,10 @@ ask before installing a missing verifier.
 Read the maintained new/legacy bootstrap guide at
 https://github.com/marroccofella/skills/blob/momm-1.16.0/momm/references/bootstrap.md.
 Do not mistake GitHub's bad_cert/Unverified badge for a gitsign verification result.
-If gitsign is missing, no signature check ran; on macOS ask before using the
-official Homebrew installation. If a real signature, identity, transparency or
+If gitsign is missing, no signature check ran. That is normal on a first install:
+explain in one or two plain sentences what gitsign is and that it is a one-time step,
+ask once, then install it exactly as the guide's "Getting the verifier" section says for
+my system (Windows included), from the official sigstore/gitsign release only. If a real signature, identity, transparency or
 hash check fails, stop. A verified commit badge does not replace these checks.
 Older releases lack bootstrap.mjs: obtain and independently inspect/trust the
 small standalone helper before executing it, or use an organization-reviewed
