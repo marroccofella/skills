@@ -497,6 +497,9 @@ test("a linked parent directory is refused like a linked file (guidance-nofollow
   assert.deepEqual(counted.value.notices, [".momm/guidance.json skipped: file is behind a symbolic link (.momm)"]);
   assert.throws(() => trustProject(f.cwd, { home: f.home }), /symbolic link|nothing trusted/, "a linked file is never offered for trust");
   assert.deepEqual(readBoundedBytes(projectFile(f.cwd), 1024, { followLinks: false, within: f.cwd }), { error: "is behind a symbolic link (.momm)" });
+  // A file that is not below the project root at all is refused by name, the root itself too.
+  assert.deepEqual(readBoundedBytes(path.join(outside, "guidance.json"), 1024, { followLinks: false, within: f.cwd }), { error: "is outside the project" });
+  assert.deepEqual(readBoundedBytes(f.cwd, 1024, { followLinks: false, within: f.cwd }), { error: "is outside the project" });
   // A swap between the check and the open (Windows has no no-follow open): the descriptor that was
   // opened is not the file that was checked, so nothing is read from it.
   const g = fixture(), rules = rulesFile(g.cwd), other = path.join(g.home, "other.txt");

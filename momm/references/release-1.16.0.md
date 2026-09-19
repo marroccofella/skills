@@ -91,6 +91,36 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Gate rerun five, 19 September (run `rev_20260919044643_2l49` on `b598bb5`: the 7 pieces that
+  missed quorum plus the round-four changes, 644 KB in 23 pieces, same three routes, 77 minutes):
+  quorum on 17 of 23 pieces, so the gate has still **not passed**. 76 findings and 116 suggestions,
+  all 192 ruled on and logged: 20 findings fixed or their tests strengthened (each reproduced first), 49 rejected with
+  evidence, 7 deferred. All 4 marked critical were wrong: two said Copilot attachment names reach `cmd.exe`
+  (staged files are renamed `attachment-<n><ext>` in a private folder, and Copilot is launched as
+  `node.exe` plus the verified package entry without a shell; a `.cmd` shim with no verifiable
+  package is refused; checked with a folder named `bin & echo BIN_INJECTED`); the two stale comments
+  that caused the reading are corrected; one said the Setup Center cannot start a session (the token
+  arrives in the launch URL fragment and is sent on the first request: 403 without it, 200 with
+  it); one said `clockPost` returns nothing (it returns its value; the reviewer saw a cut piece).
+  Real defects fixed: a lock file holding an impossible process id was read as a live owner for
+  ever; a failed update left its error showing after a later success; removing the macOS timer left
+  its plist, so the timer came back at next login; the updater looked for a tool on the parent's
+  PATH instead of the child's; null settings threw a bare TypeError; a failed version read lost its
+  reason when a probe ran; after an apply the Setup Center showed the old installed versions for up
+  to ten minutes; a ledger rebuild that threw left the previous exit code beside the error; Copilot
+  output that is not an event stream could be pattern-matched as a login problem and echoed;
+  `--jobs 2foo` was read as 2; a modality probe record with an unreadable time stayed "latest" for
+  ever; `x.constructor` was accepted as a media extension (inherited property lookup; routing
+  refused it later); the privacy scanner missed upper-case URL schemes (a false positive that failed
+  closed, not a leak). CI found a clock-dependent probe test on macOS Node 20 (fixed in `734cfe6`).
+  One protocol slip to record: while checking `--timeout`, a triage agent ran the dispatcher with
+  `--timeout -5` in a scratch folder; the parser clamps that to one second, so Codex was started
+  for about one second against a two-byte dummy file containing `x`, then timed out. No project
+  source was sent. Reviewer reliability across the five gate runs: 285 reviews succeeded and 120
+  failed (30%); 70 of the 120 were exact-quote contract rejections. At that rate roughly one piece
+  in five misses a two-of-three quorum in any single run, which is what every rerun has shown, so
+  reruns alone will not make every piece pass in one run. How to close the gate is the owner's
+  decision and is not changed here.
 - Full-source gate rerun, 19 September (run `rev_20260919023950_h6hn`: the 12 pieces that missed
   quorum plus every file the round-three fixes touched, 826 KB in 28 pieces, same three routes):
   quorum on 21 of 28 pieces, so the gate has still **not passed**; the seven misses were again
@@ -352,7 +382,7 @@ Added to the candidate on 2026-09-13 evening at the owner's direction: MOMM must
   - Six runs failed in turn on runner assumptions the suites had baked in, each fixed by making the assertion environment-independent rather than skipping it: (1) clock tests inherited the runner's `NO_UPDATE_CHECK`; (2) the updater's review-log path test compared against macOS `/private` real paths; (3) the probes tree-kill test detached a grandchild on POSIX; (4) a Windows 8.3 temp path in the update table assertion; (5) the manifest still said 1.15.1; (6) the 1.16.0 changelog entry was missing from the release catalogue.
   - The seventh run, [34780254256](https://github.com/marroccofella/skills/actions/runs/34780254256) on `2fa8bac`, passed all nine jobs: self-test on ubuntu-latest, macos-latest and windows-latest × Node 18.x, 20.x and 22.x.
   - That head merges `main` (the 1.15.1 release record and the walkthrough page work). The conflicts were the generated pages and the release catalogue, resolved by taking main's catalogue plus the 1.16.0 version-notes entry and regenerating. The visuals test on main asserted the CURRENT STABLE banner unconditionally and now follows the catalogue's publication state.
-  - GitHub runs no `pull_request` checks while a PR conflicts with its base, which is why the run before the merge never appeared. A green matrix on one head is evidence for that head only: every commit after `2fa8bac` (the E7 work and anything the gate changes) needs its own nine-job run, and the SHA that `momm-release.mjs --prepare` seals must be the one whose matrix passed — the release workflow does not run the matrix itself; it refuses to sign unless a completed, successful self-test run already exists for that exact commit on the push event (main after merge), so a green PR run is necessary but not what the seal checks.
+  - GitHub runs no `pull_request` checks while a PR conflicts with its base, which is why the run before the merge never appeared. A green matrix on one head is evidence for that head only: every commit after `2fa8bac` (the E7 work and anything the gate changes) needs its own full matrix run (nine jobs then, ten since the Windows Node 24 job was added on 16 September), and the SHA that `momm-release.mjs --prepare` seals must be the one whose matrix passed — the release workflow does not run the matrix itself; it refuses to sign unless a completed, successful self-test run already exists for that exact commit on the push event (main after merge), so a green PR run is necessary but not what the seal checks.
 - Sealing checklist item from the full-source gate: pin the bootstrap links in `bootstrap.md` and `upgrade-prompt.md` to the signed `momm-1.16.0` tag (they point at `main` until a tag containing `bootstrap.mjs` exists).
 - Still owed before release: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
 

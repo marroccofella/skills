@@ -722,6 +722,17 @@ try {
     assert.equal(lines.length, 2); assert.equal(lines[1].schema, MODALITY_PROBE_SCHEMA); assert.equal(lines[1].cells[0].status, "verified");
     assert.equal(latestProbes(root).codex.schema, "momm-probe/1", "the newer modality record does not become the latest canary");
   });
+  await test("a_modality_record_without_a_readable_time_never_holds_the_latest_slot", async () => {
+    // Gate round five [30]: Date.parse("not-a-date") is NaN and every comparison with NaN is
+    // false, so one malformed line stayed "latest" for that CLI whatever was recorded after it.
+    const { latestModalityProbes } = await import("./probes.mjs");
+    const root = path.join(fixture, "modality-latest-root"); fs.mkdirSync(path.join(root, path.dirname(PROBES_FILE)), { recursive: true });
+    const row = (at, verdict) => JSON.stringify({ schema: MODALITY_PROBE_SCHEMA, cli: "codex", at, verdict, cells: [] });
+    fs.writeFileSync(path.join(root, PROBES_FILE), [row("not-a-date", "malformed"), row("2026-09-01T10:00:00.000Z", "older"), row("2026-09-02T10:00:00.000Z", "newest"), row("also bad", "malformed")].join("\n") + "\n");
+    assert.equal(latestModalityProbes(root).codex?.verdict, "newest");
+    fs.writeFileSync(path.join(root, PROBES_FILE), row("not-a-date", "malformed") + "\n");
+    assert.equal(latestModalityProbes(root).codex, undefined, "a record with no readable time is not a latest result at all");
+  });
   await test("synthetic_material_is_well_formed", () => {
     const png = syntheticPng("yellow");
     assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a"); assert.equal(png.readUInt32BE(16), 64); assert.equal(png.readUInt32BE(20), 64);

@@ -59,7 +59,7 @@ function writeJSON(file, value) { fs.mkdirSync(path.dirname(file), { recursive: 
 // ---- settings (~/.momm/settings.json) ---------------------------------------
 export const settingsFile = (home = os.homedir()) => path.join(home, ".momm", "settings.json");
 export function validateSettings(s) {
-  if (!s || typeof s !== "object" || typeof s.auto_update !== "object" || typeof s.clock !== "object") throw new Error("settings must contain auto_update and clock objects");
+  if (!s || typeof s !== "object" || !s.auto_update || typeof s.auto_update !== "object" || !s.clock || typeof s.clock !== "object") throw new Error("settings must contain auto_update and clock objects");
   for (const k of Object.keys(DEFAULT_SETTINGS.auto_update)) if (typeof s.auto_update[k] !== "boolean") throw new Error(`auto_update.${k} must be true or false`);
   for (const k of Object.keys(DEFAULT_SETTINGS.clock)) if (!Number.isInteger(s.clock[k]) || s.clock[k] < 60_000) throw new Error(`clock.${k} must be an integer >= 60000 ms`);
   if (s.clock.min_interval_ms > s.clock.max_interval_ms) throw new Error("clock.min_interval_ms must not exceed clock.max_interval_ms");
@@ -97,12 +97,15 @@ const freshEntry = min => ({ last_checked_at: null, next_due_at: 0, interval_ms:
 // process won). Filesystems without hard links fall back to an exclusive open
 // followed immediately by the write; the 2 s grace below covers that gap, and a
 // pid-less lock older than the grace is a crashed writer. A corrupt lock must
-// never throw: it would wedge every later run behind an unowned lock.
+// never throw: it would wedge every later run behind an unowned lock. A pid no
+// process can have (above 2^31-1) is corrupt as well: process.kill rejects it with
+// ERR_INVALID_ARG_TYPE, which the liveness check would otherwise read as "alive".
+const MAX_PID = 0x7fffffff;
 function readLockOwner(file) {
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch (e) { return e.code === "ENOENT" ? { gone: true } : { corrupt: "unreadable" }; }
   if (!text.trim()) return { corrupt: "empty", text };
-  try { const pid = JSON.parse(text)?.pid; return Number.isInteger(pid) && pid > 0 ? { pid, text } : { corrupt: "corrupt (no usable pid)", text }; } catch { return { corrupt: "truncated or corrupt JSON", text }; }
+  try { const pid = JSON.parse(text)?.pid; return Number.isInteger(pid) && pid > 0 && pid <= MAX_PID ? { pid, text } : { corrupt: "corrupt (no usable pid)", text }; } catch { return { corrupt: "truncated or corrupt JSON", text }; }
 }
 // Removes the lock that was INSPECTED, never one published since. Between the inspection
 // and the removal another process may reclaim the same stale lock and publish its own; an
@@ -349,6 +352,7 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
       entry.consecutive_unchanged = outcome === "unchanged" ? entry.consecutive_unchanged + 1 : 0;
       entry.last_error = null;
     } catch (e) { outcome = "error"; entry.last_error = safeText(e.message).slice(0, 300); }
+    delete entry.last_error_from; // whatever stands now came from this check, not from an apply
     schedule(entry, outcome, t, settings.clock);
     return { name: source.name, outcome, latest: entry.last_seen_version, installed: installedFor(source), error: entry.last_error };
   }
@@ -460,12 +464,16 @@ async function applyLocked(clock, out, staleSettings, lockNotices, deps) {
       if (row.latest) commandRanFor[row.name] = row.latest;
       // The update has happened: a failing version read or probe is recorded on this
       // row, never allowed to lose the accounting or stop the remaining updates.
-      let version = null, probe = null;
-      try { version = semver(await versionOf(cli)); } catch (e) { probe = { status: "error", error: `version read failed: ${safeText(e.message).slice(0, 200)}` }; }
-      if (postUpdateProbe) { try { probe = await postUpdateProbe(cli); } catch (e) { probe = { status: "error", error: safeText(e.message).slice(0, 300) }; } }
+      let version = null, probe = null, versionError = null;
+      try { version = semver(await versionOf(cli)); } catch (e) { versionError = `version read failed: ${safeText(e.message).slice(0, 200)}`; probe = { status: "error", error: versionError }; }
+      if (postUpdateProbe) {
+        try { probe = await postUpdateProbe(cli); } catch (e) { probe = { status: "error", error: safeText(e.message).slice(0, 300) }; }
+        // The probe result replaces the row above; the reason the version is unknown rides along.
+        if (versionError) probe = { ...(probe && typeof probe === "object" ? probe : { status: probe ?? null }), version_error: versionError };
+      }
       if (version) clock.setInstalled(cli, version);
       out.applied.push({ name: row.name, command, from: row.installed, to: version, probe });
-      note(row.name, "applied", `${cli} updated ${row.installed} -> ${version || "unknown"} via '${command}'${probe ? `; probe ${probe.status || JSON.stringify(probe)}${probe.error ? ` (${probe.error})` : ""}` : ""}`, { probe });
+      note(row.name, "applied", `${cli} updated ${row.installed} -> ${version || "unknown"} via '${command}'${probe ? `; probe ${probe.status || JSON.stringify(probe)}${probe.error ? ` (${probe.error})` : ""}${probe.version_error ? ` (${probe.version_error})` : ""}` : ""}`, { probe });
     } else if (row.kind === "models" && settings.auto_update.models && row.new_models) {
       for (const [route, list] of Object.entries(row.new_models)) if (list.length) note(row.name, "recorded", `new models available for ${route}: ${list.join(", ")} (configured models unchanged)`);
       reportedModels.push(row.name);
@@ -484,12 +492,15 @@ async function applyLocked(clock, out, staleSettings, lockNotices, deps) {
       // Every successful apply retires the source's pre-update hint: a hint-only source
       // (no version on either side) would otherwise re-run the updater on every pass.
       delete entry.update_available_hint;
+      // A failure an earlier apply left behind is over. A CHECK error is kept: it may be
+      // from this very pass, and only the next successful check answers it.
+      if (entry.last_error_from === "apply") { entry.last_error = null; delete entry.last_error_from; }
       if (a.name === "skill") entry.needs_protocol_acceptance = false;
       else { if (commandRanFor[a.name]) entry.update_command_ran_for = commandRanFor[a.name]; }
     }
     // Model discoveries are reported once: the seen set is retired after recording.
     for (const m of reportedModels) if (state.sources[m]) delete state.sources[m].new_models;
-    for (const f of out.failed) if (state.sources[f.name]) state.sources[f.name].last_error = f.reason;
+    for (const f of out.failed) if (state.sources[f.name]) { state.sources[f.name].last_error = f.reason; state.sources[f.name].last_error_from = "apply"; }
     state.history.push(...history);
     writeState(clock.stateFile, state);
   }
@@ -546,7 +557,12 @@ async function timerAction(action, { platform = process.platform, nodePath = pro
   if (confirm !== true) return { done: false, reason: "confirm: true required; nothing registered", command: cmd[action] };
   if (action === "install" && cmd.plist_path) { fs.mkdirSync(path.dirname(cmd.plist_path), { recursive: true, mode: 0o700 }); atomic(cmd.plist_path, cmd.plist); }
   const p = cmd.argv ? await exec(systemTool("schtasks.exe"), cmd.argv[action], { timeout: 60_000 }) : await exec(cmd[action], [], { shell: true, timeout: 60_000 });
-  return { done: p.code === 0, command: cmd[action], code: p.code, stderr: safeText(p.stderr || "").slice(-300) };
+  const result = { done: p.code === 0, command: cmd[action], code: p.code, stderr: safeText(p.stderr || "").slice(-300) };
+  // launchd loads every plist in ~/Library/LaunchAgents at the next login, so an unload
+  // alone would bring the timer back. The file goes after the unload (which names it),
+  // and also when the unload failed because the agent was not loaded.
+  if (action === "remove" && cmd.plist_path) { try { fs.rmSync(cmd.plist_path, { force: true }); result.plist_removed = !fs.existsSync(cmd.plist_path); } catch { result.plist_removed = false; } }
+  return result;
 }
 export const installTimer = opts => timerAction("install", opts);
 export const removeTimer = opts => timerAction("remove", opts);

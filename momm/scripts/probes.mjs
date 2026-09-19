@@ -465,7 +465,9 @@ export function latestModalityProbes(root) {
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim()) continue;
     let entry; try { entry = JSON.parse(raw); } catch { continue; }
-    if (!entry?.cli || !entry.at || entry.schema !== MODALITY_PROBE_SCHEMA) continue;
+    // As in latestProbes: a time that does not parse is NaN, and NaN wins or loses no comparison,
+    // so such a record would keep the slot against everything recorded after it.
+    if (!entry?.cli || entry.schema !== MODALITY_PROBE_SCHEMA || !Number.isFinite(Date.parse(entry.at))) continue;
     if (!latest[entry.cli] || Date.parse(entry.at) >= Date.parse(latest[entry.cli].at)) latest[entry.cli] = entry;
   }
   return latest;

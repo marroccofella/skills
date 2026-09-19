@@ -407,6 +407,37 @@ await test('setup.open and setup.check apply updates after the check when enable
   const broken=fakeClock(true,async()=>{throw new Error('registry down');});
   assert.equal(await c.trigger(broken,'setup.check'),null);assert.equal(seen.applyDeps.length,2);assert.equal(c.activity.last_error,'registry down');
 });
+// Gate rev_20260919044643_2l49 apply-stale-installed-versions: the Modalities overlay is bound to
+// the installed semver, so an apply pass must drop the ten-minute version cache along with the
+// maintenance cache; a disabled apply changed nothing and keeps it.
+await test('an apply pass drops the cached installed versions; a disabled apply keeps them',async()=>{
+  const {c}=clockSlice({applyResult:()=>({applied:[{name:'cli:codex',from:'1.0.0',to:'1.1.0',probe:{status:'pass',cli_version:'1.1.0'}}],skipped:[],failed:[],notices:[]})});
+  const seed=()=>vm.runInContext('installedVersionsCache={at:Date.now(),value:{codex:"1.0.0"}};',c);
+  const cached=()=>vm.runInContext('installedVersionsCache',c);
+  seed();const off=await c.handle({op:'apply'},fakeClock(false),{});
+  assert.equal(off.status,200);assert.equal(cached()?.value?.codex,'1.0.0','control: nothing was applied, so the cache stands');
+  const on=await c.handle({op:'apply'},fakeClock(true),{});
+  assert.equal(on.status,200);assert.equal(on.value.applied.length,1);
+  assert.equal(cached(),null,'the pre-update version must not outlive the apply pass');
+  seed();await c.trigger(fakeClock(true),'setup.check');
+  assert.equal(cached(),null,'the event path applies through the same pass');
+});
+// Gate rev_20260919044643_2l49 ledger-throw-stale-exit-code: a rebuild that throws after a clean
+// one must not leave last_exit_code 0 beside the failure, and an empty message is still a failure
+// (GET /ledger reads a falsy last_error with exit code 0 as a good rebuild).
+await test('a throwing ledger rebuild clears the previous exit code and always records a reason',async()=>{
+  const a=source.indexOf('function createLedgerWatcher('),b=source.indexOf('\nfunction isLoopback(',a);assert(a>=0&&b>a);
+  const make=vm.runInNewContext(source.slice(a,b)+';createLedgerWatcher',{fs,path,Promise,Date,Math,String,setTimeout,clearTimeout,safeDetail:v=>String(v||'').trim(),LEDGER_FILES:new Set(['review-log.jsonl']),LEDGER_MIN_GAP_MS:0});
+  for(const message of ['spawn failed','']){
+    let runs=0;
+    const watcher=make({dir:os.tmpdir(),minGapMs:0,run:async()=>{if(runs++===0)return {code:0,stderr:''};throw new Error(message);}});
+    const first=await watcher.rebuild();
+    assert.equal(first.last_exit_code,0);assert.equal(first.last_error,null,'control: a clean rebuild records exit 0 and no error');
+    const second=await watcher.rebuild();
+    assert.equal(second.last_exit_code,null,`"${message}": the previous run's exit code must not stand beside a failure`);
+    assert.equal(second.last_error,message||'ledger rebuild threw');assert.equal(second.regenerations,1);assert.equal(second.running,false);
+  }
+});
 // guidance-body-limit-unenforced: saveGuidance answers 413 for a file over the cap,
 // and the route hands that status to the page untouched.
 await test('the guidance route passes a 413 from saveGuidance through untouched',async()=>{

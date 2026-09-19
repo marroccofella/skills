@@ -14,7 +14,7 @@ function publicTextFiles(relative) {
 // The root and skill READMEs are version surfaces of the release flow, so they are public text too.
 const files = [...publicTextFiles('docs'), ...publicTextFiles('momm/references'), 'README.md', 'momm/README.md', 'momm/scripts/capabilities.test.mjs', 'momm/scripts/modality.test.mjs'];
 // Web URLs are blanked first: their path segments are not directories on anyone's machine.
-const withoutWebUrls = source => source.replace(/\bhttps?:\/\/[^\s"'`<>)\]]+/g, ' ');
+const withoutWebUrls = source => source.replace(/\bhttps?:\/\/[^\s"'`<>)\]]+/gi, ' ');
 const homeNames = source => [...withoutWebUrls(source).matchAll(/(?:[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+|\/(?:home|Users)\/)([^\\/\s"'`<>]+)/g)].map(m => m[1]);
 // Scanner controls (gate rev_20260919000938_1nkh privacy-scan-case-and-allowlist): Windows paths are
 // case-insensitive, so a lower-case drive path names a machine identity just the same.
@@ -26,6 +26,9 @@ assert.deepEqual(homeNames('https://api.example.invalid/users/octocat'), [], 'a 
 // Gate rev_20260919023950_h6hn url-users-false-positive / privacy-url-negative-untested: web URLs are removed
 // before scanning whatever their spelling; file URLs and nested mount paths still name a machine.
 for (const url of ['https://example.invalid/Users/octocat', 'http://example.invalid/home/octocat/repo', '[docs](https://example.invalid/a/Users/octocat).']) assert.deepEqual(homeNames(url), [], url);
+// Gate rev_20260919044643_2l49 privacy-url-scheme-case: a URL scheme is case-insensitive (RFC 3986 section 3.1).
+for (const url of ['HTTPS://example.invalid/Users/octocat', 'Http://example.invalid/home/octocat/repo']) assert.deepEqual(homeNames(url), [], url);
+assert.deepEqual(homeNames('open FILE:///Users/someone/notes.md'), ['someone'], 'a file URL names a machine whatever its case');
 assert.deepEqual(homeNames('open file:///Users/someone/notes.md'), ['someone']);
 assert.deepEqual(homeNames('cd /mnt/c/Users/someone/project'), ['someone']);
 assert.deepEqual(homeNames('https://example.invalid/x then /home/someone/y'), ['someone'], 'text after a URL is still scanned');

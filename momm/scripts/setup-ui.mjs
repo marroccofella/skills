@@ -982,6 +982,9 @@ function recordApply(event, apply, enabled) {
 async function applyPass(clock, event, deps) {
   const apply = recordApply(event, annotateApply(await applyUpdates(clock, applyDeps(deps))), true);
   maintenanceCache = null; // installed versions may have changed
+  // The Modalities overlay is bound to the installed version: a pre-update semver kept
+  // for the rest of its ten minutes would let an entry probed on the old binary stand.
+  installedVersionsCache = null;
   return apply;
 }
 
@@ -1243,7 +1246,12 @@ function createLedgerWatcher({ dir, run, debounceMs = 1500, minGapMs = LEDGER_MI
       state.last_error = result && result.code !== 0 ? (safeDetail(result.stderr) || `exit ${result.code}`) : null;
       state.last_regenerated_at = new Date().toISOString();
       state.regenerations += 1;
-    } catch (error) { state.last_error = safeDetail(error.message); }
+    } catch (error) {
+      // A rebuild that threw has no exit code: the previous run's 0 must not stand
+      // beside this failure, and an empty message must still read as a failure.
+      state.last_exit_code = null;
+      state.last_error = safeDetail(error?.message) || "ledger rebuild threw";
+    }
     finally {
       state.running = false;
       // A notification that arrived mid-run is honored only while the watcher

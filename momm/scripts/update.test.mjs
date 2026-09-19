@@ -347,9 +347,29 @@ try {
     fs.copyFileSync(process.execPath, path.join(dir, "git.exe"));
     const child = path.join(checkFixture, "planted-git-child.mjs"), env = { ...process.env };
     for (const key of Object.keys(env)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete env[key];
-    fs.writeFileSync(child, `import { run } from ${JSON.stringify(new URL("./update.mjs", import.meta.url).href)};\nprocess.stdout.write(run("git", ["--version"], process.cwd()));\n`);
+    // Gate-5 [61]: importing update.mjs sets the variable again (the inline launch guard), and that
+    // alone keeps the working directory out of the search, so the resolver went untested. The child
+    // removes it after the import and reports that it is gone: run() must pass on resolveTool alone.
+    fs.writeFileSync(child, `import { run } from ${JSON.stringify(new URL("./update.mjs", import.meta.url).href)};\ndelete process.env.NoDefaultCurrentDirectoryInExePath;\nprocess.stdout.write(JSON.stringify({ guard: process.env.NoDefaultCurrentDirectoryInExePath ?? null, out: run("git", ["--version"], process.cwd()) }));\n`);
     const p = spawnSync(process.execPath, [child], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 30_000 });
-    assert.equal(p.status, 0, p.stderr); assert.match(p.stdout, /^git version /, `the planted executable answered: ${p.stdout.trim()}`);
+    assert.equal(p.status, 0, p.stderr); const r = JSON.parse(p.stdout);
+    assert.equal(r.guard, null, "the child must run without the launch guard, or the resolver is not what is being tested");
+    assert.match(r.out, /^git version /, `the planted executable answered: ${r.out.trim()}`);
+  });
+  await test("windows_run_resolves_a_tool_on_the_path_given_to_the_child", () => {
+    // Gate-5 [58]: run() resolved against the parent's PATH while spawnSync searched options.env,
+    // so a tool present only on the child's PATH was refused as missing before it was started.
+    if (process.platform !== "win32") return;
+    const tools = path.join(checkFixture, "child-path-tools"), work = path.join(checkFixture, "child-path-work"); fs.mkdirSync(tools, { recursive: true }); fs.mkdirSync(work, { recursive: true });
+    fs.copyFileSync(process.execPath, path.join(tools, "mommgate5probe.exe")); // harmless stand-in executable
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.toLowerCase() === "path") delete env[key];
+    env.PATH = tools;
+    assert.match(run("mommgate5probe", ["--version"], work, { env }), /^v\d+\./);
+    assert.throws(() => run("mommgate5probe", ["--version"], work), e => e.code === "ENOENT", "absent from the parent PATH: still refused without the child environment");
+    // The working-directory rule holds for the child's PATH as well.
+    fs.copyFileSync(process.execPath, path.join(work, "mommgate5planted.exe"));
+    assert.throws(() => run("mommgate5planted", ["--version"], work, { env: { ...env, PATH: work } }), e => e.code === "ENOENT");
   });
   await test("windows_installers_never_run_a_harness_launcher_planted_in_the_working_directory", () => {
     // Both installers probe `gemini --version` through cmd.exe, which looks in the working

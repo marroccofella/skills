@@ -692,7 +692,7 @@ await test("async-api-uses-spawnsync: defaultExec/defaultRunUpdater return pendi
   assert(gpid > 0, `grandchild pid reported: ${JSON.stringify(killed.stdout)}`);
   await new Promise(r => setTimeout(r, 300));
   let alive = true; try { process.kill(gpid, 0); } catch (e) { alive = e.code !== "ESRCH" && process.platform !== "win32" ? true : false; }
-  if (process.platform === "win32") { const q = spawnSync("tasklist", ["/FI", `PID eq ${gpid}`, "/NH"], { encoding: "utf8" }); alive = new RegExp(`\\b${gpid}\\b`).test(q.stdout); }
+  if (process.platform === "win32") { const q = spawnSync("tasklist", ["/FI", `PID eq ${gpid}`, "/NH"], { encoding: "utf8" }); assert.equal(q.status, 0, `tasklist did not run: ${q.error?.message || q.stderr}`); assert.match(q.stdout || "", /\S/, "tasklist printed nothing"); alive = new RegExp(`\\b${gpid}\\b`).test(q.stdout); }
   assert.equal(alive, false, `grandchild ${gpid} survived the tree kill`);
   const u = defaultRunUpdater(["--bogus-option"]);
   assert(util.inspect(u).includes("pending"), "defaultRunUpdater is asynchronous too");
@@ -814,6 +814,8 @@ await test("gate4 [1]: the timeout tree kill uses System32 taskkill, never a tas
     assert.equal(r.timedOut, true); assert(gpid > 0, `grandchild pid reported: ${p.stdout}`);
     await new Promise(done => setTimeout(done, 400));
     const q = spawnSync(tasklist, ["/FI", `PID eq ${gpid}`, "/NH"], { encoding: "utf8", windowsHide: true });
+    // tasklist always answers (a row, or "INFO: No tasks ..."): silence means it never ran, which proves nothing.
+    assert.equal(q.status, 0, `tasklist did not run: ${q.error?.message || q.stderr}`); assert.match(q.stdout || "", /\S/, "tasklist printed nothing, so the pid was never looked up");
     assert.equal(new RegExp(`\\b${gpid}\\b`).test(q.stdout), false, `grandchild ${gpid} survived: the planted taskkill.exe ran instead of the System32 tool`);
   } finally { if (gpid > 0) { try { process.kill(gpid, "SIGKILL"); } catch {} } }
 });
@@ -872,6 +874,69 @@ await test("gate4 [2]: a hint-only skill update is applied once, not on every la
   const second = await applyUpdates(e.clock, deps);
   assert.equal(applies, 1, "the signed updater ran again for the same hint"); assert.equal(second.applied.length, 0);
   assert.equal(readState(e.stateFile).sources.skill.update_available_hint, undefined, "the pre-update hint is retired by the apply");
+});
+
+// ---- momm run rev_20260919044643_2l49 (gate 5) reproductions -----------------
+await test("gate5 [51]: a lock whose pid no process can have is corrupt, never a live owner that wedges every later run", async () => {
+  for (const pid of [Number.MAX_SAFE_INTEGER, 2 ** 31]) {
+    // The premise: Node rejects such a pid outright, and every error but ESRCH reads as "alive".
+    assert.throws(() => process.kill(pid, 0), e => e.code !== "ESRCH", `process.kill(${pid}, 0) is expected to reject the argument`);
+    const e = env({ responses: { [MANIFEST_URL]: ok("1.15.1") }, sources: [skillSource()] });
+    fs.mkdirSync(path.dirname(e.stateFile), { recursive: true });
+    fs.writeFileSync(`${e.stateFile}.lock`, JSON.stringify({ pid })); aged(`${e.stateFile}.lock`);
+    const r = await e.clock.trigger("manual");
+    assert.equal(r.ran, true, `pid ${pid}: the corrupt lock was treated as held (${r.skipped_reason})`);
+    assert.match(readState(e.stateFile).history.find(h => h.source === "lock")?.notice || "", /corrupt \(no usable pid\)/);
+    assert.equal(fs.existsSync(`${e.stateFile}.lock`), false);
+  }
+});
+await test("gate5 [53]: a successful apply clears the failure an earlier apply left, but never a check error", async () => {
+  const e = env({ responses: { [CODEX_URL]: ok("0.155.0") }, sources: [npmSource("codex")] });
+  writeSettings(e.home, { auto_update: { enabled: true } }); await e.clock.trigger("manual");
+  await applyUpdates(e.clock, { exec: async () => ({ code: 1, stdout: "", stderr: "boom" }) });
+  assert.equal(e.clock.status().sources[0].last_error, "exit 1", "precondition: the failed apply is reported");
+  // The source is not due again, so no check clears the row before the retry succeeds.
+  const done = await applyUpdates(e.clock, { exec: async () => ({ code: 0, stdout: "", stderr: "" }), versionOf: async () => "codex-cli 0.155.0" });
+  assert.equal(done.applied.length, 1);
+  assert.equal(e.clock.status().sources[0].last_error, null, "status still reported the failure of the apply that has since succeeded");
+  assert.equal("last_error_from" in readState(e.stateFile).sources["cli:codex"], false);
+  // A check error of the same pass is not an apply failure: it stays until a check succeeds.
+  const e2 = env({ responses: { [CODEX_URL]: ok("0.155.0") }, sources: [npmSource("codex")] });
+  writeSettings(e2.home, { auto_update: { enabled: true } }); await e2.clock.trigger("manual");
+  e2.responses[CODEX_URL] = { throw: "socket hang up" }; await e2.clock.trigger("manual");
+  const kept = await applyUpdates(e2.clock, { exec: async () => ({ code: 0, stdout: "", stderr: "" }), versionOf: async () => "codex-cli 0.155.0" });
+  assert.equal(kept.applied.length, 1); assert.match(e2.clock.status().sources[0].last_error, /socket hang up/);
+});
+await test("gate5 [54]/[57]: removing the macOS timer deletes the LaunchAgent plist, so the next login cannot load it again", async () => {
+  const home = path.join(fixture, "mac home"), execs = [];
+  const opts = { platform: "darwin", nodePath: "/usr/local/bin/node", scriptPath: "/s/update-clock.mjs", home, confirm: true, exec: async cmd => { execs.push(cmd); return { code: 0, stdout: "", stderr: "" }; } };
+  const plist = timerCommand("darwin", opts.nodePath, opts.scriptPath, home).plist_path;
+  assert.equal((await installTimer(opts)).done, true); assert.equal(fs.existsSync(plist), true, "precondition: install wrote the plist");
+  const unconfirmed = await UC.removeTimer({ ...opts, confirm: false });
+  assert.equal(unconfirmed.done, false); assert.equal(fs.existsSync(plist), true, "nothing is deleted without confirm");
+  const removed = await UC.removeTimer(opts);
+  assert.equal(removed.done, true); assert.equal(removed.plist_removed, true);
+  assert.equal(fs.existsSync(plist), false, "the plist survived the removal: launchd loads it again at the next login");
+  assert.match(execs.at(-1), /^launchctl unload /, "the unload still names the file, so it runs before the delete");
+  // Not loaded (unload fails) or already gone: the file is still removed and nothing throws.
+  await installTimer(opts);
+  const notLoaded = await UC.removeTimer({ ...opts, exec: async () => ({ code: 1, stdout: "", stderr: "Could not find specified service" }) });
+  assert.equal(notLoaded.done, false); assert.equal(notLoaded.plist_removed, true); assert.equal(fs.existsSync(plist), false);
+  assert.equal((await UC.removeTimer(opts)).plist_removed, true, "a second removal is harmless");
+  const linux = await UC.removeTimer({ ...opts, platform: "linux" });
+  assert.equal("plist_removed" in linux, false, "other platforms have no plist to report");
+});
+await test("gate5 [71]: validateSettings names the missing object when auto_update or clock is null", () => {
+  assert.throws(() => UC.validateSettings({ auto_update: null, clock: { ...DEFAULT_SETTINGS.clock } }), /settings must contain auto_update and clock objects/);
+  assert.throws(() => UC.validateSettings({ auto_update: { ...DEFAULT_SETTINGS.auto_update }, clock: null }), /settings must contain auto_update and clock objects/);
+});
+await test("gate5 [72]: a failed version read is still reported when a post-update probe result replaces the row", async () => {
+  const e = env({ responses: { [CODEX_URL]: ok("0.155.0") }, sources: [npmSource("codex")] });
+  writeSettings(e.home, { auto_update: { enabled: true } }); await e.clock.trigger("manual");
+  const out = await applyUpdates(e.clock, { exec: async () => ({ code: 0, stdout: "", stderr: "" }), versionOf: async () => { throw new Error("--version hung"); }, postUpdateProbe: async () => ({ status: "contained" }) });
+  assert.deepEqual(out.applied[0].probe, { status: "contained", version_error: "version read failed: --version hung" });
+  assert.match(out.notices[0], /-> unknown .*probe contained \(version read failed: --version hung\)/);
+  assert.match(readState(e.stateFile).history.at(-1).probe.version_error, /--version hung/);
 });
 
 await test("cliMain trigger never runs real executors under an injected clock, and never applies after a check that did not run (audit safety)", async () => {

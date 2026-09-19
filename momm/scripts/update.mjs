@@ -53,7 +53,8 @@ export function resolveTool(command, cwd, { env = process.env, platform = proces
   throw Object.assign(new Error(`${command} was not found on an absolute PATH entry outside the working directory`), { code: "ENOENT" });
 }
 export function run(command, args, cwd, options = {}) {
-  try { command = resolveTool(command, cwd); }
+  // Resolved against the PATH the child is given (options.env), the one spawnSync itself would search.
+  try { command = resolveTool(command, cwd, { env: options.env || process.env }); }
   catch (e) { throw Object.assign(new Error(`${command} failed: ${e.message}`), { code: e.code }); }
   const p = spawnSync(command, args, { cwd, encoding: "utf8", shell: false,
     windowsHide: true, timeout: 60_000, maxBuffer: 32 * 1024 * 1024, ...options });
