@@ -836,6 +836,6 @@ try { fs.rmSync(outPath, { force: true }); } catch {}
 fs.writeFileSync(outPath, html, { mode: 0o600 });
 process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — this file stays in .ensemble_reviews/, which the momm protocol keeps out of git.)\n`);
 if (process.argv.includes("--open")) {
-  const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", outPath]] : process.platform === "darwin" ? ["open", [outPath]] : ["xdg-open", [outPath]];
+  const opener = process.platform === "win32" ? [path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", "cmd.exe"), ["/c", "start", "", outPath]] : process.platform === "darwin" ? ["open", [outPath]] : ["xdg-open", [outPath]];
   try { spawn(opener[0], opener[1], { detached: true, stdio: "ignore" }).unref(); } catch {}
 }

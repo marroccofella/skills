@@ -20,7 +20,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled, systemTool } from "./update.mjs";
+import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled, systemTool, resolveTool } from "./update.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -210,6 +210,9 @@ function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20
     // look in the working directory: a planted grok.cmd or npm.cmd is never chosen.
     const env = win32 ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
     if (win32 && shell === true) shell = systemTool("cmd.exe");
+    // Without a shell a bare name is resolved here: Node 18 and 20 ignore the variable above and would
+    // look in the working directory first. With a shell, cmd.exe does the lookup and honours it.
+    if (win32 && !shell) { try { command = resolveTool(command, process.cwd(), { env }); } catch (e) { resolve({ code: -1, stdout: "", stderr: safeText(e.message), timedOut: false }); return; } }
     try { child = spawn(command, args, { shell, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], detached: !win32 }); }
     catch (e) { resolve({ code: -1, stdout: "", stderr: safeText(e.message), timedOut: false }); return; }
     const out = [], err = []; let bytes = 0, timedOut = false, spawnError = null, settled = false;

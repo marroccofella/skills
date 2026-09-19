@@ -24,7 +24,8 @@ Plan: [plan-1.16.0.md](plan-1.16.0.md).
   material only and need consent. MOMM checks initial media types by filename extension, not file
   contents. Malformed or mislabelled files may still proceed; downstream rejection is not guaranteed.
 - **Windows is safer**: the evidence folder is created private, and a `git.exe` or `taskkill.exe`
-  planted in the project under review is never started.
+  planted in the project under review is never started, on any supported Node version: MOMM
+  resolves every tool to an absolute path itself.
 - **Updates stay yours**: `update --check-all`, an event-driven update clock, and an
   automatic-update setting that is off by default and that an agent never turns on.
 - **`--retry-invalid` (opt-in)**: a reviewer answer rejected as invalid output is asked for once
@@ -137,6 +138,31 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Release halt and launch-guard correction, 19 September: after the owner's go-ahead the sealed
+  candidate was squash-merged to `main` (`434dd1a`) and the push-event CI failed on Windows Node 20.
+  Two real problems, both missed until then. First, **Node 18 and Node 20 on Windows ignore
+  `NoDefaultCurrentDirectoryInExePath`**, so on those runtimes the dispatcher still started a
+  `git.exe` planted in the reviewed project; Node 22 and 24 honour it, which is why the governor's
+  machine and all three independent confirmations (Node 22.16, 24.18, 24.15) passed the control.
+  Second, **CI hid it**: the step that runs 27 suites used the Windows default shell, where only
+  the last command's exit code counts, so the repository's own planted-`git.exe` test had been
+  failing unseen on the Windows Node 18 and 20 jobs on every head since round four. "10 of 10
+  green" was overstated for those two jobs; the logs show this was the only hidden failure. Nothing
+  was tagged or published. Fix: MOMM no longer hands a bare command name to spawn on Windows. The
+  shared launch chokepoint (`process-scope.mjs`, `windowsTool`) resolves every tool itself: system
+  tools from System32, anything else from absolute PATH entries outside the working directory, and a
+  name found nowhere becomes a path that cannot exist, so the launch fails as ENOENT. With a shell
+  the shell is `System32\cmd.exe` by absolute path and the child carries the variable, which
+  `cmd.exe` honours on every Windows. The direct launch sites got the same treatment (the governor's
+  `git`, the Setup Center's terminal and browser openers, the ledger opener, the update clock), the
+  dispatcher's PATH search ignores relative entries, and the CI step now runs under `bash`, which
+  stops at the first failing suite. The guard variable stays as a second layer. The fix went through its own
+  delta review (run `rev_20260919182102_p7hw`, three valid reviews): Codex and Grok both raised one
+  real gap, that a PATH entry of `.`, a relative entry, or an entry inside the project would still
+  let `cmd.exe` choose a planted file for shell launches; every child now gets a PATH without such
+  entries. One finding was wrong (the fixture does define `realpathSync.native`; the suite passes
+  here and in CI). CI run 35460503759 shows the planted-`git.exe` test passing on Windows Node 18
+  and Node 20, read from the job logs rather than the badge.
 - Final delta, 19 September (run `rev_20260919104506_po1k` on `b8cef55`: the three round-six fixes,
   10 KB, one piece, `--retry-invalid` on): Codex ACCEPT, Antigravity ACCEPT, Grok ACCEPT, no
   findings, no retry needed. Five suggestions ruled on and logged, none applied, so the reviewed

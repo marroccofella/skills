@@ -41,7 +41,22 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
   let names = inputPath ? [path.relative(root, path.resolve(root, inputPath)).replaceAll("\\", "/")] : [];
   try {
     if (isDiff) {
-      const git = args => { const r = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
+      // Node 18 and 20 on Windows look for a bare name in the child's working directory first (the
+      // project under review) and ignore the guard variable, so Git is named by an absolute PATH
+      // entry outside the project, or not at all.
+      const gitPath = () => {
+        if (process.platform !== "win32") return "git";
+        const inside = p => { const rel = path.relative(fs.realpathSync.native(root).toLowerCase(), p.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)); };
+        const pathValue = Object.entries(process.env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
+        for (const dir of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => d && path.isAbsolute(d))) {
+          const candidate = path.join(dir, "git.exe");
+          try { if (fs.statSync(candidate).isFile() && !inside(fs.realpathSync.native(candidate))) return candidate; } catch { /* not here */ }
+        }
+        return null;
+      };
+      const gitExecutable = gitPath();
+      demand(gitExecutable, "cannot verify current Git diff: git.exe was not found on an absolute PATH entry outside the project");
+      const git = args => { const r = spawnSync(gitExecutable, args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
       // Windows JS realpath can preserve an 8.3 spelling while Git returns
       // its long name. Native resolution compares the same physical root.
       const canonical = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
