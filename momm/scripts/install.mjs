@@ -7,6 +7,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./update.mjs";
 import { readiness } from "./bootstrap.mjs";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..");
@@ -20,14 +24,21 @@ function antigravityCommand() {
   return "agy";
 }
 
+// Harness launchers (gemini, claude, agy) are npm .cmd shims on Windows, so they need
+// cmd.exe. It is named by its absolute System32 path (a bare "cmd.exe" would be looked up
+// in the working directory first), and NoDefaultCurrentDirectoryInExePath stops cmd.exe
+// itself from preferring a gemini.cmd planted in the directory the installer is run from.
+const WINDOWS_CMD = [process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", "cmd.exe"].join("\\");
 function runCommand(command, args, options = {}) {
-  const invocation = process.platform === "win32"
-    ? { command: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", command, ...args] }
+  const win32 = process.platform === "win32";
+  const invocation = win32
+    ? { command: WINDOWS_CMD, args: ["/d", "/s", "/c", command, ...args] }
     : { command, args };
   return spawnSync(invocation.command, invocation.args, {
     shell: false,
     windowsHide: true,
     encoding: "utf8",
+    ...(win32 ? { env: { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } } : {}),
     ...options,
   });
 }
@@ -135,7 +146,10 @@ function main() {
   }
   for (const customDir of options.customDirs) results.push({ target: "custom", ...linkSkill(customDir, options) });
   const output = { source: skillRoot, results, note: "Existing paths are never overwritten. No credentials are copied." };
-  output.update_readiness = readiness();
+  // Informational only: a probe that throws (process.cwd() fails with ENOENT when the working
+  // directory was deleted under the process) must not discard the link rows gathered above.
+  try { output.update_readiness = readiness(); }
+  catch (error) { output.update_readiness = { status: "unavailable", error: String(error?.message || error).slice(0, 300), installed: false }; }
   try { output.installation = recordInstall(path.resolve(skillRoot, ".."), "momm/scripts/install.mjs", results, { dryRun: options.dryRun }); }
   catch (error) {
     output.installation = { updater_available: false, error: error.message,

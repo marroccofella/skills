@@ -412,14 +412,21 @@ export function reassemble(pieces = [], oversize = []) {
 // A deleted "-- text" line is stored as "--- text" and an added "++ text" as
 // "+++ text": body, not header. So a ---/+++ line counts as a file header only
 // in a form git writes (a/ b/ or a mnemonic prefix, optionally C-quoted, or
-// /dev/null) or as half of an adjacent ---/+++ pair (diff.noprefix). Residual:
-// a deleted line that itself reads "-- a/…" is indistinguishable from a header.
+// /dev/null) or as half of a qualifying ---/+++ pair (diff.noprefix, below).
+// Residual: a deleted line that itself reads "-- a/…" is indistinguishable from a header.
 const FILE_SIDE = /^(?:--- |\+\+\+ )(?:"?[abciow]\/|\/dev\/null(?:\t|$))/;
+// A ---/+++ pair WITHOUT a git prefix (diff.noprefix) is a header only when both lines name
+// one path (timestamps aside) or the pair directly follows a header block line (diff --git,
+// index, mode, similarity, rename). A bare adjacent pair is not enough: a deleted "-- old"
+// next to an added "++ new" is body. Residual: such a pair with IDENTICAL text reads as a header.
+const sidePath = (l) => l.slice(4).replace(/\t.*$/, "");
+const BLOCK_LINE = (l) => l !== undefined && HEADER_LINE.test(l) && !/^(?:--- |\+\+\+ |@@ )/.test(l);
 export function headerOnlyQuote(text) {
   const lines = String(text ?? "").split(/\r?\n/).filter((l) => l !== "");
+  const pairAt = (i) => Boolean(lines[i]?.startsWith("--- ") && lines[i + 1]?.startsWith("+++ ") && (BLOCK_LINE(lines[i - 1]) || sidePath(lines[i]) === sidePath(lines[i + 1])));
   return lines.length > 0 && lines.every((l, i) => {
-    if (l.startsWith("--- ")) return FILE_SIDE.test(l) || Boolean(lines[i + 1]?.startsWith("+++ "));
-    if (l.startsWith("+++ ")) return FILE_SIDE.test(l) || Boolean(lines[i - 1]?.startsWith("--- "));
+    if (l.startsWith("--- ")) return FILE_SIDE.test(l) || pairAt(i);
+    if (l.startsWith("+++ ")) return FILE_SIDE.test(l) || pairAt(i - 1);
     return HEADER_LINE.test(l);
   });
 }

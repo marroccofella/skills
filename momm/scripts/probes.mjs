@@ -16,6 +16,10 @@ import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export const PROBE_CLIS = Object.freeze(["codex", "claude", "gemini", "copilot", "grok", "antigravity"]);
 export const PROBE_SCHEMA = "momm-probe/1";
@@ -215,13 +219,19 @@ export function resolveCommand(cli, { env = process.env, platform = process.plat
   return cli;
 }
 export function windowsLauncher(command, args, env, platform = process.platform) {
-  if (platform !== "win32" || path.isAbsolute(command) || /\.exe$/i.test(command)) return { command, args };
+  // A command that already names a location (absolute, or a relative path the caller chose) is used
+  // as given. A bare NAME is never handed to spawn on Windows: older libuv looks for it in the
+  // working directory first, and a probe's working directory is a project that is not trusted. It
+  // is resolved here against the absolute PATH entries only, or refused as not installed.
+  if (platform !== "win32" || path.isAbsolute(command) || /[\\/]/.test(command)) return { command, args };
+  const namesExe = /\.exe$/i.test(command);
   const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
-  const dirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, ""));
+  const dirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p));
   let refusedShim = null;
   for (const dir of dirs) {
-    const native = path.join(dir, `${command}.exe`);
+    const native = path.join(dir, namesExe ? command : `${command}.exe`);
     if (fs.existsSync(native)) return { command: native, args };
+    if (namesExe) continue;
     if (![".cmd", ".bat"].some(ext => fs.existsSync(path.join(dir, command + ext)))) continue;
     try {
       const pkgName = NPM_PACKAGES[command]; if (!pkgName) throw new Error("unknown package");
@@ -242,7 +252,7 @@ export function windowsLauncher(command, args, env, platform = process.platform)
     refusedShim ??= dir;
   }
   if (refusedShim) return { error: Object.assign(new Error(`Unsupported Windows launcher for ${command}: shell shim in ${refusedShim} refused and no native executable found on PATH`), { code: "MOMM_UNSUPPORTED_LAUNCHER" }) };
-  return { command, args };
+  return { error: Object.assign(new Error(`spawn ${command} ENOENT: not found in any absolute PATH directory`), { code: "ENOENT" }) };
 }
 // The names the review dispatcher withholds from its reviewer children (its FORBIDDEN_ENV_NAMES);
 // probes.test.mjs reads that list and fails if this one falls behind it. OAuth tokens are kept.
@@ -269,7 +279,9 @@ export function defaultExec(command, args, { input = "", timeout = 120_000, cwd 
     const out = [], err = []; let outBytes = 0, errBytes = 0, timedOut = false, spawnError = null, settled = false, timer = null, graceTimer = null;
     const killTree = () => {
       if (!child.pid) return;
-      if (win32) { try { spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true, timeout: 10_000 }); } catch {} }
+      // Named by its absolute System32 path: probes run inside projects that are not trusted, and
+      // older libuv looks for a bare command name in the working directory before PATH.
+      if (win32) { try { spawnSync(path.join(env.SystemRoot || env.windir || process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", "taskkill.exe"), ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true, timeout: 10_000 }); } catch {} }
       else { try { process.kill(-child.pid, "SIGKILL"); } catch {} }
       try { child.kill("SIGKILL"); } catch {}
     };
@@ -418,7 +430,13 @@ export function recordProbe(root, result) {
   const line = { ...result, recorded_at: new Date().toISOString() };
   delete line.token;
   const c = fs.constants, fd = fs.openSync(file, (c.O_WRONLY ?? 1) | (c.O_APPEND ?? 0) | (c.O_CREAT ?? 0) | (c.O_NOFOLLOW ?? 0), PRIVATE_FILE);
-  try { fs.writeSync(fd, `${JSON.stringify(line)}\n`); } finally { fs.closeSync(fd); }
+  try {
+    // The path may have been redirected after the link check above. Before anything is appended the
+    // open descriptor must be the ledger that sits inside the folder, and the folder still no link.
+    const opened = fs.fstatSync(fd, { bigint: true }), named = fs.lstatSync(file, { bigint: true });
+    if (isLink(dir) || named.isSymbolicLink() || named.ino !== opened.ino) throw new Error("probe ledger path changed while it was being opened; refused, nothing was appended");
+    fs.writeSync(fd, `${JSON.stringify(line)}\n`);
+  } finally { fs.closeSync(fd); }
   try { fs.chmodSync(file, PRIVATE_FILE); } catch {}
   return file;
 }
@@ -431,7 +449,9 @@ export function latestProbes(root) {
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim()) continue;
     let entry; try { entry = JSON.parse(raw); } catch { continue; }
-    if (!entry?.cli || !entry.at || entry.schema === MODALITY_PROBE_SCHEMA) continue;
+    // The ledger is shared: only a canary record (this schema) for a known CLI can be a route's
+    // latest containment result; another family's or a later schema's record never stands in for it.
+    if (entry?.schema !== PROBE_SCHEMA || !PROBE_CLIS.includes(entry.cli) || !Number.isFinite(Date.parse(entry.at))) continue;
     if (!latest[entry.cli] || Date.parse(entry.at) >= Date.parse(latest[entry.cli].at)) latest[entry.cli] = entry;
   }
   return latest;
@@ -983,6 +1003,8 @@ export function parseTimeoutArg(argv, fallback = 120_000) {
   if (t < 0) return fallback;
   const raw = argv[t + 1];
   if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) <= 0) throw new Error(`--timeout needs a positive integer number of milliseconds, got ${raw === undefined ? "nothing" : JSON.stringify(raw)}`);
+  // Node runs a timer delay above 2^31-1 ms as 1 ms, which would end every probe at once.
+  if (Number(raw) > 2_147_483_647) throw new Error(`--timeout can be at most 2147483647 milliseconds (about 24 days), got ${JSON.stringify(raw.length > 24 ? `${raw.slice(0, 24)}...` : raw)}`);
   return Number(raw);
 }
 export function parseProbeArgs(argv) {

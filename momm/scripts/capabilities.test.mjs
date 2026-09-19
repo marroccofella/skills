@@ -324,12 +324,17 @@ await test("E7 files are LF-only with no raw control characters", () => {
 
 await test("CLI prints the effective matrix as JSON", () => {
   const home = fs.mkdtempSync(path.join(tmp, "home-"));
-  const result = spawnSync(process.execPath, [path.join(here, "capabilities.mjs"), "--json", "--home", home], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+  // --versions keeps these two runs hermetic: without it the command asks every installed reviewer
+  // CLI for its version, and a slow launcher could use up this test's whole timeout. Detection
+  // has its own tests below, with an injected exec.
+  const versions = ["--versions", JSON.stringify({ codex: "0.0.0-test" })];
+  const result = spawnSync(process.execPath, [path.join(here, "capabilities.mjs"), "--json", "--home", home, ...versions], { encoding: "utf8", timeout: 30_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /installed versions read from --versions/); assert.doesNotMatch(result.stderr, /detected from the CLIs/);
   const json = JSON.parse(result.stdout);
   assert.equal(json.schema, cap.EFFECTIVE_SCHEMA);
   assert.equal(json.routes.codex.input.image.level, "verified");
-  const text = spawnSync(process.execPath, [path.join(here, "capabilities.mjs"), "--home", home], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+  const text = spawnSync(process.execPath, [path.join(here, "capabilities.mjs"), "--home", home, ...versions], { encoding: "utf8", timeout: 30_000, windowsHide: true });
   assert.equal(text.status, 0, text.stderr);
   assert.match(text.stdout, /INPUT\s+text\s+image/);
 });

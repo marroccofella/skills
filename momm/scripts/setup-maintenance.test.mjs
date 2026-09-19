@@ -32,6 +32,22 @@ await test('inventory includes the controller version without self review',async
 for (const [name,result] of Object.entries({empty:{code:0,stdout:'{}'},exit_failure:{code:1,stdout:'{"latestVersion":"1.0.0","updateAvailable":false}'},malformed:{code:0,stdout:'not json'},missing_boolean:{code:0,stdout:'{"latestVersion":"1.0.0"}'},timeout:{code:null,timedOut:true,stdout:'{}'}})) {
   await test(`Grok ${name} never reports current`,async()=>{const r=await report(result);assert.equal(r.value.cli_updates.find(x=>x.agent==='grok').status,'unknown');});
 }
+// Gate rev_20260919023950_h6hn installed-null-on-missing-route: a route the readiness report did not
+// mention is UNKNOWN (failed discovery is not proof of absence), never "missing" beside installed:null;
+// only a route reported as not installed is missing, and that one says installed:false.
+await test('an unreported route is unknown, a reported absence is missing, and the two fields never contradict',async()=>{
+  const context=vm.createContext({Date,process,maintenanceCache:null,localVersionsFile:'versions.json',publishedVersionsUrl:'manifest',skillsRoot:'.',
+    fs:{readFileSync:()=>'{"momm":"1.15.0"}',existsSync:()=>true},path:{join:(...p)=>p.join('/')},os:{platform:()=>process.platform,release:()=>'',arch:()=>''},
+    providers:Object.fromEntries(['codex','claude','gemini','antigravity','copilot','grok'].map(a=>[a,{}])),safeDetail:s=>String(s||''),
+    readiness:async()=>({routes:[{agent:'codex',version:'1.0.0',installed:true,ready:true},{agent:'claude',installed:false,ready:false},{agent:'gemini',installed:null,version:null,version_status:'timeout',ready:false}]}),
+    runCommand:async(cmd,args)=>({code:0,stdout:args.includes('status')?'':'1.0.0'}),detectInstallation:()=>({kind:'native',path:null}),actionCommand:()=>null});
+  vm.runInContext(source.slice(start,end)+'\nfetchJson=async()=>({version:"1.0.0"}); this.run=maintenanceReport;',context);
+  const rows=Object.fromEntries((await context.run('other')).cli_updates.map(row=>[row.agent,row]));
+  assert.equal(rows.claude.installed,false);assert.equal(rows.claude.status,'missing');
+  assert.equal(rows.gemini.installed,null);assert.equal(rows.gemini.status,'unknown');
+  for(const agent of ['antigravity','copilot','grok']){assert.equal(rows[agent].installed,null,agent);assert.equal(rows[agent].status,'unknown',`${agent}: an unreported route must not read as missing`);}
+  for(const row of Object.values(rows))assert.equal(row.status==='missing',row.installed===false,`${row.agent}: status and installed disagree`);
+});
 await test('Antigravity latest is unknown, not assumed managed',async()=>{const r=await report();assert.equal(r.value.cli_updates.find(x=>x.agent==='antigravity').status,'unknown');});
 await test('prerelease sorts before stable',async()=>{const r=await report();assert.equal(r.compare('1.0.0-beta.1','1.0.0'),-1);assert.equal(r.compare('1.0.0-beta.2','1.0.0-beta.10'),-1);});
 await test('valid native latest result is current',async()=>{const r=await report({code:0,stdout:'{"latestVersion":"1.0.0","updateAvailable":false}'});assert.equal(r.value.cli_updates.find(x=>x.agent==='grok').status,'current');});
@@ -492,7 +508,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities','clockAction'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);const toastLog=this.toasts=[];showToast=m=>{toastLog.push(String(m));};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -579,6 +595,32 @@ await test('automatic updates card shows the last apply outcome per CLI, never p
   assert.match(stale,/clock-table/,'the last known table stays');assert.match(stale,/could not be refreshed[^<]*synthetic &lt;disk&gt; failure/,'the refresh failure is shown, escaped, on the card');
   c.setApi(async()=>({...base,activity:{running:false}}));await c.core.loadUpdateClock();
   assert(!/could not be refreshed/.test(c.node('#update-clock-card').innerHTML),'a good refresh clears the notice');
+  // Gate rev_20260919023950_h6hn trigger-masks-operation-failure: a check that FAILED answers 200 with
+  // result:null and the reason in activity.last_error. It must never be reported as "skipped: another
+  // check is running", and the card names the failure, escaped.
+  c.setApi(async()=>({...base,result:null,activity:{running:false,last_event:'setup.check',last_error:'registry <down>'}}));
+  c.toasts.length=0;await c.core.clockAction('check');
+  assert.equal(c.toasts.length,1);assert.match(c.toasts[0],/Check failed: registry <down>/);assert(!/another check is running/.test(c.toasts[0]),c.toasts[0]);
+  assert.match(c.node('#update-clock-card').innerHTML,/Last check or apply failed: registry &lt;down&gt;/);
+  // clock-poll-stale-get: a poll that was already in flight when a POST answered must not paint its
+  // older snapshot over the newer state.
+  {let releaseGet;const mark=v=>({...base,sources:[{name:'skill',kind:'skill',installed:v,latest:v,update_available:false}],activity:{running:false}});
+    c.setApi((p,o)=>o?.method==='POST'?Promise.resolve({...mark('9.9.9-post'),result:{ran:true,results:[]}}):new Promise(resolve=>{releaseGet=()=>resolve(mark('0.0.1-older-get'));}));
+    const poll=c.core.loadUpdateClock();await c.core.clockAction('check');
+    assert.match(c.node('#update-clock-card').innerHTML,/9\.9\.9-post/);
+    releaseGet();await poll;
+    assert.match(c.node('#update-clock-card').innerHTML,/9\.9\.9-post/,'the newer POST state stays on the card');assert(!/0\.0\.1-older-get/.test(c.node('#update-clock-card').innerHTML),'an older GET must not overwrite it');
+    // The other order: a long POST that answers after polls came and went is the newest state and is shown.
+    let releasePost;c.setApi((p,o)=>o?.method==='POST'?new Promise(resolve=>{releasePost=()=>resolve({...mark('7.7.7-long-post'),result:{ran:true,results:[]}});}):Promise.resolve(mark('5.5.5-poll')));
+    const long=c.core.clockAction('check');await c.core.loadUpdateClock();
+    assert.match(c.node('#update-clock-card').innerHTML,/5\.5\.5-poll/);releasePost();await long;
+    assert.match(c.node('#update-clock-card').innerHTML,/7\.7\.7-long-post/,'a POST answer is as new as its arrival');}
+  // clock-stale-result: while a new run is in flight the previous failure is not the current state.
+  c.setClock({...base,activity:{running:true,last_event:'apply',last_error:'registry <down>'}});c.core.renderUpdateClock();
+  assert(!/Last check or apply failed/.test(c.node('#update-clock-card').innerHTML),'a previous failure is not shown as current while a run is in flight');
+  c.setApi(async()=>({...base,result:{ran:false,skipped_reason:'NO_UPDATE_CHECK is set'},activity:{running:false}}));
+  c.toasts.length=0;await c.core.clockAction('check');
+  assert.match(c.toasts[0],/Check skipped: NO_UPDATE_CHECK is set/);assert(!/failed/.test(c.node('#update-clock-card').innerHTML.match(/Last check or apply[^<]*/)?.[0]||''));
 });
 // effective-prompt-preview-overclaims: the preview is built with a contract stub
 // and no persona, so the page and API call it a guidance preview and say what is missing.

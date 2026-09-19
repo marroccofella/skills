@@ -151,6 +151,15 @@ try {
     assert.equal(latest.grok.verdict, "pass"); assert.equal(latest.grok.cli_version, "9.9.9");
     if (process.platform !== "win32") { assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700); assert.equal(fs.statSync(file).mode & 0o777, 0o600); }
     assert.deepEqual(latestProbes(path.join(fixture, "nowhere")), {});
+    // Gate rev_20260919023950_h6hn: the ledger is shared between record families. Only a canary
+    // record for a known CLI may become a route's latest containment result, however new it is.
+    const future = new Date(1_800_000_000_000).toISOString();
+    for (const stray of [{ schema: "future/1", cli: "codex", at: future, verdict: "pass" }, { cli: "grok", at: future, verdict: "pass" }, { schema: newer.schema, cli: "__proto__", at: future }, { schema: newer.schema, cli: "not-a-cli", at: future }])
+      fs.appendFileSync(file, `${JSON.stringify(stray)}\n`);
+    const filtered = latestProbes(root);
+    assert.deepEqual(Object.keys(filtered).sort(), ["codex", "grok"]);
+    assert.equal(filtered.grok.at, newer.at); assert.equal(filtered.codex.at, other.at);
+    assert.equal(Object.getPrototypeOf(filtered), Object.prototype);
   });
   await test("token_never_appears_in_prompt_file_names_or_the_recorded_line_except_as_sha256", async () => {
     const root = path.join(fixture, "token-root"); fs.mkdirSync(root);
@@ -222,6 +231,28 @@ try {
     const essay = fakeExec({ reply: () => ok(envelope("antigravity", `${"I would love to help with this request. ".repeat(20)}Note that no tools are configured.`)) });
     assert.notEqual((await runProbes("antigravity", opts({ exec: essay.exec, command: "antigravity" }))).containment.status, "held");
   });
+  await test("windows_tree_kill_is_named_by_its_absolute_system32_path", async () => {
+    // Gate rev_20260919023950_h6hn: probes run inside projects that are not trusted. Older libuv
+    // (Node 18/20) looks for a bare command name in the working directory before PATH, so the tree
+    // killer is always named by its absolute path, as process-scope.mjs already does.
+    if (process.platform !== "win32") return; // POSIX kills the process group; no command is launched
+    const { EventEmitter } = await import("node:events");
+    const childProcess = (await import("node:child_process")).default, { syncBuiltinESMExports } = await import("node:module");
+    const original = { spawn: childProcess.spawn, spawnSync: childProcess.spawnSync };
+    const killers = [];
+    childProcess.spawn = () => { const child = new EventEmitter(); const pipe = () => Object.assign(new EventEmitter(), { destroy() {} }); child.pid = 424242; child.kill = () => false; child.stdout = pipe(); child.stderr = pipe(); child.stdin = Object.assign(new EventEmitter(), { end() {} }); return child; };
+    childProcess.spawnSync = (command, args) => { killers.push({ command, args }); return { status: 0 }; };
+    syncBuiltinESMExports();
+    try {
+      const outcome = await defaultExec(process.execPath, ["-e", "0"], { cwd: fixture, timeout: 40, killGraceMs: 40, env: { PATH: "", SystemRoot: "D:\\WinRoot" } });
+      assert.equal(outcome.timedOut, true);
+      assert.equal(killers.length, 1); assert.equal(killers[0].command, "D:\\WinRoot\\System32\\taskkill.exe");
+      assert.deepEqual(killers[0].args, ["/T", "/F", "/PID", "424242"]);
+      killers.length = 0;
+      await defaultExec(process.execPath, ["-e", "0"], { cwd: fixture, timeout: 40, killGraceMs: 40, env: { PATH: "" } });
+      assert.match(killers[0].command, /^[A-Za-z]:\\.*\\System32\\taskkill\.exe$/, "still absolute without SystemRoot in the child environment");
+    } finally { Object.assign(childProcess, original); syncBuiltinESMExports(); }
+  });
   await test("default_exec_settles_even_when_the_child_never_reports_exit", async () => {
     // Gate rev_20260919000938_1nkh: the deadline must hold even if the kill does not produce an exit
     // (a child the OS will not end, a refused taskkill). A synthetic child that never exits stands in.
@@ -267,6 +298,16 @@ try {
       assert.deepEqual(fs.readdirSync(outside), ["sentinel.txt"], "nothing was written through the link");
       if (!real) assert.equal(fs.readFileSync(file, "utf8"), "");
     }
+    // Gate rev_20260919023950_h6hn: the path can be redirected AFTER the link check. The descriptor
+    // that was opened must be the ledger inside the (still unlinked) folder, or nothing is appended.
+    const root = fs.mkdtempSync(path.join(fixture, "link-swap-")), outside = fs.mkdtempSync(path.join(fixture, "outside-"));
+    const sentinel = path.join(outside, "sentinel.txt"); fs.writeFileSync(sentinel, "UNCHANGED");
+    recordProbe(root, result); // an ordinary first record
+    const ledger = path.join(root, PROBES_FILE), before = fs.readFileSync(ledger, "utf8"), open = fs.openSync;
+    fs.openSync = function (p, ...rest) { return open.call(fs, path.resolve(String(p)) === ledger ? sentinel : p, ...rest); };
+    try { assert.throws(() => recordProbe(root, result), /changed while it was being opened/); } finally { fs.openSync = open; }
+    assert.equal(fs.readFileSync(sentinel, "utf8"), "UNCHANGED"); assert.equal(fs.readFileSync(ledger, "utf8"), before);
+    recordProbe(root, result); assert.equal(fs.readFileSync(ledger, "utf8").trim().split("\n").length, 2);
   });
   await test("final_error_envelope_never_falls_through_to_an_earlier_reply", () => {
     // Gate rev_20260919000938_1nkh: the last envelope decides. An error envelope that carries no
@@ -389,11 +430,33 @@ try {
     assert.equal(onlyShim.error?.code, "MOMM_UNSUPPORTED_LAUNCHER", "an unverifiable shim with no native fallback is still refused");
     assert.deepEqual(windowsLauncher("claude", ["a"], env, "linux"), { command: "claude", args: ["a"] });
   });
+  await test("windows_launcher_never_hands_a_bare_name_to_spawn", () => {
+    // Gate rev_20260919023950_h6hn: on Windows a bare name given to spawn can be looked up in the
+    // working directory (older libuv), which for a probe is a project that is not trusted. A name
+    // is resolved against the absolute PATH entries here, or refused as not installed.
+    const bin = path.join(fixture, "launcher-bin"); fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, "grok.exe"), "MZ");
+    const env = { PATH: [".", "relative\\dir", bin].join(path.delimiter) };
+    assert.equal(windowsLauncher("grok", ["x"], env, "win32").command, path.join(bin, "grok.exe"));
+    assert.equal(windowsLauncher("grok.exe", ["x"], env, "win32").command, path.join(bin, "grok.exe"), "a bare .exe name is resolved too");
+    for (const missing of ["codex", "codex.exe"]) {
+      const refused = windowsLauncher(missing, [], env, "win32");
+      assert.equal(refused.command, undefined, "no bare fallback"); assert.equal(refused.error?.code, "ENOENT");
+    }
+    const cwdOnly = windowsLauncher("grok", [], { PATH: "." }, "win32");
+    assert.equal(cwdOnly.error?.code, "ENOENT", "a relative PATH entry (the working directory) is never searched");
+    const absolute = path.join(bin, "grok.exe");
+    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: absolute, args: ["x"] });
+  });
   // nan-timeout-from-argv
   await test("timeout_argument_is_validated", () => {
     assert.equal(parseTimeoutArg([]), 120_000);
     assert.equal(parseTimeoutArg(["claude", "--timeout", "5000"]), 5000);
     for (const bad of [["--timeout"], ["--timeout", "--record"], ["--timeout", "abc"], ["--timeout", "0"], ["--timeout", "-5"], ["--timeout", "1.5"], ["--timeout", "NaN"]]) assert.throws(() => parseTimeoutArg(bad), /--timeout/, bad.join(" "));
+    // Gate rev_20260919023950_h6hn: a timer delay above 2^31-1 ms is silently run as 1 ms by Node, which
+    // would kill every probe at once; an overflowing digit string becomes Infinity. Both are refused.
+    for (const bad of ["2147483648", "3000000000", "1".repeat(400)]) assert.throws(() => parseTimeoutArg(["--timeout", bad]), /--timeout.*at most 2147483647/, bad.slice(0, 12));
+    assert.equal(parseTimeoutArg(["--timeout", "2147483647"]), 2147483647);
   });
   // run-probes-drops-env-option
   await test("env_option_reaches_every_exec_call", async () => {

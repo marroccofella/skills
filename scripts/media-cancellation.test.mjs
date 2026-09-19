@@ -33,7 +33,7 @@ try {
     const report=await runModalityProbes('grok',{registry,command:'grok',tmpdir:root,home:root,colour:'red',exec:async(_command,args)=>args[0]==='--version'?{code:0,stdout:'1.0.0',stderr:''}:reply});
     const image=report.cells.find(c=>c.modality==='image');
     results.push({name:cancelled?'cancelled input not certified':'end-turn input verified despite warnings',passed:image.status===(cancelled?'probe_failed':'verified')});
-    if(cancelled)results.push({name:'safe cancellation explanation',passed:/cancelled/.test(image.reason)&&!image.reason.includes('quota')});
+    if(cancelled)results.push({name:'safe cancellation explanation',passed:/cancelled/.test(image.reason)&&!['quota','429','402','RESOURCE_EXHAUSTED'].some(word=>image.reason.includes(word))});
   }
   const registry={effective:()=>({routes:{grok:{input:{},output:{image_gen:{level:'documented',harvest:'~/.grok/synthetic/**/*.png'}}}}}),writeOverlayEntry:()=>{}};
   const generation=await runModalityProbes('grok',{registry,command:'grok',tmpdir:root,home:root,consent:true,inputs:false,disclose:()=>{},exec:async(_command,args)=>args[0]==='--version'?{code:0,stdout:'1.0.0',stderr:''}:{code:0,stdout:JSON.stringify({text:'Starting generation',stopReason:'cancelled'}),stderr:'auxiliary HTTP 429 RESOURCE_EXHAUSTED'}});

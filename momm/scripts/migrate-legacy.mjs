@@ -6,6 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { execute, readiness, publishedRelease, verifyObjects, verifyCheckout, assertPreparedRepository, GUIDE } from './bootstrap.mjs';
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 const fail = (code, message) => Object.assign(Error(message), { code });
 const inside = (file, root) => { const rel=path.relative(root,file);return !rel || (!rel.startsWith('..'+path.sep) && rel!=='..' && !path.isAbsolute(rel)); };
 function entry(file) { try { const s=fs.lstatSync(file);return { type:s.isSymbolicLink()?'link':s.isDirectory()?'directory':'other', dev:s.dev, ino:s.ino, link:s.isSymbolicLink()?fs.readlinkSync(file):null }; } catch(e){if(e.code==='ENOENT')return null;throw e;} }

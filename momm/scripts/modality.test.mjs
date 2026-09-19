@@ -193,6 +193,9 @@ await test("normaliseNeed: aliases, defaults, rejects unknown names", () => {
   assert.deepEqual(mod.normaliseNeed({ chain: ["text", "web", "image"] }), [{ from: ["text"], to: ["web"] }, { from: ["text"], to: ["image_gen"] }]);
   assert.deepEqual(mod.normaliseNeed({ chain: ["text", "code", "text"] }), [{ from: ["text"], to: ["code_exec"] }, { from: ["text"], to: ["text"] }]);
   assert.equal(mod.plan(matrix(), { chain: ["text", "web", "image"] }, { prompt: PROMPT }).steps.length, 2);
+  // Only a node that a previous step PRODUCED is consumed as text; as the first node these words
+  // name an input nobody can supply, and stay refused (gate rev_20260919023950_h6hn).
+  for (const first of ["web", "code", "code_exec"]) assert.throws(() => mod.normaliseNeed({ chain: [first, "image"] }), /unknown input modality/);
   assert.throws(() => mod.normaliseNeed({ input: ["hologram"] }), /unknown input modality/);
   assert.throws(() => mod.normaliseNeed({ output: ["smell"] }), /unknown output modality/);
   assert.throws(() => mod.normaliseNeed({ chain: ["text"] }), /at least two/);

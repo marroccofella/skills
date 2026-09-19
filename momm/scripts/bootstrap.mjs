@@ -6,6 +6,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+// Windows launch guard (see momm/scripts/launch-guard.mjs): a bare command launched without a shell is
+// looked up in THIS process's current directory before PATH unless this process carries the variable.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export const REMOTE = "https://github.com/marroccofella/skills.git";
 export const SIGNER = "https://github.com/marroccofella/skills/.github/workflows/momm-release.yml@refs/heads/main";

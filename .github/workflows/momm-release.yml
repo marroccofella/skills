@@ -76,6 +76,7 @@ jobs:
           node momm/scripts/lock-ownership.test.mjs
           node momm/scripts/modality.test.mjs
           node momm/scripts/modality-evaluation.test.mjs
+          node scripts/launch-guard.test.mjs
           node scripts/render-momm-site.mjs --check
           node scripts/check-momm-site.mjs
           node scripts/momm-release-pages.test.mjs

@@ -30,6 +30,10 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { preparePrivateEvidence, requirePrivateEvidence } from "./evidence-permissions.mjs";
 import { loadBaseline, effective as effectiveMatrix, routable, clearingAction, levelAction, bindingProblem, sha256, GENERATIVE_OUTPUTS, INPUT_MODALITIES, OUTPUT_MODALITIES } from "./capabilities.mjs";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export const PLAN_SCHEMA = "momm-plan/1";
 export const MEDIA_SCHEMA = "momm-media/1";
@@ -64,10 +68,11 @@ export function normaliseNeed(need) {
   const outKey = (m) => { const k = OUTPUT_ALIAS[String(m).toLowerCase()]; if (!k || !OUTPUT_MODALITIES.includes(k)) throw fail(`unknown output modality ${m}`, "MOMM_BAD_NEED"); return k; };
   if (Array.isArray(need.chain)) {
     if (need.chain.length < 2) throw fail("a chain needs at least two nodes", "MOMM_BAD_NEED");
-    // A code or web step produces a text answer, so the step after it consumes text. (As a plain
-    // `input` these words stay unknown: there is no code or web artefact to supply.)
-    const consumed = (node) => (["code", "code_exec", "web"].includes(String(node).toLowerCase()) ? "text" : node);
-    return need.chain.slice(0, -1).map((node, i) => ({ from: [inKey(consumed(node))], to: [outKey(need.chain[i + 1])] }));
+    // A code or web step produces a text answer, so the step after it consumes text. That holds only
+    // for a node a previous step produced: as the FIRST node, or as a plain `input`, these words
+    // stay unknown, because there is no code or web artefact anyone could supply.
+    const consumed = (node, i) => (i > 0 && ["code", "code_exec", "web"].includes(String(node).toLowerCase()) ? "text" : node);
+    return need.chain.slice(0, -1).map((node, i) => ({ from: [inKey(consumed(node, i))], to: [outKey(need.chain[i + 1])] }));
   }
   const input = Array.isArray(need.input) && need.input.length ? need.input : ["text"];
   const output = Array.isArray(need.output) && need.output.length ? need.output : ["text"];

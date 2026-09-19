@@ -155,7 +155,12 @@ try{
   });
   await test('object_bytes_must_hash_to_their_git_object_name',async()=>{
     const f=fixture('corrupt-object'),oid=execute('git',['rev-parse','HEAD:momm/SKILL.md'],f.repo).trim(),blob=path.join(f.repo,'.git/objects',oid.slice(0,2),oid.slice(2));
-    const payload=Buffer.from('# Substituted protocol\n');fs.chmodSync(blob,0o600);fs.writeFileSync(blob,deflateSync(Buffer.concat([Buffer.from(`blob ${payload.length}\0`),payload])));
+    const payload=Buffer.from('# Substituted protocol\n');// The substitution needs a LOOSE object. Some git builds or runner settings deliver the blob in a
+    // pack instead (CI run 35411040011, Windows Node 22: ENOENT on this path); explode any pack first so
+    // the test exercises the same check on either layout rather than failing on its fixture.
+    if(!fs.existsSync(blob)){const packDir=path.join(f.repo,'.git/objects/pack');for(const name of fs.existsSync(packDir)?fs.readdirSync(packDir).filter(n=>n.endsWith('.pack')):[]){const moved=path.join(path.dirname(f.repo),name);fs.renameSync(path.join(packDir,name),moved);fs.rmSync(path.join(packDir,name.replace(/\.pack$/,'.idx')),{force:true});const unpacked=spawnSync('git',['unpack-objects'],{cwd:f.repo,input:fs.readFileSync(moved),windowsHide:true});assert.equal(unpacked.status,0,'fixture could not explode its pack');}}
+    assert(fs.existsSync(blob),'fixture blob must exist as a loose object before it is substituted');
+    fs.chmodSync(blob,0o600);fs.writeFileSync(blob,deflateSync(Buffer.concat([Buffer.from(`blob ${payload.length}\0`),payload])));
     write(path.join(f.repo,'momm/SKILL.md'),payload);
     await assert.rejects(migrate(f.options,f.dep),{code:'unsafe_repository'});assert(!fs.existsSync(f.backup));
   });

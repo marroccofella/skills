@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
@@ -337,6 +337,49 @@ try {
     const p = spawnSync(process.execPath, [child], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 30_000 });
     assert.equal(p.status, 0, p.stderr); const r = JSON.parse(p.stdout);
     assert.doesNotMatch(r.stdout, /PLANTED/, "a same-named launcher in the working directory must not run"); assert.notEqual(r.code, 0);
+  });
+  await test("windows_git_is_never_resolved_from_the_working_directory", () => {
+    // Gate-4 [1] class: a direct spawn of a bare name tries the working directory BEFORE
+    // PATH unless the CALLING process carries NoDefaultCurrentDirectoryInExePath. The child
+    // runs without it, like a plain user shell; the planted git.exe is a copy of node.exe.
+    if (process.platform !== "win32") return;
+    const dir = path.join(checkFixture, "planted-git"); fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(process.execPath, path.join(dir, "git.exe"));
+    const child = path.join(checkFixture, "planted-git-child.mjs"), env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete env[key];
+    fs.writeFileSync(child, `import { run } from ${JSON.stringify(new URL("./update.mjs", import.meta.url).href)};\nprocess.stdout.write(run("git", ["--version"], process.cwd()));\n`);
+    const p = spawnSync(process.execPath, [child], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 30_000 });
+    assert.equal(p.status, 0, p.stderr); assert.match(p.stdout, /^git version /, `the planted executable answered: ${p.stdout.trim()}`);
+  });
+  await test("windows_installers_never_run_a_harness_launcher_planted_in_the_working_directory", () => {
+    // Both installers probe `gemini --version` through cmd.exe, which looks in the working
+    // directory first. Dry run with one explicit target: nothing is linked or recorded.
+    if (process.platform !== "win32") return;
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete env[key];
+    for (const [label, installer] of [["root", new URL("../../install.mjs", import.meta.url)], ["momm", new URL("./install.mjs", import.meta.url)]]) {
+      const dir = path.join(checkFixture, `planted-installer-${label}`); fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "gemini.cmd"), '@echo 9.9.9\r\n@echo ran> "%~dp0planted-marker.txt"\r\n');
+      const p = spawnSync(process.execPath, [fileURLToPath(installer), "--target", "gemini", "--dry-run"], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 60_000 });
+      assert.notEqual(p.status, null, `${label}: installer did not finish: ${p.error?.message}`);
+      assert.equal(fs.existsSync(path.join(dir, "planted-marker.txt")), false, `${label} installer ran the gemini.cmd planted in its working directory`);
+    }
+  });
+  await test("installer_keeps_its_link_report_when_the_readiness_probe_throws", () => {
+    // Gate-4 [5]: readiness() reads process.cwd(), which throws ENOENT (uv_cwd) on POSIX when
+    // the working directory was deleted under the process. The preload models exactly that.
+    // Dry run into a disposable custom directory: nothing is linked or recorded.
+    const dir = path.join(checkFixture, "readiness-throws"), parent = path.join(dir, "skills"); fs.mkdirSync(parent, { recursive: true });
+    const pre = path.join(dir, "deleted-cwd.mjs"), runner = path.join(dir, "runner.mjs");
+    fs.writeFileSync(pre, "globalThis.__deleteCwd = () => { process.cwd = () => { throw Object.assign(new Error('ENOENT: no such file or directory, uv_cwd'), { code: 'ENOENT', syscall: 'uv_cwd' }); }; };\n");
+    for (const installer of [new URL("../../install.mjs", import.meta.url), new URL("./install.mjs", import.meta.url)]) {
+      fs.writeFileSync(runner, `import ${JSON.stringify(pathToFileURL(pre).href)};\nprocess.argv.splice(2, 0, "--custom-dir", ${JSON.stringify(parent)}, "--dry-run");\nglobalThis.__deleteCwd();\nawait import(${JSON.stringify(installer.href)});\n`);
+      const p = spawnSync(process.execPath, [runner], { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+      assert.match(p.stdout, /"results"/, `${installer.pathname}: the link report was lost: ${p.stderr.slice(0, 200)}`);
+      const out = JSON.parse(p.stdout);
+      assert.equal(out.results[0].target, "custom"); assert.equal(out.update_readiness.status, "unavailable"); assert.match(out.update_readiness.error, /uv_cwd/);
+    }
+    assert.deepEqual(fs.readdirSync(parent), [], "dry run links nothing");
   });
   await test("windows_absolute_exe_path_with_percent_sequence_is_not_expanded_by_the_shell", () => {
     // Gate-3 [61]: %VAR% inside quotes is still expanded by cmd.exe, so an absolute

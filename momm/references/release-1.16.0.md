@@ -91,6 +91,31 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Full-source gate rerun, 19 September (run `rev_20260919023950_h6hn`: the 12 pieces that missed
+  quorum plus every file the round-three fixes touched, 826 KB in 28 pieces, same three routes):
+  quorum on 21 of 28 pieces, so the gate has still **not passed**; the seven misses were again
+  reviewer-output failures, not outages. 92 findings and 176 suggestions, all 268 ruled on and logged:
+  34 findings fixed, 52 rejected with evidence, 6 deferred. Of 3 marked critical, 2 were real. First,
+  a Windows launch hijack: for a direct launch of a bare command name (`git`, `taskkill`), Windows
+  looks in the **calling** process's current directory before PATH, and MOMM runs inside the project
+  under review. Reproduced on Windows 11 with Node 22.16 by planting a `taskkill.exe` and then a
+  `git.exe` (copies of `node.exe`) in a scratch project: both were started. Setting
+  `NoDefaultCurrentDirectoryInExePath` only in the child's environment does not help, because the
+  lookup happens in the parent. Fix: every script that starts a process sets that variable on its
+  own process with one inline line (`momm/scripts/launch-guard.mjs` holds the explanation and the
+  reference implementation; an import was tried first and broke scripts that run as single copied
+  files, so the guard is inline); System32 tools are launched by absolute path as well;
+  `scripts/launch-guard.test.mjs` fails if a process-launching script lacks the guard. Second, with
+  an injected hint-only skill source the automatic-update pass re-ran the signed updater on every
+  pass because the hint survived a successful apply; the hint is now cleared. The third (oversize
+  scope "never dispatched") repeats a round-three item and is the designed `governor_direct` path.
+  Other real defects fixed: a stale update lock was removed by path rather than captured by rename;
+  the Windows scheduled-task command was built as one string; project guidance was protected
+  against a link at the leaf but not in a parent directory; `--timeout` accepted values Node turns
+  into a 1 ms timer; `guidance --trust` accepted a short digest prefix; and a dead early read of
+  `.reviewrules` in the dispatcher, which bypassed the guidance layer's no-follow checks, is removed.
+  A Windows Node 22 CI flake in the legacy-migration suite (fixture blob delivered in a pack rather
+  than loose) now has a layout-independent fixture.
 - Full-source gate, 19 September (run `rev_20260919000938_1nkh`: the whole candidate against `main`,
   1.85 MB across 109 files, 59 pieces, Codex, Antigravity and Grok, two-review quorum, 186 minutes):
   quorum on 47 of 59 pieces, so the gate has still **not passed**. Every miss was a reviewer-output

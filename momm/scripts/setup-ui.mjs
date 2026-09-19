@@ -13,6 +13,13 @@ import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTi
 import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
 
+// Windows: a bare command name (git.exe, powershell.exe, cmd.exe, a CLI version
+// probe) is looked up in the WORKING DIRECTORY before PATH, by cmd.exe and by
+// libuv's own shell:false lookup, and this server runs in the project it was
+// started from. Measured on Node 22.16: only the guard on THIS process stops
+// libuv's lookup; a child env entry does not. Set before anything can spawn.
+if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath = "1";
+
 const processScope = createProcessScope();
 processScope.installSignalHandlers(undefined, {graceful:true});
 
@@ -493,7 +500,9 @@ async function maintenanceReport(governor) {
       update_command: actionCommand(item.agent, 'update'),
       install_command: actionCommand(item.agent, 'install'),
       installed: route ? (route.installed ?? null) : null,
-      status: route?.installed === false || !route ? "missing" : item.update_available === true ? "update_available" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
+      // A route the readiness report did not mention is unknown, never "missing":
+      // failed discovery is not proof of absence (installed stays null with it).
+      status: route?.installed === false ? "missing" : !route ? "unknown" : item.update_available === true ? "update_available" : !current ? 'unknown' : comparison === -1 ? "update_available" : comparison === 0 ? "current" : comparison === 1 ? 'local_newer' : "unknown",
     };
   });
   const value = {
@@ -849,9 +858,15 @@ function runClockActivity(event, work) {
 // The environment update and probe children start from: everything the user's
 // shell has (PATH, proxies, registry settings) except API-key-shaped secrets,
 // which no updater or OAuth CLI needs from this server.
+// Names the dispatcher forbids for reviewer children that the pattern below does
+// not already catch; the self-test reads the dispatcher's list so the two cannot drift.
+const CHILD_FORBIDDEN_ENV_NAMES = new Set(["ANTHROPIC_AUTH_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]);
 function childEnvironment(source = process.env) {
   const env = { ...source, NO_UPDATE_CHECK: "1", NO_COLOR: "1" };
-  for (const key of Object.keys(env)) if (/(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(key.toUpperCase())) delete env[key];
+  for (const key of Object.keys(env)) {
+    const upper = key.toUpperCase();
+    if (CHILD_FORBIDDEN_ENV_NAMES.has(upper) || /(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(upper)) delete env[key];
+  }
   return env;
 }
 function clockExec(command, args = [], { timeout = 60_000, shell = false } = {}) {
@@ -1843,6 +1858,15 @@ async function dashboardRegression() {
           && /env: childEnvironment\(\)/.test(clockExec.toString()) && /childEnvironment\(sourceEnv\)/.test(probeExec.toString());
       } catch { return false; }
     })();
+    // Gate rev_20260919023950_h6hn incomplete-secret-scrub: the children are scrubbed of at least
+    // every name the dispatcher forbids for reviewers (its FORBIDDEN_ENV_NAMES), read from its source.
+    checks.update_children_scrub_matches_the_dispatcher_forbidden_names = (() => {
+      try {
+        const names = fs.readFileSync(dispatcherScript, "utf8").match(/const FORBIDDEN_ENV_NAMES = new Set\(\[([\s\S]*?)\]\);/)[1].match(/[A-Z][A-Z0-9_]+/g);
+        const env = childEnvironment(Object.fromEntries([...names, "aws_secret_access_key", "PATH"].map((name) => [name, "x"])));
+        return names.length >= 10 && names.includes("AWS_SECRET_ACCESS_KEY") && names.every((name) => !(name in env)) && !("aws_secret_access_key" in env) && env.PATH === "x";
+      } catch { return false; }
+    })();
     checks.usage_valid_row_past_the_line_limit_is_not_counted = overlongIndex.error === null && overlongIndex.index.get("rev_3_c\u0000codex") === 1;
     // An unreadable ledger (here a directory at its path) reads as "counts
     // unavailable" with null ratios — never as zero accepted findings.
@@ -2102,16 +2126,21 @@ async function dashboardRegression() {
     const missingPageBuilt = builtResult.status === 200 && builtResult.rebuilt === true && rebuilds === 1 && built.body.includes("ledger 1") && built.headers["Content-Type"] === "text/html; charset=utf-8";
     const csp = built.headers["Content-Security-Policy"];
     const hashOf = (text) => `'sha256-${crypto.createHash("sha256").update(text, "utf8").digest("base64")}'`;
-    const hashedInline = csp.includes(`style-src ${hashOf("body{color:red}")}`) && csp.includes(`script-src ${hashOf("console.log(1);")}`) && !csp.includes("unsafe-inline") && csp.includes("frame-ancestors 'none'");
+    const hashedInline = csp.includes(`style-src ${hashOf("body{color:red}")}`) && csp.includes(`script-src ${hashOf("console.log(1);")}`) && !csp.includes("unsafe-inline") && csp.includes("frame-ancestors 'none'")
+      // The hashes allow-list whatever inline code the generator wrote, so they are not the injection defence (ledger.mjs escaping is);
+      // what the policy does guarantee is that nothing on this page can reach the API, a form, or any other origin.
+      && csp.startsWith("default-src 'none';") && !/connect-src/.test(csp) && csp.includes("form-action 'none'") && csp.includes("base-uri 'none'");
+    // Every response carries the hashes of ITS OWN body: a rebuilt page never inherits an earlier policy.
+    const cspMatches = (res, n) => res.headers["Content-Security-Policy"].includes(`script-src ${hashOf(`console.log(${n});`)};`) && [1, 2, 3].filter((other) => other !== n).every((other) => !res.headers["Content-Security-Policy"].includes(hashOf(`console.log(${other});`)));
     const fresh = fakeResponse(); const freshResult = await serveLedger(fresh, { cwd: lr.cwd, rebuild });
-    const freshServedAsIs = freshResult.status === 200 && freshResult.rebuilt === true && rebuilds === 2 && fresh.body.includes("ledger 2");
+    const freshServedAsIs = freshResult.status === 200 && freshResult.rebuilt === true && rebuilds === 2 && fresh.body.includes("ledger 2") && cspMatches(fresh, 2);
     const later = new Date(Date.now() + 10_000); fs.utimesSync(path.join(lrDir, "review-log.jsonl"), later, later); // telemetry newer than the page
     const staleRes = fakeResponse(); const staleResult = await serveLedger(staleRes, { cwd: lr.cwd, rebuild });
-    const staleRebuilt = staleResult.status === 200 && staleResult.rebuilt === true && rebuilds === 3 && staleRes.body.includes("ledger 3");
+    const staleRebuilt = staleResult.status === 200 && staleResult.rebuilt === true && rebuilds === 3 && staleRes.body.includes("ledger 3") && cspMatches(staleRes, 3) && cspMatches(built, 1);
     const failFx = fixture("ledger-route-failing"); fs.mkdirSync(path.join(failFx.cwd, ".ensemble_reviews"), { recursive: true });
     const failed = fakeResponse(); const failedResult = await serveLedger(failed, { cwd: failFx.cwd, rebuild: async () => { throw new Error("ledger exploded"); } });
-    const failureIsA404 = failedResult.status === 503 && failed.body.includes("Ledger refresh failed") && failed.headers["Content-Type"].startsWith("text/html");
-    checks.ledger_route_serves_rebuilds_when_stale_and_404s_without_directory = missing404 && missingPageBuilt && hashedInline && freshServedAsIs && staleRebuilt && failureIsA404;
+    const failureIsA503 = failedResult.status === 503 && failed.body.includes("Ledger refresh failed") && failed.headers["Content-Type"].startsWith("text/html");
+    checks.ledger_route_serves_rebuilds_when_stale_and_404s_without_directory = missing404 && missingPageBuilt && hashedInline && freshServedAsIs && staleRebuilt && failureIsA503;
     // setup-center.json: written 0600 on start with url/pid/started_at, removed on shutdown, never written without .ensemble_reviews, never removes another pid's file.
     const sp = fixture("setup-pointer"); const spDir = path.join(sp.cwd, ".ensemble_reviews");
     const fakeProc = { handlers: {}, once(name, fn) { (this.handlers[name] ??= []).push(fn); }, exit() { this.exited = true; } };
@@ -2328,6 +2357,10 @@ async function selfTest() {
       } catch { return false; }
     })(),
     guidance_body_limit_fits_every_block: GUIDANCE_BODY_LIMIT >= (GUIDANCE_ROUTES.length + 2) * GUIDANCE_BUDGET.per_block * 4,
+    // The Setup Center runs in the project it was started from and launches git.exe, powershell.exe, cmd.exe and
+    // CLI version probes by bare name. On Windows only the guard on THIS process stops the working-directory
+    // lookup for shell:false spawns (measured; a child env entry does not), so it must be set by this module itself.
+    windows_launch_guard_is_set_on_this_process: process.platform !== "win32" || process.env.NoDefaultCurrentDirectoryInExePath === "1",
     ...regression,
   };
   const { passed, failing } = summarizeChecks(tests);

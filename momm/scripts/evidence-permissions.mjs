@@ -5,6 +5,10 @@ import path from 'node:path';
 import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 // Windows PowerShell decodes redirected stdin with the console's input code page, which is an OEM
 // page unless the machine uses the UTF-8 system locale. Payloads are therefore pure ASCII: every

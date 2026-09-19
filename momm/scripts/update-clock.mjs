@@ -20,7 +20,11 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled } from "./update.mjs";
+import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled, systemTool } from "./update.mjs";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -97,8 +101,24 @@ const freshEntry = min => ({ last_checked_at: null, next_due_at: 0, interval_ms:
 function readLockOwner(file) {
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch (e) { return e.code === "ENOENT" ? { gone: true } : { corrupt: "unreadable" }; }
-  if (!text.trim()) return { corrupt: "empty" };
-  try { const pid = JSON.parse(text)?.pid; return Number.isInteger(pid) && pid > 0 ? { pid } : { corrupt: "corrupt (no usable pid)" }; } catch { return { corrupt: "truncated or corrupt JSON" }; }
+  if (!text.trim()) return { corrupt: "empty", text };
+  try { const pid = JSON.parse(text)?.pid; return Number.isInteger(pid) && pid > 0 ? { pid, text } : { corrupt: "corrupt (no usable pid)", text }; } catch { return { corrupt: "truncated or corrupt JSON", text }; }
+}
+// Removes the lock that was INSPECTED, never one published since. Between the inspection
+// and the removal another process may reclaim the same stale lock and publish its own; an
+// unconditional unlink would delete that live lock and let both processes in. The file is
+// therefore captured by an atomic rename and judged afterwards: only the bytes that were
+// inspected are deleted, anything else is put back and the caller stands down.
+// Returns "removed", "gone" or "replaced".
+function removeInspectedLock(file, inspected) {
+  const captured = `${file}.${process.pid}.${randomUUID()}.stale`;
+  try { fs.renameSync(file, captured); } catch { return "gone"; }
+  let text; try { text = fs.readFileSync(captured, "utf8"); } catch {}
+  if (text === inspected) { try { fs.unlinkSync(captured); } catch {} return "removed"; }
+  try { fs.linkSync(captured, file); } // EEXIST: a newer lock already stands, which is just as good
+  catch (e) { if (e.code !== "EEXIST") { try { fs.copyFileSync(captured, file, fs.constants.COPYFILE_EXCL); } catch {} } }
+  try { fs.unlinkSync(captured); } catch {}
+  return "replaced";
 }
 function lockAgeMs(file) { try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return Infinity; } }
 // true when this process now owns `file`; false when another lock already exists.
@@ -130,8 +150,9 @@ function acquireLock(stateFile, isAlive) {
     if (current.gone) continue;
     if (current.pid && isAlive(current.pid)) return null;
     if (current.corrupt && lockAgeMs(file) < LOCK_GRACE_MS) return null; // a writer between create and publish
-    notices.push(current.corrupt ? `removed ${current.corrupt} lock file ${path.basename(file)} (crashed or interrupted writer)` : `removed stale lock file ${path.basename(file)} left by dead pid ${current.pid}`);
-    try { fs.unlinkSync(file); } catch {}
+    const outcome = removeInspectedLock(file, current.text);
+    if (outcome === "replaced") return null; // a live process won the reclaim; its lock was restored
+    if (outcome === "removed") notices.push(current.corrupt ? `removed ${current.corrupt} lock file ${path.basename(file)} (crashed or interrupted writer)` : `removed stale lock file ${path.basename(file)} left by dead pid ${current.pid}`);
   }
   return null;
 }
@@ -172,19 +193,26 @@ async function readBody(res, controller, maxBytes) {
 // the child's lifetime (an apply may run for minutes while the state lock is
 // held), and a timeout kills the whole tree (win32: taskkill /T; POSIX: the child's
 // own process group), so a grandchild holding the pipes cannot keep us waiting.
+// Windows system tools are always named by their absolute System32 path. A direct
+// spawn of a bare name ("taskkill") tries the working directory BEFORE PATH unless the
+// calling process itself already carries NoDefaultCurrentDirectoryInExePath, which cannot
+// be assumed; review.start runs inside the reviewed project, where a planted
+// taskkill.exe, cmd.exe or schtasks.exe must never be chosen.
+// (systemTool lives in update.mjs beside the resolver for non-system tools.)
 function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20 } = {}) {
   return new Promise(resolve => {
     const win32 = process.platform === "win32";
     let child;
-    // cmd.exe looks in the working directory BEFORE PATH, and review.start runs inside
-    // the reviewed project: a planted grok.cmd or npm.cmd there must never be chosen.
+    // cmd.exe (needed for npm's .cmd shims) is named absolutely too, and told not to
+    // look in the working directory: a planted grok.cmd or npm.cmd is never chosen.
     const env = win32 ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
+    if (win32 && shell === true) shell = systemTool("cmd.exe");
     try { child = spawn(command, args, { shell, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], detached: !win32 }); }
     catch (e) { resolve({ code: -1, stdout: "", stderr: safeText(e.message), timedOut: false }); return; }
     const out = [], err = []; let bytes = 0, timedOut = false, spawnError = null, settled = false;
     const killTree = () => {
       if (!child.pid) return;
-      if (win32) { try { spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true, timeout: 10_000 }); } catch {} }
+      if (win32) { try { spawnSync(systemTool("taskkill.exe"), ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true, timeout: 10_000 }); } catch {} }
       else { try { process.kill(-child.pid, "SIGKILL"); } catch {} }
       try { child.kill("SIGKILL"); } catch {}
     };
@@ -290,6 +318,10 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
   const installedFor = s => installedVersions[s.cli || (s.kind === "skill" ? "skill" : "")] || null;
   const jitter = ms => Math.round(ms * (0.9 + 0.2 * random()));
   function schedule(entry, outcome, t, clock) {
+    // A hand-edited or partly written row may lack a finite interval: NaN would make
+    // next_due_at NaN, which no passive event ever reaches, parking the source for good.
+    if (!Number.isFinite(entry.interval_ms)) entry.interval_ms = clock.min_interval_ms;
+    if (!Number.isFinite(entry.tight_until)) entry.tight_until = 0;
     if (outcome === "changed") { entry.interval_ms = clock.min_interval_ms; entry.tight_until = t + DAY; }
     else if (outcome === "unchanged") entry.interval_ms = t < entry.tight_until ? clock.min_interval_ms : Math.min(entry.interval_ms * 2, clock.max_interval_ms);
     entry.interval_ms = Math.max(clock.min_interval_ms, Math.min(entry.interval_ms, clock.max_interval_ms));
@@ -361,7 +393,7 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
       const skip = reason => { if (degraded) writeState(stateFile, state); return { ran: false, skipped_reason: reason, results: [] }; };
       if (event === "review.start" && state.last_review_start_check_at && t - state.last_review_start_check_at < settings.clock.min_interval_ms) return skip("rate_limited");
       for (const s of sources) state.sources[s.name] ||= freshEntry(settings.clock.min_interval_ms);
-      const due = sources.filter(s => forced || t >= state.sources[s.name].next_due_at);
+      const due = sources.filter(s => forced || !Number.isFinite(state.sources[s.name].next_due_at) || t >= state.sources[s.name].next_due_at);
       if (!due.length) return skip("nothing_due");
       if (event === "review.start") state.last_review_start_check_at = t;
       // Routes narrow to the CLIs with a known installation; when none is known (the
@@ -414,7 +446,7 @@ async function applyLocked(clock, out, staleSettings, lockNotices, deps) {
       if (preview.protocolChanged && !settings.auto_update.accept_protocol) { out.skipped.push({ name: row.name, reason: "needs_protocol_acceptance" }); note(row.name, "needs_protocol_acceptance", `skill ${row.latest} changes the review protocol; set auto_update.accept_protocol or apply by hand`, { needs_protocol_acceptance: true }); continue; }
       const apply = await runUpdater(["--apply", "--yes", ...(settings.auto_update.accept_protocol ? ["--accept-protocol"] : [])]);
       if (apply.code !== 0) { out.failed.push({ name: row.name, reason: "apply failed (signature or verification not bypassed)", output: safeText(apply.output || "").slice(-500) }); note(row.name, "failed", `skill ${row.latest}: signed apply failed; previous installation retained`); }
-      else { out.applied.push({ name: row.name, from: row.installed, to: row.latest }); clock.setInstalled("skill", row.latest); note(row.name, "applied", `skill updated ${row.installed} -> ${row.latest} through the signed updater`); }
+      else { out.applied.push({ name: row.name, from: row.installed, to: row.latest }); if (row.latest) clock.setInstalled("skill", row.latest); note(row.name, "applied", `skill updated ${row.installed} -> ${row.latest} through the signed updater`); }
     } else if (row.kind === "cli" && settings.auto_update.clis && row.update_available) {
       const cli = row.name.slice(4), command = commands[cli];
       if (isManaged(cli)) { out.skipped.push({ name: row.name, reason: "package-manager-owned installation; update through that package manager" }); note(row.name, "skipped", `${cli}: installation is package-manager owned; not touched`); continue; }
@@ -449,8 +481,11 @@ async function applyLocked(clock, out, staleSettings, lockNotices, deps) {
       // A successful skill apply (with or without --accept-protocol) settles any
       // pending acceptance; a successful CLI update retires the source's pre-update
       // hint so the re-read installed version, not the hint, decides what comes next.
+      // Every successful apply retires the source's pre-update hint: a hint-only source
+      // (no version on either side) would otherwise re-run the updater on every pass.
+      delete entry.update_available_hint;
       if (a.name === "skill") entry.needs_protocol_acceptance = false;
-      else { delete entry.update_available_hint; if (commandRanFor[a.name]) entry.update_command_ran_for = commandRanFor[a.name]; }
+      else { if (commandRanFor[a.name]) entry.update_command_ran_for = commandRanFor[a.name]; }
     }
     // Model discoveries are reported once: the seen set is retired after recording.
     for (const m of reportedModels) if (state.sources[m]) delete state.sources[m].new_models;
@@ -489,7 +524,14 @@ export async function defaultApplyDeps({ exec = defaultExec, root = ROOT } = {})
 const shq = s => `'${String(s).replaceAll("'", "'\\''")}'`;
 const xml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
 export function timerCommand(platform, nodePath, scriptPath, home = os.homedir()) {
-  if (platform === "win32") { const run = `"${nodePath}" "${scriptPath}" trigger daily.tick`; return { platform, install: `schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "${run.replaceAll('"', '\\"')}"`, remove: "schtasks /Delete /TN MOMM-UpdateClock /F" }; }
+  // win32: `install`/`remove` are the lines shown to the user; they are correct for paths
+  // with spaces but cmd.exe would still read & % ^ inside them as syntax. Registration
+  // itself therefore never passes through a shell: timerAction runs `argv` directly.
+  if (platform === "win32") {
+    const run = `"${nodePath}" "${scriptPath}" trigger daily.tick`;
+    return { platform, install: `schtasks /Create /SC HOURLY /MO 6 /TN MOMM-UpdateClock /TR "${run.replaceAll('"', '\\"')}"`, remove: "schtasks /Delete /TN MOMM-UpdateClock /F",
+      argv: { install: ["/Create", "/SC", "HOURLY", "/MO", "6", "/TN", "MOMM-UpdateClock", "/TR", run], remove: ["/Delete", "/TN", "MOMM-UpdateClock", "/F"] } };
+  }
   if (platform === "darwin") {
     const plist_path = path.join(home, "Library", "LaunchAgents", "uk.42.momm.update-clock.plist");
     const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>uk.42.momm.update-clock</string>\n<key>ProgramArguments</key><array><string>${xml(nodePath)}</string><string>${xml(scriptPath)}</string><string>trigger</string><string>daily.tick</string></array>\n<key>StartInterval</key><integer>21600</integer>\n<key>RunAtLoad</key><false/>\n</dict></plist>\n`;
@@ -503,7 +545,7 @@ async function timerAction(action, { platform = process.platform, nodePath = pro
   const cmd = timerCommand(platform, nodePath, scriptPath, home);
   if (confirm !== true) return { done: false, reason: "confirm: true required; nothing registered", command: cmd[action] };
   if (action === "install" && cmd.plist_path) { fs.mkdirSync(path.dirname(cmd.plist_path), { recursive: true, mode: 0o700 }); atomic(cmd.plist_path, cmd.plist); }
-  const p = await exec(cmd[action], [], { shell: true, timeout: 60_000 });
+  const p = cmd.argv ? await exec(systemTool("schtasks.exe"), cmd.argv[action], { timeout: 60_000 }) : await exec(cmd[action], [], { shell: true, timeout: 60_000 });
   return { done: p.code === 0, command: cmd[action], code: p.code, stderr: safeText(p.stderr || "").slice(-300) };
 }
 export const installTimer = opts => timerAction("install", opts);

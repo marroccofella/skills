@@ -13,7 +13,9 @@ function publicTextFiles(relative) {
 }
 // The root and skill READMEs are version surfaces of the release flow, so they are public text too.
 const files = [...publicTextFiles('docs'), ...publicTextFiles('momm/references'), 'README.md', 'momm/README.md', 'momm/scripts/capabilities.test.mjs', 'momm/scripts/modality.test.mjs'];
-const homeNames = source => [...source.matchAll(/(?:[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+|\/(?:home|Users)\/)([^\\/\s"'`<>]+)/g)].map(m => m[1]);
+// Web URLs are blanked first: their path segments are not directories on anyone's machine.
+const withoutWebUrls = source => source.replace(/\bhttps?:\/\/[^\s"'`<>)\]]+/g, ' ');
+const homeNames = source => [...withoutWebUrls(source).matchAll(/(?:[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+|\/(?:home|Users)\/)([^\\/\s"'`<>]+)/g)].map(m => m[1]);
 // Scanner controls (gate rev_20260919000938_1nkh privacy-scan-case-and-allowlist): Windows paths are
 // case-insensitive, so a lower-case drive path names a machine identity just the same.
 const backslash = String.fromCharCode(92);
@@ -21,6 +23,12 @@ assert.deepEqual(homeNames(['C:', 'Users', 'someone', 'project'].join(backslash)
 assert.deepEqual(homeNames(['c:', 'users', 'someone', 'project'].join(backslash)), ['someone'], 'a lower-case Windows home path must be detected');
 assert.deepEqual(homeNames('see /home/someone/x and /Users/other/y'), ['someone', 'other']);
 assert.deepEqual(homeNames('https://api.example.invalid/users/octocat'), [], 'a URL path segment is not a home directory');
+// Gate rev_20260919023950_h6hn url-users-false-positive / privacy-url-negative-untested: web URLs are removed
+// before scanning whatever their spelling; file URLs and nested mount paths still name a machine.
+for (const url of ['https://example.invalid/Users/octocat', 'http://example.invalid/home/octocat/repo', '[docs](https://example.invalid/a/Users/octocat).']) assert.deepEqual(homeNames(url), [], url);
+assert.deepEqual(homeNames('open file:///Users/someone/notes.md'), ['someone']);
+assert.deepEqual(homeNames('cd /mnt/c/Users/someone/project'), ['someone']);
+assert.deepEqual(homeNames('https://example.invalid/x then /home/someone/y'), ['someone'], 'text after a URL is still scanned');
 for (const file of files) {
   const source = fs.readFileSync(new URL(file, root), 'utf8');
   const homes = homeNames(source);

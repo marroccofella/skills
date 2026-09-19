@@ -30,7 +30,7 @@ for(const [output,expected] of [
  const result=inspectEvidencePermissions(dir,{platform:'win32',systemRoot:path.resolve('synthetic-system'),fsx,run:(_exe,args,options)=>{
   assert.deepEqual(JSON.parse(options.input),{path:dir});
   assert(args.includes('-NonInteractive'));
-  assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/,'inspection must not contain anything that changes access');
+  assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/i,'inspection must not contain anything that changes access');
   assert(args.at(-1).includes("Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1'"));
   return {status:0,stdout:JSON.stringify(output)};
  }});
@@ -92,7 +92,7 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  assert.throws(()=>protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,run:noSpawn,fsx:{...fsx,lstatSync:()=>{throw Object.assign(Error('missing'),{code:'ENOENT'});}}}),e=>/no evidence folder here yet/.test(e.message));checks++;
  // Already private: reports unchanged and runs no protect script.
  let scripts=0;
- const unchanged=protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,fsx,run:(_e,args)=>{scripts++;assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/);return okRun();}});
+ const unchanged=protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,fsx,run:(_e,args)=>{scripts++;assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/i);return okRun();}});
  assert.equal(unchanged.changed,false);assert.equal(scripts,1);checks++;
 }
 // Gate rev_20260918172020_ehti: evidence --protect must survey the whole tree first and refuse a

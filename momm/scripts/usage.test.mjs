@@ -236,6 +236,14 @@ test("lastJsonObject: a stray opening brace in earlier diagnostic text does not 
   assert.deepEqual(lastJsonObject('a { b { c {"k":1} trailing'), { k: 1 });
   assert.equal(lastJsonObject('{"early":1}\n{"usage": {"input_tokens": 1'), null);
   assert.equal(lastJsonObject("{".repeat(5000)), null, "bounded on hostile input");
+  // Gate rev_20260919023950_h6hn: no cap on how many stray openers may precede the object, and the
+  // scan stays one pass (a 200 000-brace prefix must not take quadratic time).
+  assert.deepEqual(lastJsonObject(`${"{".repeat(17)}{"usage":{"input_tokens":1}}`), { usage: { input_tokens: 1 } });
+  const started = Date.now();
+  assert.deepEqual(lastJsonObject(`${"{ ".repeat(200_000)}{"k":2}`), { k: 2 });
+  assert.ok(Date.now() - started < 2000, `one pass expected, took ${Date.now() - started} ms`);
+  assert.equal(lastJsonObject('{ {"a":1} {'), null, "an unclosed opener after the object is still an unbalanced tail");
+  assert.deepEqual(lastJsonObject('{"outer":{"inner":1}} trailing'), { outer: { inner: 1 } }, "the outermost complete object, not a nested one");
   assert.equal(parseUsage("claude", `warning: unmatched { in hook output\n${CLAUDE}`).reported.input_tokens, parseUsage("claude", CLAUDE).reported.input_tokens);
 });
 test("lastJsonObject tolerates missing text", () => {

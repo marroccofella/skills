@@ -67,11 +67,27 @@ export function trustKey(projectDir) {
 // followLinks: false is for files that arrive with a clone: a symbolic link there could name any
 // other file the user can read, so it is refused (lstat, and a no-follow open where the platform
 // has one) instead of being read into reviewer prompts. Paths the user chose keep following links.
-export function readBoundedBytes(file, cap = GUIDANCE_FILE_MAX_BYTES, { followLinks = true } = {}) {
-  let stat;
+// `within` is the project root: every directory between it and the file is held to the same rule
+// (a linked .momm, which on Windows can be a junction made without any privilege), while the root
+// itself and everything above it stay the user's own choice of location. The opened descriptor is
+// then compared with the file that was checked, so a swap between the check and the open (the only
+// protection where there is no no-follow open, as on Windows) is refused too.
+export function readBoundedBytes(file, cap = GUIDANCE_FILE_MAX_BYTES, { followLinks = true, within } = {}) {
+  let stat, checked = null;
   if (!followLinks) {
-    try { if (fs.lstatSync(file).isSymbolicLink()) return { error: "is a symbolic link" }; }
-    catch (e) { return e?.code === "ENOENT" ? null : { error: `unreadable (${e.message})` }; }
+    try {
+      if (within !== undefined) {
+        const root = path.resolve(within), parts = path.relative(root, path.resolve(file)).split(path.sep);
+        if (!parts[0] || parts[0] === ".." || path.isAbsolute(parts.join(path.sep))) return { error: "is outside the project" };
+        let current = root;
+        for (const part of parts.slice(0, -1)) {
+          current = path.join(current, part);
+          if (fs.lstatSync(current).isSymbolicLink()) return { error: `is behind a symbolic link (${path.relative(root, current).replaceAll("\\", "/")})` };
+        }
+      }
+      checked = fs.lstatSync(file, { bigint: true });
+      if (checked.isSymbolicLink()) return { error: "is a symbolic link" };
+    } catch (e) { return e?.code === "ENOENT" ? null : { error: `unreadable (${e.message})` }; }
   }
   try { stat = fs.statSync(file); } catch (e) { return e?.code === "ENOENT" ? null : { error: `unreadable (${e.message})` }; }
   if (!stat.isFile()) return { error: "not a regular file" };
@@ -80,6 +96,11 @@ export function readBoundedBytes(file, cap = GUIDANCE_FILE_MAX_BYTES, { followLi
   let fd, length = 0;
   try {
     fd = fs.openSync(file, followLinks ? "r" : (fs.constants.O_RDONLY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0));
+    if (checked) {
+      // Windows reports no device number for a path, so devices are compared only where both sides have one.
+      const opened = fs.fstatSync(fd, { bigint: true });
+      if (opened.ino !== checked.ino || (checked.dev !== 0n && opened.dev !== 0n && opened.dev !== checked.dev)) return { error: "changed while being read" };
+    }
     for (let got = 1; got > 0 && length < buffer.length; length += got) got = fs.readSync(fd, buffer, length, buffer.length - length, length);
   } catch (e) { return { error: `unreadable (${e.message})` }; } finally { if (fd !== undefined) fs.closeSync(fd); }
   if (length > cap) return { error: `grew past ${cap} bytes while being read` };
@@ -168,7 +189,8 @@ function withTrustLock(home, timeoutMs, fn) {
   try { return fn(); } finally { try { fs.unlinkSync(lock); } catch { /* already gone */ } }
 }
 
-const fileHash = (file) => { const read = readBoundedBytes(file); return read && !read.error ? read.sha256 : null; };
+// Project files are hashed for trust under the same no-follow rule they are later read with.
+const fileHash = (file, within) => { const read = readBoundedBytes(file, GUIDANCE_FILE_MAX_BYTES, { followLinks: false, within }); return read && !read.error ? read.sha256 : null; };
 
 // Records trust for the project's guidance files, one file at a time.
 //   expect: (from `guidance --trust <sha256>`) trusts ONLY the file whose
@@ -179,7 +201,7 @@ const fileHash = (file) => { const read = readBoundedBytes(file); return read &&
 export function trustProject(projectDir, { home, expect, only, lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
   const dir = trustKey(projectDir);
   const files = projectGuidanceFiles(dir);
-  const current = { guidance: fileHash(files.guidance), reviewrules: fileHash(files.reviewrules) };
+  const current = { guidance: fileHash(files.guidance, dir), reviewrules: fileHash(files.reviewrules, dir) };
   let kinds;
   if (expect !== undefined) {
     if (typeof expect !== "string" || !expect) throw new Error("expect must be the sha256 hex digest shown in the notice");
@@ -218,7 +240,7 @@ function stack(layers, scope) {
   for (const layer of layers) {
     const next = text ? `${text}\n\n${layer.text}` : layer.text;
     if (next.length > GUIDANCE_BUDGET.per_route) {
-      throw new Error(`guidance for ${scope} exceeds ${GUIDANCE_BUDGET.per_route} characters at layer ${layer.name} (${next.length} joined); trim that layer or an earlier one`);
+      throw Object.assign(new Error(`guidance for ${scope} exceeds ${GUIDANCE_BUDGET.per_route} characters at layer ${layer.name} (${next.length} joined); trim that layer or an earlier one`), { code: "MOMM_GUIDANCE_BUDGET" });
     }
     text = next;
     meta.push({ name: layer.name, sha256: sha256(layer.text), chars: layer.text.length });
@@ -237,7 +259,7 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
 
   // .reviewrules: stat -> read once -> hash -> trust -> validate the same bytes.
   let rules = null, rulesTrusted = false;
-  const rulesRead = readBoundedBytes(files.reviewrules, GUIDANCE_FILE_MAX_BYTES, { followLinks: false });
+  const rulesRead = readBoundedBytes(files.reviewrules, GUIDANCE_FILE_MAX_BYTES, { followLinks: false, within: dir });
   if (rulesRead?.error) notices.push(`.reviewrules skipped: file ${rulesRead.error}`);
   else if (rulesRead) {
     const sha = rulesRead.sha256;
@@ -253,7 +275,7 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
   }
 
   // .momm/guidance.json: same single-read discipline; parsed only once trusted.
-  const projectRead = readBoundedBytes(files.guidance, GUIDANCE_FILE_MAX_BYTES, { followLinks: false });
+  const projectRead = readBoundedBytes(files.guidance, GUIDANCE_FILE_MAX_BYTES, { followLinks: false, within: dir });
   if (projectRead?.error) notices.push(`.momm/guidance.json skipped: file ${projectRead.error}`);
   else if (projectRead) {
     const sha = projectRead.sha256;
@@ -290,7 +312,8 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
       // Text that arrived with a clone and was never trusted must not be able to abort the review:
       // drop it for this route, say so, and let the owner's own layers stand or fail on their own.
       const withoutRules = layers.filter((layer) => layer.name !== "project:.reviewrules");
-      if (rulesTrusted || withoutRules.length === layers.length) throw error;
+      // Only a budget overflow is handled this way; any other failure is not explained by the notice below.
+      if (error?.code !== "MOMM_GUIDANCE_BUDGET" || rulesTrusted || withoutRules.length === layers.length) throw error;
       resolved = stack(withoutRules, `route ${route}`);
       notices.push(`.reviewrules skipped for route ${route}: applying this untrusted file would exceed the ${GUIDANCE_BUDGET.per_route}-character route budget.`);
     }

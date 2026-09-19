@@ -117,6 +117,15 @@ try{
     safeFailure(r);clean(c);assert(!('scratch_access' in r));
     assert.equal(r.detail,'review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted');
   });
+  // Gate rev_20260919023950_h6hn scratch-inspection-ignores-fail: the real inspector throws on failure, but an
+  // inspector that ANSWERS "not verified" must be believed too, whatever else its answer holds.
+  for(const route of ['codex','grok'])await test(`${route} an inspection that answers not-verified without throwing is still a refusal`,async()=>{
+    for(const verdict of [{verified:false,reason:'additional_principal'},{verified:false,tolerated:[]},{verified:false,tolerated:[sandboxGrant]}]){
+      const c=context();const r=await scratchInvoke(c,route,()=>verdict);
+      safeFailure(r);clean(c);assert(!('scratch_access' in r));
+      assert.equal(r.detail,'review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted');
+    }
+  });
   await test('a tolerated entry outside the route table, or malformed, is refused rather than recorded',async()=>{
     for(const tolerated of [[{principal:'OTHERDOMAIN\\CodexSandboxUsers',rights:'read_execute'}],[{principal:'WORK\\Everyone',rights:'ReadAndExecute'}],[sandboxGrant,{principal:'BUILTIN\\Users',rights:'ReadAndExecute'}],[{principal:'WORK\\CodexSandboxUsersX',rights:'Read'}],[{rights:'Read'}],'CodexSandboxUsers',[null]]){
       const c=context();const r=await scratchInvoke(c,'codex',()=>({verified:true,tolerated}));

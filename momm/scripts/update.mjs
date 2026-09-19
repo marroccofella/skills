@@ -8,6 +8,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export const REMOTE = "https://github.com/marroccofella/skills.git";
 export const MANIFEST_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
@@ -21,7 +25,36 @@ const TARGETS = new Set(["codex", "claude", "gemini", "antigravity"]);
 const okLink = r => ["linked", "already_linked", "canonical"].includes(r.status);
 export const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 export const safeText = value => String(value).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+// Windows launch discipline (gate rev_20260919023950_h6hn). A direct spawn of a bare name
+// tries the working directory BEFORE PATH unless the CALLING process already carries
+// NoDefaultCurrentDirectoryInExePath, which cannot be assumed; MOMM runs inside clones and
+// reviewed projects, so a git.exe, taskkill.exe or cmd.exe planted there must never be
+// chosen. System tools are named by their absolute System32 path, and any other bare
+// name is resolved here to an absolute PATH entry that lies outside the working directory.
+export const systemTool = (name, env = process.env) => [env.SystemRoot || env.windir || "C:\\Windows", "System32", name].join("\\");
+const resolvedTools = new Map();
+export function resolveTool(command, cwd, { env = process.env, platform = process.platform } = {}) {
+  if (platform !== "win32" || /[\\/]/.test(command)) return command;
+  const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
+  const real = p => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  const root = real(cwd || process.cwd()).toLowerCase(), key = `${command}\0${pathValue}\0${root}`;
+  if (resolvedTools.has(key)) return resolvedTools.get(key);
+  for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => path.win32.isAbsolute(d))) {
+    for (const extension of path.extname(command) ? [""] : [".exe", ".com"]) {
+      const candidate = path.join(directory, command + extension);
+      try {
+        if (!fs.statSync(candidate).isFile()) continue;
+        const relative = path.relative(root, real(candidate).toLowerCase());
+        if (!relative || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) continue; // inside the working directory
+        resolvedTools.set(key, candidate); return candidate;
+      } catch {}
+    }
+  }
+  throw Object.assign(new Error(`${command} was not found on an absolute PATH entry outside the working directory`), { code: "ENOENT" });
+}
 export function run(command, args, cwd, options = {}) {
+  try { command = resolveTool(command, cwd); }
+  catch (e) { throw Object.assign(new Error(`${command} failed: ${e.message}`), { code: e.code }); }
   const p = spawnSync(command, args, { cwd, encoding: "utf8", shell: false,
     windowsHide: true, timeout: 60_000, maxBuffer: 32 * 1024 * 1024, ...options });
   if (p.error || p.status !== 0) throw Object.assign(new Error(`${command} failed: ${safeText(p.error?.message || p.stderr || p.stdout).slice(0, 3000)}`), { code: p.error?.code || "command_failed" });
@@ -356,7 +389,7 @@ const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
 export function captureExec(command, args, { timeout = 20_000, cwd } = {}) {
   const win = process.platform === "win32", shell = win && !(path.isAbsolute(command) && /\.exe$/i.test(command));
   const env = win ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
-  const p = spawnSync(shell && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, env, encoding: "utf8", shell, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
+  const p = spawnSync(shell && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, env, encoding: "utf8", shell: shell ? systemTool("cmd.exe") : false, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
 }
 const notInstalled = r => !r || r.error?.code === "ENOENT" || r.code === 127 || (r.code !== 0 && NOT_INSTALLED.test(`${r.stderr}\n${r.stdout}`));

@@ -52,24 +52,30 @@ const pick = (obj, names) => { for (const k of names) { const v = num(obj?.[k]);
 
 // Last balanced top-level JSON object in text (string-aware). Non-JSON around
 // it is ignored; an unbalanced tail returns null rather than an earlier guess.
-// A stray "{" in diagnostic text before the object would leave the scan unbalanced too, so the scan
-// resumes just after an unclosed opener (a bounded number of times): a complete object that follows
-// is still found, while a truncated tail, which nothing complete follows, still returns null.
+// A stray "{" in diagnostic text before the object leaves the text unbalanced too; a complete object
+// that follows such openers is still found, while a truncated tail still returns null.
 export function lastJsonObject(text) {
   text = typeof text === "string" ? text : String(text ?? "");
-  let from = 0;
-  for (let attempt = 0; attempt < 16; attempt++) {
-    let start = -1, depth = 0, inString = false, escaped = false, last = null;
-    for (let i = from; i < text.length; i++) {
-      const c = text[i];
-      if (depth === 0) { if (c === "{") { start = i; depth = 1; } continue; }
-      if (inString) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') inString = false; continue; }
-      if (c === '"') inString = true;
-      else if (c === "{") depth++;
-      else if (c === "}" && --depth === 0) { try { last = JSON.parse(text.slice(start, i + 1)); } catch { /* keep previous */ } }
-    }
-    if (depth === 0) return isObject(last) ? last : null;
-    from = start + 1;
+  // One pass: every closed brace pair is recorded with the opener that encloses it.
+  const open = [], closed = [];
+  let inString = false, escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (!open.length) { if (c === "{") open.push(i); continue; }
+    if (inString) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') inString = false; continue; }
+    if (c === '"') inString = true;
+    else if (c === "{") open.push(i);
+    else if (c === "}") { const start = open.pop(); closed.push({ start, end: i, parent: open.length ? open[open.length - 1] : -1 }); }
+  }
+  // The answer is the last pair that parses as an object and is enclosed by nothing, or only by
+  // openers that never close (stray braces). A pair that starts before an opener left unclosed is
+  // an earlier guess ahead of an unbalanced tail and is never returned.
+  const unclosed = new Set(open), lastUnclosed = open.length ? open[open.length - 1] : -1;
+  for (let k = closed.length - 1; k >= 0; k--) {
+    const pair = closed[k];
+    if (pair.start < lastUnclosed) return null;
+    if (pair.parent !== -1 && !unclosed.has(pair.parent)) continue;
+    try { const value = JSON.parse(text.slice(pair.start, pair.end + 1)); if (isObject(value)) return value; } catch { /* keep looking at earlier pairs */ }
   }
   return null;
 }

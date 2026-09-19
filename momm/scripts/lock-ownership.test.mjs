@@ -29,7 +29,8 @@ for(const [file,start,end,name,kind] of cases)for(const record of ['111\n','','m
  const context=vm.createContext({fs:fake,path,crypto,randomBytes:crypto.randomBytes,process:{pid:333,platform:process.platform,env:{}},Number,Promise,Map,Date:{now:()=>clock+=100},
   TRANSIENT:new Set(['EEXIST']),pidAlive:()=>false,sleepMs(){},sleep:async()=>{},LOCK_STALE_MS:1,GUIDANCE_LOCK_STALE_MS:1,
   trustStorePath:()=> 'synthetic-trust',sha256:()=> 'a'.repeat(64),inProcessTurns:turns,fail:(m,c)=>Object.assign(Error(m),{code:c})});
- vm.runInContext(source.slice(a,b)+`;this.invoke=${name};`,context);
+ // On its own line: the slice may end in a comment that belongs to the next declaration.
+ vm.runInContext(source.slice(a,b)+`\n;this.invoke=${name};`,context);
  try {
   if(kind==='editor'){const release=context.invoke('synthetic');if(release){entered=true;release();}}
   else if(kind==='harvest'){const release=await context.invoke('synthetic','pattern',2000);entered=true;release();}

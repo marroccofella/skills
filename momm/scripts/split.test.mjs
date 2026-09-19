@@ -473,6 +473,13 @@ test("gate3 [156]: a deleted '-- text' or added '++ text' body line is content, 
   assert.equal(headerOnlyQuote('+++ "b/caf\\303\\251.js"'), true);
   assert.equal(headerOnlyQuote("--- src/no-prefix.js\n+++ src/no-prefix.js"), true, "an adjacent ---/+++ pair is a header even without a/ b/ prefixes");
 });
+test("gate4 [69]: an adjacent '-- x' deletion and '++ y' addition are body; a no-prefix pair must name one path or follow a header block", () => {
+  assert.equal(headerOnlyQuote("--- DROP TABLE users;\n+++ CREATE TABLE t (id int);"), false);
+  assert.equal(headerOnlyQuote("@@ -1,2 +1,2 @@\n--- old comment\n+++ new comment"), false, "a hunk header before the pair does not make it a file header");
+  assert.equal(headerOnlyQuote("--- src/no-prefix.js\t2026-09-01 10:00:00\n+++ src/no-prefix.js\t2026-09-02 10:00:00"), true, "timestamps do not make the paths differ");
+  assert.equal(headerOnlyQuote("diff --git old.js new.js\nsimilarity index 90%\nrename from old.js\nrename to new.js\n--- old.js\n+++ new.js"), true, "a no-prefix rename is recognised by the header block above it");
+  assert.equal(headerOnlyQuote("index 1111111..2222222 100644\n--- lib/x.js\n+++ lib/y.js"), true);
+});
 
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length) process.exitCode = 1;

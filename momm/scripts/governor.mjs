@@ -6,6 +6,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const hash = s => typeof s === "string" && /^[a-f0-9]{64}$/.test(s);

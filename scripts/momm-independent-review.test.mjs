@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,6 +162,58 @@ try {
       assert.equal(p.status, 0, args.join(' '));
       assert.equal(JSON.parse(p.stdout).exists, false);
     }
+  });
+
+  // Gate rev_20260919023950_h6hn ci-ephemeral-branch-trigger: the standing safety suite runs for main and for
+  // pull requests into main; a dated development branch does not belong in a release workflow.
+  test('the safety workflow is triggered only by main', () => {
+    const workflow = read('.github/workflows/self-test.yml');
+    const triggers = [...workflow.matchAll(/^\s+branches:\s*\[([^\]]*)\]/gm)].map(m => m[1].split(',').map(s => s.trim()));
+    assert.deepEqual(triggers, [['main'], ['main']]);
+  });
+
+  // Windows launch hardening (measured on Node 22.16): with shell:false, libuv looks in the PARENT's working
+  // directory before PATH for a bare command name, and only the guard variable on the parent process itself
+  // stops that; passing it in the child's env does nothing. The dispatcher runs inside the reviewed project,
+  // so a planted git.exe there must never be what `git diff HEAD` starts.
+  test('a git.exe planted in the reviewed project is never started by the dispatcher', () => {
+    if (process.platform !== 'win32') return; // POSIX exec never searches the working directory unless PATH says so
+    const made = run(process.execPath, [path.join(root, 'scripts/private-test-fixture.mjs'), 'momm-planted-git-'], root);
+    assert.equal(made.status, 0, 'private fixture setup failed');
+    const project = made.stdout.trim();
+    try {
+      fs.copyFileSync(process.execPath, path.join(project, 'git.exe')); // a harmless stand-in: node started as "git.exe diff ..."
+      fs.writeFileSync(path.join(project, 'diff'), "require('node:fs').writeFileSync('PLANTED-RAN', 'x');\n"); // ...runs this file
+      const unguarded = Object.fromEntries(Object.entries(env).filter(([key]) => key.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
+      const p = spawnSync(process.execPath, [path.join(root, 'momm/scripts/multi-review.mjs'), '--governor', 'codex', '--reviewers', 'codex'], { cwd: project, env: unguarded, encoding: 'utf8', windowsHide: true, timeout: 60000 });
+      assert(!p.error, p.error?.message);
+      assert.match(p.stderr, /git diff HEAD/, 'the run must have reached input collection, or this control proves nothing: ' + p.stderr.slice(0, 300));
+      assert.equal(fs.existsSync(path.join(project, 'PLANTED-RAN')), false, 'the planted git.exe in the working directory was executed');
+    } finally { fs.rmSync(project, { recursive: true, force: true }); }
+  });
+
+  // Gate rev_20260919023950_h6hn guidance-trust-missing-digest: the digest is what the owner confirms. Without
+  // it (or with a malformed one) nothing is trusted and nothing is written; the exact digest still works.
+  test('guidance --trust requires the exact sha256 and never trusts whatever happens to be on disk', () => {
+    const project = path.join(temp, 'trust-project'), home = path.join(temp, 'trust-home');
+    fs.mkdirSync(path.join(project, '.momm'), { recursive: true }); fs.mkdirSync(home);
+    const bytes = JSON.stringify({ governor: 'Synthetic guidance fixture.' }) + '\n';
+    fs.writeFileSync(path.join(project, '.momm', 'guidance.json'), bytes);
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const dispatcher = path.join(root, 'momm/scripts/multi-review.mjs');
+    const trust = args => { const p = spawnSync(process.execPath, [dispatcher, 'guidance', ...args], { cwd: project, env: { ...env, HOME: home, USERPROFILE: home }, encoding: 'utf8', windowsHide: true, timeout: 20000 }); assert(!p.error, p.error?.message); return p; };
+    const homeEntries = () => fs.readdirSync(home, { recursive: true }).map(String);
+    for (const args of [['--trust'], ['--trust', ''], ['--trust', 'abc'], ['--trust', digest.toUpperCase() + 'x'], ['--trust', digest, 'extra'], ['--trust', '--show']]) {
+      const p = trust(args);
+      assert.notEqual(p.status, 0, JSON.stringify(args));
+      assert.match(p.stdout + p.stderr, /guidance --trust <sha256>/, JSON.stringify(args));
+      assert.deepEqual(homeEntries(), [], 'nothing may be written to the trust store: ' + JSON.stringify(args));
+    }
+    const wrong = trust(['--trust', '0'.repeat(64)]);
+    assert.notEqual(wrong.status, 0); assert.deepEqual(homeEntries(), [], 'a digest that matches no file trusts nothing');
+    const good = trust(['--trust', digest]);
+    assert.equal(good.status, 0, good.stderr); assert.equal(JSON.parse(good.stdout).guidance_sha256, digest);
+    assert(homeEntries().length > 0, 'the exact digest records trust');
   });
 
   test('final report records a tolerated provider sandbox grant on the reviewer entry and names the route in evidence', () => {

@@ -810,6 +810,7 @@ function renderUpdateClock() {
     <div class="cli-table-scroll"><table class="momm-table cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="environment-note">Estimated ${escapeHtml(clockState.overhead_estimate_per_day ?? "—")} conditional request${clockState.overhead_estimate_per_day === 1 ? "" : "s"} per day at the current intervals. Checks run only on events (review start or finish, opening this page, Check everything, the timer below); nothing polls.${activity.last_finished_at ? ` Last check ${escapeHtml(formatWhen(activity.last_finished_at))} (${escapeHtml(activity.last_event || "—")}${activity.last_result?.skipped_reason ? `, ${escapeHtml(activity.last_result.skipped_reason)}` : ""}).` : ""}${activity.last_error ? ` Last error: ${escapeHtml(activity.last_error)}.` : ""}</p>
     <p class="environment-note">When this switch is on, every check event also applies what it found, and each updated CLI is then probed for containment: MOMM sends one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider, never project content. The re-read version and the probe verdict are shown below; a route whose probe failed or could not run is listed as updated, containment not verified, and is not ready.</p>
+    ${activity.last_error && !activity.running ? `<p class="environment-note clock-error" role="status">Last check or apply failed: ${escapeHtml(activity.last_error)}</p>` : ""}
     ${applyOutcome(activity, auto.enabled)}
     <div class="timer-row">
       <div><strong>Timer</strong><small>Runs the clock every 6 hours when no MOMM process is open. Registered only with your confirmation of the exact command.</small><code>${escapeHtml(timer.install || "")}</code></div>
@@ -818,16 +819,26 @@ function renderUpdateClock() {
   if (activity.running && !clockPoll) clockPoll = setTimeout(() => { clockPoll = null; loadUpdateClock(); }, 4000);
 }
 
+// A GET snapshot is as old as its request; a POST answer is as new as its
+// arrival (an apply can run for minutes while polls come and go). A poll takes
+// its ticket when it leaves, a POST when it lands, and a poll older than what
+// the card already shows (overtaken by a POST or a later poll) is dropped.
+let clockTicket = 0, clockShown = 0;
 async function loadUpdateClock() {
+  const ticket = ++clockTicket;
   try {
-    clockState = await api("/api/update-clock");
+    const value = await api("/api/update-clock");
+    if (ticket < clockShown) return;
+    clockShown = ticket;
+    clockState = value;
     clockError = null;
-  } catch (error) { clockError = error.message; }
+  } catch (error) { if (ticket < clockShown) return; clockError = error.message; }
   renderUpdateClock();
 }
 
 async function clockPost(body) {
   const value = await api("/api/update-clock", { method: "POST", body: JSON.stringify(body) });
+  clockShown = ++clockTicket;
   clockState = value;
   clockError = null;
   renderUpdateClock();
@@ -847,6 +858,9 @@ async function clockAction(action) {
     if (action === "check") {
       const value = await clockPost({ op: "trigger", event: "setup.check" });
       const applied = value.result?.apply?.applied?.length || 0;
+      // A failed check answers with result:null and the reason in activity.last_error;
+      // only a result that says so was skipped.
+      if (!value.result) { showToast(`Check failed: ${value.activity?.last_error || "the update clock reported no result"}.`); return; }
       showToast(`${value.result?.ran ? `Checked ${value.result.results.length} source${value.result.results.length === 1 ? "" : "s"}.` : `Check skipped: ${value.result?.skipped_reason || "another check is running"}.`}${applied ? ` Applied ${applied} update${applied === 1 ? "" : "s"}; see the card for each probe verdict.` : ""}`);
       if (applied) loadMaintenance(true);
     } else if (action === "apply") {

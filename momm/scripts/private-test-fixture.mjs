@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 export function privateTestFixture(prefix='momm-test-',{run=spawnSync}={}) {
   if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
   const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));

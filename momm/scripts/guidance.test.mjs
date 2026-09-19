@@ -469,7 +469,7 @@ test("grace: an untrusted .reviewrules that overflows the route budget is skippe
   assert.deepEqual(r.routes.grok.layers.map((l) => l.name), ["user:*", "project:.reviewrules"]);
   // Once trusted it is the owner's text: overflowing is an error they must fix.
   trustProject(f.cwd, { home: f.home, only: "reviewrules" });
-  assert.throws(() => resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex"] }), /exceeds 6000 characters/);
+  assert.throws(() => resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex"] }), (e) => /exceeds 6000 characters/.test(e.message) && e.code === "MOMM_GUIDANCE_BUDGET");
 });
 test("the guidance sidecar directory is created owner-only", () => {
   // Gate rev_20260919000938_1nkh: the evidence folder is inspected again after the sidecar is
@@ -481,6 +481,34 @@ test("the guidance sidecar directory is created owner-only", () => {
   try { writeGuidanceSidecar(f.cwd, "rev_mode_check", fullResolved); } finally { fs.mkdirSync = mkdir; }
   assert.deepEqual(modes, [0o700]);
   if (process.platform !== "win32") assert.equal(fs.statSync(path.join(f.cwd, ".ensemble_reviews", "guidance")).mode & 0o077, 0);
+});
+test("a linked parent directory is refused like a linked file (guidance-nofollow-boundary-bypass)", () => {
+  // Gate rev_20260919023950_h6hn: the no-follow rule covered only the last path component, so a
+  // clone could ship .momm as a link (a junction needs no privilege on Windows) to a folder outside
+  // the project. Every component below the project root is checked, and nothing is opened.
+  const f = fixture();
+  const outside = path.join(f.home, "outside-momm");
+  writeJson(path.join(outside, "guidance.json"), { reviewers: { codex: "FOREIGN-GUIDANCE" } });
+  fs.symlinkSync(outside, path.join(f.cwd, ".momm"), process.platform === "win32" ? "junction" : "dir");
+  assert.equal(fs.readFileSync(projectFile(f.cwd), "utf8").includes("FOREIGN-GUIDANCE"), true, "fixture: the link resolves");
+  const counted = countOpens(projectFile(f.cwd), () => resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex"] }));
+  assert.equal(counted.opens, 0, "the file behind the linked directory was opened");
+  assert.equal(counted.value.routes.codex.text, "");
+  assert.deepEqual(counted.value.notices, [".momm/guidance.json skipped: file is behind a symbolic link (.momm)"]);
+  assert.throws(() => trustProject(f.cwd, { home: f.home }), /symbolic link|nothing trusted/, "a linked file is never offered for trust");
+  assert.deepEqual(readBoundedBytes(projectFile(f.cwd), 1024, { followLinks: false, within: f.cwd }), { error: "is behind a symbolic link (.momm)" });
+  // A swap between the check and the open (Windows has no no-follow open): the descriptor that was
+  // opened is not the file that was checked, so nothing is read from it.
+  const g = fixture(), rules = rulesFile(g.cwd), other = path.join(g.home, "other.txt");
+  fs.writeFileSync(rules, "checked"); fs.writeFileSync(other, "SWAPPED-IN");
+  const open = fs.openSync;
+  fs.openSync = function (p, ...rest) { return open.call(fs, path.resolve(String(p)) === rules ? other : p, ...rest); };
+  try { assert.deepEqual(readBoundedBytes(rules, 1024, { followLinks: false, within: g.cwd }), { error: "changed while being read" }); } finally { fs.openSync = open; }
+  assert.equal(readBoundedBytes(rules, 1024, { followLinks: false, within: g.cwd }).bytes.toString(), "checked");
+  // The project root itself, and anything above it, is the user's own choice of location.
+  const linkedRoot = path.join(f.home, "linked-root");
+  fs.symlinkSync(full.cwd, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+  assert.equal(readBoundedBytes(path.join(linkedRoot, ".reviewrules"), 1024, { followLinks: false, within: linkedRoot }).bytes.toString().startsWith("RR line one"), true);
 });
 test("project guidance files are never read through a symbolic link", () => {
   // A real link where the platform allows one; otherwise (Windows without the symlink privilege)

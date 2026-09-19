@@ -2,7 +2,7 @@ name: Skill safety suite
 
 on:
   push:
-    branches: [main, test/momm-bootstrap-hardening-20260914]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -90,6 +90,9 @@ jobs:
       - name: modality runner regressions from the 1.16 readiness audit
         timeout-minutes: 2
         run: node momm/scripts/modality-evaluation.test.mjs
+      - name: Windows launch guard on every process-launching script
+        timeout-minutes: 2
+        run: node scripts/launch-guard.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |

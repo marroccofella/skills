@@ -17,7 +17,10 @@ const defaultApplyDeps = (...a) => UC.defaultApplyDeps(...a);
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-clock-"));
 const passed = [], failures = [];
 let n = 0;
-async function test(name, fn) { try { await fn(); passed.push(name); } catch (e) { failures.push({ name, error: e.message }); } }
+// A test that cannot run on this platform returns { skip: reason }: it is listed under
+// `skipped`, never under `passed`, so a no-op is not reported as a green Windows case.
+const skipped = {};
+async function test(name, fn) { try { const r = await fn(); if (r?.skip) skipped[name] = r.skip; else passed.push(name); } catch (e) { failures.push({ name, error: e.message }); } }
 const MIN = DEFAULT_SETTINGS.clock.min_interval_ms, MAX = DEFAULT_SETTINGS.clock.max_interval_ms;
 function env(overrides = {}) {
   const dir = path.join(fixture, `case-${n++}`); fs.mkdirSync(dir);
@@ -580,7 +583,8 @@ await test("body-cap-after-slurp: the body is read as a stream and aborted past 
   await assert.rejects(defaultFetcher(url).then(r => r.text()), /1 MiB|exceeds/);
   // The close must come from the CLIENT's abort: it is awaited (bounded) and judged
   // BEFORE closeAllConnections(), which would otherwise set the same flag itself.
-  const observed = await Promise.race([closed.then(() => true), new Promise(r => setTimeout(() => r(false), 5_000))]);
+  let bound; const observed = await Promise.race([closed.then(() => true), new Promise(r => { bound = setTimeout(() => r(false), 5_000); })]);
+  clearTimeout(bound); // a prompt client close must not leave a 5 s handle behind
   const abortedByClient = observed && closedEarly;
   server.closeAllConnections(); server.close();
   assert.equal(abortedByClient, true, `client aborted mid-body (server had sent ${sent} of ${TOTAL} bytes)`);
@@ -708,13 +712,17 @@ await test("gate3 [161]: a timeout still resolves when the direct child already 
     const took = Date.now() - t0;
     assert(took < 5_000, `resolved only after ${took} ms: the promise waited for the grandchild's pipes instead of the deadline`);
     assert.equal(r.timedOut, true); assert.equal(r.code, -1);
+    // The reproduction is only load-bearing if the grandchild really existed and outlived its parent.
+    assert(fs.existsSync(pidFile), "the parent never spawned the grandchild before the deadline: nothing held the pipes");
+    const held = Number(fs.readFileSync(pidFile, "utf8")); let alive = true; try { process.kill(held, 0); } catch (e) { alive = e.code !== "ESRCH"; }
+    assert.equal(alive, true, `grandchild ${held} was not alive at the deadline, so the pipe-hold case was not exercised`);
   } finally {
     const gpid = Number(fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8") : 0);
     if (gpid > 0) { try { process.kill(gpid, "SIGKILL"); } catch {} }
   }
 });
 await test("gate3 [163]/[63]: defaultExec starts an absolute .exe without cmd.exe (no %VAR% expansion) and never resolves a bare name from the working directory", async () => {
-  if (process.platform !== "win32") return;
+  if (process.platform !== "win32") return { skip: "Windows cmd.exe and CreateProcess behaviour only" };
   const dir = path.join(fixture, "pct %OS% dir"); fs.mkdirSync(dir, { recursive: true });
   const probe = path.join(dir, "probe.exe"); fs.copyFileSync(process.execPath, probe); // harmless stand-in executable
   const r = await defaultExec(probe, ["--version"], { timeout: 20_000 });
@@ -783,6 +791,89 @@ await test("gate3 [164]: a CLI update whose new version cannot be read is not re
   await applyUpdates(e.clock, deps); assert.equal(runs, 2, "a NEWER release is attempted again");
 });
 
+// ---- momm run rev_20260919023950_h6hn (gate 4) reproductions -----------------
+await test("gate4 [1]: the timeout tree kill uses System32 taskkill, never a taskkill.exe planted in the working directory", async () => {
+  if (process.platform !== "win32") return { skip: "Windows executable search order only" };
+  // A direct spawn of a bare name tries the working directory BEFORE PATH unless the
+  // CALLING process already carries NoDefaultCurrentDirectoryInExePath (setting it for the
+  // child alone changes nothing). The child below runs without it, like a plain user shell.
+  // The planted stand-in is a copy of node.exe: it kills nothing, so the DETACHED grandchild
+  // (outside every kill-on-close job) survives exactly when the planted file was chosen.
+  const dir = path.join(fixture, "planted-taskkill"); fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(process.execPath, path.join(dir, "taskkill.exe"));
+  const hang = path.join(dir, "hang.cjs"), tree = path.join(dir, "tree.cjs"), child = path.join(dir, "child.mjs");
+  fs.writeFileSync(hang, "setTimeout(() => {}, 60000);\n");
+  fs.writeFileSync(tree, `const { spawn } = require("child_process");\nconst g = spawn(process.execPath, [${JSON.stringify(hang)}], { stdio: "inherit", detached: true });\nprocess.stdout.write(String(g.pid) + "\\n");\nsetTimeout(() => {}, 60000);\n`);
+  fs.writeFileSync(child, `import { defaultExec } from ${JSON.stringify(new URL("./update-clock.mjs", import.meta.url).href)};\nconst r = await defaultExec(process.execPath, [${JSON.stringify(tree)}], { timeout: 1500 });\nprocess.stdout.write(JSON.stringify({ timedOut: r.timedOut, gpid: Number(r.stdout.trim()) }));\n`);
+  const tasklist = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tasklist.exe");
+  let gpid = 0; const bareEnv = { ...process.env };
+  for (const key of Object.keys(bareEnv)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete bareEnv[key];
+  try {
+    const p = spawnSync(process.execPath, [child], { cwd: dir, env: bareEnv, encoding: "utf8", windowsHide: true, timeout: 60_000 });
+    assert.equal(p.status, 0, p.stderr); const r = JSON.parse(p.stdout); gpid = r.gpid;
+    assert.equal(r.timedOut, true); assert(gpid > 0, `grandchild pid reported: ${p.stdout}`);
+    await new Promise(done => setTimeout(done, 400));
+    const q = spawnSync(tasklist, ["/FI", `PID eq ${gpid}`, "/NH"], { encoding: "utf8", windowsHide: true });
+    assert.equal(new RegExp(`\\b${gpid}\\b`).test(q.stdout), false, `grandchild ${gpid} survived: the planted taskkill.exe ran instead of the System32 tool`);
+  } finally { if (gpid > 0) { try { process.kill(gpid, "SIGKILL"); } catch {} } }
+});
+await test("gate4 [62]: a lock another process published after the stale one was inspected is never deleted", async () => {
+  const DEAD = 4_000_001, LIVE = 4_000_002; let swapped = 0, lockFile;
+  // isAlive runs between inspection and removal: exactly where a second process can
+  // reclaim the stale lock and publish its own.
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.15.1") }, sources: [skillSource()], isAlive: pid => {
+    if (pid === DEAD && !swapped) { swapped += 1; fs.unlinkSync(lockFile); fs.writeFileSync(lockFile, JSON.stringify({ pid: LIVE, at: "2026-09-19T00:00:00.000Z" })); return false; }
+    return pid === LIVE;
+  } });
+  lockFile = `${e.stateFile}.lock`; fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: DEAD, at: "2026-09-18T00:00:00.000Z" }));
+  const r = await e.clock.trigger("manual");
+  assert.equal(swapped, 1); assert.equal(r.skipped_reason, "locked", "entered the critical section beside the live owner");
+  assert.equal(JSON.parse(fs.readFileSync(lockFile, "utf8")).pid, LIVE, "the replacement lock is intact");
+  assert.deepEqual(fs.readdirSync(path.dirname(lockFile)).filter(n => /\.(stale|tmp)$/.test(n)), [], "no capture file is left behind");
+});
+await test("gate4 grok#76: a state row without a finite interval is rescheduled, never parked on NaN", async () => {
+  const e = env({ responses: { [MANIFEST_URL]: { status: 304 } }, sources: [skillSource()] });
+  fs.mkdirSync(path.dirname(e.stateFile), { recursive: true });
+  fs.writeFileSync(e.stateFile, JSON.stringify({ schema: "momm-update-clock/1", sources: { skill: { etag: '"v1"', last_seen_version: "1.15.1", consecutive_unchanged: 3, tight_until: 0 } }, history: [] }));
+  assert.equal((await e.clock.trigger("daily.tick")).ran, true);
+  const row = readState(e.stateFile).sources.skill;
+  assert(Number.isFinite(row.interval_ms) && row.interval_ms >= MIN && row.interval_ms <= MAX, `interval_ms=${row.interval_ms}`);
+  assert(Number.isFinite(row.next_due_at) && row.next_due_at > e.time.t, `next_due_at=${row.next_due_at}: a NaN due time is never reached by a passive event`);
+  e.time.t = row.next_due_at + 1;
+  assert.equal((await e.clock.trigger("daily.tick")).ran, true, "the source comes due again");
+});
+await test("gate4 [65]: the Windows timer is registered by argv through System32 schtasks, so & % ^ in a path are never cmd.exe syntax", async () => {
+  const node = "C:\\A&B\\node.exe", script = "C:\\Users\\me\\100%OS% a^b (x)\\update-clock.mjs", want = `"${node}" "${script}" trigger daily.tick`;
+  const seen = [];
+  const done = await installTimer({ platform: "win32", nodePath: node, scriptPath: script, confirm: true, exec: async (command, args, options) => { seen.push({ command, args, options }); return { code: 0, stderr: "" }; } });
+  assert.equal(done.done, true); assert.equal(seen.length, 1);
+  assert.match(seen[0].command, /^[A-Za-z]:\\.*\\System32\\schtasks\.exe$/, "absolute system tool, never a bare name a working directory could shadow");
+  assert.notEqual(seen[0].options?.shell, true, "no shell line: cmd.exe would read & as a command separator and expand %OS%");
+  assert.deepEqual(seen[0].args, ["/Create", "/SC", "HOURLY", "/MO", "6", "/TN", "MOMM-UpdateClock", "/TR", want]);
+  const removed = []; await UC.removeTimer({ platform: "win32", nodePath: node, scriptPath: script, confirm: true, exec: async (command, args) => { removed.push([command, args]); return { code: 0 }; } });
+  assert.match(removed[0][0], /\\System32\\schtasks\.exe$/); assert.deepEqual(removed[0][1], ["/Delete", "/TN", "MOMM-UpdateClock", "/F"]);
+  if (process.platform !== "win32") return;
+  // Parse-only round trip (schtasks is never run): node.exe splits argv with the same CRT rules.
+  const echo = await defaultExec(process.execPath, ["-e", "console.log(JSON.stringify(process.argv.slice(1)))", "--", ...seen[0].args], { timeout: 20_000 });
+  assert.equal(echo.code, 0, echo.stderr); assert.equal(JSON.parse(echo.stdout)[8], want);
+});
+await test("gate4 [2]: a hint-only skill update is applied once, not on every later pass", async () => {
+  // No shipped source reports a skill hint; an injected one can (sources is a public option).
+  const hinted = { name: "skill", kind: "skill", async check() { return { latest: null, update_available: true }; } };
+  const e = env({ sources: [hinted] });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  assert.equal(e.clock.status().sources[0].update_available, true, "the hint stands in while no version is known");
+  let applies = 0; const deps = { runUpdater: async a => { if (a[0] === "--apply") applies += 1; return { code: 0, output: a[0] === "--dry-run" ? PREVIEW : "Installed" }; } };
+  const first = await applyUpdates(e.clock, deps);
+  assert.equal(first.applied.length, 1); assert.equal(applies, 1);
+  assert.equal(e.clock.installedVersions.skill, "1.15.1", "an unknown latest never erases the known installed version");
+  const second = await applyUpdates(e.clock, deps);
+  assert.equal(applies, 1, "the signed updater ran again for the same hint"); assert.equal(second.applied.length, 0);
+  assert.equal(readState(e.stateFile).sources.skill.update_available_hint, undefined, "the pre-update hint is retired by the apply");
+});
+
 await test("cliMain trigger never runs real executors under an injected clock, and never applies after a check that did not run (audit safety)", async () => {
   const dir = path.join(fixture, "guard"); fs.mkdirSync(dir, { recursive: true });
   const home = path.join(dir, "home"), stateFile = path.join(dir, "clock.json");
@@ -804,5 +895,5 @@ await test("cliMain trigger never runs real executors under an injected clock, a
 });
 
 fs.rmSync(fixture, { recursive: true, force: true });
-console.log(JSON.stringify({ passed, failures }, null, 2));
+console.log(JSON.stringify({ passed, failures, skipped }, null, 2));
 if (failures.length) process.exitCode = 1;

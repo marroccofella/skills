@@ -17,6 +17,14 @@ import { createScheduler } from "./scheduler.mjs";
 import { createUpdateClock } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
 
+// Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
+// cmd.exe and libuv's own shell:false lookup try the WORKING DIRECTORY before
+// PATH, and this process runs inside the reviewed project, where a planted
+// git.exe would otherwise be started. Measured on Node 22.16: only the guard on
+// THIS process stops libuv's lookup; putting it in a child's env does not.
+// Set before anything can spawn; children inherit it through process.env.
+if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath = "1";
+
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
@@ -1355,6 +1363,9 @@ const SCRATCH_ACCESS_NOTE = "provider sandbox group was granted read-only access
 // Returns the recorded grants, [] when nothing was tolerated, or null when the
 // inspector's answer names anything this route was not offered (fail closed).
 function toleratedScratchAccess(agent, inspection) {
+  // The real inspector throws on failure; an answer that says "not verified"
+  // is believed all the same, whatever else it carries.
+  if (inspection && typeof inspection === "object" && inspection.verified === false) return null;
   const tolerated = inspection?.tolerated;
   if (tolerated === undefined || tolerated === null) return [];
   if (!Array.isArray(tolerated) || tolerated.length > 8) return null;
@@ -1798,7 +1809,7 @@ function splitQuorum(pieceResults, minSuccess) {
 // splitter's hard cap — never raised by --max-bytes.
 // The split hard cap replaces the per-review limit only for input the splitter
 // can pack (a diff). Anything else is dispatched whole and keeps --max-bytes.
-function inputLimitFor(options, artifact = null) { return options.split && (artifact === null || looksLikeDiff(artifact)) ? SPLIT_HARD_CAP_BYTES : options.maxBytes; }
+function inputLimitFor(options, artifact = null) { return options.split && artifact !== null && looksLikeDiff(artifact) ? SPLIT_HARD_CAP_BYTES : options.maxBytes; }
 // Exit 3 names the failing pieces of a split run; `achieved` is the lowest piece.
 function quorumFailure(achieved, required, pieceResults) {
   const failing = pieceResults ? pieceResults.filter((piece) => !piece.quorum_met).map((piece) => piece.id) : null;
@@ -2748,7 +2759,11 @@ async function selfTest(pretty) {
     })(),
     gate_split_quorum_empty_pieces_is_not_infinity: (() => { const q = splitQuorum([], 2); return q.external_successes === 0 && q.met === true && q.governor_direct_only === true; })(),
     gate_split_quorum_all_pieces_must_meet: (() => { const q = splitQuorum([{ external_successes: 2, quorum_met: true }, { external_successes: 1, quorum_met: false }], 2); return q.external_successes === 1 && q.met === false && q.governor_direct_only === false; })(),
-    gate_input_limit_under_split_is_the_hard_cap: inputLimitFor({ split: "auto", maxBytes: 3_000_000 }) === SPLIT_HARD_CAP_BYTES && inputLimitFor({ split: null, maxBytes: 120_000 }) === 120_000,
+    // Gate rev_20260919023950_h6hn split-cap-no-text-overload: the hard cap is granted only for a diff the
+    // caller actually shows; with no artifact in hand the answer is the conservative --max-bytes.
+    gate_input_limit_under_split_is_the_hard_cap: inputLimitFor({ split: "auto", maxBytes: 3_000_000 }, "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n") === SPLIT_HARD_CAP_BYTES
+      && inputLimitFor({ split: "auto", maxBytes: 120_000 }) === 120_000 && inputLimitFor({ split: "auto", maxBytes: 120_000 }, null) === 120_000
+      && inputLimitFor({ split: null, maxBytes: 120_000 }) === 120_000,
     split_args_parse_auto_and_kb_and_reject_small: (() => { const a = parseArgs(["--split", "auto"]); const b = parseArgs(["--split", "12"]); let rejected = false; try { parseArgs(["--split", "2"]); } catch { rejected = true; } return a.split === "auto" && b.split === 12 * 1024 && rejected; })(),
     merge_pieces_worst_verdict_and_per_piece_outcomes: (() => {
       const mk = (agent, status, verdict, id) => ({ agent, status, attempts: 1, duration_ms: 10, ...(status === "success" ? { review: { verdict, confidence: 0.9, summary: "s", findings: id ? [{ id, severity: "WARNING", target_file: "a", line_range: null, issue: "i", rationale: "r", test_suggestion: "t", sources: [agent] }] : [], improvements: [], reviewed_scope: [] }, usage: { reported: { total_tokens: 100, cost_usd: 0.01 } } } : { detail: "timed out" }) });
@@ -2907,6 +2922,9 @@ async function selfTest(pretty) {
         && Object.keys(PROVIDER_SANDBOX_PRINCIPALS).join() === "codex"
         && toleratedScratchAccess("grok", { tolerated: [grant] }) === null && toleratedScratchAccess("codex", { verified: true }).length === 0;
     })(),
+    // The guard must be set by this module on its own process (CI runners do not provide it); the behavioural
+    // proof with a planted git.exe is in scripts/momm-independent-review.test.mjs.
+    windows_launch_guard_is_set_on_this_process: process.platform !== "win32" || process.env.NoDefaultCurrentDirectoryInExePath === "1",
     forced_timeout_settles: forcedTimeout.timedOut && timeoutElapsedMs < 8_000,
   };
   const passed = selfTestPassed(tests);
@@ -2948,6 +2966,9 @@ function evidenceCommand(args) {
 function guidanceCommand(args) {
   const home = os.homedir();
   if (args[0] === "--trust") {
+    // The digest IS the owner's confirmation of the exact bytes shown in the
+    // notice: without it nothing is trusted, never "whatever is on disk now".
+    if (args.length !== 2 || !/^[0-9a-f]{64}$/.test(args[1])) throw new Error("usage: multi-review.mjs guidance --trust <sha256> (the 64-character lower-case digest shown in the guidance notice); nothing was trusted");
     const entry = trustProject(process.cwd(), { home, expect: args[1] });
     process.stdout.write(`${JSON.stringify({ trusted: process.cwd().replaceAll("\\", "/"), ...entry }, null, 2)}\n`);
     return;
@@ -3060,11 +3081,6 @@ async function main() {
       options.reviewersAuto = { selected: auto.routes, per_modality: auto.perModality };
     }
   }
-  try {
-    if (fs.existsSync(".reviewrules")) {
-      options.projectRules = clipped(fs.readFileSync(".reviewrules", "utf8"), 4000) || null;
-    }
-  } catch { options.projectRules = null; }
   const uniqueReviewers = [...new Set(options.reviewers)];
   clockTrigger("review.start", options.stream);
   // 1.16 guidance: persona (selector) → user → trusted project (.reviewrules,

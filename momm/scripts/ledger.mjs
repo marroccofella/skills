@@ -19,6 +19,10 @@ import { fileURLToPath } from "node:url";
 import { inspectCompletion } from "./governor.mjs";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 // The page quotes this script by its installed path, so every command it
 // shows (rebuild, --rate) is copy-pasteable from any project directory.
