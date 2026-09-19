@@ -1,12 +1,14 @@
 # MOMM 1.16.0 — measurement, ratings, guidance, throughput, upkeep
 
-Status: release candidate, originally built 2026-09-13 from 1.15.1. The consolidated
+Status: **released 19 September 2026** as the signed tag `momm-1.16.0` (commit `cbd5570`, release
+workflow run 35462410210: signature, Rekor entry and certificate claims validated; genuine signed
+preview and apply passed). Built from 1.15.1 starting 2026-09-13. The consolidated
 candidate and its gate record are on [PR #7](https://github.com/marroccofella/skills/pull/7);
 the independent-audit conversation is on [PR #4](https://github.com/marroccofella/skills/pull/4)
 and the audit repairs came from [PR #6](https://github.com/marroccofella/skills/pull/6) and
 [PR #8](https://github.com/marroccofella/skills/pull/8).
-Neither this document nor a candidate version string establishes a stable release: only the
-signed `momm-1.16.0` tag does.
+A version string never establishes a release; the signed `momm-1.16.0` tag does. The text below
+the summary is the dated record as it was written, so it speaks of a candidate.
 Plan: [plan-1.16.0.md](plan-1.16.0.md).
 
 ## In short
