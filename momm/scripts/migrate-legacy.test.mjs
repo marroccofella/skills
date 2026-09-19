@@ -10,8 +10,14 @@ const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileS
 // Inputs retain their caller spelling, including symlink/short-name temp roots.
 // Expected paths and race hooks use the OS-resolved parent of each entry.
 const physicalEntry=p=>path.join((process.platform==='win32'?fs.realpathSync.native:fs.realpathSync)(path.dirname(p)),path.basename(p));
-async function test(n,f){try{const result=await f();if(result?.skip)skipped[n]=result.skip;results[n]=true;}catch(e){results[n]={failure:e.message};process.exitCode=1;}}
-async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,dep);return migrate({...f.options,apply:true,acceptProtocol:true,planSha256:preview.plan_sha256},dep);}
+// Progress goes to STDERR only (one line per test: outcome, name, elapsed ms)
+// so a slow run can be told from a hung one; the STDOUT JSON shape is unchanged.
+async function test(n,f){
+  const started=Date.now();let outcome='ok';
+  try{const result=await f();if(result?.skip){skipped[n]=result.skip;outcome='skip';}results[n]=true;}catch(e){results[n]={failure:e.message};process.exitCode=1;outcome='FAIL';}
+  process.stderr.write(`[migrate-legacy.test] ${outcome} ${n} ${Date.now()-started}ms\n`);
+}
+async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,dep);assert.equal(preview.status,'migration_preview');return migrate({...f.options,apply:true,acceptProtocol:true,planSha256:preview.plan_sha256},dep);}
 function fixture(name,link=false){
   const base=path.join(root,name),repo=path.join(base,'prepared'),skill=path.join(base,'harness','skills','momm'),backup=path.join(base,'backups','old-momm');
   fs.mkdirSync(repo,{recursive:true});fs.mkdirSync(path.dirname(backup),{recursive:true});
@@ -66,6 +72,14 @@ try{
     const f=fixture('backup-conflicts');await assert.rejects(migrate({...f.options,backup:path.join(path.dirname(f.skill),'momm.bak')},f.dep),{code:'unsafe_backup'});
     write(f.backup,'keep');await assert.rejects(migrate(f.options,f.dep),{code:'migration_conflict'});assert.equal(fs.readFileSync(f.backup,'utf8'),'keep');
   });
+  await test('prepared_clone_overlapping_the_live_link_target_is_refused',async()=>{
+    // Gate-3 [65]: only the link path was compared, never the installation it resolves to.
+    const f=fixture('overlap-target'),type=process.platform==='win32'?'junction':'dir';
+    fs.rmSync(f.skill,{recursive:true});fs.symlinkSync(f.repo,f.skill,type); // old discovery link -> the "prepared" clone itself
+    await assert.rejects(migrate(f.options,f.dep),{code:'unsafe_backup'});
+    fs.unlinkSync(f.skill);write(path.join(f.repo,'vendored/momm/SKILL.md'),'# Old protocol\n');fs.symlinkSync(path.join(f.repo,'vendored','momm'),f.skill,type); // link -> inside the clone
+    await assert.rejects(migrate(f.options,f.dep),{code:'unsafe_backup'});assert(!fs.existsSync(f.backup));assert(fs.lstatSync(f.skill).isSymbolicLink());
+  });
   await test('failed_partial_installer_restores_original_without_deleting_new_clone',async()=>{
     const f=fixture('partial');let failure;
     try{await applyFixture(f,{...f.dep,run:(cmd,args,cwd,opts)=>{const result=execute(cmd,args,cwd,opts);if(cmd===process.execPath)throw Error('simulated receipt reporting failure');return result;}});}catch(e){failure=e;}
@@ -79,6 +93,31 @@ try{
     const f=fixture('changed-link'),r=await applyFixture(f);
     fs.unlinkSync(f.skill);write(path.join(f.skill,'new-user-file'),'keep');assert.throws(()=>rollback(r.paths.journal),{code:'discovery_changed'});
     assert.equal(fs.readFileSync(path.join(f.skill,'new-user-file'),'utf8'),'keep');assert(fs.existsSync(f.backup));
+  });
+  await test('rollback_removes_a_real_directory_junction_or_symlink_without_touching_its_target',async()=>{
+    // Gate-3 [1]: claim that unlink of a directory junction throws EPERM on Windows.
+    const f=fixture('junction-unlink'),r=await applyFixture(f),target=path.join(f.repo,'momm');
+    const before=fs.lstatSync(f.skill);assert(before.isSymbolicLink(),'installer must have produced a link or junction');
+    if(process.platform==='win32')assert.equal(fs.realpathSync.native(f.skill),fs.realpathSync.native(target));
+    assert.equal(rollback(r.paths.journal).status,'rolled_back');
+    assert(!fs.lstatSync(f.skill).isSymbolicLink());assert.equal(fs.readFileSync(path.join(f.skill,'SKILL.md'),'utf8'),'# Old protocol\n');
+    assert.equal(fs.readFileSync(path.join(target,'SKILL.md'),'utf8'),'# New protocol\n','link target must survive removal of the link');
+  });
+  await test('rollback_accepts_the_new_link_when_its_target_is_a_respelling_of_the_prepared_clone',async()=>{
+    // Gate-3 [2]: the link text may spell the clone differently (alias, 8.3 name,
+    // /var vs /private/var) from the physical path stored in the journal.
+    const f=fixture('respelled-link'),r=await applyFixture(f),alias=path.join(root,'respelled-alias'),type=process.platform==='win32'?'junction':'dir';
+    fs.symlinkSync(path.dirname(f.repo),alias,type);
+    fs.unlinkSync(f.skill);fs.symlinkSync(path.join(alias,'prepared','momm'),f.skill,type);
+    assert.notEqual(path.resolve(path.dirname(f.skill),fs.readlinkSync(f.skill)),path.join(f.repo,'momm'),'fixture must really be respelled');
+    assert.equal(fs.realpathSync(f.skill),fs.realpathSync(path.join(f.repo,'momm')));
+    assert.equal(rollback(r.paths.journal).status,'rolled_back');
+    assert.equal(fs.readFileSync(path.join(f.skill,'SKILL.md'),'utf8'),'# Old protocol\n');assert(fs.existsSync(path.join(f.repo,'momm/SKILL.md')));
+  });
+  await test('rollback_still_refuses_a_link_that_resolves_outside_the_prepared_clone',async()=>{
+    const f=fixture('foreign-link'),r=await applyFixture(f),foreign=path.join(path.dirname(f.repo),'foreign','momm');write(path.join(foreign,'SKILL.md'),'# Foreign\n');
+    fs.unlinkSync(f.skill);fs.symlinkSync(foreign,f.skill,process.platform==='win32'?'junction':'dir');
+    assert.throws(()=>rollback(r.paths.journal),{code:'discovery_changed'});assert(fs.lstatSync(f.skill).isSymbolicLink());assert(fs.existsSync(f.backup));
   });
   await test('force_and_mixed_rollback_flags_are_not_supported',()=>{assert.throws(()=>parse(['--force']));assert.throws(()=>parse(['--rollback','/fixture/journal','--apply']));});
   await test('apply_requires_the_exact_approved_preview_digest',async()=>{
@@ -146,4 +185,4 @@ try{
     const f=fixture('missing-old-protocol');fs.unlinkSync(path.join(f.skill,'SKILL.md'));await assert.rejects(migrate(f.options,f.dep),{code:'unsupported_scope'});assert(!fs.existsSync(f.backup));
   });
   console.log(JSON.stringify({passed:Object.values(results).every(v=>v===true),tests:Object.keys(results).length,results,skipped,note:'Signature service stubbed; real installers, receipts, Git files and discovery links exercised only in temporary synthetic projects. Platform or filesystem skips are reported explicitly.'},null,2));
-}finally{const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true});}
+}finally{const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true,force:true,maxRetries:3});}

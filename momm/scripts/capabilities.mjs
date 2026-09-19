@@ -59,7 +59,6 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const toMs = (d) => (typeof d === "function" ? d() : new Date(d)).getTime();
 const semver = (text) => String(text ?? "").match(/\d+\.\d+\.\d+/)?.[0] ?? null;
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; } };
 const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // The exact action that clears each blocker, specialised per route where the route has
@@ -213,7 +212,7 @@ function withOverlayLock(file, timeoutMs, fn) {
     try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); break; } catch (e) {
       if (!TRANSIENT.has(e?.code)) throw e;
       // Every failed acquisition observes the deadline, even during churn.
-      if (Date.now() >= deadline) throw new Error(`Capabilities overlay lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.`);
+      if (Date.now() >= deadline) throw new Error(`Capabilities overlay lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.${e?.code && e.code !== "EEXIST" ? ` The lock could not be created (${e.code}); if no lock file exists, check that this folder is writable.` : ""}`);
       sleepMs(20);
     }
   }

@@ -91,6 +91,7 @@ cd momm/references/cli/help
 codex --help > codex.txt; codex exec --help > codex-exec.txt; codex login --help > codex-login.txt
 claude --help > claude.txt
 agy --help > agy.txt
+# POSIX shell syntax: on Windows run these lines in Git Bash, not PowerShell or cmd
 copilot --help > copilot.txt; for t in environment limits billing permissions config sandbox; do copilot help $t; done > copilot-help-topics.txt
 grok --help > grok.txt; grok login --help > grok-login.txt; grok agent --help > grok-agent.txt
 gemini --help > gemini.txt

@@ -55,7 +55,6 @@ const FILE_INSTRUCTION = "Read prompt.txt in the current working directory and f
 const fail = (message, code, extra = {}) => Object.assign(new Error(message), { code, ...extra });
 const posix = (p) => p.replace(/\\/g, "/");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; } };
 const artefactModality = (file) => MODALITY_BY_EXT[path.extname(file).slice(1).toLowerCase()] ?? null;
 
 // ---- need normalisation -----------------------------------------------------------------------
@@ -65,7 +64,10 @@ export function normaliseNeed(need) {
   const outKey = (m) => { const k = OUTPUT_ALIAS[String(m).toLowerCase()]; if (!k || !OUTPUT_MODALITIES.includes(k)) throw fail(`unknown output modality ${m}`, "MOMM_BAD_NEED"); return k; };
   if (Array.isArray(need.chain)) {
     if (need.chain.length < 2) throw fail("a chain needs at least two nodes", "MOMM_BAD_NEED");
-    return need.chain.slice(0, -1).map((node, i) => ({ from: [inKey(node)], to: [outKey(need.chain[i + 1])] }));
+    // A code or web step produces a text answer, so the step after it consumes text. (As a plain
+    // `input` these words stay unknown: there is no code or web artefact to supply.)
+    const consumed = (node) => (["code", "code_exec", "web"].includes(String(node).toLowerCase()) ? "text" : node);
+    return need.chain.slice(0, -1).map((node, i) => ({ from: [inKey(consumed(node))], to: [outKey(need.chain[i + 1])] }));
   }
   const input = Array.isArray(need.input) && need.input.length ? need.input : ["text"];
   const output = Array.isArray(need.output) && need.output.length ? need.output : ["text"];
@@ -283,10 +285,13 @@ async function acquireHarvestLock(home, pattern, timeoutMs) {
   const dir = path.join(home, ".momm", "harvest-locks");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const lock = path.join(dir, `${sha256(pattern).slice(0, 16)}.lock`);
-  let endTurn;
-  const turn = new Promise((r) => { endTurn = r; });
+  let releaseTurn;
+  const turn = new Promise((r) => { releaseTurn = r; });
   const previous = inProcessTurns.get(lock) ?? Promise.resolve();
-  inProcessTurns.set(lock, previous.then(() => turn));
+  const tail = previous.then(() => turn);
+  inProcessTurns.set(lock, tail);
+  // The registry holds a key only while someone holds or waits for it: the last one out removes it.
+  const endTurn = () => { releaseTurn(); if (inProcessTurns.get(lock) === tail) inProcessTurns.delete(lock); };
   await previous;
   const token = randomBytes(8).toString("hex");
   const deadline = Date.now() + timeoutMs;
@@ -393,6 +398,10 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
   const inputTypes = inputs.map(artefactModality);
   const missingTypes = firstMedia.filter(m => !inputTypes.includes(m));
   if (missingTypes.length) throw fail(`Refused: initial artefacts are missing required ${missingTypes.join("+")} input`, "MOMM_INPUT_MISSING", { modalities: missingTypes });
+  // Only what the first step takes is staged and sent: an artefact of any other modality (a file
+  // with no media type counts as text) is refused here, before a run directory exists.
+  const unexpected = inputs.filter((f, k) => !resolved[0].step.from.includes(inputTypes[k] ?? "text"));
+  if (unexpected.length) throw fail(`Refused: initial input ${unexpected.map((f) => path.basename(f)).join(", ")} is not a modality the first step takes (${resolved[0].step.from.join("+")}); nothing was staged or sent`, "MOMM_INPUT_UNEXPECTED", { modalities: resolved[0].step.from });
   if (!exec) ({ defaultExec: exec } = await import("./probes.mjs"));
   const at = typeof now === "function" ? now() : new Date(now);
   fs.mkdirSync(path.join(cwd, MEDIA_DIR), { recursive: true, mode: 0o700 });

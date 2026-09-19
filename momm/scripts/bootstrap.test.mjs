@@ -156,6 +156,14 @@ try {
     const p=spawnSync(process.execPath,[fileURLToPath(new URL('./bootstrap.mjs',import.meta.url)),'--check'],{cwd:home,env:{...process.env,PATH:bin,Path:bin},encoding:'utf8',windowsHide:true,timeout:15000});
     assert.equal(JSON.parse(p.stdout).tools.find(t=>t.name==='git').status,'available');
   });
+  await test('unresolvable_existing_path_does_not_mask_tool_availability',()=>{
+    // Gate-3 [64]: a mistyped --existing made --check advise installing Git.
+    const absent=path.join(root,'no-such-clone'),baseline=readiness({inspected:null}),checked=readiness({inspected:absent});
+    assert.equal(baseline.tools.find(t=>t.name==='git').status,'available','this suite already requires Git on PATH');
+    assert.deepEqual(checked.tools,baseline.tools);assert.equal(inspectExisting(absent).route,'inspection_required');
+    const p=spawnSync(process.execPath,[fileURLToPath(new URL('./bootstrap.mjs',import.meta.url)),'--check','--existing',absent],{cwd:root,encoding:'utf8',windowsHide:true,timeout:20000});
+    const r=JSON.parse(p.stdout);assert.equal(r.tools.find(t=>t.name==='git').status,'available');assert.equal(r.installation.route,'inspection_required');
+  });
   await test('existing_clone_inspection_disables_local_fsmonitor_execution',()=>{
     const repo=path.join(root,'monitor-check');fs.mkdirSync(repo);const git=(...a)=>execute('git',a,repo);
     git('-c','init.templateDir=','init','.');write(path.join(repo,'versions.json'),'{"momm":"1.10.2"}');git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m','fixture');

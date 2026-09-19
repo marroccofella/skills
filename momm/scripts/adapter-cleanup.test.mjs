@@ -94,7 +94,8 @@ try{
     return c.ctx.invoke(route,scratchArtifact,{governor:'other',timeoutMs:1000,...(seam?{testWorkspaceCheck:check}:{}),
       runProcess:async()=>({code:0,stdout:scratchReply[route]??scratchReview,stderr:''})});
   };
-  const sandboxGrant={principal:'WORK\\CodexSandboxUsers',rights:'ReadAndExecute, Synchronize'};
+  // The shape the real inspector returns: the exact offered name and its read-only verdict.
+  const sandboxGrant={principal:'CodexSandboxUsers',rights:'read_execute'};
   for(const seam of [false,true])await test(`codex tolerated sandbox group on its own scratch is accepted and recorded (${seam?'testWorkspaceCheck seam':'stubbed requirePrivateScratch binding'})`,async()=>{
     const c=context(),calls=[];
     const r=await scratchInvoke(c,'codex',(...args)=>{calls.push(args);return {verified:true,basis:'windows_dacl',tolerated:[sandboxGrant]};},seam);
@@ -117,7 +118,7 @@ try{
     assert.equal(r.detail,'review workspace permissions could not be verified after execution; temporary copies were removed and no review was accepted');
   });
   await test('a tolerated entry outside the route table, or malformed, is refused rather than recorded',async()=>{
-    for(const tolerated of [[{principal:'WORK\\Everyone',rights:'ReadAndExecute'}],[sandboxGrant,{principal:'BUILTIN\\Users',rights:'ReadAndExecute'}],[{principal:'WORK\\CodexSandboxUsersX',rights:'Read'}],[{rights:'Read'}],'CodexSandboxUsers',[null]]){
+    for(const tolerated of [[{principal:'OTHERDOMAIN\\CodexSandboxUsers',rights:'read_execute'}],[{principal:'WORK\\Everyone',rights:'ReadAndExecute'}],[sandboxGrant,{principal:'BUILTIN\\Users',rights:'ReadAndExecute'}],[{principal:'WORK\\CodexSandboxUsersX',rights:'Read'}],[{rights:'Read'}],'CodexSandboxUsers',[null]]){
       const c=context();const r=await scratchInvoke(c,'codex',()=>({verified:true,tolerated}));
       safeFailure(r);clean(c);assert.match(r.detail,/permissions could not be verified after execution/);assert(!('scratch_access' in r));
     }

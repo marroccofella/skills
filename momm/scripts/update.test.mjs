@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -321,6 +322,30 @@ try {
     fs.writeFileSync(probe, win ? "@echo probe 9.9.9\r\n" : "#!/bin/sh\necho probe 9.9.9\n"); fs.chmodSync(probe, 0o755);
     const r = captureExec(probe, ["--version"]);
     assert.equal(r.code, 0, `a launcher under a metacharacter path must run: ${r.stderr}`); assert.match(r.stdout, /probe 9\.9\.9/);
+  });
+  await test("windows_bare_command_is_never_resolved_from_the_current_directory", () => {
+    // Gate-3 [63]: cmd.exe searches the working directory before PATH, so a launcher
+    // planted in a reviewed project ran during the read-only --check-all.
+    if (process.platform !== "win32") return;
+    const dir = path.join(checkFixture, "planted-cwd"); fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "mommgate3planted.cmd"), "@echo PLANTED 9.9.9\r\n");
+    // A child with the protective variable removed models a plain user shell; the
+    // host running this suite may already export it and hide the defect.
+    const child = path.join(checkFixture, "planted-child.mjs"), env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete env[key];
+    fs.writeFileSync(child, `import { captureExec } from ${JSON.stringify(new URL("./update.mjs", import.meta.url).href)};\nprocess.stdout.write(JSON.stringify(captureExec("mommgate3planted", ["--version"])));\n`);
+    const p = spawnSync(process.execPath, [child], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 30_000 });
+    assert.equal(p.status, 0, p.stderr); const r = JSON.parse(p.stdout);
+    assert.doesNotMatch(r.stdout, /PLANTED/, "a same-named launcher in the working directory must not run"); assert.notEqual(r.code, 0);
+  });
+  await test("windows_absolute_exe_path_with_percent_sequence_is_not_expanded_by_the_shell", () => {
+    // Gate-3 [61]: %VAR% inside quotes is still expanded by cmd.exe, so an absolute
+    // .exe (the only absolute form cliBinary returns on Windows) is started directly.
+    if (process.platform !== "win32") return;
+    const dir = path.join(checkFixture, "pct %OS% dir"); fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, "probe.exe"); fs.copyFileSync(process.execPath, probe); // harmless stand-in executable
+    const r = captureExec(probe, ["--version"]);
+    assert.equal(r.code, 0, `literal percent path must launch: ${r.stderr}`); assert.match(r.stdout, /^v\d+\./);
   });
   await test("prerelease_installed_version_is_kept_and_compares_below_its_stable", async () => {
     assert.equal(newer("1.2.3", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.1", "1.2.3"), false); assert.equal(newer("1.2.3-beta.1", "1.2.3-beta.1"), false);

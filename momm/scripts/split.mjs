@@ -9,9 +9,11 @@
 //      text duplicated across pieces is header text, which headerOnlyQuote()
 //      lets the parent merge ignore during corroboration.
 //   2. A single hunk that does not fit under the ceiling even alone (header +
-//      hunk > ceiling) is never line-split: it becomes an `oversize` entry
-//      (with its file header, so it too is a valid diff) and is excluded from
-//      `pieces`. Nothing is ever dropped.
+//      hunk > ceiling) becomes an `oversize` entry (with its file header, so
+//      it too is a valid diff) and is excluded from `pieces`, UNLESS the caller
+//      passes `lineSplit: true` and rule 2b below can divide it. The option
+//      defaults to off in this module; the dispatcher turns it on unless
+//      --no-line-split is given. Nothing is ever dropped.
 //   3. Whole-file units are grouped by directory (posix dirname), groups sorted
 //      by dirname. Within a group, units are packed first-fit-decreasing by
 //      size (ties by path) into bins up to the ceiling. Bins are then walked in
@@ -209,7 +211,15 @@ export function lineSplitHunk(fileHeader, hunk, ceiling) {
     });
     if (fits) cutBefore = cuts;
   }
-  if (!cutBefore) return null;
+  // Balanced planning can overfill an early part before its next planned cut
+  // (3 + 100 bytes against a 101-byte budget) and run out of part counts to
+  // try. Every group fits the budget on its own, so greedy filling always
+  // succeeds: a divisible hunk is never sent to `oversize` by the heuristic.
+  if (!cutBefore) {
+    cutBefore = new Set();
+    let partBytes = 0;
+    groups.forEach((g, i) => { if (partBytes && partBytes + g.bytes > budget) { cutBefore.add(i); partBytes = 0; } partBytes += g.bytes; });
+  }
   for (const [i, g] of groups.entries()) {
     if (part && cutBefore.has(i)) flush();
     if (!part) part = { body: "", bytes: 0, oldFirst: oldCursor, newFirst: newCursor, oldLen: 0, newLen: 0 };
@@ -399,7 +409,17 @@ export function reassemble(pieces = [], oversize = []) {
 // diff a leading space is the context marker, so " index abc" is file content
 // that happens to resemble a header, and an indented "+++ b/x" is not a header
 // either. Only empty lines are ignored.
+// A deleted "-- text" line is stored as "--- text" and an added "++ text" as
+// "+++ text": body, not header. So a ---/+++ line counts as a file header only
+// in a form git writes (a/ b/ or a mnemonic prefix, optionally C-quoted, or
+// /dev/null) or as half of an adjacent ---/+++ pair (diff.noprefix). Residual:
+// a deleted line that itself reads "-- a/…" is indistinguishable from a header.
+const FILE_SIDE = /^(?:--- |\+\+\+ )(?:"?[abciow]\/|\/dev\/null(?:\t|$))/;
 export function headerOnlyQuote(text) {
   const lines = String(text ?? "").split(/\r?\n/).filter((l) => l !== "");
-  return lines.length > 0 && lines.every((l) => HEADER_LINE.test(l));
+  return lines.length > 0 && lines.every((l, i) => {
+    if (l.startsWith("--- ")) return FILE_SIDE.test(l) || Boolean(lines[i + 1]?.startsWith("+++ "));
+    if (l.startsWith("+++ ")) return FILE_SIDE.test(l) || Boolean(lines[i - 1]?.startsWith("--- "));
+    return HEADER_LINE.test(l);
+  });
 }

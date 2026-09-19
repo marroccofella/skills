@@ -176,8 +176,9 @@ export function isolateReply(cli, result, prompt) {
       // Terminal envelopes need not repeat the reply text. A final cancellation
       // must not fall through to an earlier successful-looking answer.
       if (cli === "grok" && obj.stopReason === "cancelled") return { isolated: false, reply: "", terminal_status: "cancelled", detail: "provider ended the request as cancelled; cause not established" };
+      // The same holds for a final error envelope, whether or not it carries a string reply.
+      if (obj.is_error === true || obj.type === "error") return { isolated: false, reply: "", detail: `provider reported an error: ${(typeof obj[field] === "string" && clip(obj[field], 200)) || "(no message)"}` };
       if (typeof obj[field] !== "string") continue;
-      if (obj.is_error === true || obj.type === "error") return { isolated: false, reply: "", detail: `provider reported an error: ${clip(obj[field], 200) || "(no message)"}` };
       return { isolated: true, reply: obj[field], via: `json.${field}` };
     }
     return { isolated: false, reply: "", detail: `no JSON object with a string "${field}" field in stdout` };
@@ -243,9 +244,12 @@ export function windowsLauncher(command, args, env, platform = process.platform)
   if (refusedShim) return { error: Object.assign(new Error(`Unsupported Windows launcher for ${command}: shell shim in ${refusedShim} refused and no native executable found on PATH`), { code: "MOMM_UNSUPPORTED_LAUNCHER" }) };
   return { command, args };
 }
+// The names the review dispatcher withholds from its reviewer children (its FORBIDDEN_ENV_NAMES);
+// probes.test.mjs reads that list and fails if this one falls behind it. OAuth tokens are kept.
+const FORBIDDEN_ENV_NAMES = new Set(["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "XAI_API_KEY", "GROQ_API_KEY", "MISTRAL_API_KEY", "COHERE_API_KEY", "AZURE_OPENAI_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]);
 function cleanEnv(source = process.env) {
   const env = { ...source };
-  for (const key of Object.keys(env)) if (/(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(key.toUpperCase())) delete env[key];
+  for (const key of Object.keys(env)) { const upper = key.toUpperCase(); if (FORBIDDEN_ENV_NAMES.has(upper) || /(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(upper)) delete env[key]; }
   env.NO_COLOR = "1";
   return env;
 }
@@ -253,7 +257,7 @@ function cleanEnv(source = process.env) {
 // is killed (win32: taskkill /T /F; POSIX: the child runs as its own process group and
 // the group gets SIGKILL) so a reviewer's worker cannot outlive the probe or hold the
 // temporary directory open. The caller's env is always secret-scrubbed first.
-export function defaultExec(command, args, { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env } = {}) {
+export function defaultExec(command, args, { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env, killGraceMs = 5_000 } = {}) {
   const env = cleanEnv(sourceEnv);
   const launch = windowsLauncher(command, args, env);
   if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
@@ -262,7 +266,7 @@ export function defaultExec(command, args, { input = "", timeout = 120_000, cwd 
     let child;
     try { child = spawn(launch.command, launch.args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], shell: false, windowsHide: true, detached: !win32 }); }
     catch (error) { resolve({ code: -1, stdout: "", stderr: error.message, error, timedOut: false }); return; }
-    const out = [], err = []; let outBytes = 0, errBytes = 0, timedOut = false, spawnError = null, settled = false, timer = null;
+    const out = [], err = []; let outBytes = 0, errBytes = 0, timedOut = false, spawnError = null, settled = false, timer = null, graceTimer = null;
     const killTree = () => {
       if (!child.pid) return;
       if (win32) { try { spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true, timeout: 10_000 }); } catch {} }
@@ -270,7 +274,7 @@ export function defaultExec(command, args, { input = "", timeout = 120_000, cwd 
       try { child.kill("SIGKILL"); } catch {}
     };
     const finish = status => {
-      if (settled) return; settled = true; clearTimeout(timer);
+      if (settled) return; settled = true; clearTimeout(timer); clearTimeout(graceTimer);
       const error = spawnError || (timedOut ? Object.assign(new Error(`spawn ${launch.command} ETIMEDOUT`), { code: "ETIMEDOUT" }) : null);
       resolve({ code: error ? -1 : status, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8"), error, timedOut });
     };
@@ -278,7 +282,12 @@ export function defaultExec(command, args, { input = "", timeout = 120_000, cwd 
       if (total > MAX_BUFFER) { spawnError ??= Object.assign(new Error(`${launch.command} output exceeded ${MAX_BUFFER} bytes`), { code: "ENOBUFS" }); killTree(); return; }
       chunks.push(chunk);
     };
-    timer = setTimeout(() => { timedOut = true; killTree(); }, timeout);
+    // The deadline holds even if the kill never produces an exit (a child the OS will not end, a
+    // refused taskkill): after a short grace the pipes are released and the call settles as timed out.
+    timer = setTimeout(() => {
+      timedOut = true; killTree();
+      graceTimer = setTimeout(() => { try { child.stdout.destroy(); child.stderr.destroy(); } catch {} finish(null); }, killGraceMs);
+    }, timeout);
     child.stdout.on("data", d => collect(out, d, outBytes += d.length));
     child.stderr.on("data", d => collect(err, d, errBytes += d.length));
     child.on("error", e => { spawnError = e; if (!child.pid) finish(null); });
@@ -400,11 +409,16 @@ export async function runProbes(cli, { exec = defaultExec, tmpdir = os.tmpdir(),
 export function recordProbe(root, result) {
   if (!result || typeof result !== "object" || !PROBE_CLIS.includes(result.cli)) throw new Error("recordProbe needs a runProbes result");
   const file = path.join(root, PROBES_FILE), dir = path.dirname(file);
+  // The folder and the ledger can arrive with a checkout: neither may be a link (a junction counts),
+  // or the append below would land in whatever it names. The append itself refuses to follow one.
+  const isLink = (target) => { try { return fs.lstatSync(target).isSymbolicLink(); } catch (e) { if (e?.code === "ENOENT") return false; throw e; } };
+  if (isLink(dir) || isLink(file)) throw new Error("probe ledger path is a link; refused, nothing was written");
   fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
   try { fs.chmodSync(dir, PRIVATE_DIR); } catch {}
   const line = { ...result, recorded_at: new Date().toISOString() };
   delete line.token;
-  fs.appendFileSync(file, `${JSON.stringify(line)}\n`, { mode: PRIVATE_FILE });
+  const c = fs.constants, fd = fs.openSync(file, (c.O_WRONLY ?? 1) | (c.O_APPEND ?? 0) | (c.O_CREAT ?? 0) | (c.O_NOFOLLOW ?? 0), PRIVATE_FILE);
+  try { fs.writeSync(fd, `${JSON.stringify(line)}\n`); } finally { fs.closeSync(fd); }
   try { fs.chmodSync(file, PRIVATE_FILE); } catch {}
   return file;
 }
@@ -634,7 +648,10 @@ export function generativeProbeVector(cli, cell, { projectDir, imagePath }) {
 // What the user is told before a generative request leaves the machine. Deterministic
 // for a route and cell so the Setup Center can require the exact string echoed back.
 export function generativeDisclosure(cli, cell, { prompt, harvest }) {
-  return `MOMM generative probe, ${cli} / ${cell}: one request is sent to ${cli}'s provider under your account login with exactly this prompt: "${prompt}". Nothing from this project is included. The provider's quota is spent by this request. Any file it produces is looked for at ${harvest || "(no harvest glob in the registry)"}, hashed with sha256 and left where the tool wrote it; nothing is published.`;
+  // A prompt that names the probe's own synthetic image carries a placeholder here: the real path is
+  // only known once the temporary folder exists, and this text must stay the same before and after.
+  const placeholder = String(prompt).includes("<probe-dir>") ? " In it, <probe-dir> stands for a temporary folder MOMM creates for this probe; the request names that folder's real path and the synthetic image MOMM writes there." : "";
+  return `MOMM generative probe, ${cli} / ${cell}: one request is sent to ${cli}'s provider under your account login with exactly this prompt: "${prompt}".${placeholder} Nothing from this project is included. The provider's quota is spent by this request. Any file it produces is looked for at ${harvest || "(no harvest glob in the registry)"}, hashed with sha256 and left where the tool wrote it; nothing is published.`;
 }
 // Every generative cell of a route the registry rates documented or verified, with its disclosure.
 export function generativeCells(cli, route, { clearing = clearingAction } = {}) {
@@ -927,13 +944,16 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       cell.prompt_sha256 = sha256(vector.prompt);
       disclose(g.disclosure);
       // Only a file this request produced counts: written at or after the exec started
-      // (floored to the second for coarse-mtime filesystems, never two seconds before) AND
-      // hashed. An isolated refusal is a failure however many files the glob finds.
+      // (floored to the second for coarse-mtime filesystems, never two seconds before), new or
+      // changed against the listing taken just before the request, AND hashed. An isolated
+      // refusal is a failure however many files the glob finds.
+      const signature = (f) => `${f.bytes}:${f.mtime}`;
+      const before = new Map(g.harvest ? globFiles(g.harvest, { home }).map((f) => [f.path, signature(f)]) : []);
       await runCell(cell, vector, vector.prompt, (reply, _r, started) => {
         const text = squash(reply);
         if (CANNOT_VIEW_PATTERN.test(text) || REFUSAL_PATTERN.test(text)) return { confirmed: false, reason: `route refused the generation request: ${clip(text, 120)}` };
         const since = Math.floor(started / 1000) * 1000;
-        const files = harvest(g.harvest, { home, since }).filter(f => typeof f.sha256 === "string");
+        const files = harvest(g.harvest, { home, since }).filter(f => typeof f.sha256 === "string" && before.get(f.path) !== signature(f));
         cell.harvested = files.map(({ path: p, bytes, sha256: digest, mtime }) => ({ path: p, bytes, sha256: digest, mtime }));
         if (files.length) return { confirmed: true, detail: `${files.length} file(s) harvested by ${g.harvest}` };
         return { confirmed: false, reason: g.harvest ? `no hashed file matched ${g.harvest} after the request started — reply: ${clip(reply, 120) || "(empty)"}` : "the registry has no harvest glob for this cell" };

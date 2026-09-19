@@ -64,15 +64,22 @@ export function trustKey(projectDir) {
 // Reads a file's bytes exactly once, bounded. Returns null when absent,
 // { error } when it must be skipped (oversized, not a regular file, unreadable),
 // otherwise { bytes, sha256 } — the caller hashes/checks/parses these same bytes.
-export function readBoundedBytes(file, cap = GUIDANCE_FILE_MAX_BYTES) {
+// followLinks: false is for files that arrive with a clone: a symbolic link there could name any
+// other file the user can read, so it is refused (lstat, and a no-follow open where the platform
+// has one) instead of being read into reviewer prompts. Paths the user chose keep following links.
+export function readBoundedBytes(file, cap = GUIDANCE_FILE_MAX_BYTES, { followLinks = true } = {}) {
   let stat;
+  if (!followLinks) {
+    try { if (fs.lstatSync(file).isSymbolicLink()) return { error: "is a symbolic link" }; }
+    catch (e) { return e?.code === "ENOENT" ? null : { error: `unreadable (${e.message})` }; }
+  }
   try { stat = fs.statSync(file); } catch (e) { return e?.code === "ENOENT" ? null : { error: `unreadable (${e.message})` }; }
   if (!stat.isFile()) return { error: "not a regular file" };
   if (stat.size > cap) return { error: `is ${stat.size} bytes; the cap is ${cap} bytes` };
   const buffer = Buffer.allocUnsafe(cap + 1); // one extra byte detects growth between stat and read
   let fd, length = 0;
   try {
-    fd = fs.openSync(file, "r");
+    fd = fs.openSync(file, followLinks ? "r" : (fs.constants.O_RDONLY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0));
     for (let got = 1; got > 0 && length < buffer.length; length += got) got = fs.readSync(fd, buffer, length, buffer.length - length, length);
   } catch (e) { return { error: `unreadable (${e.message})` }; } finally { if (fd !== undefined) fs.closeSync(fd); }
   if (length > cap) return { error: `grew past ${cap} bytes while being read` };
@@ -154,7 +161,7 @@ function withTrustLock(home, timeoutMs, fn) {
   for (;;) {
     try { fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 }); break; } catch (e) {
       if (!TRANSIENT.has(e?.code)) throw e;
-      if (Date.now() >= deadline) throw new Error(`Trust store lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.`);
+      if (Date.now() >= deadline) throw new Error(`Trust store lock ${lock} requires waiting or explicit recovery. Stop all MOMM writers, including older versions, and independently confirm none remain before removing only this lock; retry afterward. PID or age alone does not prove safe recovery.${e?.code && e.code !== "EEXIST" ? ` The lock could not be created (${e.code}); if no lock file exists, check that this folder is writable.` : ""}`);
       sleepMs(20);
     }
   }
@@ -229,12 +236,12 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
   const trust = readTrust(home); // one snapshot for both project files
 
   // .reviewrules: stat -> read once -> hash -> trust -> validate the same bytes.
-  let rules = null;
-  const rulesRead = readBoundedBytes(files.reviewrules);
+  let rules = null, rulesTrusted = false;
+  const rulesRead = readBoundedBytes(files.reviewrules, GUIDANCE_FILE_MAX_BYTES, { followLinks: false });
   if (rulesRead?.error) notices.push(`.reviewrules skipped: file ${rulesRead.error}`);
   else if (rulesRead) {
     const sha = rulesRead.sha256;
-    const trusted = trustedIn(trust, key, "reviewrules", sha);
+    const trusted = rulesTrusted = trustedIn(trust, key, "reviewrules", sha);
     if (trusted || reviewrulesGrace) {
       try {
         rules = assertBlock(rulesRead.bytes.toString("utf8").replace(/\r\n/g, "\n").trim().slice(0, REVIEWRULES_CLIP), ".reviewrules", files.reviewrules, REVIEWRULES_CLIP);
@@ -246,7 +253,7 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
   }
 
   // .momm/guidance.json: same single-read discipline; parsed only once trusted.
-  const projectRead = readBoundedBytes(files.guidance);
+  const projectRead = readBoundedBytes(files.guidance, GUIDANCE_FILE_MAX_BYTES, { followLinks: false });
   if (projectRead?.error) notices.push(`.momm/guidance.json skipped: file ${projectRead.error}`);
   else if (projectRead) {
     const sha = projectRead.sha256;
@@ -277,7 +284,16 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
       if (Object.hasOwn(reviewers, "*")) add(layers, `${prefix}:*`, reviewers["*"]);
       if (route !== "*" && Object.hasOwn(reviewers, route)) add(layers, `${prefix}:${route}`, reviewers[route]);
     }
-    const resolved = stack(layers, `route ${route}`);
+    let resolved;
+    try { resolved = stack(layers, `route ${route}`); }
+    catch (error) {
+      // Text that arrived with a clone and was never trusted must not be able to abort the review:
+      // drop it for this route, say so, and let the owner's own layers stand or fail on their own.
+      const withoutRules = layers.filter((layer) => layer.name !== "project:.reviewrules");
+      if (rulesTrusted || withoutRules.length === layers.length) throw error;
+      resolved = stack(withoutRules, `route ${route}`);
+      notices.push(`.reviewrules skipped for route ${route}: applying this untrusted file would exceed the ${GUIDANCE_BUDGET.per_route}-character route budget.`);
+    }
     const persona = personas[route];
     if (typeof persona === "string" && persona) resolved.layers.unshift({ name: "persona", sha256: sha256(persona), chars: persona.length });
     resolvedRoutes[route] = resolved;
@@ -296,7 +312,9 @@ export function writeGuidanceSidecar(cwd, runId, resolved) {
   if (typeof runId !== "string" || !RUN_ID.test(runId)) throw new Error(`Refusing guidance sidecar for run id ${JSON.stringify(runId)}: expected /^rev_[A-Za-z0-9_]+$/`);
   const file = path.join(path.resolve(cwd), ".ensemble_reviews", "guidance", `${runId}.json`);
   const body = { run_id: runId, written_at: new Date().toISOString(), budget: resolved.budget, notices: resolved.notices, routes: resolved.routes, governor: resolved.governor };
-  writePrivate(file, `${JSON.stringify(body, null, 2)}\n`);
+  // Owner-only, like the trust store: the evidence folder is inspected again after this write, and
+  // on POSIX a directory created with the default mode would fail that inspection.
+  writePrivate(file, `${JSON.stringify(body, null, 2)}\n`, 0o700);
   return file;
 }
 

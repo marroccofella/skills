@@ -134,7 +134,7 @@ await test("status shape, update_available, overhead estimate", async () => {
   assert.equal(s.auto_update.enabled, false);
   // skill: 1.16.0 newer than the installed 1.15.1 on first sight is a detected release (stays at MIN); codex: unchanged, doubled.
   assert.equal(typeof s.overhead_estimate_per_day, "number"); assert.equal(s.overhead_estimate_per_day, Math.ceil(MAX / MIN) + Math.ceil(MAX / (MIN * 2)));
-  assert.match(skill.last_checked_at, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(skill.last_checked_at, new Date(e.time.t).toISOString(), "the injected clock, not the wall clock, stamps the check");
 });
 
 await test("grok and antigravity sources: check-only JSON vs unknown, never running an updater", async () => {
@@ -509,7 +509,7 @@ await test("corrupt-settings-state-throws: unparseable settings.json or state ->
   assert.equal(e.clock.status().auto_update.enabled, false, "status also reads through");
   fs.writeFileSync(path.join(e.home, ".momm", "settings.json"), JSON.stringify({ auto_update: { enabled: "yes" } }));
   assert.equal((await e.clock.trigger("manual")).ran, true, "an invalid value is ignored the same way");
-  assert.match(readState(e.stateFile).history.at(-2).notice, /enabled must be true or false/);
+  assert.equal(readState(e.stateFile).history.filter(h => h.source === "settings" && /enabled must be true or false/.test(h.notice || "")).length, 1, "the invalid value is recorded once, wherever the row lands");
   writeSettings(e.home, { auto_update: { clis: false } });
   assert.deepEqual(readSettings(e.home).auto_update, { ...DEFAULT_SETTINGS.auto_update, clis: false }, "writeSettings heals the file from defaults");
   fs.writeFileSync(e.stateFile, '{"sources": {"skill": {');
@@ -565,20 +565,25 @@ await test("response-body-outlives-fetch-deadline: the abort timer covers the bo
 });
 
 await test("body-cap-after-slurp: the body is read as a stream and aborted past 1 MiB instead of being buffered whole", async () => {
-  let sent = 0, closedEarly = false;
+  let sent = 0, closedEarly = false, clientClosed;
+  const closed = new Promise(r => { clientClosed = r; });
   const CHUNK = Buffer.alloc(64 * 1024, 0x78), TOTAL = 16 * 1024 * 1024;
   const server = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
-    res.on("close", () => { if (sent < TOTAL) closedEarly = true; });
-    const pump = () => { while (sent < TOTAL) { sent += CHUNK.length; if (!res.write(CHUNK)) { res.once("drain", pump); return; } } res.end(); };
+    res.on("error", () => {}); // a write racing the client's abort is expected, not a test failure
+    res.on("close", () => { if (sent < TOTAL) closedEarly = true; clientClosed(); });
+    const pump = () => { while (sent < TOTAL && !res.destroyed) { sent += CHUNK.length; if (!res.write(CHUNK)) { res.once("drain", pump); return; } } if (!res.destroyed) res.end(); };
     pump();
   });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const url = `http://127.0.0.1:${server.address().port}/`;
   await assert.rejects(defaultFetcher(url).then(r => r.text()), /1 MiB|exceeds/);
-  await new Promise(r => setTimeout(r, 50));
+  // The close must come from the CLIENT's abort: it is awaited (bounded) and judged
+  // BEFORE closeAllConnections(), which would otherwise set the same flag itself.
+  const observed = await Promise.race([closed.then(() => true), new Promise(r => setTimeout(() => r(false), 5_000))]);
+  const abortedByClient = observed && closedEarly;
   server.closeAllConnections(); server.close();
-  assert.equal(closedEarly, true, `client aborted mid-body (server had sent ${sent} of ${TOTAL} bytes)`);
+  assert.equal(abortedByClient, true, `client aborted mid-body (server had sent ${sent} of ${TOTAL} bytes)`);
   assert(sent < TOTAL / 2, `server was stopped well short of the full body: ${sent}`);
   const small = http.createServer((req, res) => { res.writeHead(200, { etag: '"e1"' }); res.end(JSON.stringify({ version: "1.2.3" })); });
   small.listen(0, "127.0.0.1"); await once(small, "listening");
@@ -608,9 +613,12 @@ await test("models-new-models-replay: discoveries are reported once, not on ever
   writeSettings(e.home, { auto_update: { enabled: true } });
   await e.clock.trigger("manual"); lists = { grok: ["grok-4", "grok-5"] }; await e.clock.trigger("manual");
   const count = () => readState(e.stateFile).history.filter(h => /new models available for grok/.test(h.notice || "")).length;
-  const first = await applyUpdates(e.clock);
+  // Only the models source is configured, so no executor is reachable; the stubs make that a hard guarantee.
+  const never = name => async () => { throw new Error(`${name} must never run in this test`); };
+  const inert = { runUpdater: never("runUpdater"), exec: never("exec"), versionOf: never("versionOf"), isManaged: () => false };
+  const first = await applyUpdates(e.clock, inert);
   assert.equal(first.notices.length, 1); assert.equal(count(), 1);
-  const second = await applyUpdates(e.clock);
+  const second = await applyUpdates(e.clock, inert);
   assert.equal(second.notices.length, 0, "no replay"); assert.equal(count(), 1, "history holds a single row");
   assert.equal(e.clock.status().sources[0].new_models, null, "the seen set is persisted as reported");
 });
@@ -687,6 +695,93 @@ await test("async-api-uses-spawnsync: defaultExec/defaultRunUpdater return pendi
   const ur = await u; assert.equal(ur.code, 1); assert.match(ur.output, /Unknown update option/);
 });
 
+
+// ---- momm run rev_20260919000938_1nkh (gate 3) reproductions -----------------
+await test("gate3 [161]: a timeout still resolves when the direct child already exited and a grandchild holds the pipes", async () => {
+  const prog = (name, src) => { const f = path.join(fixture, name); fs.writeFileSync(f, src); return f; };
+  const pidFile = path.join(fixture, "orphan.pid"), LIFE = 9_000;
+  const orphan = prog("orphan-hang.cjs", `setTimeout(() => {}, ${LIFE});\n`);
+  const parent = prog("orphan-parent.cjs", `const { spawn } = require("child_process");\nconst g = spawn(process.execPath, [${JSON.stringify(orphan)}], { stdio: ["ignore", "inherit", "inherit"], detached: true });\nrequire("fs").writeFileSync(${JSON.stringify(pidFile)}, String(g.pid));\ng.unref();\n`);
+  const t0 = Date.now();
+  try {
+    const r = await defaultExec(process.execPath, [parent], { timeout: 700 });
+    const took = Date.now() - t0;
+    assert(took < 5_000, `resolved only after ${took} ms: the promise waited for the grandchild's pipes instead of the deadline`);
+    assert.equal(r.timedOut, true); assert.equal(r.code, -1);
+  } finally {
+    const gpid = Number(fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8") : 0);
+    if (gpid > 0) { try { process.kill(gpid, "SIGKILL"); } catch {} }
+  }
+});
+await test("gate3 [163]/[63]: defaultExec starts an absolute .exe without cmd.exe (no %VAR% expansion) and never resolves a bare name from the working directory", async () => {
+  if (process.platform !== "win32") return;
+  const dir = path.join(fixture, "pct %OS% dir"); fs.mkdirSync(dir, { recursive: true });
+  const probe = path.join(dir, "probe.exe"); fs.copyFileSync(process.execPath, probe); // harmless stand-in executable
+  const r = await defaultExec(probe, ["--version"], { timeout: 20_000 });
+  assert.equal(r.code, 0, `literal percent path must launch: ${r.stderr}`); assert.match(r.stdout, /^v\d+\./);
+  // A child with the protective variable removed models a plain user shell.
+  const planted = path.join(fixture, "planted-cwd"); fs.mkdirSync(planted, { recursive: true });
+  fs.writeFileSync(path.join(planted, "mommgate3planted.cmd"), "@echo PLANTED 9.9.9\r\n");
+  const child = path.join(fixture, "planted-child.mjs"), childEnv = { ...process.env };
+  for (const key of Object.keys(childEnv)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete childEnv[key];
+  fs.writeFileSync(child, `import { defaultExec } from ${JSON.stringify(new URL("./update-clock.mjs", import.meta.url).href)};\nprocess.stdout.write(JSON.stringify(await defaultExec("mommgate3planted", ["--version"], { timeout: 15000 })));\n`);
+  const p = spawnSync(process.execPath, [child], { cwd: planted, env: childEnv, encoding: "utf8", windowsHide: true, timeout: 40_000 });
+  assert.equal(p.status, 0, p.stderr); const ran = JSON.parse(p.stdout);
+  assert.doesNotMatch(ran.stdout, /PLANTED/, "a same-named launcher in the working directory must not run"); assert.notEqual(ran.code, 0);
+});
+await test("gate3 codex#57: npmSource.check does not depend on its receiver", async () => {
+  const seen = [], { check } = npmSource("codex");
+  const r = await check({ fetcher: async url => { seen.push(url); return { status: 200, ok: true, headers: new Headers(), text: async () => JSON.stringify({ version: "1.2.3" }) }; } }, {});
+  assert.equal(r.latest, "1.2.3"); assert.deepEqual(seen, [CODEX_URL]);
+});
+await test("gate3 [159]: a malformed stored model baseline is rebaselined, never a TypeError that wedges the models source", async () => {
+  const lists = { codex: ["m-1", "m-2"] };
+  const e = env({ sources: [modelsSource()], installed: { skill: "1.15.1", codex: "0.154.0" }, listModels: async route => lists[route] || null });
+  fs.mkdirSync(path.dirname(e.stateFile), { recursive: true });
+  fs.writeFileSync(e.stateFile, JSON.stringify({ schema: "momm-update-clock/1", sources: { models: { next_due_at: 0, interval_ms: MIN, consecutive_unchanged: 0, tight_until: 0, models: { codex: { hash: "old", models: null } } } }, history: [] }));
+  const first = await e.clock.trigger("manual");
+  assert.equal(first.results[0].error, null, `models check failed: ${first.results[0].error}`); assert.notEqual(first.results[0].outcome, "error");
+  assert.deepEqual(readState(e.stateFile).sources.models.models.codex.models, ["m-1", "m-2"], "the baseline is healed");
+  lists.codex = ["m-1", "m-2", "m-3"];
+  const second = await e.clock.trigger("manual");
+  assert.equal(second.results[0].outcome, "changed"); assert.deepEqual(readState(e.stateFile).sources.models.new_models, { codex: ["m-3"] });
+});
+await test("gate3 [165]: a rejected CLI exec or updater is a recorded failure and the remaining sources are still attempted", async () => {
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.16.0"), [CODEX_URL]: ok("0.155.0") }, sources: [skillSource(), npmSource("codex")] });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  const seen = [];
+  const out = await applyUpdates(e.clock, { runUpdater: async () => { seen.push("skill"); throw new Error("spawn EPERM"); }, exec: async bin => { seen.push(bin); throw new Error("spawn npm ENOENT"); } });
+  assert.deepEqual(seen, ["skill", "npm"], "the second source is attempted after the first rejected");
+  assert.deepEqual(out.failed.map(f => f.name), ["skill", "cli:codex"]); assert.equal(out.applied.length, 0);
+  assert.match(out.failed[1].reason, /ENOENT/);
+  assert.equal(readState(e.stateFile).history.filter(h => h.trigger === "apply" && h.outcome === "failed").length, 2, "both failures are persisted");
+  assert.equal(fs.existsSync(`${e.stateFile}.lock`), false);
+});
+await test("gate3 [166]: auto-update disabled while waiting for the lock is honoured once the lock is held", async () => {
+  const e = env({ responses: { [MANIFEST_URL]: ok("1.16.0") }, sources: [skillSource()] });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  let ran = false; const locked = e.clock.locked;
+  // Model the wait: another process flips the setting between the caller's first read and lock acquisition.
+  e.clock.locked = (fn, busy) => { writeSettings(e.home, { auto_update: { enabled: false } }); return locked(fn, busy); };
+  const out = await applyUpdates(e.clock, { runUpdater: async () => { ran = true; return { code: 0, output: PREVIEW }; } });
+  assert.equal(ran, false, "the updater ran against a setting that was already off"); assert.equal(out.applied.length, 0);
+  assert.deepEqual(out.skipped, [{ name: "*", reason: "auto_update.enabled is false" }]);
+});
+await test("gate3 [164]: a CLI update whose new version cannot be read is not re-run on every later trigger", async () => {
+  const e = env({ responses: { [CODEX_URL]: ok("0.155.0") }, sources: [npmSource("codex")] });
+  writeSettings(e.home, { auto_update: { enabled: true } });
+  await e.clock.trigger("manual");
+  let runs = 0; const deps = { exec: async () => { runs += 1; return { code: 0, stdout: "", stderr: "" }; }, versionOf: async () => { throw new Error("version read failed"); } };
+  const first = await applyUpdates(e.clock, deps);
+  assert.equal(first.applied.length, 1); assert.equal(first.applied[0].to, null); assert.equal(runs, 1);
+  const second = await applyUpdates(e.clock, deps);
+  assert.equal(runs, 1, "the update command ran again although it already succeeded for this release");
+  assert.match(second.skipped[0].reason, /already ran .* 0\.155\.0/);
+  e.responses[CODEX_URL] = ok("0.156.0", '"v2"'); e.time.t += 2 * MAX; await e.clock.trigger("manual");
+  await applyUpdates(e.clock, deps); assert.equal(runs, 2, "a NEWER release is attempted again");
+});
 
 await test("cliMain trigger never runs real executors under an injected clock, and never applies after a check that did not run (audit safety)", async () => {
   const dir = path.join(fixture, "guard"); fs.mkdirSync(dir, { recursive: true });

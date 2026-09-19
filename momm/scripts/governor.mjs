@@ -177,6 +177,15 @@ export function inspectCompletion(root, runId) {
         const ok = claimed.filter(agent => successful.some(r => r.agent === agent));
         return { id: p.id, external_successes: ok.length, met: ok.length >= required, ok };
       });
+      // A merged route row reads "success" when any piece succeeded; its per-status piece counts are
+      // the piece-level fact it carries. The piece structure may not claim more successes for a
+      // route than that row records (rows without counts predate them and cannot be compared).
+      for (const row of successful) {
+        const recorded = row.pieces?.success;
+        if (!Number.isInteger(recorded)) continue;
+        const claimedPieces = perPiece.filter(p => p.ok.includes(row.agent)).length;
+        if (claimedPieces > recorded) state.errors.push(`piece structure claims ${claimedPieces} successful piece(s) for ${row.agent} but its verified row records ${recorded}`);
+      }
       const failing = perPiece.filter(p => !p.met).map(p => p.id);
       const achieved = perPiece.length ? Math.min(...perPiece.map(p => p.external_successes)) : 0;
       state.quorum = { required, achieved, met: perPiece.length > 0 && failing.length === 0, pieces: perPiece.length, failing_pieces: failing, governor_direct: report.split.governor_direct.length };

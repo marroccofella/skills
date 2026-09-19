@@ -386,7 +386,7 @@ export function protectEvidence(directory, { platform = process.platform, run = 
     // entry (or one of its parents) with a link, and chmod would follow it. Each entry is opened
     // without following links, the descriptor is compared with the surveyed inode and link count,
     // and only that descriptor is changed. The root comes first, which also shuts other accounts out.
-    const c = fs.constants;
+    const c = fsx.constants ?? fs.constants; // the injected filesystem names its own flag values
     const flags = (c.O_RDONLY ?? 0) | (c.O_NOFOLLOW ?? 0) | (c.O_NONBLOCK ?? 0);
     const moved = () => fail('Evidence changed while it was being protected (an entry was replaced, linked or removed); the run stopped without touching that entry. Earlier entries may already have been changed; run evidence --status to see the current state.');
     for (const item of entries) {

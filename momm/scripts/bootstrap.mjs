@@ -23,7 +23,10 @@ export function trustedEnv(input = process.env) {
 const toolPaths=new Map();
 function trustedTool(command,cwd) {
   if(!['git','gitsign'].includes(command))return command;
-  const value=process.env[Object.keys(process.env).find(k=>k.toUpperCase()==='PATH')]||'',root=cwd===null?null:fs.realpathSync(cwd||process.cwd()),key=command+'\0'+value+'\0'+root;
+  // An inspected path that cannot be resolved (mistyped --existing) must not be
+  // reported as a missing tool. Its lexical spelling still excludes candidates.
+  const resolveRoot=dir=>{try{return fs.realpathSync(dir);}catch{return path.resolve(dir);}};
+  const value=process.env[Object.keys(process.env).find(k=>k.toUpperCase()==='PATH')]||'',root=cwd===null?null:resolveRoot(cwd||process.cwd()),key=command+'\0'+value+'\0'+root;
   if(toolPaths.has(key))return toolPaths.get(key);
   for(const dir of value.split(path.delimiter)) {
     if(!path.isAbsolute(dir))continue;

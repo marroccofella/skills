@@ -222,6 +222,64 @@ try {
     const essay = fakeExec({ reply: () => ok(envelope("antigravity", `${"I would love to help with this request. ".repeat(20)}Note that no tools are configured.`)) });
     assert.notEqual((await runProbes("antigravity", opts({ exec: essay.exec, command: "antigravity" }))).containment.status, "held");
   });
+  await test("default_exec_settles_even_when_the_child_never_reports_exit", async () => {
+    // Gate rev_20260919000938_1nkh: the deadline must hold even if the kill does not produce an exit
+    // (a child the OS will not end, a refused taskkill). A synthetic child that never exits stands in.
+    const { EventEmitter } = await import("node:events");
+    const childProcess = (await import("node:child_process")).default, { syncBuiltinESMExports } = await import("node:module");
+    const original = childProcess.spawn;
+    const destroyed = [];
+    childProcess.spawn = () => {
+      const child = new EventEmitter();
+      const pipe = (name) => Object.assign(new EventEmitter(), { destroy: () => destroyed.push(name) });
+      child.pid = undefined; child.kill = () => false;
+      child.stdout = pipe("stdout"); child.stderr = pipe("stderr"); child.stdin = Object.assign(new EventEmitter(), { end() {} });
+      return child;
+    };
+    syncBuiltinESMExports();
+    try {
+      const started = Date.now();
+      const outcome = await Promise.race([
+        defaultExec(process.execPath, ["-e", "0"], { cwd: fixture, timeout: 60, killGraceMs: 80 }),
+        new Promise((resolve) => setTimeout(() => resolve("HUNG"), 3000)),
+      ]);
+      assert.notEqual(outcome, "HUNG", "defaultExec never settled after its deadline");
+      assert.equal(outcome.timedOut, true); assert.equal(outcome.error?.code, "ETIMEDOUT"); assert.equal(outcome.code, -1);
+      assert(Date.now() - started < 2000);
+      assert.deepEqual(destroyed.sort(), ["stderr", "stdout"], "pipes are released so nothing keeps the caller waiting");
+    } finally { childProcess.spawn = original; syncBuiltinESMExports(); }
+  });
+  await test("record_probe_never_writes_through_a_link", () => {
+    // Gate rev_20260919000938_1nkh: a checkout can ship .ensemble_reviews or probes.jsonl as a link.
+    // A real link where the platform allows one; otherwise lstat is made to report one.
+    const result = { cli: "codex", verdict: "pass" };
+    for (const which of ["file", "dir"]) {
+      const root = fs.mkdtempSync(path.join(fixture, `link-${which}-`)), outside = fs.mkdtempSync(path.join(fixture, "outside-"));
+      const sentinel = path.join(outside, "sentinel.txt"); fs.writeFileSync(sentinel, "UNCHANGED");
+      const dir = path.join(root, ".ensemble_reviews"), file = path.join(root, PROBES_FILE), linked = which === "file" ? file : dir;
+      let real = true;
+      try { if (which === "file") { fs.mkdirSync(dir); fs.symlinkSync(sentinel, file, "file"); } else fs.symlinkSync(outside, dir, process.platform === "win32" ? "junction" : "dir"); }
+      catch (e) { if (e.code !== "EPERM") throw e; real = false; fs.writeFileSync(file, ""); }
+      const lstat = fs.lstatSync;
+      if (!real) fs.lstatSync = (p, ...rest) => { const st = lstat(p, ...rest); if (path.resolve(String(p)) === linked) st.isSymbolicLink = () => true; return st; };
+      try { assert.throws(() => recordProbe(root, result), /link/); } finally { fs.lstatSync = lstat; }
+      assert.equal(fs.readFileSync(sentinel, "utf8"), "UNCHANGED");
+      assert.deepEqual(fs.readdirSync(outside), ["sentinel.txt"], "nothing was written through the link");
+      if (!real) assert.equal(fs.readFileSync(file, "utf8"), "");
+    }
+  });
+  await test("final_error_envelope_never_falls_through_to_an_earlier_reply", () => {
+    // Gate rev_20260919000938_1nkh: the last envelope decides. An error envelope that carries no
+    // string reply (result:null, or no reply field at all) must not expose an earlier answer.
+    const earlier = JSON.stringify({ type: "result", result: "NO-TOOLS", is_error: false });
+    for (const last of [{ is_error: true, result: null }, { is_error: true, type: "error" }, { type: "error" }]) {
+      const iso = isolateReply("claude", ok(`${earlier}\n${JSON.stringify(last)}`), "prompt");
+      assert.equal(iso.isolated, false, JSON.stringify(last)); assert.equal(iso.reply, ""); assert.match(iso.detail, /provider reported an error/);
+    }
+    // An unrelated trailing object (no reply field, not an error) is still skipped, as before.
+    assert.equal(isolateReply("claude", ok(`${earlier}\n${JSON.stringify({ type: "stats", tokens: 3 })}`), "prompt").reply, "NO-TOOLS");
+    assert.equal(isolateReply("claude", ok(JSON.stringify({ type: "result", result: "boom", is_error: true })), "prompt").detail, "provider reported an error: boom");
+  });
   await test("isolate_and_classify_reply_per_cli", () => {
     const prompt = canaryPrompt("/x/canary.txt");
     assert.deepEqual(isolateReply("claude", ok(envelope("claude", "NO-TOOLS")), prompt).reply, "NO-TOOLS");
@@ -348,6 +406,20 @@ try {
     const r = await defaultExec(process.execPath, ["-e", "process.stdout.write(JSON.stringify(process.env))"], { cwd: fixture, env: { ...process.env, MY_API_KEY: "x", MOMM_PROBE_CUSTOM: "1" }, timeout: 20_000 });
     const seen = JSON.parse(r.stdout);
     assert.equal(seen.MY_API_KEY, undefined); assert.equal(seen.MOMM_PROBE_CUSTOM, "1"); assert.equal(seen.NO_COLOR, "1"); assert.equal(r.code, 0);
+  });
+  await test("default_exec_scrub_matches_the_dispatchers_forbidden_names", async () => {
+    // Gate rev_20260919000938_1nkh: a probe child must not see any credential the review dispatcher
+    // withholds. The list is read from the dispatcher so the two cannot drift; OAuth tokens stay.
+    const dispatcherSource = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
+    const from = dispatcherSource.indexOf("const FORBIDDEN_ENV_NAMES = new Set(["), to = dispatcherSource.indexOf("]);", from);
+    assert(from >= 0 && to > from, "dispatcher forbidden list not found");
+    const names = [...dispatcherSource.slice(from, to).matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]);
+    assert(names.includes("AWS_SECRET_ACCESS_KEY") && names.includes("ANTHROPIC_AUTH_TOKEN") && names.length >= 10);
+    const planted = Object.fromEntries(names.map((name) => [name, "sentinel"]));
+    const r = await defaultExec(process.execPath, ["-e", "process.stdout.write(JSON.stringify(Object.keys(process.env)))"], { cwd: fixture, env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...planted, aws_session_token: "lowercase", CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth" }, timeout: 20_000 });
+    const seen = JSON.parse(r.stdout).map((k) => k.toUpperCase());
+    assert.deepEqual(names.filter((name) => seen.includes(name)), [], "forbidden names reached the child");
+    assert(seen.includes("CLAUDE_CODE_OAUTH_TOKEN"), "OAuth tokens are preserved, as in the dispatcher");
   });
 
   // ==== Modality probes (1.16 E7) =====================================================
@@ -509,6 +581,25 @@ try {
     const m = await runModalityProbes("grok", mopts({ registry: reg, exec: missing.exec, command: "grok" }));
     assert.equal(m.reason, "not_installed"); assert.equal(m.verdict, "unavailable"); assert.equal(reg.effectiveCalls.length, readsBefore, "no registry read for an absent CLI");
   });
+  await test("generation_probe_ignores_a_file_that_was_already_there", async () => {
+    // Gate rev_20260919000938_1nkh: only a file this request produced verifies a generative cell. A
+    // matching file that existed before the request, even one whose time stamp is not older than
+    // the request (same second, clock skew), is not evidence; one rewritten by the request is.
+    const home = path.join(fixture, "stale-gen-home");
+    const routes = { codex: { input: {}, output: { image_gen: { level: "documented", harvest: "~/.codex/generated_images/**/*.png", mime: "image/png" } } } };
+    const stale = path.join(home, ".codex", "generated_images", "earlier", "exec-old.png");
+    fs.mkdirSync(path.dirname(stale), { recursive: true }); fs.writeFileSync(stale, syntheticPng("red"));
+    const ahead = new Date(Date.now() + 60_000); fs.utimesSync(stale, ahead, ahead);
+    const reg = fakeRegistry(routes);
+    const idle = modalityExec({ replies: {}, generate: () => ok("Done.") });
+    const r = await runModalityProbes("codex", mopts({ home, registry: reg, exec: idle.exec, command: "codex", consent: true, inputs: false, disclose: () => {} }));
+    const cell = cellOf(r, "image_gen");
+    assert.equal(cell.status, "probe_failed", JSON.stringify(cell)); assert.deepEqual(cell.harvested, []);
+    assert.equal(reg.entries.some(e => e.entry.level === "verified"), false, "no verified overlay from a stale file");
+    const rewriting = modalityExec({ replies: {}, generate: () => { fs.writeFileSync(stale, syntheticPng("blue")); return ok("Done."); } });
+    const again = await runModalityProbes("codex", mopts({ home, registry: fakeRegistry(routes), exec: rewriting.exec, command: "codex", consent: true, inputs: false, disclose: () => {} }));
+    assert.equal(cellOf(again, "image_gen").status, "verified", cellOf(again, "image_gen").reason);
+  });
   // Consent gate (spec + review #1): without --consent the generative cell is listed with its
   // disclosure and nothing is sent; with consent, exactly one request per UNBLOCKED cell, the
   // disclosure printed before it; a blocked cell is skipped with its clearing action and no exec.
@@ -607,6 +698,15 @@ try {
     assert.ok(generativeProbeVector("antigravity", "image_gen", { projectDir: "D" }).args.includes("--new-project"));
     assert.equal(generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: "~/x/*.png" }), generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: "~/x/*.png" }), "deterministic, so the Setup Center can demand the exact echo");
     assert.match(generativeDisclosure("codex", "image_gen", { prompt: "P", harvest: null }), /no harvest glob/);
+    // Gate rev_20260919000938_1nkh: the video probe names a synthetic image by path, and that path is
+    // only known once the temporary folder exists. The disclosure says what the placeholder stands
+    // for instead of calling a prompt with a placeholder "exactly" the one sent.
+    const video = generativeCells("grok", { input: {}, output: { video_gen: { level: "documented", harvest: "~/.grok/sessions/**/*.mp4" } } })[0];
+    assert.ok(video.prompt.includes("<probe-dir>/probe.png"));
+    assert.match(video.disclosure, /<probe-dir> stands for a temporary folder MOMM creates for this probe/);
+    assert.match(video.disclosure, /the synthetic image MOMM writes there/);
+    const image = generativeCells("codex", { input: {}, output: { image_gen: { level: "documented", harvest: "~/x/*.png" } } })[0];
+    assert.ok(!image.disclosure.includes("<probe-dir>"), "a prompt without a placeholder keeps the plain wording");
   });
   await test("glob_harvest_matches_double_star_and_filters_by_mtime", () => {
     const home = path.join(fixture, "glob-home");

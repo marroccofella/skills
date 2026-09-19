@@ -437,5 +437,42 @@ test("lineSplit: parts are balanced; no sliver tail", () => {
   }
 });
 
+// ---- gate-3 (rev_20260919000938_1nkh) ------------------------------------------
+// [0] The plan text described an over-ceiling hunk dispatched to a SUBSET of routes
+// that could never reach per-piece quorum. The splitter has no such unit: a hunk is
+// either divided into ordinary pieces every route reads, or it is `oversize`, which
+// is never a piece, so per-piece quorum can never wait on it.
+test("gate3 [0]: a 200 KiB hunk under a 100 KiB ceiling becomes ordinary pieces; oversize entries are never pieces", () => {
+  const body = Array.from({ length: 4200 }, (_, i) => `+L${String(i).padStart(5, "0")} ${"z".repeat(42)}\n`).join("");
+  const text = `diff --git a/big/new.mjs b/big/new.mjs\nnew file mode 100644\n--- /dev/null\n+++ b/big/new.mjs\n@@ -0,0 +1,4000 @@\n${body}`;
+  assert.ok(bytes(text) > 200 * 1024);
+  const on = splitDiff(text, { ceilingBytes: 100 * 1024, lineSplit: true });
+  assert.equal(on.oversize.length, 0); assert.ok(on.pieces.length >= 3);
+  assert.ok(on.pieces.every((p) => p.bytes <= 100 * 1024 && p.oversize === false));
+  assert.equal(reassemble(on.pieces, on.oversize).files[0].hunks[0].body, body);
+  const off = splitDiff(text, { ceilingBytes: 100 * 1024 }); // --no-line-split: governor scope, still never a dispatched piece
+  assert.equal(off.pieces.length, 0); assert.equal(off.oversize.length, 1);
+  const stuck = splitDiff(`diff --git a/one.min.js b/one.min.js\n--- a/one.min.js\n+++ b/one.min.js\n@@ -1,1 +1,1 @@\n-${"a".repeat(6000)}\n+${"b".repeat(6000)}\n`, { ceilingBytes: CEILING, lineSplit: true });
+  assert.equal(stuck.pieces.length, 0, "an undividable hunk is governor scope, not a piece awaiting quorum"); assert.equal(stuck.oversize.length, 1);
+});
+test("gate3 [154]: balanced planning that overfills an early part falls back to greedy cuts, never to oversize", () => {
+  const long = " " + "x".repeat(98) + "\n", hunkIn = { header: "@@ -1,3 +1,3 @@\n", body: " a\n" + long + long };
+  const parts = lineSplitHunk("", hunkIn, 117);
+  assert.ok(parts, "every line fits the budget, so the hunk is divisible");
+  assert.ok(parts.every((p) => p.bytes <= 117), JSON.stringify(parts.map((p) => p.bytes)));
+  assert.equal(parts.map((p) => p.body).join(""), hunkIn.body);
+  assert.deepEqual(parts.map((p) => p.header), ["@@ -1,1 +1,1 @@\n", "@@ -2,1 +2,1 @@\n", "@@ -3,1 +3,1 @@\n"]);
+});
+test("gate3 [156]: a deleted '-- text' or added '++ text' body line is content, not a repeated file header", () => {
+  assert.equal(headerOnlyQuote("--- title"), false);
+  assert.equal(headerOnlyQuote("+++ foo"), false);
+  assert.equal(headerOnlyQuote("--- DROP TABLE users;\n--- second comment"), false);
+  assert.equal(headerOnlyQuote("diff --git a/f b/f\n--- a/f\n+++ b/f"), true);
+  assert.equal(headerOnlyQuote("--- /dev/null\n+++ b/new.mjs"), true);
+  assert.equal(headerOnlyQuote("--- a/only-old-side.js"), true);
+  assert.equal(headerOnlyQuote('+++ "b/caf\\303\\251.js"'), true);
+  assert.equal(headerOnlyQuote("--- src/no-prefix.js\n+++ src/no-prefix.js"), true, "an adjacent ---/+++ pair is a header even without a/ b/ prefixes");
+});
+
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length) process.exitCode = 1;

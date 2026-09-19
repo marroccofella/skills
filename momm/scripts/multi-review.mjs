@@ -1335,8 +1335,10 @@ function copilotStreamFailure(stdout, code) {
   if (/quota|rate.?limit/.test(kind) || http === 402 || http === 429) {
     return { status: "error", detail: `Copilot reported that this account's request quota or rate limit is exhausted${http ? ` (HTTP ${http})` : ""}. This is an account limit, not an authentication problem and not a MOMM fault: do not re-login; wait for the limit to reset or leave the route out with --reviewers. No review was accepted.` };
   }
-  if (/auth/.test(kind) || http === 401 || http === 403) return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
+  // An outage is classified before authentication, as in classifyFailure: a 5xx
+  // from an auth service is still "wait", never "log in again".
   if (http !== null && http >= 500 && http <= 504) return { status: "provider_unavailable", detail: `provider service error (retry later) — Copilot reported HTTP ${http}` };
+  if (/auth/.test(kind) || http === 401 || http === 403) return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
   const label = /^[a-z_]{1,40}$/.test(kind.trim().split(" ")[0] ?? "") ? kind.trim().split(" ")[0] : "unspecified";
   return { status: "error", detail: `Copilot ended with a terminal error event (kind: ${label}${http ? `, HTTP ${http}` : ""}) and exit ${code}; its private event stream is not echoed. Run the same copilot command by hand to read the provider's message. No review was accepted.` };
 }
@@ -1360,7 +1362,10 @@ function toleratedScratchAccess(agent, inspection) {
   const recorded = [];
   for (const entry of tolerated) {
     if (!entry || typeof entry.principal !== "string" || typeof entry.rights !== "string") return null;
-    if (!offered.includes(entry.principal.split("\\").pop())) return null;
+    // The inspector answers with the exact name it was offered (it has already
+    // matched the account and confirmed read-only rights); anything else, such
+    // as another domain's group of the same name, is not a trusted answer.
+    if (!offered.includes(entry.principal) || entry.rights !== "read_execute") return null;
     recorded.push({ principal: clipped(entry.principal, 120), rights: clipped(entry.rights, 120) });
   }
   return recorded;
@@ -1779,13 +1784,29 @@ const SPLIT_HARD_CAP_BYTES = 2_000_000;
 // Per-piece quorum for the parent. No pieces at all means every hunk exceeded
 // the ceiling: the parent completes as governor_direct scope (never a vacuous
 // Infinity), and says so.
+// --strict: every external route must have reviewed everything it was asked.
+// A split route that succeeded on some pieces only merges as "success, partial"
+// (quorum is judged per piece), so partial counts as a strict failure here.
+function strictPolicyFailed(results, governor) {
+  return results.some((result) => result.agent !== governor && (result.status !== "success" || result.partial === true));
+}
 function splitQuorum(pieceResults, minSuccess) {
   if (!pieceResults.length) return { external_successes: 0, met: true, governor_direct_only: true };
   return { external_successes: Math.min(...pieceResults.map((piece) => piece.external_successes)), met: pieceResults.every((piece) => piece.quorum_met), governor_direct_only: false };
 }
 // --split reviews pieces under the ceiling, so the whole-input limit is the
 // splitter's hard cap — never raised by --max-bytes.
-function inputLimitFor(options) { return options.split ? SPLIT_HARD_CAP_BYTES : options.maxBytes; }
+// The split hard cap replaces the per-review limit only for input the splitter
+// can pack (a diff). Anything else is dispatched whole and keeps --max-bytes.
+function inputLimitFor(options, artifact = null) { return options.split && (artifact === null || looksLikeDiff(artifact)) ? SPLIT_HARD_CAP_BYTES : options.maxBytes; }
+// Exit 3 names the failing pieces of a split run; `achieved` is the lowest piece.
+function quorumFailure(achieved, required, pieceResults) {
+  const failing = pieceResults ? pieceResults.filter((piece) => !piece.quorum_met).map((piece) => piece.id) : null;
+  return {
+    event: { event: "quorum_failed", achieved, required, ...(failing ? { failing_pieces: failing } : {}) },
+    text: `quorum not met: ${achieved}/${required} required external reviews succeeded${failing?.length ? ` on piece(s): ${failing.join(", ")}` : ""}\n`,
+  };
+}
 const VERDICT_RANK = { REJECT: 3, MODIFY: 2, ACCEPT: 1 };
 const STATUS_RANK = { success: 0, invalid_output: 1, timeout: 2, missing: 3, error: 4, provider_unavailable: 5, authentication_required: 6, unsupported: 7, self_excluded: 8 };
 // One parent row per route from its piece results: success when at least one
@@ -1795,6 +1816,9 @@ function mergePieceResults(pieceResults, agents, governor) {
   return agents.map((agent) => {
     const runs = pieceResults.map((piece) => ({ piece: piece.id, ...(piece.results.find((r) => r.agent === agent) ?? { agent, status: "missing", detail: "no result recorded for this route on this piece" }) }));
     if (agent === governor) return { agent, status: "self_excluded", pieces: {} };
+    // Total on zero pieces (every hunk was governor_direct): no route was asked,
+    // so there is nothing to rank and nothing that could read as a success.
+    if (!runs.length) return { agent, status: "not_dispatched", partial: false, pieces: {}, attempts: 0, duration_ms: 0, detail: "every hunk exceeded the split ceiling; the scope is governor_direct and no route was asked", usage: null };
     const pieces = {};
     for (const r of runs) pieces[r.status] = (pieces[r.status] ?? 0) + 1;
     const ok = runs.filter((r) => r.status === "success");
@@ -2658,7 +2682,70 @@ async function selfTest(pretty) {
     })(),
     gate_merge_tolerates_review_without_findings_array: (() => { try { const m = mergePieceResults([{ id: "piece-01", results: [{ agent: "codex", status: "success", review: { verdict: "ACCEPT", confidence: 1, summary: "s" } }] }], ["codex"], "claude")[0]; return m.status === "success" && m.review.findings.length === 0; } catch { return false; } })(),
     gate_merge_missing_route_result_is_a_status_not_undefined: (() => { const m = mergePieceResults([{ id: "piece-01", results: [] }, { id: "piece-02", results: [{ agent: "grok", status: "timeout", detail: "t" }] }], ["grok"], "claude")[0]; return typeof m.status === "string" && m.status !== "undefined" && m.pieces.missing === 1; })(),
-    audit_zero_pieces_do_not_reach_merge: (() => { try { return mergePieceResults([], ["grok"], "claude").length === 1 && true; } catch { return "merge threw on zero pieces — callers must branch before merging"; } })() !== "x",
+    // Gate rev_20260919000938_1nkh copilot-5xx-classified-as-auth: an HTTP 5xx is an outage
+    // whatever the event's kind says, the same precedence the text classifier already uses.
+    copilot_stream_5xx_is_an_outage_even_when_the_kind_mentions_auth: (() => {
+      try {
+        const stream = (data) => [{ type: "session.error", data }, { type: "result", exitCode: 1 }].map((e) => JSON.stringify(e)).join("\n");
+        return classifyFailure({ code: 1, stdout: stream({ errorType: "authentication", errorCode: "auth_service_unavailable", statusCode: 503 }), stderr: "" }, "copilot").status === "provider_unavailable"
+          && classifyFailure({ code: 1, stdout: stream({ errorType: "authentication", statusCode: 401 }), stderr: "" }, "copilot").status === "authentication_required"
+          && classifyFailure({ code: 1, stdout: stream({ errorType: "authentication" }), stderr: "" }, "copilot").status === "authentication_required";
+      } catch { return false; }
+    })(),
+    // sandbox-principal-suffix-allowlist: the inspector answers with the exact name it was
+    // offered, so nothing else (another domain's group, a padded name) is recorded.
+    scratch_allowance_records_only_the_exact_offered_name: (() => {
+      const rights = "read_execute";
+      return toleratedScratchAccess("codex", { tolerated: [{ principal: "CodexSandboxUsers", rights }] })?.length === 1
+        && toleratedScratchAccess("codex", { tolerated: [{ principal: "OTHERDOMAIN\\CodexSandboxUsers", rights }] }) === null
+        && toleratedScratchAccess("codex", { tolerated: [{ principal: "codexsandboxusers", rights }] }) === null
+        && toleratedScratchAccess("codex", { tolerated: [{ principal: " CodexSandboxUsers", rights }] }) === null
+        // [grok#100]: only the inspector's read-only verdict is recorded, never another rights string.
+        && toleratedScratchAccess("codex", { tolerated: [{ principal: "CodexSandboxUsers", rights: "FullControl" }] }) === null
+        && toleratedScratchAccess("codex", { tolerated: [{ principal: "CodexSandboxUsers", rights: "read_execute, write" }] }) === null;
+    })(),
+    // split-cap-skips-nondiff: only input the splitter can pack gets the split hard cap.
+    split_hard_cap_applies_only_to_a_diff: (() => {
+      try {
+        return inputLimitFor({ split: "auto", maxBytes: 120_000 }, "plain prose, no hunks\n") === 120_000
+          && inputLimitFor({ split: "auto", maxBytes: 120_000 }, "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n") === SPLIT_HARD_CAP_BYTES
+          && inputLimitFor({ split: null, maxBytes: 120_000 }, "diff --git a/x b/x\n") === 120_000;
+      } catch { return false; }
+    })(),
+    // quorum-failed-scalar: the plan says exit 3 lists the failing pieces.
+    quorum_failure_names_the_failing_pieces: (() => {
+      try {
+        const split = quorumFailure(0, 1, [{ id: "piece-01", quorum_met: true }, { id: "piece-02", quorum_met: false }]);
+        const single = quorumFailure(0, 2, null);
+        return JSON.stringify(split.event) === JSON.stringify({ event: "quorum_failed", achieved: 0, required: 1, failing_pieces: ["piece-02"] })
+          && /quorum not met: 0\/1 required external reviews succeeded on piece\(s\): piece-02/.test(split.text)
+          && JSON.stringify(single.event) === JSON.stringify({ event: "quorum_failed", achieved: 0, required: 2 })
+          && single.text === "quorum not met: 0/2 required external reviews succeeded\n";
+      } catch { return false; }
+    })(),
+    // Gate rev_20260919000938_1nkh split-partial-marked-success: a merged split row stays
+    // "success, partial" by design (quorum and completion are judged per piece), but --strict
+    // means every external route reviewed everything it was asked, so a partial route fails it.
+    strict_gate_counts_a_partially_reviewed_split_route: (() => {
+      try {
+        const ok = { agent: "grok", status: "success", review: { verdict: "ACCEPT", confidence: 1, summary: "", findings: [], improvements: [], reviewed_scope: [] } };
+        const merged = mergePieceResults([{ id: "p1", results: [ok] }, { id: "p2", results: [{ agent: "grok", status: "timeout" }] }], ["grok", "claude"], "claude");
+        return merged[0].status === "success" && merged[0].partial === true && merged[0].pieces.timeout === 1
+          && strictPolicyFailed(merged, "claude") === true
+          && strictPolicyFailed([ok, { agent: "claude", status: "self_excluded" }], "claude") === false
+          && strictPolicyFailed([{ ...ok, partial: false }, { agent: "codex", status: "timeout" }], "claude") === true;
+      } catch { return false; }
+    })(),
+    // Gate rev_20260919000938_1nkh empty-split-merge-crash / vacuous-zero-pieces-merge-test: main()
+    // branches before merging, but the merge itself must also be total. Zero pieces is never a
+    // success, never a review, and carries finite numbers (Math.max() of nothing is -Infinity).
+    audit_zero_pieces_merge_is_total_and_never_a_success: (() => {
+      try {
+        const [grok, governor] = mergePieceResults([], ["grok", "claude"], "claude");
+        return grok.status === "not_dispatched" && !("review" in grok) && grok.partial === false && grok.attempts === 0 && grok.duration_ms === 0
+          && JSON.stringify(grok.pieces) === "{}" && typeof grok.detail === "string" && grok.usage === null && governor.status === "self_excluded";
+      } catch { return false; }
+    })(),
     gate_split_quorum_empty_pieces_is_not_infinity: (() => { const q = splitQuorum([], 2); return q.external_successes === 0 && q.met === true && q.governor_direct_only === true; })(),
     gate_split_quorum_all_pieces_must_meet: (() => { const q = splitQuorum([{ external_successes: 2, quorum_met: true }, { external_successes: 1, quorum_met: false }], 2); return q.external_successes === 1 && q.met === false && q.governor_direct_only === false; })(),
     gate_input_limit_under_split_is_the_hard_cap: inputLimitFor({ split: "auto", maxBytes: 3_000_000 }) === SPLIT_HARD_CAP_BYTES && inputLimitFor({ split: null, maxBytes: 120_000 }) === 120_000,
@@ -2942,8 +3029,8 @@ async function main() {
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.
-  const inputLimit = inputLimitFor(options);
-  if (byteLength > inputLimit) throw new Error(`Input is ${byteLength} bytes; limit is ${inputLimit}${options.split ? " (split hard cap)" : ""}`);
+  const inputLimit = inputLimitFor(options, rawArtifact);
+  if (byteLength > inputLimit) throw new Error(`Input is ${byteLength} bytes; limit is ${inputLimit}${options.split ? (inputLimit === options.maxBytes ? " (--split packs diffs only; this input is not a diff, so --max-bytes applies)" : " (split hard cap)") : ""}`);
   const sanitized = sanitizeText(rawArtifact);
   applyTier(options);
   options.requestedTimeoutMs = options.timeoutMs;
@@ -3331,10 +3418,11 @@ async function main() {
   // dispatcher_version already lives inside the report; update_available is an
   // additive, optional field (unknown-field-safe, so REPORT_SCHEMA is unchanged).
   process.stdout.write(`${JSON.stringify({ ...report, evidence, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
-  if (options.strict && results.some((result) => result.agent !== options.governor && result.status !== "success")) process.exitCode = 2;
+  if (options.strict && strictPolicyFailed(results, options.governor)) process.exitCode = 2;
   if (options.minSuccess && !quorumMet) {
-    if (options.stream) emitEvent(true, { event: "quorum_failed", achieved: externalSuccesses, required: options.minSuccess });
-    else process.stderr.write(`quorum not met: ${externalSuccesses}/${options.minSuccess} required external reviews succeeded\n`);
+    const failure = quorumFailure(externalSuccesses, options.minSuccess, pieceResults);
+    if (options.stream) emitEvent(true, failure.event);
+    else process.stderr.write(failure.text);
     process.exitCode = 3;
   }
   } finally {

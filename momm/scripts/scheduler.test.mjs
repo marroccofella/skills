@@ -95,6 +95,14 @@ await test("jobs: zero, negative or non-numeric is an error, never max paralleli
   for (const jobs of [0, -1, "abc", NaN, Infinity, "0", true]) assert.throws(() => createScheduler({ jobs }), /jobs must be a positive number/, `jobs=${String(jobs)}`);
 });
 
+await test("perRoute: a zero, negative or non-numeric cap is an error, never a silent lane of one", () => {
+  // Gate-3 [82]: { grok: 0 } became one live slot through `|| 1`.
+  for (const cap of [0, -2, NaN, "2", Infinity, true]) assert.throws(() => createScheduler({ jobs: 4, perRoute: { grok: cap } }), /perRoute\.grok must be a positive number/, `cap=${String(cap)}`);
+  assert.throws(() => createScheduler({ perRoute: "grok" }), /perRoute must be an object/);
+  assert.equal(createScheduler({ jobs: 4, perRoute: { grok: 1.9, codex: undefined } }).capFor("grok"), 1);
+  assert.equal(createScheduler({ jobs: 4, perRoute: { grok: null } }).capFor("grok"), 2, "null or undefined means the default cap");
+});
+
 await test("cancel: a task cancelled before its onCancel registration still gets the hook and settles", async () => {
   const scheduler = createScheduler({ jobs: 1 });
   const log = [];

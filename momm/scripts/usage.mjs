@@ -52,18 +52,26 @@ const pick = (obj, names) => { for (const k of names) { const v = num(obj?.[k]);
 
 // Last balanced top-level JSON object in text (string-aware). Non-JSON around
 // it is ignored; an unbalanced tail returns null rather than an earlier guess.
+// A stray "{" in diagnostic text before the object would leave the scan unbalanced too, so the scan
+// resumes just after an unclosed opener (a bounded number of times): a complete object that follows
+// is still found, while a truncated tail, which nothing complete follows, still returns null.
 export function lastJsonObject(text) {
   text = typeof text === "string" ? text : String(text ?? "");
-  let start = -1, depth = 0, inString = false, escaped = false, last = null;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (depth === 0) { if (c === "{") { start = i; depth = 1; } continue; }
-    if (inString) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') inString = false; continue; }
-    if (c === '"') inString = true;
-    else if (c === "{") depth++;
-    else if (c === "}" && --depth === 0) { try { last = JSON.parse(text.slice(start, i + 1)); } catch { /* keep previous */ } }
+  let from = 0;
+  for (let attempt = 0; attempt < 16; attempt++) {
+    let start = -1, depth = 0, inString = false, escaped = false, last = null;
+    for (let i = from; i < text.length; i++) {
+      const c = text[i];
+      if (depth === 0) { if (c === "{") { start = i; depth = 1; } continue; }
+      if (inString) { if (escaped) escaped = false; else if (c === "\\") escaped = true; else if (c === '"') inString = false; continue; }
+      if (c === '"') inString = true;
+      else if (c === "{") depth++;
+      else if (c === "}" && --depth === 0) { try { last = JSON.parse(text.slice(start, i + 1)); } catch { /* keep previous */ } }
+    }
+    if (depth === 0) return isObject(last) ? last : null;
+    from = start + 1;
   }
-  return depth === 0 && isObject(last) ? last : null;
+  return null;
 }
 
 // JSONL: one object per non-empty line; lines that are not JSON are skipped.

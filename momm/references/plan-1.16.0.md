@@ -1,5 +1,7 @@
 # MOMM 1.16.0 plan — measurement, ratings, guidance, throughput, upkeep
 
+This plan is the dated design record the build started from. Where the implementation or the release notes differ (for example: the trust store and overlay writes are serialised by locks, the splitter carries every git header form and divides over-ceiling hunks, `.reviewrules` has a one-release grace that is recorded in every report), the code, its tests and [release-1.16.0.md](release-1.16.0.md) are authoritative.
+
 Status: revision 3, 2026-09-13, after two momm review runs: `rev_20260913112156_t8ik` (13 findings, 12 suggestions, all applied) and `rev_20260913112919_5x2s` on revision 2 (13 findings including one CRITICAL, 12 suggestions; all applied except one implementation-detail suggestion, rejected). Dispositions are in the private ledger. Baseline is the 1.15.0 candidate (branch `release/momm-1.15.0`, cb3833d). Nothing here is built.
 
 Each epic names what exists today, what changes, how it is proven, and what it must not break. The 1.15.0 release holds ship first and are not 1.16 work: evidence-cap streaming, the governor path in SKILL.md, the shallow-fetch promotion failure in `update --apply`, and Grok's exact-quote rejection rate. E6 below only adds the regression test for the shallow fetch; the fix itself is a 1.15 deliverable.

@@ -188,6 +188,11 @@ await test("normaliseNeed: aliases, defaults, rejects unknown names", () => {
   assert.deepEqual(mod.normaliseNeed({ chain: ["text", "image", "video"] }), [{ from: ["text"], to: ["image_gen"] }, { from: ["image"], to: ["video_gen"] }]);
   assert.deepEqual(mod.normaliseNeed({ input: ["pdf", "image", "image"] }), [{ from: ["pdf", "image"], to: ["text"] }]);
   assert.deepEqual(mod.normaliseNeed({ output: ["image_gen"] }), [{ from: ["text"], to: ["image_gen"] }]);
+  // Gate rev_20260919000938_1nkh: code and web are documented chain words; what such a step
+  // produces is text, which is what the next step consumes.
+  assert.deepEqual(mod.normaliseNeed({ chain: ["text", "web", "image"] }), [{ from: ["text"], to: ["web"] }, { from: ["text"], to: ["image_gen"] }]);
+  assert.deepEqual(mod.normaliseNeed({ chain: ["text", "code", "text"] }), [{ from: ["text"], to: ["code_exec"] }, { from: ["text"], to: ["text"] }]);
+  assert.equal(mod.plan(matrix(), { chain: ["text", "web", "image"] }, { prompt: PROMPT }).steps.length, 2);
   assert.throws(() => mod.normaliseNeed({ input: ["hologram"] }), /unknown input modality/);
   assert.throws(() => mod.normaliseNeed({ output: ["smell"] }), /unknown output modality/);
   assert.throws(() => mod.normaliseNeed({ chain: ["text"] }), /at least two/);
@@ -377,7 +382,7 @@ await test("run: a generative step with no new file fails the chain; nothing is 
   // A non-zero exit fails the step even when a file appeared.
   const crash = async () => { write(path.join(touched, ".codex", "generated_images", "s", "exec-crash.png"), "X"); return { code: 1, stdout: "", stderr: "boom \u001b[31mred\u001b[0m" }; };
   const third = await mod.run(mod.plan(m, { chain: ["text", "image"] }, { prompt: PROMPT }), { consent: true, exec: crash, home: touched, cwd: cwd2, effective: m });
-  assert.equal(third.report.status, "failed"); assert.equal(third.report.failure, "exit_code"); assert.ok(!/[\x00-\x1f]/.test(third.report.stderr_excerpt));
+  assert.equal(third.report.status, "failed"); assert.equal(third.report.failure, "exit_code"); assert.equal(third.report.stderr_excerpt, "boom [31mred[0m", "the excerpt exists and only the control bytes are gone");
 });
 
 await test("run: two concurrent chains into the same harvest glob keep separate artefacts", async () => {
@@ -768,6 +773,30 @@ for (const writeCode of ["ENOSPC", "synthetic-private-diagnostic"]) await test(`
   assert.equal(caught.write_cause?.code, writeCode, "retain the distinct write failure privately");
   assert.equal(Object.prototype.propertyIsEnumerable.call(caught, "write_cause"), false);
   assert.doesNotMatch(JSON.stringify(caught), /synthetic private|synthetic-private-diagnostic/);
+});
+
+// Gate rev_20260919000938_1nkh: an initial artefact the first step did not ask for must not be
+// staged or sent to a provider; the run refuses before anything is written or dispatched.
+await test("gate: an initial input whose modality the first step does not take is refused before dispatch", async () => {
+  const home = fresh("home"), cwd = fresh("cwd"), m = matrix();
+  const dirIn = fresh("in");
+  const red = write(path.join(dirIn, "red.png"), PNG_A), extraPdf = write(path.join(dirIn, "unrelated.pdf"), "%PDF-SYNTHETIC"), extraTxt = write(path.join(dirIn, "notes.txt"), "SYNTHETIC NOTES");
+  const planned = mod.plan(m, { input: ["image"], output: ["text"] }, { prompt: "What colour is the shape?" });
+  let calls = 0;
+  const exec = async () => { calls++; return ok("Red"); };
+  for (const extra of [extraPdf, extraTxt]) {
+    await assert.rejects(mod.run(planned, { consent: true, inputs: [red, extra], exec, home, cwd, effective: m }), (e) => e.code === "MOMM_INPUT_UNEXPECTED" && e.message.includes(path.basename(extra)));
+  }
+  assert.equal(calls, 0, "nothing is dispatched");
+  assert.equal(fs.existsSync(path.join(cwd, mod.MEDIA_DIR)), false, "no run directory is created for a refused input");
+  // A text-first chain takes no media at all, but a text artefact is still a text input.
+  const textFirst = mod.plan(m, { chain: ["text", "text"] }, { prompt: PROMPT });
+  await assert.rejects(mod.run(textFirst, { consent: true, inputs: [red], exec, home, cwd, effective: m }), (e) => e.code === "MOMM_INPUT_UNEXPECTED");
+  assert.equal(calls, 0);
+  // Two artefacts of a modality the step does take are both accepted.
+  const second = write(path.join(dirIn, "blue.png"), "PNG-B");
+  const okRun = await mod.run(planned, { consent: true, inputs: [red, second], exec, home, cwd, effective: m });
+  assert.equal(okRun.report.status, "complete"); assert.equal(calls, 1);
 });
 
 // Gate rev_20260918172020_ehti. The cap is per output set (HARVEST_MAX_FILES: "per glob per step"),

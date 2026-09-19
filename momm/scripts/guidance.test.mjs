@@ -453,6 +453,54 @@ await asyncTest("trust store: concurrent writers in separate processes never los
   assert.ok(!fs.existsSync(path.join(f.home, ".momm", "trust.json.lock")));
 });
 
+// Gate rev_20260919000938_1nkh. The module's invariant: text that arrives with a clone can never
+// abort a review. An untrusted (grace) .reviewrules that would push a route past its budget is
+// skipped with a notice; the owner's own layers still resolve. A trusted one is the owner's
+// decision and still fails loudly.
+test("grace: an untrusted .reviewrules that overflows the route budget is skipped, never thrown", () => {
+  const f = fixture();
+  writeJson(userFile(f.home), { reviewers: { "*": "U".repeat(2000), codex: "R".repeat(2000) } });
+  fs.writeFileSync(path.join(f.cwd, ".reviewrules"), "X".repeat(3000));
+  const r = resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex", "grok"] });
+  assert.deepEqual(r.routes.codex.layers.map((l) => l.name), ["user:*", "user:codex"]);
+  assert.ok(!r.routes.codex.text.includes("X"));
+  assert.ok(r.notices.some((n) => /\.reviewrules skipped for route codex: .*budget/.test(n)), JSON.stringify(r.notices));
+  // A route it fits on still gets it (2000 + 3000 < 6000), with the grace notice.
+  assert.deepEqual(r.routes.grok.layers.map((l) => l.name), ["user:*", "project:.reviewrules"]);
+  // Once trusted it is the owner's text: overflowing is an error they must fix.
+  trustProject(f.cwd, { home: f.home, only: "reviewrules" });
+  assert.throws(() => resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex"] }), /exceeds 6000 characters/);
+});
+test("the guidance sidecar directory is created owner-only", () => {
+  // Gate rev_20260919000938_1nkh: the evidence folder is inspected again after the sidecar is
+  // written, and on POSIX a directory created with the default mode (0755 under umask 022) fails
+  // that inspection. Windows ignores the mode, so the request itself is what is asserted.
+  const f = fixture();
+  const mkdir = fs.mkdirSync, modes = [];
+  fs.mkdirSync = function (dir, options) { if (String(dir).includes(".ensemble_reviews")) modes.push(options?.mode); return mkdir.call(fs, dir, options); };
+  try { writeGuidanceSidecar(f.cwd, "rev_mode_check", fullResolved); } finally { fs.mkdirSync = mkdir; }
+  assert.deepEqual(modes, [0o700]);
+  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(f.cwd, ".ensemble_reviews", "guidance")).mode & 0o077, 0);
+});
+test("project guidance files are never read through a symbolic link", () => {
+  // A real link where the platform allows one; otherwise (Windows without the symlink privilege)
+  // the same decision is driven through lstat, which is what the reader must consult.
+  const f = fixture();
+  const outside = path.join(f.home, "outside.env"), rules = path.join(f.cwd, ".reviewrules");
+  fs.writeFileSync(outside, "FOREIGN-FILE-TEXT");
+  let real = true;
+  try { fs.symlinkSync(outside, rules, "file"); } catch (e) { if (e.code !== "EPERM") throw e; real = false; fs.writeFileSync(rules, "FOREIGN-FILE-TEXT"); }
+  const lstat = fs.lstatSync;
+  if (!real) fs.lstatSync = (file, ...rest) => { const st = lstat(file, ...rest); if (path.resolve(String(file)) === rules) st.isSymbolicLink = () => true; return st; };
+  try {
+    const r = resolveGuidance({ cwd: f.cwd, home: f.home, routes: ["codex"] });
+    assert.equal(r.routes.codex.text, "");
+    assert.ok(r.notices.some((n) => /\.reviewrules skipped: file is a symbolic link/.test(n)), JSON.stringify(r.notices));
+    assert.deepEqual(readBoundedBytes(rules, 1024, { followLinks: false }), { error: "is a symbolic link" });
+    assert.equal(readBoundedBytes(rules, 1024).bytes.toString(), "FOREIGN-FILE-TEXT", "paths the user chose keep following links");
+  } finally { fs.lstatSync = lstat; }
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length) process.exitCode = 1;

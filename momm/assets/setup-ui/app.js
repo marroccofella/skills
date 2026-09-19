@@ -545,8 +545,8 @@ function providerLabel(agent) {
 }
 
 function reportedCell(count, total, value) {
-  if (!count) return `<span class="not-reported">not reported</span><small>0 of ${total} reported</small>`;
-  return `${escapeHtml(value)}<small>${count} of ${total} reported</small>`;
+  if (!count) return `<span class="not-reported">not reported</span><small>0 of ${escapeHtml(total)} reported</small>`;
+  return `${escapeHtml(value)}<small>${escapeHtml(count)} of ${escapeHtml(total)} reported</small>`;
 }
 
 function renderUsage() {
@@ -806,6 +806,7 @@ function renderUpdateClock() {
       ${toggle("models", "Models", "Record new model names only; configured models never change.")}
       ${toggle("accept_protocol", "Accept protocol changes", "Let a skill update that changes the review protocol apply without you.")}
     </div>
+    ${clockError ? `<p class="environment-note clock-error" role="status">The update clock could not be refreshed: ${escapeHtml(clockError)}. The table below is the last state this page read.</p>` : ""}
     <div class="cli-table-scroll"><table class="momm-table cli-table clock-table"><thead><tr><th>Source</th><th>Installed</th><th>Latest</th><th>Update</th><th>Last checked</th><th>Next due</th><th>Interval</th><th>Last error</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="environment-note">Estimated ${escapeHtml(clockState.overhead_estimate_per_day ?? "—")} conditional request${clockState.overhead_estimate_per_day === 1 ? "" : "s"} per day at the current intervals. Checks run only on events (review start or finish, opening this page, Check everything, the timer below); nothing polls.${activity.last_finished_at ? ` Last check ${escapeHtml(formatWhen(activity.last_finished_at))} (${escapeHtml(activity.last_event || "—")}${activity.last_result?.skipped_reason ? `, ${escapeHtml(activity.last_result.skipped_reason)}` : ""}).` : ""}${activity.last_error ? ` Last error: ${escapeHtml(activity.last_error)}.` : ""}</p>
     <p class="environment-note">When this switch is on, every check event also applies what it found, and each updated CLI is then probed for containment: MOMM sends one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider, never project content. The re-read version and the probe verdict are shown below; a route whose probe failed or could not run is listed as updated, containment not verified, and is not ready.</p>

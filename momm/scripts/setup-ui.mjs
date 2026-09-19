@@ -750,6 +750,7 @@ function acceptedFindingsIndex(file) {
     let carry = Buffer.alloc(0), overlong = false;
     const consume = (bytes) => {
       if (overlong) { overlong = false; return; } // the tail of a line already dropped
+      if (bytes.length > DISPOSITIONS_LINE_LIMIT) return; // complete within one read, still past the limit
       const line = bytes.toString("utf8").trim();
       if (!line) return;
       let row; try { row = JSON.parse(line); } catch { return; }
@@ -845,11 +846,19 @@ function runClockActivity(event, work) {
 // Only constant command tables reach this (UPDATE_COMMANDS, timerCommand, the
 // grok check-only command). Windows needs a shell for npm's .cmd shims; the
 // module's own defaultExec makes the same choice.
+// The environment update and probe children start from: everything the user's
+// shell has (PATH, proxies, registry settings) except API-key-shaped secrets,
+// which no updater or OAuth CLI needs from this server.
+function childEnvironment(source = process.env) {
+  const env = { ...source, NO_UPDATE_CHECK: "1", NO_COLOR: "1" };
+  for (const key of Object.keys(env)) if (/(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(key.toUpperCase())) delete env[key];
+  return env;
+}
 function clockExec(command, args = [], { timeout = 60_000, shell = false } = {}) {
   return new Promise((resolve) => {
     const child = processScope.spawn(command, args, {
       cwd: process.cwd(),
-      env: { ...process.env, NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
+      env: childEnvironment(),
       shell: shell || process.platform === "win32",
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -885,8 +894,7 @@ function createServerClock() {
 // cmd.exe shims) and the secret scrub of the inherited environment; stdin is
 // piped because the codex and grok vectors feed the prompt that way.
 function probeExec(command, args = [], { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env } = {}) {
-  const env = { ...sourceEnv, NO_UPDATE_CHECK: "1", NO_COLOR: "1" };
-  for (const key of Object.keys(env)) if (/(?:^|_)(?:API_?KEY|SECRET_?KEY|ACCESS_?TOKEN)(?:_|$)/.test(key.toUpperCase())) delete env[key];
+  const env = childEnvironment(sourceEnv);
   const launch = windowsLauncher(command, args, env);
   if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
   return new Promise((resolve) => {
@@ -1799,7 +1807,8 @@ async function dashboardRegression() {
     const codexRow = rolled.rows.find((row) => row.agent === "codex");
     checks.usage_zero_of_n_for_reports_without_usage = rolled.rows.length === 1 && codexRow.coverage.tokens === "0 of 2" && codexRow.coverage.cost === "0 of 2"
       && codexRow.median_total_tokens === null && codexRow.total_cost_usd === null && typeof rolled.note === "string"
-      && rolled.coverage.reports_scanned === 2 && !JSON.stringify(rolled).includes("NaN");
+      // JSON.stringify turns NaN into null, so walk the numbers themselves.
+      && rolled.coverage.reports_scanned === 2 && (function finite(value) { return typeof value === "number" ? Number.isFinite(value) : value && typeof value === "object" ? Object.values(value).every(finite) : true; })(rolled);
     writeJson(path.join(reports, "rev_3_c.json"), { run_id: "rev_3_c", reviewers: [{ agent: "codex", status: "success", usage: { reported: { total_tokens: 900, cost_usd: 0.02 }, coverage: { tokens: true, cost: true } } }] });
     fs.writeFileSync(path.join(usage.cwd, ".ensemble_reviews", "dispositions.jsonl"), `${JSON.stringify({ run_id: "rev_3_c", reviewer: "codex", disposition: "applied" })}\n{"broken"\n`);
     const withUsage = usageReport({ cwd: usage.cwd }).rows[0];
@@ -1818,6 +1827,23 @@ async function dashboardRegression() {
     const streamed = usageReport({ cwd: usage.cwd });
     checks.usage_oversize_ledger_still_counts_accepted_findings = emojiStraddlesChunk && fs.statSync(ledgerFile).size > 9 * 1024 * 1024
       && Math.abs(streamed.rows[0].cost_per_accepted_finding - 0.02 / 3) < 1e-6 && streamed.coverage.accepted_findings_available === true && streamed.note === null;
+    // Gate rev_20260919000938_1nkh oversized-ledger-line-counted: the line limit is a contract, not
+    // only a memory bound. A VALID applied row just past it is dropped even when its newline
+    // arrives in the same read as its tail; the row after it still counts.
+    const overlongLedger = path.join(root, "overlong-dispositions.jsonl");
+    fs.writeFileSync(overlongLedger, `${appliedRow({ pad: "p".repeat(DISPOSITIONS_LINE_LIMIT + 10) })}\n${appliedRow({})}\n`);
+    const overlongIndex = acceptedFindingsIndex(overlongLedger);
+    // updater-inherits-secrets: update and probe children get the same scrubbed environment;
+    // proxy and PATH settings an updater needs are kept.
+    checks.update_children_do_not_inherit_api_secrets = (() => {
+      try {
+        const env = childEnvironment({ PATH: "p", HTTPS_PROXY: "proxy", OPENAI_API_KEY: "k", my_secret_key: "s", GH_ACCESS_TOKEN: "t", NPM_TOKEN: "registry" });
+        return env.PATH === "p" && env.HTTPS_PROXY === "proxy" && env.NPM_TOKEN === "registry" && env.NO_UPDATE_CHECK === "1" && env.NO_COLOR === "1"
+          && !("OPENAI_API_KEY" in env) && !("my_secret_key" in env) && !("GH_ACCESS_TOKEN" in env)
+          && /env: childEnvironment\(\)/.test(clockExec.toString()) && /childEnvironment\(sourceEnv\)/.test(probeExec.toString());
+      } catch { return false; }
+    })();
+    checks.usage_valid_row_past_the_line_limit_is_not_counted = overlongIndex.error === null && overlongIndex.index.get("rev_3_c\u0000codex") === 1;
     // An unreadable ledger (here a directory at its path) reads as "counts
     // unavailable" with null ratios — never as zero accepted findings.
     const ul = fixture("usage-ledger-unreadable");
@@ -2318,7 +2344,7 @@ function startSetupCenter({ server, watcher, clock, port, browser, pointer }) {
     process.stderr.write(`MOMM Setup Center could not start: ${safeDetail(error.message)}\n`);
     process.exitCode = 1;
   });
-  server.on("close", () => pointer?.remove?.());
+  server.on("close", () => { watcher?.stop(); pointer?.remove?.(); });
   server.listen(port, "127.0.0.1", () => {
     const address = server.address();
     const url = `http://127.0.0.1:${address.port}/`;

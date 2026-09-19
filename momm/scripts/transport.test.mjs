@@ -63,6 +63,9 @@ try {
     assert(!JSON.stringify(events).includes(secret));
     assert(!JSON.stringify(rows).includes(secret),'saved report/stdout must not retain a token removed from progress');
     assert.equal(rows[0].detail,events[0].detail);
+    // Positive controls: one completion event and one row exist, and both carry the redacted diagnostic.
+    assert.equal(events.length,1);assert.equal(events[0].event,'reviewer.completed');assert.equal(rows.length,1);
+    assert.equal(rows[0].detail,'Provider diagnostic [REDACTED]');
   });
   await test("split UTF-8 survives real stdout and stderr pipes", async () => {
     const expected = JSON.stringify({ quote: "é😀", text: "ab" });

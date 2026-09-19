@@ -346,12 +346,17 @@ export function locateBinary(command, { env = process.env, platform = process.pl
 // The Windows shell is needed for npm's .cmd shims, so the executable path is
 // quoted whenever cmd.exe would otherwise read part of it as syntax: not only
 // whitespace but & | < > ^ ( ) and the other delimiters (<profile>\A&B\grok.exe).
-// A path cannot contain a double quote on Windows; %VAR% expansion inside quotes
-// is a cmd.exe limitation this cannot neutralise.
+// A path cannot contain a double quote on Windows. cmd.exe expands %VAR% even
+// inside quotes, so an absolute .exe (the only absolute form cliBinary returns
+// on Windows) is started directly, with no shell at all; only a bare name or a
+// .cmd/.bat shim still needs cmd.exe. cmd.exe also searches the working
+// directory BEFORE PATH, and --check-all is run from inside reviewed projects:
+// NoDefaultCurrentDirectoryInExePath stops a planted claude.cmd from running.
 const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
 export function captureExec(command, args, { timeout = 20_000, cwd } = {}) {
-  const win = process.platform === "win32";
-  const p = spawnSync(win && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, encoding: "utf8", shell: win, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
+  const win = process.platform === "win32", shell = win && !(path.isAbsolute(command) && /\.exe$/i.test(command));
+  const env = win ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
+  const p = spawnSync(shell && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, env, encoding: "utf8", shell, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
 }
 const notInstalled = r => !r || r.error?.code === "ENOENT" || r.code === 127 || (r.code !== 0 && NOT_INSTALLED.test(`${r.stderr}\n${r.stdout}`));

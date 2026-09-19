@@ -39,5 +39,19 @@ await test('ledger tables retain readable column minima within keyboard-scroll w
  assert.match(ledger,/\.table-scroll \.momm-table \.prose\s*\{[^}]*white-space:\s*normal/);
  assert.match(ledger,/class="table-scroll" role="region" tabindex="0"/);
 });
+// Gate rev_20260919000938_1nkh: every value the usage panel places in markup is escaped, counts
+// included; the server computes them as numbers, the page must not depend on that.
+await test('usage cells escape their counts as well as their value',()=>{
+ const a=client.indexOf('function reportedCell('),b=client.indexOf('\nfunction renderUsage(',a);
+ assert(a>=0&&b>a,'reportedCell not found');
+ const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[char]);
+ const reportedCell=vm.runInNewContext(client.slice(a,b)+';reportedCell',{escapeHtml});
+ const hostile='"><img src=x onerror=alert(1)>';
+ for(const html of [reportedCell(0,hostile,'x'),reportedCell(1,hostile,'x'),reportedCell(hostile,2,'x')]){
+  assert.doesNotMatch(html,/<img/);assert.match(html,/&lt;img/);
+ }
+ assert.equal(reportedCell(2,3,'1,024'),'1,024<small>2 of 3 reported</small>');
+ assert.equal(reportedCell(0,3,'x'),'<span class="not-reported">not reported</span><small>0 of 3 reported</small>');
+});
 console.log(JSON.stringify({checks,browser_verified:false},null,2));
 process.exitCode=checks.every(c=>c.passed)?0:1;

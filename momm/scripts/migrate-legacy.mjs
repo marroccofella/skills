@@ -21,7 +21,8 @@ function paths(options) {
   if(inside(backup,path.dirname(skill)) || inside(backup,repo) || inside(repo,skill) || inside(skill,repo))throw fail('unsafe_backup','Backup must be outside the discovery directory and both installations');
   if(!entry(skill))throw fail('unsupported_scope','Existing MOMM discovery entry is missing; no path was guessed');
   let oldRoot;try{oldRoot=physicalPath(skill);}catch{throw fail('unsupported_scope','Existing MOMM link is broken or inaccessible; inspect it before migrating');}
-  if(inside(backup,oldRoot)||oldRoot===path.join(repo,'momm'))throw fail('unsafe_backup','Do not back up into the old installation or migrate an already linked release');
+  // Compare the installation the entry resolves to, not only the link's own path.
+  if(inside(backup,oldRoot)||inside(oldRoot,repo)||inside(repo,oldRoot))throw fail('unsafe_backup','Do not back up into the old installation or migrate an already linked release');
   return {skill,backup,repo,journal:backup+'.momm-migration.json',lock:path.join(path.dirname(skill),'.momm-migration.lock')};
 }
 function readRegular(file) {
@@ -56,7 +57,12 @@ export function rollback(journalPath) {
   if(!same(entry(p.backup),state.old))throw fail('backup_changed','Backup changed or is missing; nothing was overwritten');
   const current=entry(p.skill);
   if(current) {
-    if(current.type!=='link'||path.resolve(path.dirname(p.skill),current.link)!==path.join(p.repo,'momm'))throw fail('discovery_changed','Discovery entry is no longer the new link; preserve it and inspect manually');
+    // The link text may spell the clone through an alias, 8.3 name or symlinked
+    // prefix; migrate() accepted it physically, so recovery must recognise it the
+    // same way. A dangling link falls back to the literal spelling only.
+    const expected=path.join(p.repo,'momm'),literal=current.type==='link'&&path.resolve(path.dirname(p.skill),current.link)===expected;
+    let physical=false;if(current.type==='link'&&!literal){try{physical=physicalPath(p.skill)===physicalPath(expected);}catch{physical=false;}}
+    if(!literal&&!physical)throw fail('discovery_changed','Discovery entry is no longer the new link; preserve it and inspect manually');
     fs.unlinkSync(p.skill); // Known new symlink/junction only, never its target.
   }
   fs.renameSync(p.backup,p.skill);state.phase='rolled_back';save(journal,state);releaseLock(p);

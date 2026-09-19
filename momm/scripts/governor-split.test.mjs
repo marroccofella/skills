@@ -67,6 +67,25 @@ try {
     assert.equal(r.quorum.achieved, 1, "only the route with a successful verified row counts");
     assert.deepEqual(r.quorum.failing_pieces, ["piece-01"]);
   });
+  test("a route row that succeeded on fewer pieces than the piece structure claims is refused", () => {
+    // Gate rev_20260919000938_1nkh: a merged route row says "success" when ANY piece succeeded. Its
+    // per-status piece counts are the only piece-level fact in the verified row, so the sealed
+    // piece structure may not claim more successes for a route than its row records.
+    const f = fixture("piece_count_mismatch", { pieces: [piece("piece-01", ok2), piece("piece-02", ok2)], quorum: { required: 2, achieved: 2, met: true, pieces: 2 } });
+    const rp = `.ensemble_reviews/reports/${f.id}.json`;
+    const reseal = (reviewers) => {
+      fs.writeFileSync(path.join(f.dir, rp), JSON.stringify({ ...f.report, reviewers }, null, 2));
+      const seal = digest(fs.readFileSync(path.join(f.dir, rp)));
+      fs.writeFileSync(path.join(f.dir, ".ensemble_reviews/review-log.jsonl"), JSON.stringify({ run_id: f.id, report_path: rp, report_sha256: seal, input_sha256: f.report.input_sha256 }) + "\n");
+      const v = JSON.parse(fs.readFileSync(path.join(f.dir, `.ensemble_reviews/verification/${f.id}.json`), "utf8")); v.report_sha256 = seal; fs.writeFileSync(path.join(f.dir, `.ensemble_reviews/verification/${f.id}.json`), JSON.stringify(v, null, 2));
+    };
+    reseal(f.report.reviewers.map(r => r.agent === "grok" ? { ...r, partial: true, pieces: { success: 1, timeout: 1 } } : { ...r, pieces: { success: 2 } }));
+    const r = inspectCompletion(f.dir, f.id);
+    assert.equal(r.complete, false);
+    assert(r.errors.some(e => /piece structure claims 2 successful piece\(s\) for grok but its verified row records 1/.test(e)), JSON.stringify(r.errors));
+    reseal(f.report.reviewers.map(r => ({ ...r, pieces: { success: 2 } })));
+    assert.equal(inspectCompletion(f.dir, f.id).complete, true, "consistent counts complete");
+  });
   test("clean split run with both pieces at quorum completes", () => {
     const f = fixture("clean", { pieces: [piece("piece-01", ok2), piece("piece-02", ok2)], quorum: { required: 2, achieved: 2, met: true, pieces: 2 } });
     const r = inspectCompletion(f.dir, f.id);

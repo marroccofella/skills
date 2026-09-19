@@ -30,6 +30,9 @@
   --light-button-ink: #174f3a;
   /* Text painted on a --green surface (brand mark, primary buttons): white on the deep light green, ground-dark on the bright dark green. */
   --on-green: #ffffff;
+  /* Chip text is 11px, so it needs 4.5:1: the body --muted and --amber are too light on the light chip surfaces. */
+  --chip-muted: #566058;
+  --chip-amber: #9a5212;
 
   /* Typography roles. Display for headings, sans for prose, mono only for data. */
   --font-display: Georgia, "Times New Roman", serif;
@@ -52,7 +55,7 @@
     --red: #ff7a7a; --red-soft: #2c1414; --shadow: 0 18px 50px rgba(0, 0, 0, .45);
     --glass: rgba(17, 19, 22, .86); --pill: rgba(17, 19, 22, .7); --hairline: rgba(230, 255, 230, .12);
     --toast-bg: #e6ffe6; --toast-ink: #17211b; --light-button-bg: #ffffff; --light-button-ink: #174f3a;
-    --on-green: #080a0a;
+    --on-green: #080a0a; --chip-muted: #9fb3a5; --chip-amber: #ffd166;
   }
 }
 :root[data-theme="dark"] {
@@ -62,7 +65,7 @@
   --red: #ff7a7a; --red-soft: #2c1414; --shadow: 0 18px 50px rgba(0, 0, 0, .45);
   --glass: rgba(17, 19, 22, .86); --pill: rgba(17, 19, 22, .7); --hairline: rgba(230, 255, 230, .12);
   --toast-bg: #e6ffe6; --toast-ink: #17211b; --light-button-bg: #ffffff; --light-button-ink: #174f3a;
-  --on-green: #080a0a;
+  --on-green: #080a0a; --chip-muted: #9fb3a5; --chip-amber: #ffd166;
 }
 
 /* ---- Motion layer. Every animation here is disabled under prefers-reduced-motion. */
@@ -85,7 +88,7 @@
 .theme-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--pill); color: var(--ink); cursor: pointer; font: 12px var(--font-sans); transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
 .theme-toggle:hover { border-color: var(--green-bright); }
 .theme-toggle:active { transform: scale(.97); }
-.theme-toggle:focus-visible, .momm-nav a:focus-visible { outline: 3px solid rgba(45, 139, 97, .35); outline-offset: 2px; }
+.theme-toggle:focus-visible, .momm-nav a:focus-visible { outline: 3px solid var(--green-bright); outline-offset: 2px; }
 .orbit { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; transition: transform var(--dur) var(--ease); }
 :root[data-theme="dark"] .orbit { transform: rotate(180deg); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .orbit { transform: rotate(180deg); } }
@@ -111,13 +114,13 @@
 
 /* ---- Status chips. Shared colour mapping: one class per route status, verdict
    and disposition so both pages read the same. Neutral is the base. */
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; color: var(--muted); background: var(--line); font: 800 11px/1.2 var(--font-sans); letter-spacing: .02em; white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; color: var(--chip-muted); background: var(--line); font: 800 11px/1.2 var(--font-sans); letter-spacing: .02em; white-space: nowrap; }
 .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .chip-good, .chip-success, .chip-ACCEPT, .chip-applied, .chip-applied-with-modification { color: var(--green); background: var(--mint); }
-.chip-warn, .chip-timeout, .chip-MODIFY, .chip-rejected { color: var(--amber); background: var(--amber-soft); }
+.chip-warn, .chip-timeout, .chip-MODIFY, .chip-rejected { color: var(--chip-amber); background: var(--amber-soft); }
 .chip-bad, .chip-error, .chip-authentication_required, .chip-provider_unavailable, .chip-ineligible_tier, .chip-REJECT { color: var(--red); background: var(--red-soft); }
 .chip-neutral, .chip-deferred, .chip-unknown { color: var(--ink); background: var(--line); }
-.chip-self_excluded, .chip-disabled, .chip-cancelled_after_quorum, .chip-governor_direct { color: var(--muted); background: transparent; border: 1px dashed var(--line); opacity: .75; }
+.chip-self_excluded, .chip-disabled, .chip-cancelled_after_quorum, .chip-governor_direct { color: var(--chip-muted); background: transparent; border: 1px dashed var(--line); }
 .chip-mono { font-family: var(--font-mono); font-weight: 600; }
 
 /* ---- Tables: border-bottom rows, uppercase sans headers, mono numerals. */

@@ -176,7 +176,10 @@ function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20
   return new Promise(resolve => {
     const win32 = process.platform === "win32";
     let child;
-    try { child = spawn(command, args, { shell, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], detached: !win32 }); }
+    // cmd.exe looks in the working directory BEFORE PATH, and review.start runs inside
+    // the reviewed project: a planted grok.cmd or npm.cmd there must never be chosen.
+    const env = win32 ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
+    try { child = spawn(command, args, { shell, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], detached: !win32 }); }
     catch (e) { resolve({ code: -1, stdout: "", stderr: safeText(e.message), timedOut: false }); return; }
     const out = [], err = []; let bytes = 0, timedOut = false, spawnError = null, settled = false;
     const killTree = () => {
@@ -193,10 +196,15 @@ function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20
     };
     const collect = (chunks, chunk) => {
       bytes += chunk.length;
-      if (bytes > maxBuffer) { spawnError ??= Object.assign(new Error(`${command} output exceeded ${maxBuffer} bytes`), { code: "ENOBUFS" }); killTree(); return; }
+      if (bytes > maxBuffer) { spawnError ??= Object.assign(new Error(`${command} output exceeded ${maxBuffer} bytes`), { code: "ENOBUFS" }); killTree(); if (exited()) giveUp(); return; }
       chunks.push(chunk);
     };
-    const timer = setTimeout(() => { timedOut = true; killTree(); }, timeout);
+    // The direct child may already be gone while a grandchild still holds the pipes:
+    // the tree kill then finds nothing, "exit" has already fired and "close" never
+    // comes. Past the deadline the streams are dropped and the promise settles.
+    const giveUp = () => { try { child.stdout.destroy(); child.stderr.destroy(); } catch {} finish(child.exitCode); };
+    const exited = () => child.exitCode !== null || child.signalCode !== null;
+    const timer = setTimeout(() => { timedOut = true; killTree(); if (exited()) giveUp(); else setTimeout(giveUp, 5_000).unref(); }, timeout);
     child.stdout.on("data", d => collect(out, d));
     child.stderr.on("data", d => collect(err, d));
     child.on("error", e => { spawnError = e; if (!child.pid) finish(null); });
@@ -214,6 +222,9 @@ function spawnAsync(command, args, { timeout, shell = false, maxBuffer = 8 << 20
 const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
 export function defaultExec(command, args = [], { timeout = 60_000, shell = false } = {}) {
   const win32 = process.platform === "win32", q = s => (win32 && !shell && WIN_SHELL_META.test(s) && !/^".*"$/.test(s) ? `"${s}"` : s);
+  // cmd.exe expands %VAR% even inside quotes, so an absolute .exe (the located
+  // grok/agy binary) is started directly: no shell, nothing to expand or quote.
+  if (win32 && !shell && path.isAbsolute(command) && /\.exe$/i.test(command)) return spawnAsync(command, args, { timeout, shell: false });
   return spawnAsync(q(command), args.map(q), { timeout, shell: shell || win32 });
 }
 export function defaultRunUpdater(args) {
@@ -239,10 +250,13 @@ export const skillSource = () => ({ name: "skill", kind: "skill", url: MANIFEST_
   const r = await conditionalGet(ctx, MANIFEST_URL, entry);
   return r.notModified ? r : { latest: semver(r.body.momm), etag: r.etag, last_modified: r.last_modified };
 } });
-export const npmSource = cli => ({ name: `cli:${cli}`, kind: "cli", cli, url: `https://registry.npmjs.org/${NPM_PACKAGES[cli].replace("/", "%2f")}/latest`, async check(ctx, entry) {
-  const r = await conditionalGet(ctx, this.url, entry);
-  return r.notModified ? r : { latest: semver(r.body.version), etag: r.etag, last_modified: r.last_modified };
-} });
+export const npmSource = cli => {
+  const url = `https://registry.npmjs.org/${NPM_PACKAGES[cli].replace("/", "%2f")}/latest`;
+  return { name: `cli:${cli}`, kind: "cli", cli, url, async check(ctx, entry) {
+    const r = await conditionalGet(ctx, url, entry);
+    return r.notModified ? r : { latest: semver(r.body.version), etag: r.etag, last_modified: r.last_modified };
+  } };
+};
 export const grokSource = () => ({ name: "cli:grok", kind: "cli", cli: "grok", async check(ctx) {
   const p = await ctx.exec("grok", ["update", "--check", "--stable", "--json"], { timeout: 20_000 });
   if (p.code !== 0) throw new Error(`grok update --check exited ${p.code}: ${safeText(p.stderr).slice(0, 200)}`);
@@ -262,7 +276,10 @@ export const modelsSource = () => ({ name: "models", kind: "models", async check
     if (!Array.isArray(list)) { if (previous[route]) models[route] = previous[route]; continue; }
     const sorted = [...new Set(list.map(String))].sort(), hash = createHash("sha256").update(sorted.join("\n")).digest("hex");
     models[route] = { hash, models: sorted };
-    if (previous[route] && previous[route].hash !== hash) { changed = true; new_models[route] = sorted.filter(m => !previous[route].models.includes(m)); }
+    // A baseline whose list is not an array (hand-edited or older state) is healed as
+    // a first sighting; dereferencing it would fail this source on every later run.
+    const baseline = previous[route] && Array.isArray(previous[route].models) ? previous[route] : null;
+    if (baseline && baseline.hash !== hash) { changed = true; new_models[route] = sorted.filter(m => !baseline.models.includes(m)); }
   }
   return { latest: null, changed, models, new_models };
 } });
@@ -377,10 +394,19 @@ export async function applyUpdates(clock, { runUpdater = defaultRunUpdater, exec
   if (!settings.auto_update.enabled) { out.skipped.push({ name: "*", reason: "auto_update.enabled is false" }); return out; }
   return clock.locked(lockNotices => applyLocked(clock, out, settings, lockNotices, { runUpdater, exec, versionOf, postUpdateProbe, isManaged, commands, now }), { ...out, skipped_reason: "locked" });
 }
-async function applyLocked(clock, out, settings, lockNotices, { runUpdater, exec, versionOf, postUpdateProbe, isManaged, commands, now }) {
+async function applyLocked(clock, out, staleSettings, lockNotices, deps) {
+  const { versionOf, postUpdateProbe, isManaged, commands, now } = deps;
+  // Settings are re-read under the lock: a `disable` issued while this call waited
+  // (or between the caller's read and the lock) must win over the earlier snapshot.
+  const settings = clock.settings();
+  if (!settings.auto_update.enabled) { out.skipped.push({ name: "*", reason: "auto_update.enabled is false" }); return out; }
+  // A process wrapper that rejects (missing executable, EPERM) is one failed source,
+  // never an abort of the whole pass with its history unwritten.
+  const runUpdater = async args => { try { return await deps.runUpdater(args); } catch (e) { return { code: -1, output: `updater could not run: ${safeText(e?.message || e)}` }; } };
+  const exec = async (bin, args, options) => { try { return await deps.exec(bin, args, options); } catch (e) { return { code: -1, stdout: "", stderr: `could not run: ${safeText(e?.message || e)}`, timedOut: false, spawn_failed: true }; } };
   const history = lockNotices.map(notice => ({ at: now(), trigger: "apply", source: "lock", outcome: "stale_lock_removed", notice }));
   const note = (source, outcome, notice, extra = {}) => { history.push({ at: now(), trigger: "apply", source, outcome, notice, ...extra }); out.notices.push(notice); };
-  const status = clock.status(), reportedModels = [];
+  const status = clock.status(), reportedModels = [], commandRanFor = {}, stored = readState(clock.stateFile).sources;
   for (const row of status.sources) {
     if (row.kind === "skill" && settings.auto_update.skill && row.update_available) {
       const dry = await runUpdater(["--dry-run"]), preview = parsePreview(dry.output || "");
@@ -393,8 +419,13 @@ async function applyLocked(clock, out, settings, lockNotices, { runUpdater, exec
       const cli = row.name.slice(4), command = commands[cli];
       if (isManaged(cli)) { out.skipped.push({ name: row.name, reason: "package-manager-owned installation; update through that package manager" }); note(row.name, "skipped", `${cli}: installation is package-manager owned; not touched`); continue; }
       if (!command) { out.skipped.push({ name: row.name, reason: "no fixed update command" }); continue; }
+      // One attempt per release: when the command succeeded but the new version could
+      // not be re-read, the stale installed version keeps update_available true, and
+      // without this marker every later trigger would run the command again.
+      if (row.latest && stored[row.name]?.update_command_ran_for === row.latest) { out.skipped.push({ name: row.name, reason: `'${command}' already ran for ${row.latest}; the installed version was not confirmed, check it by hand` }); continue; }
       const [bin, ...args] = command.split(/\s+/), p = await exec(bin, args, { timeout: 600_000 });
-      if (p.code !== 0) { out.failed.push({ name: row.name, command, reason: `exit ${p.code}${p.timedOut ? " (timeout)" : ""}`, stderr: safeText(p.stderr || "").slice(-500) }); note(row.name, "failed", `${cli}: '${command}' exited ${p.code}`); continue; }
+      if (p.code !== 0) { out.failed.push({ name: row.name, command, reason: p.spawn_failed ? safeText(p.stderr).slice(0, 300) : `exit ${p.code}${p.timedOut ? " (timeout)" : ""}`, stderr: safeText(p.stderr || "").slice(-500) }); note(row.name, "failed", `${cli}: '${command}' ${p.spawn_failed ? "could not run" : `exited ${p.code}`}`); continue; }
+      if (row.latest) commandRanFor[row.name] = row.latest;
       // The update has happened: a failing version read or probe is recorded on this
       // row, never allowed to lose the accounting or stop the remaining updates.
       let version = null, probe = null;
@@ -419,7 +450,7 @@ async function applyLocked(clock, out, settings, lockNotices, { runUpdater, exec
       // pending acceptance; a successful CLI update retires the source's pre-update
       // hint so the re-read installed version, not the hint, decides what comes next.
       if (a.name === "skill") entry.needs_protocol_acceptance = false;
-      else delete entry.update_available_hint;
+      else { delete entry.update_available_hint; if (commandRanFor[a.name]) entry.update_command_ran_for = commandRanFor[a.name]; }
     }
     // Model discoveries are reported once: the seen set is retired after recording.
     for (const m of reportedModels) if (state.sources[m]) delete state.sources[m].new_models;

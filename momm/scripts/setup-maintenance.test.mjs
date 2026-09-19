@@ -102,11 +102,11 @@ function handler(body,token=true,extra={},bootstrap={status:'prerequisites_missi
   return {serve,launches:()=>launched};
 }
 await test('private session, job and ledger routes refuse unauthenticated local clients',async()=>{
-  const testSecret=crypto.randomBytes(24).toString('hex');
-  const h=handler({},false,{sessionToken:testSecret,platformKey:()=> 'test',providers:{},jobs:new Map()});
+  const launchCapability=crypto.randomBytes(24).toString('hex');
+  const h=handler({},false,{sessionToken:launchCapability,platformKey:()=> 'test',providers:{},jobs:new Map()});
   for(const url of ['/api/session','/api/job/synthetic','/ledger']) {
     const r=await h.serve({method:'GET',url,socket:{}},{});
-    assert.equal(r.status,403,url);assert(!JSON.stringify(r).includes(testSecret));
+    assert.equal(r.status,403,url);assert(!JSON.stringify(r).includes(launchCapability));
   }
 });
 await test('malformed request target returns a bounded error rather than rejecting the server callback',async()=>{
@@ -202,9 +202,9 @@ await test('a rejected stored launch token is forgotten; a transient failure kee
   assert.match(raced.message,/launch link/);assert.equal(stored.get('momm-local-session'),fresh);
 });
 await test('real loopback HTTP refuses private reads and admits exactly one ticket navigation',async()=>{
-  const secret=crypto.randomBytes(24).toString('hex');let ledgerReads=0;
+  const capability=crypto.randomBytes(24).toString('hex');let ledgerReads=0;
   const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
-  const h=handler({},false,{http,crypto,authorized:req=>req.headers['x-momm-token']===secret,sessionToken:secret,
+  const h=handler({},false,{http,crypto,authorized:req=>req.headers['x-momm-token']===capability,sessionToken:capability,
     platformKey:()=> 'synthetic',providers:{},jobs:new Map(),sendJson:json,
     serveLedger:res=>{ledgerReads++;json(res,200,{synthetic_ledger:true});}});
   const server=h.serve;
@@ -217,8 +217,8 @@ await test('real loopback HTTP refuses private reads and admits exactly one tick
     });
     for(const url of ['/api/session','/api/job/known','/ledger'])assert.equal((await request('GET',url)).status,403);
     assert.equal((await request('GET','/api/session','wrong')).status,403);
-    assert.equal((await request('GET','/api/session',secret)).status,200);
-    const ticket=await request('POST','/api/ledger-ticket',secret);assert.equal(ticket.status,200);
+    assert.equal((await request('GET','/api/session',capability)).status,200);
+    const ticket=await request('POST','/api/ledger-ticket',capability);assert.equal(ticket.status,200);
     assert.equal((await request('GET',ticket.value.url)).status,200);
     assert.equal((await request('GET',ticket.value.url)).status,403);assert.equal(ledgerReads,1);
   } finally {if(server.listening)await new Promise(resolve=>server.close(resolve));}
@@ -427,9 +427,13 @@ await test('ledger watcher starts after listen succeeds and is stopped when list
   {const handlers={};const server={on(name,fn){handlers[name]=fn;},listen(_p,_h,cb){cb();},address:()=>({port:4321})};
     const c=vm.createContext({sessionToken:'fixture-session',process:{stdout:{write(){}},stderr:{write(){}},exitCode:0},openBrowser(){},triggerClock:()=>Promise.resolve(null),safeDetail:s=>String(s),Promise});
     vm.runInContext(source.slice(a,b)+';this.start=startSetupCenter;',c);
+    events.length=0;
     c.start({server,watcher:fakeWatcher(),clock:{},port:0,browser:false,pointer});
     assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/'],'setup-center.json is written with the bound URL once listening');
-    handlers.close();assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/','remove'],'and removed when the server closes');}
+    handlers.close();assert.deepEqual(pointerEvents,['write http://127.0.0.1:4321/','remove'],'and removed when the server closes');
+    // Gate rev_20260919000938_1nkh watcher-not-stopped-on-close: any close, not only /api/shutdown, stops the watcher.
+    assert.deepEqual(events.filter(e=>e.startsWith('watcher.')),['watcher.start','watcher.stop'],'a closed server must not leave its ledger watcher running');
+    events.length=0;run(false);}
   assert(events.indexOf('watcher.start')>events.indexOf('listen 127.0.0.1:0'),'watcher must not start before bind: '+events.join(' | '));
   assert(events.includes('out MOMM Setup Center: http://127.0.0.1:4321/#momm-token=fixture-session'));assert(events.includes('browser'));assert(events.includes('clock'));
   const c=run(true);
@@ -465,7 +469,7 @@ function fakeTimers(){
   const add=(fn,ms,repeat)=>{const t={id:++id,fn,ms,repeat,cleared:false};queue.push(t);return t;};
   return {setTimeout:(fn,ms)=>add(fn,ms,false),setInterval:(fn,ms)=>add(fn,ms,true),clearTimeout:t=>{if(t&&typeof t==='object')t.cleared=true;},clearInterval:t=>{if(t&&typeof t==='object')t.cleared=true;},
     pending:()=>queue.filter(t=>!t.cleared),flush,
-    async tick(){for(const t of queue.filter(t=>!t.cleared)){if(!t.repeat)t.cleared=true;t.fn();}await flush();}};
+    async tick(){for(const t of queue.filter(t=>!t.cleared)){if(t.cleared)continue;/* cleared by a sibling earlier in this tick */if(!t.repeat)t.cleared=true;t.fn();}await flush();}};
 }
 // An api() double whose every call is a held promise the test settles by hand.
 function deferredApi(){
@@ -488,7 +492,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);showToast=()=>{};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -547,7 +551,7 @@ await test('automatic updates card renders off by default with the exact timer c
 // with each updated CLI's re-read version and probe verdict; a failed or
 // unavailable probe reads "updated, containment not verified", never ready. It
 // also discloses the synthetic probe traffic that enabling the switch causes.
-await test('automatic updates card shows the last apply outcome per CLI, never presents an unverified route as ready, and discloses the probe traffic',()=>{
+await test('automatic updates card shows the last apply outcome per CLI, never presents an unverified route as ready, and discloses the probe traffic',async()=>{
   const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex'},grok:{label:'Grok'},claude:{label:'Claude Code'}}},null);
   const base={auto_update:{enabled:true,skill:true,clis:true,models:true,accept_protocol:false},clock:{},sources:[],overhead_estimate_per_day:6,timer:{platform:'win32',install:'x',remove:'y'}};
   c.setClock({...base,activity:{running:false,last_event:'setup.open',last_finished_at:'2026-09-13T10:00:00.000Z',last_apply:{at:'2026-09-13T10:00:01.000Z',event:'setup.open',enabled:true,applied:2,skipped:1,failed:1,skipped_reason:null,
@@ -557,8 +561,10 @@ await test('automatic updates card shows the last apply outcome per CLI, never p
   assert.match(html,/applied 2 \/ skipped 1 \/ failed 1/,'the last event outcome is counted on the card');assert.match(html,/setup\.open/);
   assert.match(html,/Codex CLI[^<]*<\/[^>]+>[^]*?1\.0\.0 → 1\.1\.0/,'the re-read version is shown for the applied CLI');
   assert.match(html,/updated, containment not verified/);assert.match(html,/probe fail/i);
-  const codexRow=html.slice(html.indexOf('cli:codex'),html.indexOf('cli:claude'));assert(!/\bready\b/i.test(codexRow),'a failed probe must not be presented as ready: '+codexRow);
-  const claudeRow=html.slice(html.indexOf('cli:claude'));assert.match(claudeRow,/probe pass/i);assert.match(claudeRow,/ready/i,'positive control: a passing probe reads as ready');
+  // Rows are cut at their own list item, so an empty or reversed slice can never satisfy a negative assertion.
+  const applyRow=name=>{const start=html.indexOf(`data-apply-row="${name}"`),end=html.indexOf('</li>',start);assert(start>=0&&end>start,`apply row ${name} is rendered`);return html.slice(start,end);};
+  const codexRow=applyRow('cli:codex');assert.match(codexRow,/probe fail/i);assert(!/\bready\b/i.test(codexRow),'a failed probe must not be presented as ready: '+codexRow);
+  const claudeRow=applyRow('cli:claude');assert.match(claudeRow,/probe pass/i);assert.match(claudeRow,/· ready/i,'positive control: a passing probe reads as ready');
   assert.match(html,/Grok CLI[^]*?exit 1/,'a failed update is listed with its reason');
   assert.match(html,/one synthetic sentence and one synthetic 20-line diff per updated CLI to that CLI's provider/,'the probe traffic is disclosed on the card');
   c.setClock({...base,auto_update:{...base.auto_update,enabled:false},activity:{running:false,last_event:'setup.check',last_finished_at:'2026-09-13T10:00:00.000Z',last_apply:{at:'2026-09-13T10:00:01.000Z',event:'setup.check',enabled:false,applied:0,skipped:0,failed:0,skipped_reason:'auto_update_disabled',rows:[],failures:[],note:'automatic updates are off: checked only, nothing applied'}}});
@@ -566,6 +572,13 @@ await test('automatic updates card shows the last apply outcome per CLI, never p
   assert.match(off,/automatic updates are off: checked only, nothing applied/,'while disabled the card says nothing was applied');assert(!/applied 0 \/ skipped 0/.test(off),'no misleading zero tally while disabled');
   c.setClock({...base,activity:{running:false}});c.core.renderUpdateClock();
   assert.match(c.node('#update-clock-card').innerHTML,/No update has been applied from this Setup Center yet/,'no event yet reads as such, not as a zero tally');
+  // Gate rev_20260919000938_1nkh clock-error-swallowed: a refresh that fails AFTER a good load keeps
+  // the last known table but says, on the card, that it is stale and why; a later good load clears it.
+  c.setApi(async()=>{throw new Error('synthetic <disk> failure');});await c.core.loadUpdateClock();
+  const stale=c.node('#update-clock-card').innerHTML;
+  assert.match(stale,/clock-table/,'the last known table stays');assert.match(stale,/could not be refreshed[^<]*synthetic &lt;disk&gt; failure/,'the refresh failure is shown, escaped, on the card');
+  c.setApi(async()=>({...base,activity:{running:false}}));await c.core.loadUpdateClock();
+  assert(!/could not be refreshed/.test(c.node('#update-clock-card').innerHTML),'a good refresh clears the notice');
 });
 // effective-prompt-preview-overclaims: the preview is built with a contract stub
 // and no persona, so the page and API call it a guidance preview and say what is missing.
@@ -760,6 +773,37 @@ await test('neutral chips retain 4.5:1 text contrast in every palette',()=>{
     assert(ratio>=4.5,`${selector} neutral chip contrast ${ratio.toFixed(2)}:1`);
   }
 });
+// Gate rev_20260919000938_1nkh light-chip-aa-fail / muted-chip-opacity / low-contrast-focus-ring /
+// dark-focus-ring-contrast: every status chip is 11px text (4.5:1) in every palette, a dashed
+// chip is never dimmed by opacity, and the focus ring is a solid token colour at 3:1 or better.
+const palettes=[':root {',':root[data-theme="dark"]',':root:not([data-theme="light"])'];
+const ruleFor=selector=>{const i=theme.indexOf(selector);assert(i>=0,`missing rule ${selector}`);const open=theme.indexOf('{',i);return theme.slice(open+1,theme.indexOf('}',open));};
+const colourVar=(body,property)=>{const m=new RegExp(`(?:^|[;\\s])${property}:\\s*var\\((--[\\w-]+)\\)`).exec(body);assert(m,`${property} must be a palette token in: ${body.trim()}`);return m[1];};
+await test('every status chip keeps 4.5:1 text contrast in every palette, with no opacity dimming',()=>{
+  for(const selector of ['.chip {','.chip-good,','.chip-warn,','.chip-bad,','.chip-neutral,']){
+    const body=ruleFor(selector),fg=colourVar(body,'color'),bg=colourVar(body,'background');
+    for(const name of palettes){const palette=block(name,theme),ratio=contrast(token(palette,fg),token(palette,bg));assert(ratio>=4.5,`${selector} ${fg} on ${bg} in ${name} is ${ratio.toFixed(2)}:1`);}
+  }
+  const dashed=ruleFor('.chip-self_excluded,'),fg=colourVar(dashed,'color');
+  assert(!/opacity/.test(dashed),'a dashed chip must not be dimmed below its measured contrast');assert.match(dashed,/background:\s*transparent/);
+  for(const name of palettes)for(const surface of ['--paper','--card']){const palette=block(name,theme),ratio=contrast(token(palette,fg),token(palette,surface));assert(ratio>=4.5,`dashed chip ${fg} on ${surface} in ${name} is ${ratio.toFixed(2)}:1`);}
+});
+await test('keyboard focus ring is a solid palette colour with at least 3:1 against both page surfaces',()=>{
+  const ring=ruleFor('.theme-toggle:focus-visible'),m=/outline:\s*3px solid var\((--[\w-]+)\)/.exec(ring);
+  assert(m,'the focus ring must be a solid token colour, never a translucent rgba');
+  for(const name of palettes)for(const surface of ['--paper','--card']){const palette=block(name,theme),ratio=contrast(token(palette,m[1]),token(palette,surface));assert(ratio>=3,`focus ring on ${surface} in ${name} is ${ratio.toFixed(2)}:1`);}
+});
+// Gate rev_20260919000938_1nkh reduced-motion-regression / ungated-page-motion: the gate moved from
+// styles.css into the shared theme, which both pages load; it must cover animation, transition and
+// smooth scrolling for every element, and the Setup Center must actually load that stylesheet.
+await test('reduced motion disables every animation, transition and smooth scroll through the shared theme',()=>{
+  const reduce=ruleFor('@media (prefers-reduced-motion: reduce)');
+  assert.match(reduce,/\*, \*::before, \*::after/);
+  for(const rule of ['animation: none !important','transition: none !important','scroll-behavior: auto !important'])assert(reduce.includes(rule),`reduced-motion gate lacks ${rule}`);
+  const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
+  assert(page.indexOf('href="/momm-theme.css"')>=0&&page.indexOf('href="/momm-theme.css"')<page.indexOf('href="/styles.css"'),'the Setup Center loads the shared theme');
+  assert(/animation:/.test(css)&&!/prefers-reduced-motion/.test(css),'styles.css animates and relies on the theme gate, so the gate above is load-bearing');
+});
 await test('theme cross-fade is opt-in to no-preference motion policy',()=>{
   const noPreference=block('@media (prefers-reduced-motion: no-preference)',theme);
   assert.match(noPreference,/html\.theme-switching/);
@@ -775,13 +819,13 @@ for(const [palette,selector] of [['light',':root {'],['dark toggle',':root[data-
 }
 await test('toast and light primary button read their colours from the tokens, never a hard-coded white',()=>{
   const toast=block('.toast {');assert.match(toast,/color:\s*var\(--toast-ink\)/);assert.match(toast,/background:\s*var\(--toast-bg\)/);assert(!/color:\s*white/.test(toast));assert(!/var\(--ink\)/.test(toast));
-  const button=block('.button.primary.light {');assert.match(button,/color:\s*var\(--light-button-ink\)/);assert.match(button,/background:\s*var\(--light-button-bg\)/);assert(!/\bwhite\b/.test(button));
+  const button=block('.button.primary.light {');assert.match(button,/color:\s*var\(--light-button-ink\)/);assert.match(button,/background:\s*var\(--light-button-bg\)/);assert(!/(?:^|[;\s])(?:color|background(?:-color)?):\s*(?:white|#fff(?:fff)?)\b/i.test(button),'no hard-coded white paint (white-space is not a colour)');
 });
 await test('.guidance-user establishes its own grid',()=>{assert.match(block('.guidance-user {'),/display:\s*grid/);});
 // single-source-tokens: the theme declares every shared token in all three palettes and styles.css declares none of them;
 // both pages read the same chip and table rules from the theme.
 await test('momm-theme.css is the single source of tokens; styles.css keeps layout only',()=>{
-  const tokens=['--ink','--muted','--paper','--card','--line','--green','--green-bright','--mint','--amber','--amber-soft','--red','--red-soft','--shadow','--glass','--pill','--hairline','--toast-bg','--toast-ink','--light-button-bg','--light-button-ink','--on-green'];
+  const tokens=['--ink','--muted','--paper','--card','--line','--green','--green-bright','--mint','--amber','--amber-soft','--red','--red-soft','--shadow','--glass','--pill','--hairline','--toast-bg','--toast-ink','--light-button-bg','--light-button-ink','--on-green','--chip-muted','--chip-amber'];
   for(const selector of [':root {',':root[data-theme="dark"]',':root:not([data-theme="light"])']){const body=block(selector,theme);for(const name of tokens)token(body,name);}
   for(const name of [...tokens,'--font-display','--font-sans','--font-mono','--ease','--dur','--dur-fast'])assert(!new RegExp(`${name}\\s*:`).test(css),`${name} must not be redefined in styles.css`);
   assert(!/^:root\s*\{/m.test(css),'styles.css has no :root palette block');

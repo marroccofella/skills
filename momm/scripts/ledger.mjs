@@ -272,7 +272,9 @@ const RATING_MIN_N = 5;            // show a mean only from this many rated revi
 const RECOMMEND_MIN_N = 10;        // recommend only from this many completed dispatches
 const CORE_TAGS = new Set(["specific", "reproducible", "off-artifact", "boilerplate", "hallucinated-lines", "late", "unique-catch"]);
 const NON_DISPATCH = new Set(["self_excluded"]);
-const NON_COMPLETION = new Set(["cancelled_after_quorum", "governor_direct"]);
+// Excluded from the completion rate: the route was stopped or never asked, or it could not be asked
+// at all (login lapsed, tier retired, disabled, CLI absent). None of these says how it handles input.
+const NON_COMPLETION = new Set(["cancelled_after_quorum", "governor_direct", "authentication_required", "ineligible_tier", "disabled", "missing", "not_dispatched"]);
 function isRatingRow(row) { return row && row.kind === "review_rating"; }
 function ratingsRollup(ratingRows) {
   const latest = new Map();
@@ -364,7 +366,7 @@ function sparkline(counts, width = 180, height = 28) {
   const pts = counts.map((c, i) => `${(i * step).toFixed(1)},${(height - 2 - (c / max) * (height - 4)).toFixed(1)}`).join(" ");
   return `<svg class="spark" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="runs per day, last ${counts.length} days, max ${max}"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>`;
 }
-const REVIEWER_NAME = /^[a-z0-9_+-]{1,40}$/; // a route name, after lowercasing
+const REVIEWER_NAME = /^[a-z0-9][a-z0-9_+-]{0,39}$/; // a route name, after lowercasing; never flag-like
 function appendRating(er, args) {
   const [runId, reviewerRaw, ratingRaw] = args;
   const rating = Number(ratingRaw), reviewer = String(reviewerRaw ?? "").toLowerCase();
@@ -439,6 +441,17 @@ function ledgerSelfTest() {
       const w = windowedReliability(runs, { now });
       return w.codex.dispatched === 12 && w.codex.recommendation.startsWith("unreliable");
     })(),
+    // Gate rev_20260919000938_1nkh: a route that could not be asked (login lapsed, tier retired,
+    // disabled, CLI absent, nothing dispatched) says nothing about how it handles input, so it is
+    // excluded rather than counted as a failed dispatch and met with "shorten input or drop the route".
+    reliability_excludes_routes_that_could_not_be_asked: (() => {
+      const now = Date.now();
+      const statuses = ["authentication_required", "ineligible_tier", "disabled", "missing", "not_dispatched"];
+      const runs = Array.from({ length: 15 }, (_, i) => ({ run_id: "u" + i, timestamp: new Date(now - i * 3600e3).toISOString(), input_bytes: 100, reviewer_status: { grok: statuses[i % statuses.length], codex: i < 3 ? "success" : "provider_unavailable" } }));
+      const w = windowedReliability(runs, { now });
+      return w.grok.dispatched === 0 && w.grok.excluded === 15 && w.grok.completionRate === null && w.grok.recommendation === "insufficient data (n=0)"
+        && w.codex.dispatched === 15 && w.codex.recommendation.startsWith("unreliable");
+    })(),
     usage_rollup_reports_coverage_not_zero: (() => {
       const u = usageRollup({ a: { report: { reviewers: [{ agent: "grok", status: "success", usage: { reported: { total_tokens: 100, cost_usd: 0.02 } } }, { agent: "grok", status: "success", usage: { reported: null } }, { agent: "antigravity", status: "success" }] } } });
       return u.grok.reviews === 2 && u.grok.tokens_reported === 1 && u.grok.median_total_tokens === 100 && u.grok.total_cost_usd === 0.02 && u.antigravity.tokens_reported === 0 && u.antigravity.median_total_tokens === null && u.antigravity.total_cost_usd === null;
@@ -489,7 +502,10 @@ function ledgerSelfTest() {
         const ok = appendRating(dir, ["rev_1", "Grok", "5", "--tags", "specific"]);
         const written = fs.readFileSync(path.join(dir, "dispositions.jsonl"), "utf8").trim().split("\n");
         return ok.reviewer === "grok" && written.length === 1 && JSON.parse(written[0]).reviewer === "grok"
-          && ["Grok!", "a b", "x".repeat(41), "grok/../x", "<b>", "grok\n", "gr.ok"].every((name) => rejects(["rev_1", name, "5"]));
+          && ["Grok!", "a b", "x".repeat(41), "grok/../x", "<b>", "grok\n", "gr.ok"].every((name) => rejects(["rev_1", name, "5"]))
+          // A flag in the reviewer slot is a mistyped command, never a reviewer called "--note".
+          && rejects(["rev_1", "--note", "5", "--tags", "specific"]) && rejects(["rev_1", "--tags", "5"]) && rejects(["rev_1", "-x", "5"])
+          && fs.readFileSync(path.join(dir, "dispositions.jsonl"), "utf8").trim().split("\n").length === 1;
       } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     })(),
     // Setup Center link resolver: alive pid + loopback URL -> live link; dead pid, missing file, or any non-loopback URL -> the start command.

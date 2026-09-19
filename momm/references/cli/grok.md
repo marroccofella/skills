@@ -30,7 +30,7 @@ Output envelope (json): `{"text":"…","stopReason":"end_turn"|"tool_use"|"cance
 
 - Small inputs: real reviews in 10–40 s.
 - Large inputs with the 1.14.1 adapter (schema mode, no `--verbatim`): on ~30 KB and up it returns a placeholder such as "Reading the full artifact before reviewing" or "The supplied review request is truncated" in seconds — reject these on the record — or times out (15 of 46 pieces at a 150 s base on 2026-09-12).
-- 1.15.0 candidate adapter (`--verbatim --no-subagents --tools "" --max-turns 1`): a 28 KB chunk fails in 18 s with `Error: max turns reached` because the model spends its single turn deciding to inspect files; without the turn cap it narrates "I'll inspect the surrounding code" and runs until cancelled. Tools remain enabled either way (see above), so plan mode is the only containment.
+- 1.15.0 candidate adapter (`--verbatim --no-subagents --tools "" --max-turns 1`): a 28 KB chunk fails in 18 s with `Error: max turns reached` because the model spends its single turn deciding to inspect files; without the turn cap it narrates "I'll inspect the surrounding code" and runs until cancelled. Tools remain enabled either way with `--tools ""` (see above). That was the state of the 1.15.0 candidate adapter; containment today is the verified `--deny` permission rules and `--disallowed-tools` described above together with plan mode, not plan mode alone.
 - Median 21 s, p90 about 5 min in the public ledger; acceptance rate 55 %.
 
 ## Adapter notes

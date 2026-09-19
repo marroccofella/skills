@@ -230,6 +230,14 @@ test("cost_per_accepted_finding uses the costed rows for both numerator and deno
   noNaN([mixed, none, all]);
 });
 
+test("lastJsonObject: a stray opening brace in earlier diagnostic text does not hide a later complete object", () => {
+  // Gate rev_20260919000938_1nkh. The truncated-tail rule is unchanged: nothing complete follows it.
+  assert.deepEqual(lastJsonObject('progress {\n{"usage":{"input_tokens":1}}'), { usage: { input_tokens: 1 } });
+  assert.deepEqual(lastJsonObject('a { b { c {"k":1} trailing'), { k: 1 });
+  assert.equal(lastJsonObject('{"early":1}\n{"usage": {"input_tokens": 1'), null);
+  assert.equal(lastJsonObject("{".repeat(5000)), null, "bounded on hostile input");
+  assert.equal(parseUsage("claude", `warning: unmatched { in hook output\n${CLAUDE}`).reported.input_tokens, parseUsage("claude", CLAUDE).reported.input_tokens);
+});
 test("lastJsonObject tolerates missing text", () => {
   assert.equal(lastJsonObject(null), null);
   assert.equal(lastJsonObject(undefined), null);

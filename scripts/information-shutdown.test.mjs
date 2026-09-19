@@ -9,6 +9,9 @@ const source=fs.readFileSync(path.join(root,'momm/scripts/multi-review.mjs'),'ut
 const start=source.lastIndexOf('}).finally(() => {')+'}).finally(() => {'.length;
 const end=source.lastIndexOf('});');
 assert(start>20&&end>start);
+// The slice is exact only while the termination handler is the file's final statement.
+assert.equal(end,source.trimEnd().length-3,'the termination handler must remain the last statement of multi-review.mjs');
+assert(!source.slice(start,end).includes('\n}).finally('),'the slice must hold exactly one finally handler');
 function probe(args,{stall=false,broken=false}={}){
  const timers=[],exits=[];
  const stream={write(_text,callback){if(broken)throw Error('broken fixture pipe');if(!stall)callback();}};

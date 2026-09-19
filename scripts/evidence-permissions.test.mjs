@@ -30,7 +30,7 @@ for(const [output,expected] of [
  const result=inspectEvidencePermissions(dir,{platform:'win32',systemRoot:path.resolve('synthetic-system'),fsx,run:(_exe,args,options)=>{
   assert.deepEqual(JSON.parse(options.input),{path:dir});
   assert(args.includes('-NonInteractive'));
-  assert(!args.at(-1).includes('Set-Acl'));
+  assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/,'inspection must not contain anything that changes access');
   assert(args.at(-1).includes("Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1'"));
   return {status:0,stdout:JSON.stringify(output)};
  }});
@@ -92,7 +92,7 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  assert.throws(()=>protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,run:noSpawn,fsx:{...fsx,lstatSync:()=>{throw Object.assign(Error('missing'),{code:'ENOENT'});}}}),e=>/no evidence folder here yet/.test(e.message));checks++;
  // Already private: reports unchanged and runs no protect script.
  let scripts=0;
- const unchanged=protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,fsx,run:(_e,args)=>{scripts++;assert(!args.at(-1).includes('Set-Acl'));return okRun();}});
+ const unchanged=protectEvidence(path.resolve('project/.ensemble_reviews'),{...winBase,fsx,run:(_e,args)=>{scripts++;assert.doesNotMatch(args.at(-1),/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/);return okRun();}});
  assert.equal(unchanged.changed,false);assert.equal(scripts,1);checks++;
 }
 // Gate rev_20260918172020_ehti: evidence --protect must survey the whole tree first and refuse a
@@ -103,19 +103,21 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  const root=path.resolve('project/.ensemble_reviews');
  const model=(spec,hooks={})=>{
   const nodes=new Map(Object.entries(spec).map(([rel,n],i)=>[rel?path.join(root,rel):root,{ino:100+i,nlink:1,...n}]));
-  const changed=[],fds=new Map();let next=10;
+  const changed=[],opened=[],fds=new Map();let next=10;
   const st=n=>({isSymbolicLink:()=>n.kind==='link',isDirectory:()=>n.kind==='dir',isFile:()=>n.kind==='file',uid:123,mode:n.mode,nlink:n.nlink,ino:n.ino,dev:1});
   const get=p=>{const n=nodes.get(p);if(!n)throw Object.assign(Error('missing'),{code:'ENOENT'});return n;};
   const fake={
    lstatSync:p=>st(get(p)),
    readdirSync:p=>[...nodes.keys()].filter(k=>k!==p&&path.dirname(k)===p).map(k=>path.basename(k)),
    chmodSync:(p,mode)=>{changed.push(['path',p]);const n=get(p);n.mode=(n.mode&~0o777)|mode;},
-   openSync:p=>{hooks.beforeOpen?.(p,nodes);const n=get(p);if(n.kind==='link')throw Object.assign(Error('loop'),{code:'ELOOP'});fds.set(++next,n);return next;},
+   // Platform-independent stand-ins, so the no-follow requirement is tested on Windows too.
+   constants:{O_RDONLY:0,O_NONBLOCK:0x800,O_DIRECTORY:0x10000,O_NOFOLLOW:0x20000},
+   openSync:(p,flags)=>{opened.push(flags);if(!(flags&0x20000))throw Object.assign(Error('opened without O_NOFOLLOW'),{code:'FOLLOWED'});hooks.beforeOpen?.(p,nodes);const n=get(p);if(n.kind==='link')throw Object.assign(Error('loop'),{code:'ELOOP'});fds.set(++next,n);return next;},
    fstatSync:fd=>st(fds.get(fd)),
    fchmodSync:(fd,mode)=>{const n=fds.get(fd);changed.push(['fd',n.ino]);n.mode=(n.mode&~0o777)|mode;},
    closeSync:fd=>{fds.delete(fd);},
   };
-  return {fake,changed,nodes,open:()=>fds.size};
+  return {fake,changed,opened,nodes,open:()=>fds.size};
  };
  const broad={'':{kind:'dir',mode:0o40755},'reports':{kind:'dir',mode:0o40755},'reports/a.json':{kind:'file',mode:0o100644}};
  const posix=fake=>({platform:'linux',uid:123,fsx:fake});
@@ -132,7 +134,9 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  const done=protectEvidence(root,posix(m.fake));
  assert.equal(done.changed,true);assert.equal(done.after.verified,true);
  assert.equal(m.changed.length,3);assert(m.changed.every(([how])=>how==='fd'),'POSIX protection must never chmod by pathname');
- assert.equal(m.open(),0,'descriptors must be closed');checks++;
+ assert.equal(m.open(),0,'descriptors must be closed');
+ assert.equal(m.opened.length,3);assert(m.opened.every(flags=>flags&0x20000),'every open is no-follow');
+ assert.deepEqual(m.opened.map(flags=>Boolean(flags&0x10000)).sort(),[false,true,true],'directories are opened as directories');checks++;
  // Entry swapped for a symlink between the survey and the change: the no-follow open refuses it.
  const victim=path.join(root,'reports','a.json');
  m=model(broad,{beforeOpen:(p,nodes)=>{if(p===victim)nodes.set(p,{kind:'link',mode:0o120777,nlink:1,ino:999});}});

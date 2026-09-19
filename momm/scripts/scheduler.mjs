@@ -30,9 +30,16 @@ function clampJobs(jobs) {
 // still completes.
 export function createScheduler({ jobs, perRoute = {}, now = Date.now } = {}) {
   const maxJobs = clampJobs(jobs);
+  // Same rule as jobs: a given route cap must be a positive number. Zero would
+  // park that route's tasks for ever; it must not quietly become a lane of one.
+  if (perRoute === null || typeof perRoute !== "object" || Array.isArray(perRoute)) throw new TypeError("createScheduler: perRoute must be an object of route caps");
+  for (const [route, cap] of Object.entries(perRoute)) {
+    if (cap === undefined || cap === null) continue;
+    if (typeof cap !== "number" || !Number.isFinite(cap) || cap <= 0) throw new RangeError(`createScheduler: perRoute.${route} must be a positive number; got ${String(cap)}`);
+  }
   const capFor = (route) => {
     const cap = perRoute[route] ?? DEFAULT_ROUTE_CAPS[route] ?? maxJobs;
-    return Math.min(Math.max(Math.floor(Number(cap)) || 1, 1), maxJobs);
+    return Math.min(Math.max(Math.floor(cap), 1), maxJobs);
   };
   const queue = [];
   const running = new Map(); // pieceId -> task

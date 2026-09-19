@@ -69,6 +69,11 @@ await test('missing, duplicate or nonfinal result, malformed JSONL and unknown e
     const rows=events();mutate(rows);assert.equal((await invoke(rows)).status,'invalid_output');
   }
   for(const tail of ['{"event":','null','[]'])assert.equal((await invoke(encode(events())+tail)).status,'invalid_output');
+  // Gate rev_20260919000938_1nkh antigravity-null-result-crash: a terminal event with no result
+  // object is refused by the SUCCESS requirement before any field of it is read; nothing throws.
+  for(const terminal of [{event:'result',result:null},{event:'result'},{event:'result',result:'SUCCESS'},{event:'result',result:[]}]){
+    const r=await invoke(encode([terminal]));assert.equal(r.status,'invalid_output');assert.match(r.detail,/one final SUCCESS result is required/);
+  }
 });
 await test('progress text cannot substitute for the terminal answer',async()=>{
   const rows=events('');rows[1].step_update.text_delta=JSON.stringify(payload);assert.equal((await invoke(rows)).status,'invalid_output');
