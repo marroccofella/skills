@@ -72,6 +72,7 @@ function installBody(root) {
 <p>Prefer to read before you paste? <a href="releases/bootstrap.html">The complete installation guide</a> · <a href="updates.html">How updates and rollback work</a> · <a href="releases/index.html">Every version</a></p>
 <h2 id="procedure">The procedure your agent follows</h2>
 <p>This is the full text behind the line above. An agent that opens this page should follow it exactly and completely.</p>
+<p><strong>Two things agents ask.</strong> <em>Which harness?</em> The one you are running in now; if you cannot tell, ask the person. <em>Is the verifier present?</em> Run <code>gitsign --version</code>. If it is missing, no signature check can run: stop, say so, and ask before installing it. Never continue without it.</p>
 <div class="code"><div class="code-label"><span>Install and upgrade procedure</span><button type="button" data-copy="install-procedure" aria-label="Copy the full procedure">Copy</button></div><pre id="install-procedure" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>${esc(prompt)}</code></pre></div>
 </div>`;
 }
