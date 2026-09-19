@@ -18,7 +18,7 @@
         "Windows launch guard: a git.exe or taskkill.exe planted in the reviewed project is never started; every process-launching script guards its own process.",
         "Opt-in --retry-invalid: a review rejected as invalid output is re-sent once to the same route; off by default, validation never loosened, every retry disclosed in the report."
       ],
-      "sha256": "17c6aba18e853f918385823cd09b7b865b035c76215a813f85d380762439d17e",
+      "sha256": "968492f0842cf0b86afcf3d5434d9e89656402e42122c56e3ad877920937d639",
       "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
