@@ -169,3 +169,16 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
 6. Lifecycle drills (B), last, because they certify the rest.
 
 No 1.17 item starts before the signed `momm-1.16.1` tag exists.
+
+## Progress
+
+- 20 September: D (docs integrity) done. F1 (`--doctor --versions`) built: 16 tests on real links,
+  green on all ten CI jobs. A3 first half built: `--range <base>..<head>` binds a review to both
+  commit ids and to the head commit's file bytes; the completion state names the source and the
+  pieces; 12 tests on a real temporary repository. Still owed for A3: `momm-check/1` verification
+  manifests produced by a tool rather than by hand, and attempt ids (they arrive with C).
+- Found on the way, fixed, and now guarded: a tool had expanded a regex escape into raw control
+  bytes in `installations.mjs`, so Git classed the file as binary and the first real `--range` run
+  refused it. `scripts/source-hygiene.test.mjs` fails if any tracked text source has a raw control
+  byte or is binary to Git.
+

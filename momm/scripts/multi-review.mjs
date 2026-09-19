@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { update, dailyCheck, updateCheckDisabled, provenance, parse as parseUpdateOptions } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
-import { captureSourceSnapshot } from "./governor.mjs";
+import { captureSourceSnapshot, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { inventory as installationsInventory } from "./installations.mjs";
 import { createProcessScope } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
@@ -823,6 +823,9 @@ function usage() {
 
 Options:
   --input, --patch <file>    Review a file instead of git diff HEAD/stdin
+  --range <base>..<head>     Review a COMMITTED range. MOMM takes the diff itself and binds the report (and any
+                             completion receipt) to both full commit ids. A diff on stdin must be identical.
+  --range-path <path>        Limit --range to a path (repeatable); part of the recorded identity
   --reviewers <csv|auto>    Requested peers (default: codex,claude,antigravity,copilot,grok). auto (1.16 E7):
                             with --attach, the intersection of routes whose effective capability cells take
                             every attached modality; refuses with per-modality options when it is empty
@@ -903,6 +906,12 @@ function parseArgs(argv) {
 
     if (arg === "--governor") options.governor = normalizeAgentName(next());
     else if (arg === "--input" || arg === "--patch") options.input = next();
+    else if (arg === "--range") {
+      const match = /^([^.\s][^\s]*?)\.\.([^.\s][^\s]*)$/.exec(next());
+      if (!match || match[1].startsWith("-") || match[2].startsWith("-")) throw new Error("--range needs <base>..<head> (two dots), for example main..HEAD");
+      options.range = { base: match[1], head: match[2], paths: options.range?.paths ?? [] };
+    }
+    else if (arg === "--range-path") { options.rangePaths = [...(options.rangePaths ?? []), next()]; }
     else if (arg === "--reviewers") {
       const requested = next().split(",").map(normalizeAgentName).filter(Boolean);
       // `auto` = the intersection of routes whose effective registry cells take
@@ -2023,6 +2032,23 @@ async function readAllStdin() {
 }
 
 async function collectArtifact(options) {
+  if (options.range) {
+    // A committed range (1.16.1 A3). MOMM takes the diff itself with the flags the snapshot verifies
+    // against, so the reviewed bytes and the recorded identity cannot drift apart. A diff on stdin is
+    // accepted only when it is that same diff, which is how release gates have been fed.
+    if (options.input) throw new Error("--range cannot be combined with --input: choose the committed range or the file");
+    options.range.paths = options.rangePaths ?? [];
+    const limit = options.range.paths.length ? ["--", ...options.range.paths] : ["--"];
+    const result = await runProcess("git", ["diff", ...RANGE_DIFF_FLAGS, "--end-of-options", options.range.base, options.range.head, ...limit], { timeoutMs: 60_000 });
+    if (result.code !== 0 || result.error) throw new Error(`--range: git could not produce the diff for ${options.range.base}..${options.range.head}`);
+    if (!result.stdout.trim()) throw new Error("--range: that range has no changes in the named paths");
+    if (!process.stdin.isTTY) {
+      const supplied = await readAllStdin();
+      if (supplied.trim() && supplied !== result.stdout) throw new Error("The diff on stdin is not the diff of the declared --range (same flags and path limits). Refusing: the report would name one tree and review another.");
+    }
+    return result.stdout;
+  }
+  if (options.rangePaths?.length) throw new Error("--range-path needs --range <base>..<head>");
   if (options.input) {
     const resolved = path.resolve(options.input);
     // Stale-input detection: a gate once ran against an outdated file and
@@ -3123,7 +3149,8 @@ async function main() {
 
   const evidenceProtection = preparePrivateEvidence(path.resolve('.ensemble_reviews'));
   const rawArtifact = await collectArtifact(options);
-  const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input);
+  const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input, options.range ?? null);
+  if (options.range && !sourceSnapshot.complete) throw new Error(`--range could not be bound to the repository: ${sourceSnapshot.reason}`);
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.

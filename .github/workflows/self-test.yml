@@ -54,6 +54,12 @@ jobs:
       - name: Legacy discovery migration and rollback (synthetic installs only)
         timeout-minutes: 4
         run: node momm/scripts/migrate-legacy.test.mjs
+      - name: A committed-range review is bound to that range (real temporary repository, zero provider calls)
+        timeout-minutes: 4
+        run: node momm/scripts/governor-range.test.mjs
+      - name: Every tracked source is reviewable text (no raw control bytes, nothing Git calls binary)
+        timeout-minutes: 2
+        run: node scripts/source-hygiene.test.mjs
       - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
         timeout-minutes: 2
         run: node momm/scripts/installations.test.mjs
