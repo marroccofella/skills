@@ -91,6 +91,14 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Owner decision on closing the gate, 19 September: keep the exact-quote contract strict and add an
+  opt-in `--retry-invalid`. A review whose answer is rejected as invalid output is re-sent once to
+  the same route; an outage was already retried once, and auth failures, retired tiers, timeouts
+  and hard errors still never retry. It is off by default because it spends provider quota. The
+  second answer passes the same validation, a valid review is never retried, and the report
+  discloses every retry (`gate_policy.retry_invalid`, `attempts`, `retried_after`,
+  `first_attempt_detail`, `retried_pieces`). Self-tests pin the exact call counts: one call without
+  the flag, two with it, never three.
 - Gate rerun five, 19 September (run `rev_20260919044643_2l49` on `b598bb5`: the 7 pieces that
   missed quorum plus the round-four changes, 644 KB in 23 pieces, same three routes, 77 minutes):
   quorum on 17 of 23 pieces, so the gate has still **not passed**. 76 findings and 116 suggestions,

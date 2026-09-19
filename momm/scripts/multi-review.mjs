@@ -833,6 +833,10 @@ Options:
   --strict                  Exit 2 unless every requested non-governor peer succeeds
   --min-success <n>         Exit 3 unless at least n external reviews succeeded (quorum
                             gate: stops timeouts silently thinning a release review)
+  --retry-invalid           Re-send a review ONCE to the same route when its answer was rejected
+                            as invalid output. Off by default: it spends extra provider quota.
+                            The second answer is validated exactly like the first; the report
+                            records attempts, retried_after and the first rejection
   --stream                  Emit NDJSON progress events on stderr while reviewers run
   --preflight               Check every route (install + auth evidence) and exit; zero model calls
   --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
@@ -913,6 +917,7 @@ function parseArgs(argv) {
     }
     else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
     else if (arg === "--strict") options.strict = true;
+    else if (arg === "--retry-invalid") options.retryInvalid = true;
     else if (arg === "--stream") options.stream = true;
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
@@ -1846,6 +1851,7 @@ function mergePieceResults(pieceResults, agents, governor) {
       partial: ok.length > 0 && ok.length < runs.length,
       pieces,
       attempts: Math.max(...runs.map((r) => r.attempts ?? 1)),
+      ...(runs.some((r) => r.retried_after) ? { retried_pieces: runs.filter((r) => r.retried_after).map((r) => ({ piece: r.piece, retried_after: r.retried_after, first_attempt_detail: r.first_attempt_detail ?? null, final_status: r.status })) } : {}),
       duration_ms: runs.reduce((acc, r) => acc + (r.duration_ms ?? 0), 0),
       ...(ok.length ? {} : { detail: worst.detail ?? null }),
       ...(scratchRuns.length ? { scratch_access: { tolerated: scratchGrants, note: SCRATCH_ACCESS_NOTE, pieces: scratchRuns.map((r) => r.piece) } } : {}),
@@ -2097,14 +2103,17 @@ const ANSI = {
 };
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-// Exactly one retry, and only for transient provider outages: auth failures,
-// retired tiers, timeouts, and hard errors never retry.
+// Exactly one retry. Always for a transient provider outage; for an answer rejected as
+// invalid output only when the operator passed --retry-invalid (owner decision, 19 September
+// 2026: about 30% of gate reviews were rejected, so a two-review quorum per piece could not be
+// met by rerunning). Auth failures, retired tiers, timeouts and hard errors never retry, and a
+// retry never loosens validation.
 const PROVIDER_RETRY_DELAY_MS = 3_000;
 // Declares exactly which bytes report_sha256 covers: the stored report file,
 // not the stdout copy (which additionally carries this evidence block).
 const REPORT_DIGEST_COVERS = "stored_report_bytes";
-function shouldRetryStatus(status) {
-  return status === "provider_unavailable";
+function shouldRetryStatus(status, options = {}) {
+  return status === "provider_unavailable" || (status === "invalid_output" && options?.retryInvalid === true);
 }
 
 // The one-shot retry wiring, extracted so tests can prove exact call counts
@@ -2112,13 +2121,17 @@ function shouldRetryStatus(status) {
 async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
   let attempts = 1;
   let result = await invoker(agent, artifact, options);
-  if (shouldRetryStatus(result.status)) {
+  let first = null;
+  if (shouldRetryStatus(result.status, options)) {
+    first = result;
     onRetry?.(result.status);
     await sleep(PROVIDER_RETRY_DELAY_MS);
     attempts = 2;
     result = await invoker(agent, artifact, options);
   }
-  return { ...result, attempts };
+  // An invalid-output retry is disclosed on the result: what was rejected first, and why.
+  const disclosed = first?.status === "invalid_output" ? { retried_after: first.status, first_attempt_detail: first.detail ?? null } : {};
+  return { ...result, attempts, ...disclosed };
 }
 
 // Live progress display on stderr for humans. Mutually exclusive with
@@ -2781,7 +2794,13 @@ async function selfTest(pretty) {
         { id: "piece-02", results: [mk("codex", "success", "REJECT", null), mk("grok", "success", "MODIFY", "f2")] },
       ], ["codex", "grok"], "claude");
       const codex = merged.find((r) => r.agent === "codex"), grok = merged.find((r) => r.agent === "grok");
-      return codex.status === "success" && codex.review.verdict === "REJECT" && codex.pieces.success === 2 && codex.partial === false && codex.usage.reported.total_tokens === 200 && grok.status === "success" && grok.partial === true && grok.pieces.timeout === 1 && grok.review.findings[0].piece === "piece-02";
+      // --retry-invalid disclosure survives the merge, names the piece, and is absent when nothing was retried.
+      const retried = mergePieceResults([
+        { id: "piece-01", results: [{ ...mk("codex", "success", "ACCEPT", null), piece: "piece-01", attempts: 2, retried_after: "invalid_output", first_attempt_detail: "first rejection" }] },
+        { id: "piece-02", results: [{ ...mk("codex", "success", "ACCEPT", null), piece: "piece-02" }] },
+      ], ["codex"], "claude").find((r) => r.agent === "codex");
+      const disclosed = retried.attempts === 2 && retried.retried_pieces.length === 1 && retried.retried_pieces[0].piece === "piece-01" && retried.retried_pieces[0].retried_after === "invalid_output" && retried.retried_pieces[0].final_status === "success" && !("retried_pieces" in codex);
+      return disclosed && codex.status === "success" && codex.review.verdict === "REJECT" && codex.pieces.success === 2 && codex.partial === false && codex.usage.reported.total_tokens === 200 && grok.status === "success" && grok.partial === true && grok.pieces.timeout === 1 && grok.review.findings[0].piece === "piece-02";
     })(),
     merge_pieces_all_failed_keeps_worst_status: mergePieceResults([{ id: "piece-01", results: [{ agent: "grok", status: "timeout", detail: "t" }] }, { id: "piece-02", results: [{ agent: "grok", status: "invalid_output", detail: "x" }] }], ["grok"], "claude")[0].status === "timeout",
     guidance_absent_prompt_is_byte_identical_to_1_15: assemblePrompt("C", "", "A") === "C\n\n--- ARTIFACT TO REVIEW ---\nA",
@@ -2918,6 +2937,24 @@ async function selfTest(pretty) {
         && authCalls.length === 1 && notRetried.attempts === 1
         && downCalls.length === 2 && retrySignals === 1
         && stillDown.attempts === 2 && stillDown.status === "provider_unavailable";
+    })(),
+    // Owner decision, 19 September 2026: a review rejected as invalid output may be re-sent ONCE to
+    // the same route, only when the operator passed --retry-invalid (it spends provider quota). The
+    // contract is not loosened: the second answer is validated exactly like the first.
+    retry_invalid_is_opt_in_once_and_disclosed: await (async () => {
+      const noSleep = async () => {};
+      const calls = { off: 0, on: 0, twice: 0, auth: 0 };
+      const invalidThenGood = (key) => async () => (calls[key] += 1, calls[key] === 1 ? { agent: "x", status: "invalid_output", detail: "reviewed_scope must quote the supplied artifact exactly" } : { agent: "x", status: "success" });
+      const off = await invokeWithRetry(invalidThenGood("off"), "x", "", {}, null, noSleep);
+      const reasons = [];
+      const on = await invokeWithRetry(invalidThenGood("on"), "x", "", { retryInvalid: true }, (reason) => reasons.push(reason), noSleep);
+      const twice = await invokeWithRetry(async () => (calls.twice += 1, { agent: "x", status: "invalid_output", detail: `bad ${calls.twice}` }), "x", "", { retryInvalid: true }, null, noSleep);
+      const auth = await invokeWithRetry(async () => (calls.auth += 1, { agent: "x", status: "authentication_required" }), "x", "", { retryInvalid: true }, null, noSleep);
+      const parsed = parseArgs(["--governor", "codex", "--retry-invalid"]).retryInvalid === true && parseArgs(["--governor", "codex"]).retryInvalid !== true;
+      return calls.off === 1 && off.status === "invalid_output" && off.attempts === 1 && !("retried_after" in off)
+        && calls.on === 2 && on.status === "success" && on.attempts === 2 && on.retried_after === "invalid_output" && /quote the supplied artifact/.test(on.first_attempt_detail) && reasons.join() === "invalid_output"
+        && calls.twice === 2 && twice.status === "invalid_output" && twice.attempts === 2 && twice.detail === "bad 2" && twice.first_attempt_detail === "bad 1"
+        && calls.auth === 1 && auth.attempts === 1 && parsed;
     })(),
     classifies_local_no_server_config_as_error: classifyFailure({ code: 1, stdout: "", stderr: "no server configured in settings" }).status === "error",
     warning_only_stderr_falls_back_to_stdout: classifyFailure({ code: 1, stdout: "real failure reason", stderr: "Warning: true color not detected" }).detail === "real failure reason",
@@ -3174,6 +3211,8 @@ async function main() {
       findings: result.review?.findings.length ?? 0,
       critical: result.review?.findings.filter((f) => f.severity === "CRITICAL").length ?? 0,
       attempts: result.attempts,
+      // --retry-invalid disclosure: what was rejected first (bounded and redacted like detail).
+      ...(result.retried_after ? { retried_after: result.retried_after, first_attempt_detail: result.first_attempt_detail ? clipped(sanitizeText(result.first_attempt_detail).value, 600) : null } : {}),
       ...(result.detail ? { detail: clipped(sanitizeText(result.detail).value, 1200) } : {}),
       // Wall time deliberately includes any failed attempt plus backoff.
       duration_ms: Date.now() - startedAt,
@@ -3183,7 +3222,7 @@ async function main() {
     if (!pieceId) ui.complete(agent, info);
     // Persist the same bounded redacted diagnostic shown in progress, never
     // reintroduce recognizable credentials from the provider's raw failure.
-    return { ...result, ...(info.detail ? {detail:info.detail} : {}), duration_ms: info.duration_ms, ...tag };
+    return { ...result, ...(info.detail ? {detail:info.detail} : {}), ...(info.retried_after ? { retried_after: info.retried_after, first_attempt_detail: info.first_attempt_detail } : {}), duration_ms: info.duration_ms, ...tag };
   };
   let results, pieceResults = null;
   try {
@@ -3237,7 +3276,7 @@ async function main() {
     dispatcher_version: MOMM_VERSION,
     ...reportProvenance(STARTUP_PROVENANCE, runtimeProvenance()),
     tier: options.tier ?? "default",
-    gate_policy: { strict: options.strict, quorum_required: options.minSuccess ?? 1, requested_routes: options.reviewers },
+    gate_policy: { strict: options.strict, quorum_required: options.minSuccess ?? 1, requested_routes: options.reviewers, retry_invalid: options.retryInvalid === true },
     policy: "oauth-only",
     run_id: runId,
     ...(options.label ? { label: options.label } : {}),
@@ -3283,6 +3322,8 @@ async function main() {
       // split results and zero-exit error envelopes. Never copy peer text.
       ...(result.status === "authentication_required" ? { login_hint: LOGIN_HINTS[result.agent] ?? null } : {}),
       attempts: result.attempts ?? 1,
+      ...(result.retried_after ? { retried_after: result.retried_after, first_attempt_detail: result.first_attempt_detail ?? null } : {}),
+      ...(result.retried_pieces ? { retried_pieces: result.retried_pieces } : {}),
       duration_ms: result.duration_ms ?? null,
       process_progress: result.progress ?? null,
       requested_effort: ["claude", "grok"].includes(result.agent) ? (options.effort ?? "default") : null,
