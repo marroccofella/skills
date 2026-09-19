@@ -48,6 +48,7 @@ export function canonicalUrl(file) {
 export function pageMetadata(file, catalogue) {
   const fixed = {
     'docs/momm/index.html': ['MOMM: Multi-Model Code Review for AI Agents', 'MOMM brings peer review to your coding agent through existing CLI logins. One writer, verified findings, explicit decisions and a private local ledger.'],
+    'docs/momm/install.html': ['Install MOMM in One Line: Verified Install or Upgrade', 'Paste one line into your coding agent to install or upgrade MOMM. It finds your setup, verifies the signed release, shows a dry run and asks before changing anything.'],
     'docs/momm/start.html': ['Install MOMM: Setup, First Review and Dashboard', 'Install MOMM in your AI harness, connect an OAuth reviewer, run a first review and open your private ledger. Includes macOS, Windows and Linux guidance.'],
     'docs/momm/updates.html': ['Update MOMM Safely: Signed Releases and Rollback', 'Preview a signed MOMM update, inspect protocol changes, choose stable or pinned versions and recover a retained installation. No automatic updates.'],
     'docs/momm/evidence.html': ['MOMM Review Evidence: Results, Data and Limitations', 'Inspect MOMM’s historical development reviews, route outcomes, verified fixes and rejected claims. Download the data; this is not an accuracy benchmark.'],
