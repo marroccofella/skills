@@ -842,6 +842,11 @@ try {
     const refuses = modalityExec({ generate: () => { fs.writeFileSync(fresh, syntheticPng("blue")); return ok("I cannot generate images in this session."); } });
     const r3 = await runModalityProbes("codex", gen({ exec: refuses.exec }));
     assert.equal(cellOf(r3, "image_gen").status, "probe_failed", "a refusal is not verified on files alone"); assert.match(cellOf(r3, "image_gen").reason, /refus/);
+    // The refusal case above left the same bytes at `fresh`. A fake generator answers within the same
+    // millisecond, so an identical rewrite would keep the size:mtime signature of the pre-request
+    // listing and be ignored as unchanged (CI run 35418666762, macOS Node 20). A real request takes
+    // seconds; age the leftover so this control tests the rule rather than the clock.
+    const aged = (Date.now() - 5000) / 1000; fs.utimesSync(fresh, aged, aged);
     const good = modalityExec({ generate: () => { fs.writeFileSync(fresh, syntheticPng("blue")); return ok("wrote it"); } });
     const r4 = await runModalityProbes("codex", gen({ exec: good.exec }));
     assert.equal(cellOf(r4, "image_gen").status, "verified", cellOf(r4, "image_gen").reason); assert.equal(cellOf(r4, "image_gen").harvested.length, 1, "control: exactly the file this request wrote");
