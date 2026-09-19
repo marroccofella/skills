@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
+import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");
 // Execute production parser/normalizer/aggregation functions, not a copied algorithm.
@@ -20,8 +21,8 @@ const core = vm.runInNewContext(source.slice(source.indexOf("function extractJso
   });
 const passed = [];
 const test = (name, fn) => { fn(); passed.push(name); };
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-governor-test-"));
-const write = (relative, value) => { const file = path.join(fixture, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"); return file; };
+const fixture = privateTestFixture("momm-governor-test-");
+const write = (relative, value) => { const file = path.join(fixture, relative); fs.mkdirSync(path.dirname(file), { recursive: true, mode:0o700 }); fs.writeFileSync(file, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n", {mode:0o600}); return file; };
 const ref = relative => ({ path: relative, sha256: digest(fs.readFileSync(path.join(fixture, relative))) });
 const run = args => spawnSync(process.execPath, args, { cwd: fixture, encoding: "utf8", timeout: 30000, windowsHide: true,
   env: { ...process.env, NO_UPDATE_CHECK: "1", MOMM_NO_UPDATE_CHECK: "1", DO_NOT_TRACK: "1" } });
@@ -295,6 +296,7 @@ try {
   test("real completion CLI and ledger rebuild", () => { const result = run([path.join(scripts, "governor.mjs"), "--run", report.run_id, "--record"]); assert.equal(result.status, 0, result.stdout + result.stderr); assert.equal(JSON.parse(result.stdout).ledger_rebuilt, true); assert.match(fs.readFileSync(path.join(fixture, ".ensemble_reviews/ledger.html"), "utf8"), /Local completion evidence validated/); });
   test('receipt success cannot hide dashboard rebuild failure',()=>{
     const copy=write('isolated/governor.mjs',fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8'));
+    write('isolated/evidence-permissions.mjs',fs.readFileSync(path.join(scripts,'evidence-permissions.mjs'),'utf8'));
     const result=run([copy,'--run',report.run_id,'--record']),body=JSON.parse(result.stdout);
     assert.equal(result.status,5,result.stdout+result.stderr);assert.equal(body.complete,true);assert.equal(body.ledger_rebuilt,false);assert.equal(body.ledger_url,null);assert(body.ledger_error);
   });

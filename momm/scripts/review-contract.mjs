@@ -30,6 +30,8 @@ export function reviewProblem(p, artifact) {
       || !(f.target_file === null || text(f.target_file, 500))
       || !(f.test_suggestion === null || text(f.test_suggestion, 1500))
       || !(f.line_range === null || (Array.isArray(f.line_range) && f.line_range.length === 2 && f.line_range.every(n => Number.isInteger(n) && n >= 1) && f.line_range[0] <= f.line_range[1]))) return "invalid finding; nothing may be silently dropped";
+    if (Object.hasOwn(f, "region") && !(Array.isArray(f.region) && f.region.length === 4
+      && f.region.every(n => Number.isInteger(n) && n >= 0))) return "invalid image region; expected four nonnegative integer pixels";
     ids.add(f.id);
   }
   return null;

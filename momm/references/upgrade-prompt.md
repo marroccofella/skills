@@ -19,6 +19,18 @@ release-workflow signing identity and package hash. This applies to both an
 ordinary update and a legacy bootstrap. Stop if verification is unavailable;
 ask before installing a missing verifier.
 
+Read the maintained new/legacy bootstrap guide at
+https://github.com/marroccofella/skills/blob/momm-1.16.0/momm/references/bootstrap.md.
+Do not mistake GitHub's bad_cert/Unverified badge for a gitsign verification result.
+If gitsign is missing, no signature check ran; on macOS ask before using the
+official Homebrew installation. If a real signature, identity, transparency or
+hash check fails, stop. A verified commit badge does not replace these checks.
+Older releases lack bootstrap.mjs: obtain and independently inspect/trust the
+small standalone helper before executing it, or use an organization-reviewed
+copy. Never execute an unverified candidate's code to verify itself. Use its
+offline --check first; explicit --prepare verifies an exact published stable
+release into a new permanent directory without installing or replacing anything.
+
 If my installation has the explicit update command and a valid momm.lock,
 run the information check and then the verified dry-run from the skills clone.
 Show the exact target version, changed files, complete protocol/default/persona
@@ -47,6 +59,16 @@ one-time bootstrap. Show the exact permanent clone/ref/link changes and preserve
 old installation before asking me to approve them. Do not invent a receipt,
 silently retarget links, trust an old unsigned tag retroactively or claim rollback
 is available before verifying it. Ask before installing a missing verifier.
+
+For an existing momm discovery entry, prefer the separately trusted
+migrate-legacy.mjs helper and its bootstrap.mjs dependency if available: preview
+the exact prepared clone, entry, outside-discovery backup and complete protocol;
+only after my separate approvals use --apply with the preview's --plan-sha256
+and, if needed, --accept-protocol.
+Save its journal and rollback command. Never put backups inside skill discovery,
+or copy/overwrite project .ensemble_reviews ledgers and .gitignore into a new
+clone. Verify a removed privacy rule by inspecting actual enforcement, not by
+counting sanitization keywords. Unsupported aliases need inspection, not guessing.
 
 After an approved install or upgrade, verify the installed version and harness discovery.
 Read the newly installed MOMM skill, relaunch only the MOMM Setup Center process

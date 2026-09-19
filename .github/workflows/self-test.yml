@@ -19,6 +19,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [18.x, 20.x, 22.x]
+        # Reproduce the independently reported Windows fetch/forced-exit runtime.
+        include:
+          - os: windows-latest
+            node-version: '24.15.0'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -44,9 +48,51 @@ jobs:
       - name: Explicit updater transaction and recovery fixtures
         timeout-minutes: 8
         run: node momm/scripts/update.test.mjs
+      - name: New and legacy install bootstrap trust boundaries (offline)
+        timeout-minutes: 2
+        run: node momm/scripts/bootstrap.test.mjs
+      - name: Legacy discovery migration and rollback (synthetic installs only)
+        timeout-minutes: 4
+        run: node momm/scripts/migrate-legacy.test.mjs
       - name: Governor review-to-decision lifecycle (offline)
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs
+      - name: usage module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/usage.test.mjs
+      - name: guidance module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/guidance.test.mjs
+      - name: split module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/split.test.mjs
+      - name: scheduler module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/scheduler.test.mjs
+      - name: update-clock module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/update-clock.test.mjs
+      - name: probes module (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/probes.test.mjs
+      - name: governor split/rating/direct rules (1.16)
+        timeout-minutes: 2
+        run: node momm/scripts/governor-split.test.mjs
+      - name: modality registry, overlay and effective matrix (1.16 E7)
+        timeout-minutes: 2
+        run: node momm/scripts/capabilities.test.mjs
+      - name: existing lock ownership is never stolen
+        timeout-minutes: 2
+        run: node momm/scripts/lock-ownership.test.mjs
+      - name: modality planner and step-scoped runner (1.16 E7)
+        timeout-minutes: 3
+        run: node momm/scripts/modality.test.mjs
+      - name: modality runner regressions from the 1.16 readiness audit
+        timeout-minutes: 2
+        run: node momm/scripts/modality-evaluation.test.mjs
+      - name: Windows launch guard on every process-launching script
+        timeout-minutes: 2
+        run: node scripts/launch-guard.test.mjs
       - name: Public information is deterministic and internally linked
         timeout-minutes: 2
         run: |
@@ -55,8 +101,32 @@ jobs:
           node scripts/momm-release-pages.test.mjs
           node scripts/public-export.test.mjs
           node scripts/doc-consistency.test.mjs
+          node scripts/momm-release-privacy.test.mjs
+          node scripts/momm-media-contract.test.mjs
+          node scripts/ledger-integrity.test.mjs
+          node scripts/reviewer-ux-regressions.test.mjs
+          node scripts/ledger-serving.test.mjs
+          node scripts/version-discovery.test.mjs
+          node scripts/private-tree-boundary.test.mjs
+          node scripts/information-shutdown.test.mjs
+          node scripts/evidence-permissions.test.mjs
+          node scripts/release-seal-precheck.test.mjs
+          node scripts/media-cancellation.test.mjs
+          node scripts/media-preservation.test.mjs
+          node scripts/momm-release-regressions.test.mjs
+          node scripts/momm-auth-recovery.test.mjs
+          node scripts/momm-independent-review.test.mjs
+          node momm/scripts/copilot-transport.test.mjs
+          node momm/scripts/antigravity-transport.test.mjs
+          node momm/scripts/shutdown.test.mjs
+          node momm/scripts/attachment-cleanup.test.mjs
+          node momm/scripts/adapter-cleanup.test.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
+      - name: Native evidence permission gates (zero provider calls)
+        # Native controls change access only on newly created synthetic fixtures.
+        timeout-minutes: 3
+        run: node scripts/evidence-permissions-native.test.mjs
       - name: Guided onboarding is zero-call and rejects unknown routes
         shell: node {0}
         run: |
@@ -134,7 +204,9 @@ jobs:
           const fs = require("node:fs");
           const path = require("node:path");
           const os = require("node:os");
-          const dir = fs.mkdtempSync(path.join(os.tmpdir(), "momm-ledger-"));
+          const fixture = spawnSync(process.execPath, ["scripts/private-test-fixture.mjs", "momm-ledger-"], { encoding: "utf8", timeout: 30000 });
+          if (fixture.status !== 0) throw new Error("private test fixture setup failed");
+          const dir = fixture.stdout.trim();
           const review = spawnSync(process.execPath, [path.resolve("momm/scripts/multi-review.mjs"), "--governor", "codex", "--reviewers", "codex", "--label", "ledger smoke"], { input: "artifact\n", encoding: "utf8", cwd: dir, timeout: 120000 });
           if (review.status !== 0) throw new Error("seed review failed: " + (review.error?.code ?? review.signal ?? "exit " + review.status));
           const ledger = spawnSync(process.execPath, [path.resolve("momm/scripts/ledger.mjs")], { encoding: "utf8", cwd: dir, timeout: 60000 });
@@ -173,11 +245,10 @@ jobs:
           console.log(`ok: ${lines.length} stderr line(s), all valid JSON`);
       - name: Legacy install alias forwards (dry run)
         run: node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
-      # Evidence round trip: a run (reviewer CLI absent in CI → fast terminal
-      # status, zero model calls) must persist a report whose logged sha256
+      # Evidence round trip: self-exclusion (zero model calls) must persist a report whose logged sha256
       # matches a fresh read of the file and whose input_sha256 matches the
-      # exact piped artifact; forced persistence failure must warn on stderr
-      # and report evidence.persisted=false while still exiting 0.
+      # exact piped artifact. Unavailable storage refuses before input/dispatch;
+      # a later log-indexing failure still reports the successfully saved report.
       - name: Evidence persistence round trip
         timeout-minutes: 5
         shell: node {0}
@@ -190,7 +261,11 @@ jobs:
           const script = path.resolve("momm/scripts/multi-review.mjs");
           const artifact = "evidence round trip artifact\n";
           const dirs = [];
-          const tmp = (label) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), `momm-ci-${label}-`)); dirs.push(d); return d; };
+          const tmp = (label) => {
+            const made = spawnSync(process.execPath, ["scripts/private-test-fixture.mjs", "momm-ci-" + label + "-"], { encoding: "utf8", timeout: 30000 });
+            if (made.status !== 0) throw new Error("private fixture setup failed");
+            const d = made.stdout.trim(); dirs.push(d); return d;
+          };
           // governor codex + reviewers codex => deterministic self-exclusion:
           // zero subprocess spawns, zero network, independent of runner CLIs.
           const run = (cwd, extra = []) => spawnSync(process.execPath, [script, "--governor", "codex", "--reviewers", "codex", ...extra], { input: artifact, encoding: "utf8", cwd, timeout: 120000 });
@@ -215,12 +290,10 @@ jobs:
             const blocked = tmp("blocked");
             fs.writeFileSync(path.join(blocked, ".ensemble_reviews"), "block");
             r = run(blocked);
-            if (r.status !== 0) throw new Error("blocked run should still exit 0");
-            const blockedReport = JSON.parse(r.stdout);
-            if (blockedReport.evidence.persisted !== false || blockedReport.evidence.log_indexed !== false) throw new Error("blocked persistence not reported");
-            if (!/evidence persistence failed \(report persistence\)/.test(r.stderr)) throw new Error("no stderr warning on persistence failure");
+            if (r.status !== 1 || r.stdout.trim()) throw new Error("unavailable storage must refuse before dispatch");
+            if (!/cannot prepare its evidence directory/.test(r.stderr)) throw new Error("no safe storage prerequisite explanation");
             const partial = tmp("partial");
-            fs.mkdirSync(path.join(partial, ".ensemble_reviews", "review-log.jsonl"), { recursive: true });
+            fs.mkdirSync(path.join(partial, ".ensemble_reviews", "review-log.jsonl"), { recursive: true, mode: 0o700 });
             r = run(partial);
             if (r.status !== 0) throw new Error("partial run should still exit 0");
             const partialReport = JSON.parse(r.stdout);
@@ -230,10 +303,9 @@ jobs:
             const streamBlocked = tmp("stream");
             fs.writeFileSync(path.join(streamBlocked, ".ensemble_reviews"), "block");
             r = run(streamBlocked, ["--stream"]);
-            if (r.status !== 0) throw new Error("stream run should still exit 0");
+            if (r.status !== 1 || r.stdout.trim()) throw new Error("stream storage prerequisite must refuse before dispatch");
             const events = r.stderr.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
-            if (!events.some((e) => e.event === "evidence_error" && e.stage === "report persistence")) throw new Error("no structured evidence_error event");
-            if (JSON.parse(r.stdout).evidence.persisted !== false) throw new Error("stream run persistence misreported");
+            if (!events.some((e) => typeof e.error === "string" && /cannot prepare its evidence directory/.test(e.error))) throw new Error("no structured prerequisite error");
             console.log("evidence round trip ok: full, blocked, partial, and stream-pure failure all behave as declared");
           } finally {
             for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }

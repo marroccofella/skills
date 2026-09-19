@@ -20,6 +20,9 @@ if (!/^\d+\.\d+\.\d+$/.test(version) || release?.tag !== `momm-${version}`) thro
 const code = fs.readFileSync(path.join(root, "momm/scripts/multi-review.mjs"), "utf8");
 if (!code.includes(`const MOMM_VERSION = "${version}"`)) throw new Error("Dispatcher and manifest versions differ");
 if (!fs.readFileSync(path.join(root, "README.md"), "utf8").includes(`momm-${version}-`)) throw new Error("README version differs");
+if (args[0] === "--check" && (!/^[a-f0-9]{64}$/.test(release.sha256 ?? "") || release.hash_covers !== "git-tree-blobs-excluding-versions/1")) {
+  throw new Error("Release seal is missing, malformed or unsupported; prepare and commit the exact release before checking. Package hashing was not started.");
+}
 const ref = args[0] === "--prepare" ? git(root, "write-tree") : "HEAD";
 const digest = treeHash(root, ref);
 if (args[0] === "--prepare") {

@@ -43,6 +43,9 @@ For Grok, the current candidate uses final JSON plus explicit tool deny rules an
 a bounded four-turn budget; the historical JSON-schema flag and first-login note
 below are not the current adapter contract.
 
+Per-CLI knowledge base (verbatim `--help` captures, docs, config paths, observed failure modes, exact adapter argument vectors): [cli/README.md](cli/README.md).
+
+
 - Codex reviewer: enabled when Codex is not the governor; run with the installed CLI's read-only sandbox.
 - Gemini reviewer: enabled when Gemini is not the governor; run headlessly in plan mode. CLI 0.55.1 is installed, but individual/Pro/Ultra access was retired (reported as `ineligible_tier`); Standard or Enterprise Gemini Code Assist organization licenses remain supported, and for consumer accounts Antigravity is the successor route.
 - Claude reviewer: enabled when Claude is not the governor; historical adapter used `-p` + `--output-format json` + `--permission-mode plan`. The candidate adds the containment flags documented above. Requires the provider's browser login when authentication is actually reported missing.

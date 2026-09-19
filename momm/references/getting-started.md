@@ -1,5 +1,10 @@
 # Getting started without surprises
 
+Before running newly downloaded MOMM code, use the [new/legacy bootstrap guide](bootstrap.md).
+It covers the verifier prerequisite, signed release and package check, and explicit
+installation approval. A downloaded clone is not automatically a verified release.
+The Setup Center instructions below assume a trusted installation.
+
 ## CLI versions and explicit updates
 
 In the local Setup Center, open **CLI versions, skills & diagnostics**. The six-CLI table includes the active controller even though it cannot review itself. It shows the installed version, latest checked version, source and installation type. **Check everything** refreshes these observations without installing anything. An unknown latest version is not a current version; Antigravity has no verified check-only updater, so its **Check / update…** action needs explicit consent.
@@ -29,7 +34,7 @@ From inside the `momm` directory, omit the leading `momm/`. The local Setup Cent
 - checks skill releases, reviewer CLI updates, model access, runtimes, and relevant environment-variable names; and
 - never reads credential contents or asks for API keys.
 
-The server listens only on `127.0.0.1`, rejects non-local clients, requires a random session token for actions, and accepts only fixed provider/action combinations. Setup sends no project content. A later real peer review does send the user-selected diff or input to the chosen provider, so source-sharing permission must be confirmed before dispatch. The Setup Center cannot be meaningfully hosted as a normal public website because public pages cannot safely launch or inspect local CLIs.
+The server listens only on `127.0.0.1`, rejects non-local clients, requires a private session for API access, and accepts only fixed provider/action combinations. Open the full private launch link printed by the command, fragment included (it has the shape `http://127.0.0.1:<port>/#<capability>`); treat that printed link as sensitive and do not share it. Its random capability arrives in the URL fragment, which is not sent on the first GET; the page then sends that same capability on its own same-origin API calls. It is removed from the address bar, and stays in that tab's session storage. A bare bookmarked localhost address or a new tab may require reopening the launch link. Restarting the server invalidates the old link. The capability is not written into the ledger or its Setup Center pointer. The **Private ledger** button obtains a one-use, one-minute navigation ticket. This limits unauthorized local HTTP clients, not administrators or hostile programs running as your own account. Setup sends no project content. A later real peer review does send the user-selected diff or input to the chosen provider, so source-sharing permission must be confirmed before dispatch. The Setup Center cannot be meaningfully hosted as a normal public website because public pages cannot safely launch or inspect local CLIs.
 
 ## Stay updated
 

@@ -1,5 +1,13 @@
 # Explicit updates and recovery
 
+**New install, missing verifier or old release without a receipt?** Start with
+[the bootstrap guide](bootstrap.md), not an installer from unverified code.
+`bootstrap.mjs --check` distinguishes missing tools from failed verification and
+identifies the new/legacy/1.15.0/ordinary-update route without changing anything.
+First-time users must separately inspect/trust this standalone tool; it cannot
+authenticate itself. GitHub's `bad_cert` / Unverified badge is not a gitsign result.
+Never suppress an actual gitsign identity, transparency or package-hash failure.
+
 MOMM 1.15.0's updater has a verified staging-discovery defect with gitsign 0.17.1.
 It fails closed before installation. Bootstrap with a separately signature/hash-
 verified 1.15.1-or-newer clone and invoke its updater with `--repo <existing-clone>`;
@@ -20,7 +28,14 @@ a candidate into temporary staging, verifies its signed tag, prints changed file
 across the shared clone and the complete protocol/dispatcher-policy diff, and
 removes staging. Installed files, refs, links and receipt stay unchanged. The third
 requires interactive confirmation; `--yes` is available for deliberate scripts.
-It cannot bypass the separate `--accept-protocol` gate. Never auto-apply.
+It cannot bypass the separate `--accept-protocol` gate. An agent must not initiate
+an update without the user's authorization.
+
+In 1.16, the separate update clock can apply updates only after the user enables
+its off-by-default automation setting. Automatic protocol acceptance is a second,
+independent setting, also off by default. Do not enable either setting on an agent's
+initiative. Signature verification, saved installation scopes and recovery checks
+remain mandatory in both manual and explicitly automated workflows.
 
 ## Installation identity
 

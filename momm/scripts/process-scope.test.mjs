@@ -52,9 +52,23 @@ if(scopeModule) {
     const f=fixture('win32'),c=f.scope.spawn('fixture',[],{});f.scope.terminate(c);
     assert.equal(c.options.detached,false);assert.equal(f.children.length,2);assert(!f.events.some(e=>e.pid<0));
   });
+  await test('Windows tree kill is launched by absolute System32 path, never a bare name',()=>{
+    // Gate-4 [1]: a direct spawn of a bare name tries the working directory BEFORE PATH
+    // (unless the calling process already carries NoDefaultCurrentDirectoryInExePath), so a
+    // taskkill.exe planted in a reviewed project would run on any timeout.
+    const SYSTEM=/^[A-Za-z]:\\[^"]*\\System32\\taskkill\.exe$/;
+    const f=fixture('win32');f.proc.env={SystemRoot:'D:\\WinRoot'};const launched=[];
+    const scope=scopeModule.createProcessScope({process:f.proc,spawn:(command,args,options)=>{launched.push(command);return f.spawn(command,args,options);},spawnSync:(command,args,options)=>{launched.push(command);return {status:0};},...f.clock});
+    const a=scope.spawn('fixture',[],{});scope.terminate(a);const b=scope.spawn('fixture',[],{});scope.force();
+    const killers=launched.filter(c=>/taskkill/i.test(c));assert(killers.length>=2,JSON.stringify(launched));
+    for(const command of killers){assert.match(command,SYSTEM);assert.equal(command,'D:\\WinRoot\\System32\\taskkill.exe');}
+    const bare=fixture('win32'),seen=[];// no SystemRoot in the environment: still absolute
+    const fallback=scopeModule.createProcessScope({process:bare.proc,spawn:bare.spawn,spawnSync:(command)=>{seen.push(command);return {status:0};},...bare.clock});
+    fallback.spawn('fixture',[],{});fallback.force();assert.match(seen[0],SYSTEM);
+  });
   await test('Windows final cleanup waits for tree kill before direct fallback or exit',()=>{
     const f=fixture('win32'),c=f.scope.spawn('fixture',[],{});f.scope.force();
-    assert.equal(f.events[0]?.sync,'taskkill','final cleanup must not race tree enumeration with a direct leader kill');
+    assert.match(String(f.events[0]?.sync),/\\System32\\taskkill\.exe$/,'final cleanup must not race tree enumeration with a direct leader kill');
     assert.deepEqual(f.events[0].args,['/pid',String(c.pid),'/T','/F']);
     assert(f.events[0].timeout>0&&f.events[0].timeout<=2000);
   });

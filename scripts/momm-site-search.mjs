@@ -55,6 +55,7 @@ export function pageMetadata(file, catalogue) {
     'docs/momm/reference.html': ['MOMM FAQ: Reviewers, Privacy, Costs and Troubleshooting', 'Understand MOMM’s reviewers, governor duties, account logins, costs, privacy boundaries and failure statuses. Clear answers with links to the evidence.'],
     'docs/momm/data/index.html': ['MOMM Evidence Downloads: CSV, JSON and Definitions', 'Download the historical MOMM review snapshot as CSV, JSON and Markdown. Includes route outcomes, governor decisions, timings and denominator definitions.'],
     'docs/momm/releases/index.html': ['MOMM Version History and Release Notes', 'Browse MOMM release notes and original source records. Published releases, historical tags and code milestones are distinguished, with gaps disclosed.'],
+    'docs/momm/releases/bootstrap.html': ['MOMM New and Legacy Installations: Verify Before You Install', 'Prepare a verified MOMM release before any candidate code runs, and move an old installation aside with an approved plan and a rollback journal. Nothing is automatic.'],
     'docs/momm/releases/upgrade.html': ['MOMM Install or Upgrade Prompt for Your AI Harness', 'Copy a prompt for new or existing MOMM users: detect the harness, verify a stable release, preview changes and ask before installation or protocol updates.'],
     'docs/evidence/index.html': ['MOMM Public Evidence Ledger: Historical Reviews', 'Explore the sanitized historical MOMM development ledger: reviewer claims, route failures and governor decisions. This is not a user’s private dashboard.'],
   };

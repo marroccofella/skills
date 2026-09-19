@@ -4,14 +4,23 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Auth](https://img.shields.io/badge/auth-OAuth%20only%20%C2%B7%20zero%20API%20keys-orange)
-![momm](https://img.shields.io/badge/momm-1.15.1-00cc88)
+![momm](https://img.shields.io/badge/momm-1.16.0-00cc88)
 
 A collection of portable, cross-harness [Agent Skills](https://agentskills.io) — each skill is a top-level folder with a standards-compliant `SKILL.md`, installable into any compatible AI coding harness (Claude Code, OpenAI Codex, Google Antigravity, Gemini CLI, and others). More skills coming; contributions welcome per [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Install every skill (one command)
+## Install deliberately: verify the release first
+
+For a new MOMM installation or an older version without an updater/receipt,
+start with the [bootstrap guide](momm/references/bootstrap.md). Check tools first,
+verify the exact signed release and package, then approve the protocol and harness
+links. Missing gitsign is a prerequisite issue; GitHub's `bad_cert` badge is not
+a gitsign verdict. Never bypass an actual verification failure.
+
+From your verified permanent clone, preview the skills you actually want:
 
 ```bash
-git clone https://github.com/marroccofella/skills && cd skills && node install.mjs --target claude --dry-run   # then again without --dry-run
+node install.mjs --target claude --dry-run   # all skills, only after release verification
+node momm/scripts/install.mjs --target claude --dry-run   # MOMM alone
 ```
 
 Links every skill in this repo into the harness you name (`claude`, `codex`, `gemini`, `antigravity`, or a comma list) — junctions on Windows, symlinks on POSIX, existing paths never overwritten. `--target` is required; `--dry-run` previews and `--target all` is an explicit choice. For MOMM alone use `node momm/scripts/install.mjs --target codex`. The installer records successful per-harness scopes for [explicit signed updates](momm/references/updating.md); it never updates itself in the background.

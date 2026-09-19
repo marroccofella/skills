@@ -2,11 +2,20 @@
 // POSIX groups contain ordinary descendants, not helpers that detach themselves.
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
+// Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
+// THIS process's current directory before PATH unless this process carries the variable. Kept inline so
+// a script copied on its own still runs.
+if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 export function createProcessScope(deps = {}) {
   const proc = deps.process ?? process, launch = deps.spawn ?? spawn;
   const launchSync = deps.spawnSync ?? spawnSync;
   const later = deps.setTimeout ?? setTimeout, cancel = deps.clearTimeout ?? clearTimeout;
+  // A direct spawn of a bare name tries the working directory BEFORE PATH on Windows
+  // unless the CALLING process already carries NoDefaultCurrentDirectoryInExePath,
+  // which cannot be assumed. Reviews run inside untrusted projects, so the tree killer
+  // is always named by its absolute System32 path; a planted taskkill.exe never runs.
+  const taskkill = () => [proc.env?.SystemRoot || proc.env?.windir || 'C:\\Windows', 'System32', 'taskkill.exe'].join('\\');
   const owned = new Map();
   let stopping = false, signalInstalled = false;
   function direct(child) { try { child.kill('SIGKILL'); } catch { /* hard settle remains */ } }
@@ -21,7 +30,7 @@ export function createProcessScope(deps = {}) {
     if (proc.platform === 'win32') {
       if (!child.pid) return;
       try {
-        const killer = launch('taskkill', ['/pid', String(child.pid), '/T', '/F'], {windowsHide:true,stdio:'ignore'});
+        const killer = launch(taskkill(), ['/pid', String(child.pid), '/T', '/F'], {windowsHide:true,stdio:'ignore'});
         killer.on('error', () => direct(child)); killer.unref?.();
       } catch { direct(child); }
       record.timer = later(() => { if (owned.has(child)) direct(child); }, 2000);
@@ -54,7 +63,7 @@ export function createProcessScope(deps = {}) {
         // before killing its leader; share a two-second budget across this scope.
         let result;
         try {
-          if (Date.now() < deadline) result = launchSync('taskkill', ['/pid',String(child.pid),'/T','/F'],
+          if (Date.now() < deadline) result = launchSync(taskkill(), ['/pid',String(child.pid),'/T','/F'],
             {windowsHide:true,stdio:'ignore',timeout:Math.max(1,deadline-Date.now())});
         } catch { /* Permission/OS failure keeps the direct-child backstop. */ }
         if (!result || result.error || result.status !== 0) direct(child);
