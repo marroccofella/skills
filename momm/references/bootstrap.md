@@ -26,7 +26,7 @@ No separate cosign installation is required for this gitsign path.
 ## First establish trust in the bootstrap tool
 
 Older releases do not contain `momm/scripts/bootstrap.mjs`. Obtain the standalone
-[bootstrap source](https://github.com/marroccofella/skills/blob/main/momm/scripts/bootstrap.mjs)
+[bootstrap source](https://github.com/marroccofella/skills/blob/momm-1.16.0/momm/scripts/bootstrap.mjs)
 separately from the candidate release. Inspect the complete file with your agent
 and approve trusting it before running it; alternatively use a copy your
 organization has already reviewed and distributed. It imports Node builtins only.

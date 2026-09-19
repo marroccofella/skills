@@ -1,10 +1,12 @@
 # MOMM 1.16.0 — measurement, ratings, guidance, throughput, upkeep
 
-Status: unreleased core candidate, originally built 2026-09-13 from 1.15.1.
-Independent-audit repairs are prepared on `fix/momm-1.16-clean-review`
-([PR #6](https://github.com/marroccofella/skills/pull/6)); the audit conversation
-remains on [PR #4](https://github.com/marroccofella/skills/pull/4).
-Neither this document nor a candidate version string establishes a stable release.
+Status: release candidate, originally built 2026-09-13 from 1.15.1. The consolidated
+candidate and its gate record are on [PR #7](https://github.com/marroccofella/skills/pull/7);
+the independent-audit conversation is on [PR #4](https://github.com/marroccofella/skills/pull/4)
+and the audit repairs came from [PR #6](https://github.com/marroccofella/skills/pull/6) and
+[PR #8](https://github.com/marroccofella/skills/pull/8).
+Neither this document nor a candidate version string establishes a stable release: only the
+signed `momm-1.16.0` tag does.
 Plan: [plan-1.16.0.md](plan-1.16.0.md).
 
 ## Independent retest follow-up (18 September 2026)
@@ -91,6 +93,20 @@ source review, independent retest and the release gates below.
   The condensed third-party test plan regained its fail-closed controls, and the CLI reference pages
   now state the exact Antigravity argv and stdin, the Copilot JSONL success events and which command
   classes use the Windows post-flush delay.
+- Final delta, 19 September (run `rev_20260919104506_po1k` on `b8cef55`: the three round-six fixes,
+  10 KB, one piece, `--retry-invalid` on): Codex ACCEPT, Antigravity ACCEPT, Grok ACCEPT, no
+  findings, no retry needed. Five suggestions ruled on and logged, none applied, so the reviewed
+  head did not change. Across the chain `1nkh`, `h6hn`, `2l49`, `4dn1`, `po1k` every piece of the
+  candidate against `main` has had a two-review quorum and every finding and suggestion has a logged
+  ruling. Two limits: quorum was reached cumulatively over reruns rather than in one run of the
+  whole source, and `governor.mjs --record` cannot issue its completion receipt for these runs
+  because it accepts only `git diff HEAD` or a file input as the source snapshot, while the gate
+  reviewed committed ranges from stdin. The sealing commit on top of `b8cef55` changes no behaviour: under `momm/scripts/` it renames two
+  synthetic test-fixture values (`"lowercase"` and `"registry"`, assigned to token-named keys in
+  `probes.test.mjs` and the Setup Center self-test) to `fixture-…`, because the myrepo publication
+  scan rightly refuses anything shaped like an inline credential and is never waived. It also adds
+  these lines, pins the bootstrap links to the signed tag, extends the
+  manifest change list and regenerates the pages.
 - Gate rerun six, 19 September (run `rev_20260919102005_4dn1` on `076232c` with `--retry-invalid`:
   the 6 pieces that missed quorum plus the round-five changes, 484 KB in 18 pieces, same three
   routes, 81 minutes): **quorum on 18 of 18 pieces**, the first run in which every piece was covered.
@@ -408,7 +424,7 @@ Added to the candidate on 2026-09-13 evening at the owner's direction: MOMM must
   - The seventh run, [34780254256](https://github.com/marroccofella/skills/actions/runs/34780254256) on `2fa8bac`, passed all nine jobs: self-test on ubuntu-latest, macos-latest and windows-latest × Node 18.x, 20.x and 22.x.
   - That head merges `main` (the 1.15.1 release record and the walkthrough page work). The conflicts were the generated pages and the release catalogue, resolved by taking main's catalogue plus the 1.16.0 version-notes entry and regenerating. The visuals test on main asserted the CURRENT STABLE banner unconditionally and now follows the catalogue's publication state.
   - GitHub runs no `pull_request` checks while a PR conflicts with its base, which is why the run before the merge never appeared. A green matrix on one head is evidence for that head only: every commit after `2fa8bac` (the E7 work and anything the gate changes) needs its own full matrix run (nine jobs then, ten since the Windows Node 24 job was added on 16 September), and the SHA that `momm-release.mjs --prepare` seals must be the one whose matrix passed — the release workflow does not run the matrix itself; it refuses to sign unless a completed, successful self-test run already exists for that exact commit on the push event (main after merge), so a green PR run is necessary but not what the seal checks.
-- Sealing checklist item from the full-source gate: pin the bootstrap links in `bootstrap.md` and `upgrade-prompt.md` to the signed `momm-1.16.0` tag (they point at `main` until a tag containing `bootstrap.mjs` exists).
+- Sealing checklist item from the full-source gate (done in the sealing commit): pin the bootstrap links in `bootstrap.md` and `upgrade-prompt.md` to the signed `momm-1.16.0` tag (they point at `main` until a tag containing `bootstrap.mjs` exists).
 - Still owed before release: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
 
 ## Suggestions carried forward

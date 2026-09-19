@@ -1869,8 +1869,8 @@ async function dashboardRegression() {
     // proxy and PATH settings an updater needs are kept.
     checks.update_children_do_not_inherit_api_secrets = (() => {
       try {
-        const env = childEnvironment({ PATH: "p", HTTPS_PROXY: "proxy", OPENAI_API_KEY: "k", my_secret_key: "s", GH_ACCESS_TOKEN: "t", NPM_TOKEN: "registry" });
-        return env.PATH === "p" && env.HTTPS_PROXY === "proxy" && env.NPM_TOKEN === "registry" && env.NO_UPDATE_CHECK === "1" && env.NO_COLOR === "1"
+        const env = childEnvironment({ PATH: "p", HTTPS_PROXY: "proxy", OPENAI_API_KEY: "k", my_secret_key: "s", GH_ACCESS_TOKEN: "t", NPM_TOKEN: "fixture-registry" });
+        return env.PATH === "p" && env.HTTPS_PROXY === "proxy" && env.NPM_TOKEN === "fixture-registry" && env.NO_UPDATE_CHECK === "1" && env.NO_COLOR === "1"
           && !("OPENAI_API_KEY" in env) && !("my_secret_key" in env) && !("GH_ACCESS_TOKEN" in env)
           && /env: childEnvironment\(\)/.test(clockExec.toString()) && /childEnvironment\(sourceEnv\)/.test(probeExec.toString());
       } catch { return false; }

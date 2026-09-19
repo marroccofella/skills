@@ -846,7 +846,7 @@ await test("gate4 grok#76: a state row without a finite interval is rescheduled,
   assert.equal((await e.clock.trigger("daily.tick")).ran, true, "the source comes due again");
 });
 await test("gate4 [65]: the Windows timer is registered by argv through System32 schtasks, so & % ^ in a path are never cmd.exe syntax", async () => {
-  const node = "C:\\A&B\\node.exe", script = "C:\\Users\\me\\100%OS% a^b (x)\\update-clock.mjs", want = `"${node}" "${script}" trigger daily.tick`;
+  const node = "C:\\A&B\\node.exe", script = "C:\\Users\\example\\100%OS% a^b (x)\\update-clock.mjs", want = `"${node}" "${script}" trigger daily.tick`;
   const seen = [];
   const done = await installTimer({ platform: "win32", nodePath: node, scriptPath: script, confirm: true, exec: async (command, args, options) => { seen.push({ command, args, options }); return { code: 0, stderr: "" }; } });
   assert.equal(done.done, true); assert.equal(seen.length, 1);

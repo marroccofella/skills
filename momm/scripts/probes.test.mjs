@@ -479,7 +479,7 @@ try {
     const names = [...dispatcherSource.slice(from, to).matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]);
     assert(names.includes("AWS_SECRET_ACCESS_KEY") && names.includes("ANTHROPIC_AUTH_TOKEN") && names.length >= 10);
     const planted = Object.fromEntries(names.map((name) => [name, "sentinel"]));
-    const r = await defaultExec(process.execPath, ["-e", "process.stdout.write(JSON.stringify(Object.keys(process.env)))"], { cwd: fixture, env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...planted, aws_session_token: "lowercase", CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth" }, timeout: 20_000 });
+    const r = await defaultExec(process.execPath, ["-e", "process.stdout.write(JSON.stringify(Object.keys(process.env)))"], { cwd: fixture, env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...planted, aws_session_token: "fixture-lowercase", CLAUDE_CODE_OAUTH_TOKEN: "allowed-oauth" }, timeout: 20_000 });
     const seen = JSON.parse(r.stdout).map((k) => k.toUpperCase());
     assert.deepEqual(names.filter((name) => seen.includes(name)), [], "forbidden names reached the child");
     assert(seen.includes("CLAUDE_CODE_OAUTH_TOKEN"), "OAuth tokens are preserved, as in the dispatcher");

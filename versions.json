@@ -12,7 +12,11 @@
         "Guidance layers (project, user, run) behind a per-file trust gate; untrusted guidance is never sent.",
         "--split with per-piece quorum, governor-direct scope for oversize hunks and --jobs parallel dispatch.",
         "Event-driven update clock with conditional GETs; automatic updates are a toggle that is off by default and never enabled by an agent.",
-        "update --check-all, containment probes per CLI, and one design system with theme toggle shared by the Setup Center and the private ledger."
+        "update --check-all, containment probes per CLI, and one design system with theme toggle shared by the Setup Center and the private ledger.",
+        "Modality registry and capability-aware routing: media attachments go only to routes whose capability is recorded, probes send synthetic material only and need consent, and an expired capability is blocked until re-probed.",
+        "Windows: the evidence folder is created private, `evidence --status | --protect` handles existing folders (owner-invoked), and Codex's read-only sandbox group on scratch is tolerated and recorded.",
+        "Windows launch guard: a git.exe or taskkill.exe planted in the reviewed project is never started; every process-launching script guards its own process.",
+        "Opt-in --retry-invalid: a review rejected as invalid output is re-sent once to the same route; off by default, validation never loosened, every retry disclosed in the report."
       ]
     },
     {
