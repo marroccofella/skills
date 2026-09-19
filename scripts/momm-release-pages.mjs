@@ -17,6 +17,10 @@ export function inline(text) {
 }
 export function markdown(text) {
   const out=[];let paragraph=[],list=[],fence=null;
+  // GitHub-style heading ids, so a section can be linked from another page (the install page links to
+  // the verifier section) and from its own page. A repeated heading gets -1, -2, as GitHub does.
+  const ids=new Map();
+  const headingId=text=>{const base=text.toLowerCase().replace(/[`*_]/g,'').replace(/[^a-z0-9 -]/g,'').trim().replace(/ /g,'-');if(!base)return '';const seen=(ids.get(base)??-1)+1;ids.set(base,seen);return seen?base+'-'+seen:base;};
   const flush=()=>{if(paragraph.length){out.push('<p>'+inline(paragraph.join(' '))+'</p>');paragraph=[];}if(list.length){out.push('<ul>'+list.map(s=>'<li>'+inline(s)+'</li>').join('')+'</ul>');list=[];}};
   const lines=text.replaceAll('\r\n','\n').split('\n');
   const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(s=>s.trim());
@@ -30,7 +34,7 @@ export function markdown(text) {
       out.push('<div class="table-wrap"><table><thead><tr>'+headers.map(s=>'<th scope="col">'+inline(s)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(s=>'<td>'+inline(s)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>');continue;
     }
     const heading=line.match(/^(#{1,6})\s+(.+)/),bullet=line.match(/^\s*[-*]\s+(.+)/);
-    if(heading){flush();const level=Math.min(4,heading[1].length+1);out.push(`<h${level}>${inline(heading[2])}</h${level}>`);}
+    if(heading){flush();const level=Math.min(4,heading[1].length+1),id=headingId(heading[2]);out.push(`<h${level}${id?` id="${id}"`:''}>${inline(heading[2])}</h${level}>`);}
     else if(bullet){if(paragraph.length)flush();list.push(bullet[1]);}
     else if(!line.trim())flush();
     else if(list.length&&/^\s{2,}\S/.test(line))list[list.length-1]+=' '+line.trim();
