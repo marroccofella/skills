@@ -1,0 +1,277 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:04.708
+In simple terms, the mom skill gives your coding agent a review
+
+00:00:04.708 --> 00:00:05.100
+team.
+
+00:00:05.100 --> 00:00:07.960
+It lets other tools inspect a change before you ship it.
+
+00:00:07.960 --> 00:00:11.460
+One governor stays responsible for the final decision.
+
+00:00:11.460 --> 00:00:14.720
+Your agent is still the only writer and verifier.
+
+00:00:14.720 --> 00:00:17.220
+The name expands to Mixture of Model Modality.
+
+00:00:17.220 --> 00:00:19.220
+Say the short name like mom.
+
+00:00:19.220 --> 00:00:20.760
+It is not a new model.
+
+00:00:20.760 --> 00:00:22.080
+It is not a vote.
+
+00:00:22.080 --> 00:00:24.840
+Think of it as a group of inspectors.
+
+00:00:24.840 --> 00:00:28.000
+Different reviewer tools look at code, words and supported media.
+
+00:00:28.000 --> 00:00:32.000
+Then they hand their untrusted claims back to one governor.
+
+00:00:32.000 --> 00:00:35.080
+AI can be fast and still miss an edge case.
+
+00:00:35.080 --> 00:00:37.060
+It can miss a security boundary.
+
+00:00:37.060 --> 00:00:39.780
+It can also give a confusing explanation.
+
+00:00:39.780 --> 00:00:42.240
+The mom skill makes challenge routine.
+
+00:00:42.240 --> 00:00:44.960
+A second inspector asks a different question.
+
+00:00:44.960 --> 00:00:46.860
+The governor checks the claim.
+
+00:00:46.860 --> 00:00:48.800
+Every decision stays inspectable.
+
+00:00:48.800 --> 00:00:50.680
+First, take a baseline.
+
+00:00:50.680 --> 00:00:54.160
+Next, send the scoped change to selected reviewers in parallel.
+
+00:00:54.160 --> 00:00:58.943
+Then investigate each material claim, like checking a receipt before
+
+00:00:58.943 --> 00:00:59.900
+reimbursing it.
+
+00:00:59.900 --> 00:01:03.616
+Fix only what the evidence supports, and write the decision,
+
+00:01:03.616 --> 00:01:06.960
+evidence and remaining uncertainty in a private audit notebook.
+
+00:01:06.960 --> 00:01:08.240
+Version 1.
+
+00:01:08.240 --> 00:01:12.480
+16 adds per-reviewer token and cost accounting, ratings and route
+
+00:01:12.480 --> 00:01:16.296
+reliability, trusted guidance layers, split diffs with a separate
+
+00:01:16.296 --> 00:01:20.112
+quorum for each piece, parallel jobs, a capability-aware modality
+
+00:01:20.112 --> 00:01:23.928
+registry, explicit update checks, opt-in retry for invalid output,
+
+00:01:23.928 --> 00:01:27.320
+and a shared Setup Center and ledger design.
+
+00:01:27.320 --> 00:01:31.363
+The governor is like the lead editor, project manager and referee in
+
+00:01:31.363 --> 00:01:31.700
+one.
+
+00:01:31.700 --> 00:01:33.700
+It is the only writer.
+
+00:01:33.700 --> 00:01:35.680
+It owns the final decision.
+
+00:01:35.680 --> 00:01:38.560
+Reviewer output is like sticky notes from inspectors.
+
+00:01:38.560 --> 00:01:40.560
+Useful, but never commands.
+
+00:01:40.560 --> 00:01:43.080
+Account logins are explicit and OAuth-based.
+
+00:01:43.080 --> 00:01:45.540
+Automatic updates stay off by default.
+
+00:01:45.540 --> 00:01:47.480
+On Windows, a planted git.
+
+00:01:47.480 --> 00:01:49.120
+exe or taskkill.
+
+00:01:49.120 --> 00:01:51.340
+exe in the reviewed project is never started.
+
+00:01:51.340 --> 00:01:53.920
+A claim is a proposition from a reviewer.
+
+00:01:53.920 --> 00:01:55.620
+It is not a fact yet.
+
+00:01:55.620 --> 00:01:58.480
+The governor reproduces it, or rejects it with evidence.
+
+00:01:58.480 --> 00:02:03.356
+The public record keeps those decisions, release-gate runs and
+
+00:02:03.356 --> 00:02:04.440
+cross-platform checks.
+
+00:02:04.440 --> 00:02:06.000
+Think of it as a lab notebook.
+
+00:02:06.000 --> 00:02:09.680
+It is not a universal productivity or accuracy guarantee.
+
+00:02:09.680 --> 00:02:12.000
+More reviewers use more quota.
+
+00:02:12.000 --> 00:02:13.820
+Provider availability still varies.
+
+00:02:13.820 --> 00:02:16.140
+Use the public upgrade prompt.
+
+00:02:16.140 --> 00:02:20.060
+Verify the signed release and package before running new code.
+
+00:02:20.060 --> 00:02:24.140
+Keep the clone in a permanent folder, preview the plan, then approve
+
+00:02:24.140 --> 00:02:24.480
+it.
+
+00:02:24.480 --> 00:02:28.180
+Existing users keep their harness scopes and private ledgers.
+
+00:02:28.180 --> 00:02:30.040
+Open the local Setup Center.
+
+00:02:30.040 --> 00:02:34.430
+Choose your current agent, sign in to a reviewer through its
+
+00:02:34.430 --> 00:02:38.022
+official account flow, then verify the route with disclosed
+
+00:02:38.022 --> 00:02:38.820
+synthetic input.
+
+00:02:38.820 --> 00:02:42.491
+Start with one ready inspector; add others only when their
+
+00:02:42.491 --> 00:02:43.960
+perspective earns the quota.
+
+00:02:43.960 --> 00:02:48.103
+Back in the project, choose which providers may receive the scoped
+
+00:02:48.103 --> 00:02:48.480
+work.
+
+00:02:48.480 --> 00:02:52.522
+Ask the mom skill to review the changes, investigate findings,
+
+00:02:52.522 --> 00:02:56.160
+verify fixes, record every decision and show the ledger.
+
+00:02:56.160 --> 00:02:59.300
+Your agent coordinates; no reviewer edits your project.
+
+00:02:59.300 --> 00:03:02.180
+A valid review is not an acceptance badge.
+
+00:03:02.180 --> 00:03:04.140
+The governor quotes the claim.
+
+00:03:04.140 --> 00:03:07.360
+It reproduces the claim, or rejects it with evidence.
+
+00:03:07.360 --> 00:03:09.980
+Deferred work stays visible.
+
+00:03:09.980 --> 00:03:13.472
+Quorum is the minimum number of independent inspectors needed before
+
+00:03:13.472 --> 00:03:14.520
+a gate opens.
+
+00:03:14.520 --> 00:03:17.100
+Think of two signatures on a safety checklist.
+
+00:03:17.100 --> 00:03:19.240
+It is not a popularity vote.
+
+00:03:19.240 --> 00:03:21.500
+It never replaces judgment.
+
+00:03:21.500 --> 00:03:25.859
+The private ledger connects the input hash, reviewer responses,
+
+00:03:25.859 --> 00:03:28.280
+investigations, tests and final rulings.
+
+00:03:28.280 --> 00:03:29.920
+Think of it as an audit notebook.
+
+00:03:29.920 --> 00:03:31.140
+You can revisit it.
+
+00:03:31.140 --> 00:03:31.960
+You can explain it.
+
+00:03:31.960 --> 00:03:33.720
+You can hand it over.
+
+00:03:33.720 --> 00:03:36.620
+Your project and provider logs stay private.
+
+00:03:36.620 --> 00:03:39.340
+Use the mom skill on one meaningful change.
+
+00:03:39.340 --> 00:03:41.380
+Use it for a difficult decision.
+
+00:03:41.380 --> 00:03:43.580
+Use it for a release you want challenged.
+
+00:03:43.580 --> 00:03:45.340
+Start with the guide.
+
+00:03:45.340 --> 00:03:45.880
+Connect one reviewer.
+
+00:03:45.880 --> 00:03:48.500
+Judge the value on your own work.
+
+00:03:48.500 --> 00:03:49.300
+Version 1.
+
+00:03:49.300 --> 00:03:50.940
+16 is live at marroccofella.
+
+00:03:50.940 --> 00:03:52.040
+io/skills/momm/.
