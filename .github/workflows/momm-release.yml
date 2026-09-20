@@ -66,6 +66,7 @@ jobs:
           node momm/scripts/setup-maintenance.test.mjs
           node momm/scripts/governor.test.mjs
           node momm/scripts/installations.test.mjs
+          node momm/scripts/scorecard.test.mjs
           node momm/scripts/governor-range.test.mjs
           node scripts/source-hygiene.test.mjs
           node momm/scripts/usage.test.mjs

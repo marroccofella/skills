@@ -60,6 +60,9 @@ jobs:
       - name: Every tracked source is reviewable text (no raw control bytes, nothing Git calls binary)
         timeout-minutes: 2
         run: node scripts/source-hygiene.test.mjs
+      - name: Effectiveness scorecard and training export (read-only, synthetic evidence)
+        timeout-minutes: 2
+        run: node momm/scripts/scorecard.test.mjs
       - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
         timeout-minutes: 2
         run: node momm/scripts/installations.test.mjs

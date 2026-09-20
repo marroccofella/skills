@@ -20,6 +20,8 @@ in this file gets to say "current". Website notes live in
   any change to the containment model (so Grok media stays `missing_flag`).
 - **Next: 1.17, roadmap only.** Do not start before the signed `momm-1.16.1` tag exists.
 - **Later:** the proposals under "Planned" below, each still opt-in and fail-closed.
+- Ideas that are not in the release being built, with origin, reason and "worth doing when",
+  including what was refused and why: [references/ideas-register.md](references/ideas-register.md).
 - Deferred 1.16.0 findings are listed by name, with what became of each:
   [references/deferred-from-1.16.0.md](references/deferred-from-1.16.0.md).
 

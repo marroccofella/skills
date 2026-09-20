@@ -53,7 +53,12 @@ ceiling, ledger-learned caps, CRLF handling in guidance, `Object.create(null)` l
 guidance sidecar `0o700` mode, synthetic hunk counts, recognising one observation across finding
 ids.
 
-**One item needs the owner to reconcile.** On the same day the owner also asked that 1.16.1 make
+**Section F, settled 20 September.** The owner's scope boundary keeps "installation identity and
+conflict detection" in 1.16.1 and sends "broad installation-management interfaces" to 1.17. So F1
+(the inventory) and F2 (never call an upgrade complete while an older copy is active) are in; F3 to
+F8 are recorded in the [ideas register](ideas-register.md). The paragraph below is the history.
+
+**One item needed the owner to reconcile.** On the same day the owner also asked that 1.16.1 make
 duplicate installations and precedence explicit (section F). F is not in the closed set above.
 F1, the read-only `--doctor --versions` inventory, is built and is how drill 7 proves which
 version a harness loads after an upgrade, so it stays as drill tooling. F2 (never call an upgrade
@@ -166,6 +171,45 @@ verifies both.
 elsewhere), the lifecycle drills in B end with `--doctor --versions --expect <version>` exiting 0,
 and the owner's five-folder case above is reproduced as a fixture.
 
+### G. What the evidence is worth (owner addition, 20 September)
+
+Read-only derivations of evidence the ledger already holds; no new reviewer, no new traffic.
+
+1. **Effectiveness scorecard** (`momm/scripts/scorecard.mjs`): for MOMM as a whole and for each
+   reviewer. Reliability is counted **per piece** (a split run's merged row reads "success" if any
+   piece succeeded, which hid a 30% failure rate). Acceptance is the governor's acceptance rate over
+   ruled findings; deferred and unruled count as neither. Unique catches, the accepted findings
+   each reviewer would have missed alone, severity calibration (rejected criticals), time per
+   review, and cost per accepted finding where the provider reports cost, otherwise "unmetered",
+   never zero. A score appears only from eight ruled findings and its formula is printed beside it.
+   Output as JSON, Markdown, or an HTML table in the ledger's theme.
+2. **Training export** (`--export-training <file>`, JSONL or chat format): one example per ruled
+   finding or suggestion, labelled with the governor's decision and reason. Written only where the
+   owner says, owner-only, never overwriting silently, with a dataset card that states the label is
+   not ground truth, that reviewer text is untrusted and may quote source, and that provider terms
+   apply to training on model output.
+
+*Done when* both have tests on synthetic evidence (17 today), both run on the real 1.16 gate ledger,
+and the scorecard's numbers match the hand counts in the 1.16.0 release record.
+
+### H. From the owner's 20 September proposal, not already covered
+
+1. **Usage and time from failed work** (belongs with C): tokens, cost and elapsed time of failed,
+   invalid and retried attempts are counted. Reported, estimated and unavailable are three different
+   values. Unmetered is never shown as zero.
+2. **Pages deploy only after the same revision passes its checks.** Today Pages builds from `main`
+   on push; `main` only receives squash merges whose PR checks passed, but the Pages build itself is
+   not gated on the push-event run. Gate it, or state plainly that it is not.
+3. **Node 22 and 24 are the primary lifecycle targets.** Node 18 and 20 are past end of life; they
+   stay in CI as compatibility checks, labelled as such, because the 1.16.0 Windows launch defect
+   was specific to them.
+4. **Immediate repairs to verify, not assume:** no raw control character in any tracked source
+   (done, guarded by `scripts/source-hygiene.test.mjs`); every media asset exists and matches its
+   recorded hash; nothing awaiting the owner's listening approval is publicly linked, and the
+   revised video stays labelled a local preview until the narration is approved; the sitemap is
+   valid XML listing only published pages; generated section links resolve to real pages;
+   compatibility claims match exact CI matrix cells.
+
 ## Explicitly out of 1.16.1
 
 New reviewer families. Automatic updates on by default, or any path by which an agent enables
@@ -218,6 +262,12 @@ No 1.17 item starts before the signed `momm-1.16.1` tag exists.
   commit ids and to the head commit's file bytes; the completion state names the source and the
   pieces; 12 tests on a real temporary repository. Still owed for A3: `momm-check/1` verification
   manifests produced by a tool rather than by hand, and attempt ids (they arrive with C).
+- 20 September: G built. `scorecard.mjs` and its training export, 17 tests. Run on the real 1.16 gate
+  ledger: 10 runs, 482 findings, 440 ruled, 165 accepted; corroborated findings accepted 62% against
+  36% single-source; 90% of accepted findings came from exactly one reviewer; per-piece reliability 71
+  to 76% (the first version said 100% because it read merged rows, and the real data exposed it);
+  1,376 labelled examples exported. The [ideas register](ideas-register.md) now holds everything
+  that is not in this release, with origin, reason and "worth doing when".
 - Field report, 20 September (it was the owner's own installed clone): the verified updater stopped
   on local changes, which is right, and left the person with nothing to do next. The refusal now
   names the files, says when MOMM's own signed files were edited, and gives three safe choices as
