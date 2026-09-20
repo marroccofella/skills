@@ -55,8 +55,9 @@ The workflow is a repository maintenance feature, not a change to installed MOMM
 on published stable `momm-X.Y.Z` releases, completion of the trusted main-branch signed
 publisher, and manual dispatch after merge to main. The publisher-completion trigger covers
 releases made with GITHUB_TOKEN, whose events do not trigger further release workflows.
-That trigger and manual dispatch check the newest stable MOMM release in the first 100
-release records; they do not backfill all history. There is no polling schedule. It checks
+That trigger and manual dispatch check the first stable MOMM release returned in the first
+100 GitHub release records; this is not a highest-semver upgrade decision and does not
+backfill all history. There is no polling schedule. It checks
 only GitHub release/asset/tag/version metadata. It does not execute code from release tags.
 It records the exact tag commit, checker commit and a link to public workflow history. An issue is created
 per release. One bot-authored summary is updated only when observations change; a closed
@@ -114,6 +115,54 @@ Local verification: deterministic renderer, all site checks (44 pages, 924 local
 privacy test passed. Desktop 1440px and phone 390px previews were inspected; phone navigation,
 reduced-motion visibility and actual video chapter seeking passed with no page errors. These
 local results do not substitute for the PR's cross-platform CI or a post-merge live-site check.
+
+## Follow-up source-file reviews
+
+Run `rev_20260920091639_knoo` captured the actual 13-file source diff rather than a
+bundle. Antigravity returned ACCEPT with no findings; Claude's response failed the
+report-format check (missing or oversized summary). Quorum was 1/2, so this run is
+not a completed review gate. No completion receipt is claimed.
+
+| Reviewer / item | Disposition | Reason and verification |
+| --- | --- | --- |
+| Antigravity: duplicated direct-release test key | Applied (style) | Removed identical duplicate assignment; full regression suite passes, no behavioral change claimed |
+| Antigravity: special release-ID 404 message | Rejected | Existing status-specific error stops the run without publishing an observation; additional wording is optional |
+| Antigravity: job-level permissions | Rejected | There is exactly one job; moving the same permissions would not reduce its effective access |
+
+Final run `rev_20260920092155_2iiq` captured 14 actual source files, including the roadmap
+note. Quorum 2/2: Claude MODIFY (6 findings), Antigravity ACCEPT (0). Both succeeded on
+their first attempt; the enabled invalid-response retry was not used. Agreement score 0
+means no jointly reported findings. Claude's six findings were unique to that route;
+the highest concentration was the regression runner (3), then observer (1), homepage
+test (1) and gallery (1). Model claims of having executed attacks are not test evidence.
+
+| Reviewer / item | Disposition | Reason and verification |
+| --- | --- | --- |
+| Claude: CRLF issue creates duplicate | Applied | Independently reproduced; recognize LF/CRLF identity but retain exact-byte edit refusal. Before exit 1, after 0, zero writes |
+| Claude: imported suite consumes host arguments | Applied | Only direct CLI reads case argument; imports run all cases. Before exit 1, after 0 |
+| Claude: imported failure can be masked | Applied | Suite throws on any failure; seeded failure cannot be hidden by a later exit-code assignment. Before exit 1, after 0 |
+| Claude: homepage/companion count mismatch | Rejected | Current homeCinema does not call companionFilms. Actual home and gallery suites both pass before/after investigation |
+| Claude: missing-token test depends on cwd | Applied | Resolve observer from module URL; execution from docs passes. Before exit 1, after 0 |
+| Claude: same-ID same-hash entry bypasses guard | Applied | Identity guard precedes hash deduplication. Before exit 1, after 0; distinct identities with matching bytes still deduplicate |
+| Claude: narrow issue scan using search/creator | Rejected | Keep bounded enumeration and explicit bot identity checks; search freshness/creator encoding are not established here |
+| Claude: normalize CRLF identity and integrity | Applied with modification | Recognize CRLF identity only; normalization must not silently authorize overwriting an edited body |
+| Claude: export runner and separate CLI arguments | Applied | Exported run, explicit main detection and thrown failure; same argv/failure reproductions pass |
+| Claude: select diagram by ID | Rejected | Current ordered technical paper intentionally begins with the ownership overview; current tests verify it. Optional refactor, no reordered-paper defect reproduced |
+| Claude: rename mutating navigation helper | Rejected | Mutation is explicit at its renderer call and idempotency-tested; optional naming change |
+| Claude: require navigation on every generated page | Rejected | Already iterates every generated MOMM HTML entry and refuses absent/duplicate primary landmarks; tested |
+| Claude: textual workflow-shape test | Rejected | Exact permissions, pinned actions, default-branch checkout and disabled credential persistence were manually checked; optional additional drift coverage |
+| Claude: data-only acceptance of fourth film | Rejected | A new film needs deliberate purpose, category and approval wiring; unknown accepted identity intentionally refuses |
+| Claude: latest endpoint or highest semver | Rejected | Repository latest may be another skill; semver maximum can ignore intentional release ordering. Bounded first-stable selection is explicitly documented |
+| Antigravity: historical pagination | Rejected | Backfill is outside the future-release observer's scope and bound |
+| Antigravity: use path.posix for prefixes | Rejected | Controlled forward-slash paths and nested navigation tests already establish correct depth prefixes |
+
+The governor authored five failing-before/passing-after reproductions, investigated the
+non-reproducing homepage report and reran all six verification suites. Completion validation
+returned `complete: true`, no errors and no unresolved items, with a private receipt for this
+run. It validates these 14 source-file hashes and local records, not all repository history,
+independent execution truth, cross-platform CI, a release or live deployment. Generated
+website outputs were checked separately against the deterministic renderer. Every ruling is
+also retained in the private ledger; no raw report or machine telemetry is published.
 
 ## Still requires engineer/owner review
 
