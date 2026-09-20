@@ -147,41 +147,5 @@
         "display_text": "Start with one meaningful change. MOMM. Keep your agent. Add the review team."
       }
     ]
-  },
-  {
-    "schema": "momm-tour/2",
-    "id": "overview-1.16.0",
-    "title": "MOMM 1.16.0: why the review team exists",
-    "description": "The complete 1.16.0 story: what MOMM means, why it exists, the updated workflow, and the evidence ledger.",
-    "version": "1.16.0",
-    "recorded_date": "2026-09-20",
-    "published_date": null,
-    "status": "pending_human_approval",
-    "narration_speed": 1.5,
-    "duration_seconds": 232.0405,
-    "video_sha256": "00e67901bed10d8a5fb0e2ebf55c8e1b8d66ef8451b6e1b3c4951adfc2119f06",
-    "media_hashes": {
-      "films/overview-1.16.0/walkthrough.mp4": "00e67901bed10d8a5fb0e2ebf55c8e1b8d66ef8451b6e1b3c4951adfc2119f06",
-      "films/overview-1.16.0/poster.jpg": "cbc753b1cbdf9f442d4ab2e2276388e5b8f42856ee92ffab6484af7fe14f50d6",
-      "films/overview-1.16.0/captions.vtt": "a5f03b83d7c3d21ee6cca857ef3970e2046679d983da6a08b5626dbe6026052f"
-    },
-    "voice": "Consented synthetic Dom narration, generated locally with Promptus F5-TTS",
-    "captions_burned_in": true,
-    "human_listening": "pending",
-    "chapters": [
-      {"id":"hook","title":"Your AI moves fast. Who checks it?","start":0,"end":14.72},
-      {"id":"meaning","title":"What MOMM means","start":14.72,"end":32.0},
-      {"id":"purpose","title":"Why it exists","start":32.0,"end":48.8},
-      {"id":"loop","title":"The five-part loop","start":48.8,"end":66.96},
-      {"id":"release","title":"What 1.16.0 adds","start":66.96,"end":87.32},
-      {"id":"safety","title":"Safety by design","start":87.32,"end":111.34},
-      {"id":"evidence","title":"Evidence and limits","start":111.34,"end":133.82},
-      {"id":"install","title":"Install and upgrade","start":133.82,"end":148.18},
-      {"id":"setup","title":"Connect a reviewer","start":148.18,"end":163.96},
-      {"id":"prompt","title":"Ask for the review","start":163.96,"end":179.3},
-      {"id":"decisions","title":"Decisions and quorum","start":179.3,"end":201.5},
-      {"id":"ledger","title":"Your audit notebook","start":201.5,"end":216.62},
-      {"id":"cta","title":"Start with one change","start":216.62,"end":232.0405}
-    ]
   }
 ]

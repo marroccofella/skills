@@ -1,10 +1,11 @@
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import vm from 'node:vm';import {fileURLToPath}from'node:url';
 import {watchOutputs,validateTour}from'./momm-site-videos.mjs';
+import {normalizeNavigation} from './momm-site-community.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),tour=JSON.parse(fs.readFileSync(path.join(root,'docs/momm/tour.json'))),version=JSON.parse(fs.readFileSync(path.join(root,'versions.json'))).momm;
 assert.deepEqual(watchOutputs({...tour,status:'pending'},version,root),{});
 assert.throws(()=>validateTour({...tour,video_sha256:'0'.repeat(64)},root),/hash mismatch/);
 assert.throws(()=>validateTour({...tour,chapters:tour.chapters.map((c,i)=>i===1?{...c,start:0}:c)},root),/timing/);
-const output=watchOutputs(tour,version,root),html=output['docs/momm/watch/overview.html'];assert.equal(fs.readFileSync(path.join(root,'docs/momm/watch/overview.html'),'utf8'),html);
+const output=watchOutputs(tour,version,root);normalizeNavigation(output);const html=output['docs/momm/watch/overview.html'];assert.equal(fs.readFileSync(path.join(root,'docs/momm/watch/overview.html'),'utf8'),html);
 const graph=JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]),video=graph['@graph'].find(x=>x['@type']==='VideoObject');
 assert.equal(video.hasPart.length,12);assert.equal(video.transcript,tour.chapters.map(c=>c.display_text).join('\n\n'));assert(video.contentUrl.startsWith('https://marroccofella.github.io/skills/'));assert.equal(video.uploadDate,tour.published_date);
 assert(html.indexOf('<video')<html.indexOf('Full transcript'));assert(html.includes('id="share-video"'));assert(html.includes('id="copy-video"'));assert(!html.includes('autoplay'));
@@ -20,7 +21,7 @@ assert(fs.readFileSync(path.join(root,'docs/sitemap.xml'),'utf8').includes('/mom
 console.log(JSON.stringify({passed:true,approved_media_hashes:true,chapters:12,structured_data:true,deep_link_logic:true,privacy:true}));
 const companions=JSON.parse(fs.readFileSync(path.join(root,'docs/momm/films.json')));
 for(const f of companions){
-  const pages=watchOutputs(f,version,root,f.id),page=pages[`docs/momm/watch/${f.id}.html`];
+  const pages=watchOutputs(f,version,root,f.id);normalizeNavigation(pages);const page=pages[`docs/momm/watch/${f.id}.html`];
   assert.equal(page,fs.readFileSync(path.join(root,`docs/momm/watch/${f.id}.html`),'utf8'));
   assert(page.includes(`../films/${f.id}/walkthrough.mp4`));
   assert(page.includes(`<h1>${f.title.replaceAll('&','&amp;')}</h1>`));

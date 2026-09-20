@@ -6,6 +6,20 @@ These are dated records, kept as written. Where one says "candidate" it describe
 own date: 1.15.0 and 1.15.1 were released on 13 September 2026 and 1.16.0 on 19 September 2026.
 The current release is whatever `versions.json` and the newest `release-*.md` say, not this file.
 
+## Interactive homepage workflow — September 20, in development
+
+Replaces the static responsibility overview with a nine-stage, browser-only
+workflow: prompt, governor baseline/draft, readiness, scoped sharing, peer review,
+minimum-review gate, claim reproduction, verification/records and owner decision.
+Six governor illustrations exclude the active harness from the depicted peer team.
+Three teaching paths show a reproduced bug, an unmet review minimum and a disproved
+claim. The before/after price-summing fixture executes deterministic JavaScript;
+it is not a live-provider comparison or a claim that an unaided agent cannot test.
+Explicit play/pause and step controls stop at the end or failed gate. Reduced-motion
+users step manually; the complete written workflow remains available without JS.
+This work neither changes the installed skill nor approves an unfinished film.
+Deployment is pending review, privacy checks and owner publication approval.
+
 ## Homepage cinema and diagram library — September 14
 
 The first page presents the approved introduction with real scene thumbnails and

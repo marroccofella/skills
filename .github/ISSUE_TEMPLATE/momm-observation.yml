@@ -1,0 +1,31 @@
+name: MOMM observation or suggestion
+description: Reproducible public evidence and a proposed improvement, not private review logs.
+title: "MOMM observation: "
+body:
+  - type: markdown
+    attributes:
+      value: "Use synthetic examples. Do not include secrets, account identifiers, home paths or private ledgers. Do not disclose security-sensitive details publicly."
+  - type: input
+    id: version
+    attributes:
+      label: MOMM version and full commit
+    validations:
+      required: true
+  - type: textarea
+    id: observation
+    attributes:
+      label: Expected and observed behavior
+      description: Separate what you measured from what you infer.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction and relevant output
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement and acceptance check
+      description: Say whether this is a 1.16.1 safety correction or a possible 1.17 feature; maintainers decide scope.

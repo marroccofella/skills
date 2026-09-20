@@ -1,0 +1,30 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import {mediaBody, normalizeNavigation, improvementBody} from './momm-site-community.mjs';
+const read=name=>fs.readFileSync(new URL('../docs/momm/'+name,import.meta.url),'utf8');
+const tour=JSON.parse(read('tour.json')), films=JSON.parse(read('films.json'));
+const gallery=mediaBody(tour,films,'1.16.0');
+assert.equal((gallery.match(/<section aria-labelledby=/g)||[]).length,3);
+assert(!gallery.includes('<video'),'gallery links to a single watch page per film, not duplicate players');
+assert(gallery.includes('overlaps with the full film'));
+assert(!mediaBody({...tour,status:'pending'},[], '1.16.0').includes('watch/overview.html'));
+assert.equal((mediaBody(tour,[{...films[0],video_sha256:tour.video_sha256}],'1.16.0').match(/<section aria-labelledby=/g)||[]).length,1,'identical bytes are not separate films');
+assert.throws(()=>mediaBody(tour,[{...tour}],'1.16.0'),/Duplicate accepted film identity/,'identity collisions must fail even when bytes match');
+assert(!mediaBody({...tour,title:'<script>unsafe</script>'},[],'1.16.0').includes('<script>'));
+const fixture={'docs/momm/watch/overview.html':'<nav aria-label="Main navigation"><a>old</a></nav>'};
+normalizeNavigation(fixture);assert(fixture[Object.keys(fixture)[0]].includes('href="../media.html"'));
+const first=JSON.stringify(fixture);normalizeNavigation(fixture);assert.equal(JSON.stringify(fixture),first);
+for(const name of ['index.html','media.html','improvement.html','watch/overview.html','releases/1.16.0.html','data/index.html']){
+  const html=read(name),prefix=name.includes('/')?'../':'';
+  assert(html.includes(`href="${prefix}media.html"`),name);
+  assert(html.includes(`href="${prefix}improvement.html"`),name);
+}
+assert(!read('home-player.mjs').includes('overview-1.16.0'),'player must not silently swap approved media');
+assert(!read('index.html').includes('films/overview-1.16.0'));
+assert(!read('media.html').includes('overview-1.16.0'));
+assert(read('media.html').includes('rel="canonical"'));
+assert(read('improvement.html').includes('og:title'));
+assert(read('install.html').includes('One prompt, several explicit choices'));
+assert(!read('reference.html').includes('updates are never automatic'));
+assert(improvementBody().includes('No model calls'),'privacy boundary');
+console.log('Community pages: catalogue, duplicates, escaping, static nested navigation, truthful install/update copy and approval boundary pass.');
