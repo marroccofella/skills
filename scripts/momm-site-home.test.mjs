@@ -29,7 +29,7 @@ assert(!diagrams.includes('10% shared-blind-spot floor'));
 const home=fs.readFileSync(new URL('../docs/momm/index.html',import.meta.url),'utf8');
 assert.equal((home.match(/id="walkthrough"/g)||[]).length,1);
 assert.equal((home.match(/MOMM HOME COMPANIONS/g)||[]).length,1);
-assert(home.indexOf('id="walkthrough"')<home.indexOf('id="architecture-library"'));
+assert(home.indexOf('id="architecture-library"')<home.indexOf('id="walkthrough"'));
 assert.equal((home.match(/<figure /g)||[]).length,1);
 assert(!home.includes('private-draft-films'));
 assert(!home.includes('The written walkthrough below is ready.'));

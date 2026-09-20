@@ -14,6 +14,10 @@ version boundaries, reviewer rulings and deployment prerequisites are recorded i
 [the website improvement work record](../docs/momm/improvement-plan.md).
 The observer proposes follow-up in one GitHub issue per stable release; it never
 executes model suggestions, exports private ledgers or authorizes its own fixes.
+The homepage workflow extension adds an explicitly illustrative, browser-only
+prompt-to-evidence flow with one governor, read-only reviewers, quorum failure and
+claim-reproduction paths. It is website teaching material, not a new runtime feature
+or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 

@@ -1,6 +1,6 @@
 // The homepage presents existing approved media, not promised or held films.
 import {runtimeLabel} from './momm-site-videos.mjs';
-import {technicalBody} from './momm-site-technical.mjs';
+import {homeWorkflow} from './momm-site-flow.mjs';
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 export function homeCinema(tour,version,companions=[]){
@@ -21,15 +21,6 @@ export function companionFilms(films,version){
     return `<article class="companion-film"><div class="poster-player"><video id="home-${id}" controls playsinline preload="none" poster="films/${id}/poster.jpg" aria-label="${title}"><source src="films/${id}/walkthrough.mp4" type="video/mp4"><track kind="captions" srclang="en" label="English (also in picture)" src="films/${id}/captions.vtt"><p><a href="films/${id}/walkthrough.mp4">Download video</a></p></video><a class="film-start" data-play="home-${id}" href="watch/${id}.html" aria-label="Play ${title} here"><span aria-hidden="true">▶</span> Play ${id==='setup'?'setup guide':'trailer'}</a></div><div class="companion-copy"><p class="eyebrow">${id==='setup'?'THE PRACTICAL WALKTHROUGH':'THE BIG IDEA'} · ${esc(runtimeLabel(f.duration_seconds))}</p><h3>${title}</h3><p>${esc(f.description)}</p><a href="watch/${id}.html">Chapters, transcript &amp; share →</a><p class="film-provenance">Recorded ${esc(f.recorded_date)} with MOMM ${esc(f.version)}. Consented synthetic Dom voice at ${esc(f.narration_speed)}×.${f.version!==version?' Current release: '+esc(version)+'.':''}</p></div></article>`;
   }).join('')+'</div>';
 }
-export function homeDiagrams(data,stats,version){
-  const paper=technicalBody(data,stats,version);
-  const figures=[...paper.matchAll(/<figure class="architecture[^\"]*" id="([^"]+)">[\s\S]*?<\/figure>/g)];
-  const labels=[['Who owns what','Your agent, MOMM, the CLI routes and the evidence.'],['The complete review loop','Baseline → peer review → investigate → verify → record.'],['What crosses the boundary','Local control, external inference, explicit sharing.'],['From claim to evidence','Input hashes, immutable reports and governor decisions.'],['How many reviewers answered','Actual participation in the public development snapshot.'],['Why diversity beats headcount','An assumption model of independent and shared errors.'],['Where parallelism saves waiting','A toy timing comparison, not a productivity benchmark.']];
-  if(figures.length!==labels.length)throw Error('Homepage diagram library is out of sync with technical paper');
-  return `<section id="architecture-library" class="home-diagrams"><div class="cinema-heading"><div><p class="eyebrow">UNDER THE HOOD · ONE RESPONSIBLE WRITER</p><h2>Not a black box.<br><span>A workflow you can inspect.</span></h2></div><p>Start with who does what. The architecture guide holds all seven diagrams, implementation links and the limits of the evidence.</p></div><div class="diagram-library">${figures.slice(0,1).map(([figure,id],i)=>{
-    // Reuse the source diagrams rather than allowing homepage illustrations to drift.
-    // Their ids are namespaced because this page has its own evidence sections.
-    let content=figure.replace(/\bid="([^"]+)"/g,(_,value)=>`id="home-${value}"`).replace(/aria-labelledby="([^"]+)"/g,(_,value)=>`aria-labelledby="${value.split(' ').map(v=>'home-'+v).join(' ')}"`).replace('Exact values are in the following table.','Exact values are in the linked technical paper.');
-    return `<details class="diagram-topic${i===0?' diagram-main':''}"${i===0?' open':''}><summary><span class="diagram-number">0${i+1}</span><span><strong>${labels[i][0]}</strong><small>${labels[i][1]}</small></span><span class="diagram-toggle" aria-hidden="true">+</span></summary><div class="diagram-content">${content}<a class="text-link" href="technical.html#${id}">Read the method and limitations →</a></div></details>`;
-  }).join('')}</div><div class="actions"><a class="button" href="technical.html">Full technical paper →</a><a class="button" href="technical.html#stacking-controls">Try the stacking calculator →</a><a class="button" href="evidence.html">Download the real data →</a></div><p class="film-provenance">Architecture baseline: MOMM 1.15.1. Historical counts and hypothetical models are labelled separately. Neither establishes a universal accuracy or productivity multiplier.</p></section>`;
+export function homeDiagrams(){
+  return homeWorkflow();
 }

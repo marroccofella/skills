@@ -179,10 +179,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   }
   output['docs/momm/index.html'] = output['docs/momm/index.html']
     .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
-    .replace('<section class="principles">', () => homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + homeDiagrams(data, s, version) + '<section class="principles">')
+    .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
     .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
-    .replace('</head>', '<link rel="stylesheet" href="home.css"><script type="module" src="home-player.mjs"></script></head>')
-    .replace('See a real review</a>', 'See a real review</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
+    .replace('</head>', '<link rel="stylesheet" href="home.css"><link rel="stylesheet" href="workflow.css"><script type="module" src="home-player.mjs"></script><script type="module" src="workflow.mjs"></script></head>')
+    .replace('See a real review</a>', 'See a real review</a><a class="button" href="#architecture-library">Explore the workflow ↓</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
   output['docs/momm/start.html'] = output['docs/momm/start.html'].replace('<section id="install">', `<section class="notice"><h2>Recommended: let your agent verify the release first</h2><p><a class="button primary" href="install.html">Install or upgrade in one line →</a></p><p>A clone starts on the default branch, which can contain unreleased work. Before executing the manual installer below, select the published signed release, verify its expected signing identity and package hash, and read its installer help. The copyable prompt covers those steps and asks before installing missing prerequisites.</p></section><section id="install">`);
   const releaseEvidence = releaseChecks(catalogue, version);
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html']
