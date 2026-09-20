@@ -103,6 +103,40 @@ try {
     await assert.rejects(command(["--apply", "--yes", "--accept-protocol"]), /local changes/);
     assert.equal(fs.readFileSync(path.join(installed, "keep.txt"), "utf8"), "user-owned"); fs.unlinkSync(path.join(installed, "keep.txt"));
   });
+  // Reported from the field on 20 September 2026: the verified updater stopped on local changes, which is
+  // right, and left the person with nothing to do next, which is not. The refusal must name the files,
+  // say whether MOMM's own signed files were edited, and give safe choices. It still changes nothing.
+  await test("local_changes_refusal_names_the_files_and_offers_safe_ways_forward", async () => {
+    write(installed, "momm/scripts/local-note.test.mjs", "// mine\n");
+    const tracked = path.join(installed, "momm/SKILL.md"), before = fs.readFileSync(tracked);
+    fs.appendFileSync(tracked, "\nmy local edit\n");
+    const head = git(installed, "rev-parse", "HEAD"), branches = git(installed, "branch", "--list");
+    let error; try { await command(["--apply", "--yes", "--accept-protocol"]); } catch (e) { error = e; }
+    try {
+      assert(error, "the update must be refused"); assert.equal(error.code, "local_changes");
+      assert.match(error.message, /local changes/);
+      assert.match(error.message, /momm\/SKILL\.md/); assert.match(error.message, /momm\/scripts\/local-note\.test\.mjs/);
+      assert.match(error.message, /untracked/); assert.match(error.message, /modified/);
+      assert.match(error.message, /not the signed release/i, "an edited MOMM file means what runs today is not the verified release");
+      assert.match(error.message, /switch -c/, "keeping the changes on a branch is offered, as commands the OWNER runs");
+      assert.match(error.message, /never stash, overwrite, reset or discard/i);
+      assert.deepEqual(error.changes.map(c => c.path).sort(), ["momm/SKILL.md", "momm/scripts/local-note.test.mjs"]);
+      // Nothing was touched: same commit, same branches, both local changes still there.
+      assert.equal(git(installed, "rev-parse", "HEAD"), head); assert.equal(git(installed, "branch", "--list"), branches);
+      assert.equal(fs.readFileSync(path.join(installed, "momm/scripts/local-note.test.mjs"), "utf8"), "// mine\n");
+      assert(fs.readFileSync(tracked, "utf8").endsWith("my local edit\n"));
+    } finally { fs.writeFileSync(tracked, before); fs.unlinkSync(path.join(installed, "momm/scripts/local-note.test.mjs")); }
+  });
+  await test("local_changes_refusal_is_bounded_and_inert_for_hostile_file_names", async () => {
+    for (let i = 0; i < 40; i++) write(installed, `junk/file-${i}.txt`, "x");
+    write(installed, "junk/$(touch PWNED) `x` & echo.txt", "x");
+    let error; try { await command(["--apply", "--yes", "--accept-protocol"]); } catch (e) { error = e; }
+    try {
+      assert.equal(error?.code, "local_changes"); assert(error.message.length < 6000, "bounded message");
+      assert.match(error.message, /and \d+ more/); assert.equal(fs.existsSync(path.join(installed, "PWNED")), false);
+      assert(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(error.message));
+    } finally { fs.rmSync(path.join(installed, "junk"), { recursive: true, force: true }); }
+  });
   await test("pinned_channel_requires_explicit_version", async () => {
     await command(["--channel", "pinned"]);
     await assert.rejects(command(["--dry-run"]), /Pinned channel/);

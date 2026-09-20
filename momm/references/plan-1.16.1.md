@@ -218,6 +218,12 @@ No 1.17 item starts before the signed `momm-1.16.1` tag exists.
   commit ids and to the head commit's file bytes; the completion state names the source and the
   pieces; 12 tests on a real temporary repository. Still owed for A3: `momm-check/1` verification
   manifests produced by a tool rather than by hand, and attempt ids (they arrive with C).
+- Field report, 20 September (it was the owner's own installed clone): the verified updater stopped
+  on local changes, which is right, and left the person with nothing to do next. The refusal now
+  names the files, says when MOMM's own signed files were edited, and gives three safe choices as
+  commands the owner runs; it still changes nothing. A parser slip that ate the first letter of the
+  first path was caught by the new test before it shipped. Belongs to item 7: an upgrade has to be
+  something a person can finish.
 - Found on the way, fixed, and now guarded: a tool had expanded a regex escape into raw control
   bytes in `installations.mjs`, so Git classed the file as binary and the first real `--range` run
   refused it. `scripts/source-hygiene.test.mjs` fails if any tracked text source has a raw control

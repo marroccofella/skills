@@ -305,8 +305,47 @@ export function verifySignature(root, ref, channel) {
       : `signature_unverified: verification did not succeed; stop. Check the verifier diagnostic and network access, not GitHub's bad_cert/Unverified badge. That badge is not a gitsign verdict. ${e.message}`), { code: missing ? "gitsign_missing" : "signature_unverified" });
   }
 }
+// A clone with local changes is never updated, stashed, reset or overwritten. Refusing is the easy
+// half; the person also has to be able to get unstuck (field report, 20 September 2026). So the
+// refusal names the files, says when MOMM's own files were edited (what runs today is then not the
+// signed release), and gives the safe choices as commands the OWNER runs. It changes nothing.
+export function localChanges(root) {
+  const raw = git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all");
+  if (!raw) return [];
+  const fields = raw.split("\0").filter(Boolean), changes = [];
+  for (let i = 0; i < fields.length; i++) {
+    // The git() helper trims its output, so a first record such as " M path" arrives as "M path".
+    const record = /^([ MADRCUT?!]{2}) ([^]*)$/.exec(fields[i]) ?? /^([MADRCUT?!]) ([^]*)$/.exec(fields[i]);
+    if (!record) continue;
+    const code = record[1].padStart(2), file = record[2];
+    if (code[0] === "R" || code[0] === "C") i++; // the next field is the old name
+    changes.push({ path: file, state: code === "??" ? "untracked" : code.includes("D") ? "deleted" : code.includes("A") ? "added" : "modified" });
+  }
+  return changes;
+}
 function clean(root) {
-  if (git(root, "status", "--porcelain", "--untracked-files=all")) throw new Error("Checkout has local changes or untracked files. Commit or move them yourself; MOMM will not stash, overwrite or discard them.");
+  const changes = localChanges(root);
+  if (!changes.length) return;
+  const label = p => safeText(p).replace(/[^A-Za-z0-9._\/ -]/g, "?").slice(0, 160);   // shown, never run
+  const shown = changes.slice(0, 12).map(c => `  ${c.state.padEnd(9)} ${label(c.path)}`);
+  const more = changes.length > 12 ? [`  ... and ${changes.length - 12} more (git status lists them all)`] : [];
+  const edited = changes.filter(c => c.state !== "untracked" && /^momm\//.test(c.path));
+  const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const lines = [
+    "Checkout has local changes or untracked files, so nothing was updated. MOMM will never stash, overwrite, reset or discard them.",
+    "", ...shown, ...more, "",
+    ...(edited.length ? [`${edited.length} of these are MOMM's own files. While they are edited, what this harness runs is NOT the signed release it claims to be.`, ""] : []),
+    "Safe ways forward. You choose and you run them; MOMM runs none of these:",
+    "  1. Keep the changes on a branch of their own (nothing is lost, the update can then proceed):",
+    `       git -C "<this clone>" switch -c local/momm-changes-${stamp}`,
+    `       git -C "<this clone>" add -A && git -C "<this clone>" commit -m "my local MOMM changes"`,
+    `       git -C "<this clone>" switch --detach ${safeText(git(root, "rev-parse", "HEAD")).slice(0, 40)}`,
+    "     then run the update again. Your changes stay on that branch; compare them with the new release afterwards.",
+    "  2. Copy the files somewhere outside this clone, restore the clone yourself, then run the update again.",
+    "  3. Leave this clone exactly as it is and prepare the new release in a separate verified folder (bootstrap guide: --prepare).",
+    "If you did not make these changes, find out who did before choosing: another tool or session may be working in this clone.",
+  ];
+  throw Object.assign(new Error(lines.join("\n")), { code: "local_changes", changes });
 }
 function policyDiff(root, from, to) {
   // Dispatcher contains default rules and personas. Show its whole diff rather

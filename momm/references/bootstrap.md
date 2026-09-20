@@ -10,6 +10,7 @@ invented receipt, an unsigned tag, or a force flag.
 | Observation | Meaning | Next step |
 | --- | --- | --- |
 | `gitsign_missing` | No signature check ran. Expected on a first install: most machines do not have the verifier yet | Ask once, in plain words, then install it as described under [Getting the verifier](#getting-the-verifier-gitsign-once) |
+| `local_changes` | The installed clone has edited or untracked files, so nothing was updated. Correct and safe | Do not stash, reset or overwrite. Tell the person which files, then let THEM choose: keep the changes on a branch, copy them out, or prepare the new release in a separate verified folder. If they did not make the edits, find out who did first |
 | `gitsign_unusable` | Installed verifier cannot perform the required check | Inspect its version/help and official installation instructions; do not bypass |
 | GitHub `bad_cert` / Unverified | GitHub's badge is not a Sigstore verification result | Use gitsign with the expected release-workflow identity, issuer and transparency checks |
 | `signature_unverified` | Required verification did not succeed | Stop; inspect network, trust-service and identity diagnostics. Do not assume tampering or assume safety |
