@@ -12,6 +12,7 @@ import { watchOutputs } from './momm-site-videos.mjs';
 import {technicalBody, brandBadge, ensembleObservations} from './momm-site-technical.mjs';
 import {homeCinema,homeDiagrams} from './momm-site-home.mjs';
 import {mediaBody, improvementBody, normalizeNavigation, navigationLinks} from './momm-site-community.mjs';
+import {llmsText} from './momm-site-discovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = v => createHash("sha256").update(v).digest("hex");
@@ -191,7 +192,8 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
     .replace('Read the release’s verification record →', 'Read the historical 1.13.0 fix record →');
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('<section id="privacy">', `<section id="modalities"><h2>Not just code: prose and supported attachments</h2><p>Use MOMM for manuscripts, specifications and other text when sharing with the selected providers is permitted. The same rule applies: reviewers make claims; the governor verifies and records decisions.</p><p>Text routes include Codex, Claude Code, Antigravity, Copilot and Grok. Verified attachment adapters differ: Codex supports images; Claude supports images and PDFs; Gemini supports images, PDFs, audio and video where the account is eligible. Other routes stay text-only until verified. Run preflight for the installed adapter’s actual capability; a provider logo is not evidence of multimedia support.</p><p>The historical public ledger contains the manuscript specimen <code>rev_20260904131823_wvxh</code>. <a href="../evidence/index.html">Inspect the sanitized specimen →</a> · <a href="https://github.com/marroccofella/skills/blob/main/momm/SKILL.md">Read the current protocol ↗</a></p><p>Strict review-contract rejection and input/source size ceilings remain possible. The source completion validator covers local text and supported Git text additions/modifications, not every binary, rename, deletion or media lifecycle.</p></section><section id="privacy">`);
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('</main>', () => answerSection()+'</main>');
-  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p></section><section class="cta">');
+  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p><p>Reading with an assistant? <a href="llms.txt">Plain-text MOMM guide (llms.txt)</a> · <a href="../sitemap.xml">Site map</a>. The same workflow and safety boundaries are available in the written guides; no video or JavaScript is required to understand them.</p></section><section class="cta">');
+  output['docs/momm/llms.txt'] = llmsText(version);
   output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">', () => projectStory()+'<section class="cta">');
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html'].replace('<section id="real-review">', () => evidenceBenefits(s)+'<section id="real-review">');
   output['docs/momm/data/route-outcomes.json'] = JSON.stringify(chartSeries(data).routes, null, 2) + '\n';
