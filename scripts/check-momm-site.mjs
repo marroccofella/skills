@@ -10,6 +10,7 @@ await import("./ledger-ui.test.mjs");
 await import("./momm-site-visuals.test.mjs");
 await import("./momm-site-videos.test.mjs");
 await import("./momm-site-search.test.mjs");
+await import("./momm-site-discovery.test.mjs");
 await import("./momm-site-regression.test.mjs");
 await import("./momm-site-technical.test.mjs");
 await import("./momm-site-home.test.mjs");
