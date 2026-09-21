@@ -106,7 +106,14 @@ export function validateMedia(buffer, filename, { allowText = false } = {}) {
 }
 export function readMedia(file, options) {
   const absolute = path.resolve(file);
-  for (let p = absolute;; p = path.dirname(p)) { if (fs.lstatSync(p).isSymbolicLink()) return refuse('symlink or junction path'); if (p === path.dirname(p)) break; }
+  // No link INSIDE the project tree (options.root, by default the working directory): a link planted in
+  // a reviewed project could point at the user's private files. Folders ABOVE the project are the
+  // machine's own layout (macOS reaches every temp folder through /var -> /private/var) and are not
+  // refused. The file itself is never followed, wherever it lies.
+  const root = path.resolve(options?.root ?? process.cwd());
+  const within = (p) => { const rel = path.relative(root, p); return rel !== '' && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
+  if (fs.lstatSync(absolute).isSymbolicLink()) return refuse('symlink or junction path');
+  for (let p = path.dirname(absolute); within(p); p = path.dirname(p)) if (fs.lstatSync(p).isSymbolicLink()) return refuse('symlink or junction path');
   const before = fs.lstatSync(absolute);
   if (!before.isFile() || before.size > Math.max(...Object.values(MEDIA_CAPS))) return refuse('not a bounded regular file');
   const fd = fs.openSync(absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
