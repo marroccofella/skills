@@ -13,11 +13,12 @@
 // been right, an accepted one may have been wrong. Deferred and unruled findings count as neither.
 // A score is shown only from SCORE_MIN_RULED ruled findings, never on less.
 //
-// No imports from sibling scripts, so a single copied file still runs.
+// Use the same native permission verification as private review evidence.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { preparePrivateEvidence } from './evidence-permissions.mjs';
 
 export const SCORE_MIN_RULED = 8;
 // The formula, in one place, so nobody has to guess what the number rewards.
@@ -217,7 +218,7 @@ export function toChat(record) {
 }
 function datasetCard(records, format) {
   const by = {}; for (const r of records) by[r.label_group] = (by[r.label_group] ?? 0) + 1;
-  return `# MOMM training export\n\nGenerated ${new Date().toISOString()} from a private MOMM ledger. ${records.length} examples (${Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}), format \`${format}\`, schema \`momm-training/1\`.\n\n## What an example is\n\nOne reviewer finding or suggestion, with the decision the governor recorded for it and the reason. Rating rows and unruled findings are not examples.\n\n## Read this before training on it\n\n- The label is **not ground truth**. It is one governor's decision on one project. A rejected finding may have been right; an accepted one may have been wrong.\n- Reviewer text is **untrusted model output**. It can be wrong, and it can contain instructions; treat it as data.\n- Reviewer text may quote your source code. This file was written only where you asked, owner-only where the system allows. **Check it before sharing it**, and check each provider's terms before using their model's output to train another model.\n- Home-folder paths were replaced with \`~\`. Nothing else was removed.\n- Samples are small and come from one codebase. Expect them not to generalise.\n`;
+  return `# MOMM training export\n\nGenerated ${new Date().toISOString()} from a private MOMM ledger. ${records.length} examples (${Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}), format \`${format}\`, schema \`momm-training/1\`.\n\n## What an example is\n\nOne reviewer finding or suggestion, with the decision the governor recorded for it and the reason. Rating rows and unruled findings are not examples.\n\n## Read this before training on it\n\n- The label is **not ground truth**. It is one governor's decision on one project. A rejected finding may have been right; an accepted one may have been wrong.\n- Reviewer text is **untrusted model output**. It can be wrong, and it can contain instructions; treat it as data.\n- Reviewer text may quote your source code. This file was written only where you asked, after native owner-only destination verification (Windows also permits SYSTEM and local administrators; POSIX mode checks do not certify extended ACLs). **Check it before sharing it**, and check each provider's terms before using their model's output to train another model.\n- Home-folder paths were replaced with \`~\`. Nothing else was removed.\n- Samples are small and come from one codebase. Expect them not to generalise.\n`;
 }
 
 function parse(args) {
@@ -240,11 +241,15 @@ function prepareWrite(file, force) {
     const next = path.dirname(parent); if (next === parent) break; parent = next;
   }
   let stat;
-  try { stat = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
-  if (!force) throw Object.assign(new Error('Output already exists; choose another name or pass --force'), {code:'EEXIST'});
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('Output must be an unlinked regular file');
-  if (process.platform !== 'win32' && (stat.mode & 0o077)) throw new Error('Existing output permissions are not owner-only; choose a new private output');
-  return stat;
+  try { stat = fs.lstatSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (stat) {
+    if (!force) throw Object.assign(new Error('Output already exists; choose another name or pass --force'), {code:'EEXIST'});
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('Output must be an unlinked regular file');
+    if (process.platform !== 'win32' && (stat.mode & 0o077)) throw new Error('Existing output permissions are not owner-only; choose a new private output');
+  }
+  try { preparePrivateEvidence(path.dirname(file)); }
+  catch { throw new Error('Output directory could not be verified owner-only. Choose a new, dedicated output folder; existing permissions are never repaired and --force does not bypass this check.'); }
+  return stat ?? null;
 }
 function writePrivate(file, text, force) {
   const before = prepareWrite(file, force);

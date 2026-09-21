@@ -37,6 +37,9 @@ jobs:
       - name: Media byte validation
         timeout-minutes: 2
         run: node momm/scripts/media-bytes.test.mjs
+      - name: Scope audit closure and native export permissions
+        timeout-minutes: 3
+        run: node momm/scripts/scope-closure.test.mjs
       - name: Installation completion boundary
         timeout-minutes: 2
         run: node momm/scripts/install-completion.test.mjs

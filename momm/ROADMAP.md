@@ -27,6 +27,14 @@ in this file gets to say "current". Website notes live in
 
 ## 1.16.1 implementation checkpoint
 
+Scope-audit closure: update-clock failures clear the previous result; scorecard
+exports create a private destination or refuse an existing non-private one,
+including Windows DACL and forced companion-file checks. No existing permissions
+are repaired. A dedicated current acceptance guide replaces historical test plans
+for this candidate, with invalid-output retry and explicit ledger-ticket tests.
+Native synthetic regressions are in `momm/scripts/scope-closure.test.mjs` (repository root). These fixes
+do not close the separate signed lifecycle, whole-source or live-image gates.
+
 21 September implementation checkpoint (not a release): the 1.16.1 candidate adds byte-based
 media checks, seven-day successful-probe expiry, immutable attempt files, cumulative coverage
 audits, a governor-selected test runner producing verification records, failed-attempt accounting,

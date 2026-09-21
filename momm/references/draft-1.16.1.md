@@ -16,6 +16,13 @@ The existing installation inventory, dirty-clone guidance, effectiveness scoreca
 training export are retained. Scorecards reflect governor rulings, not objective model quality.
 Private evidence and project content are not published automatically.
 
+The scope-audit follow-up clears stale update success after a failure and verifies
+training-export destinations with the native privacy checker, on Windows as well
+as POSIX. A new dedicated destination can be created privately; an existing unsafe
+directory or companion file is refused, even with `--force`. Existing permissions
+are not changed. The current [acceptance guide](third-party-test-plan-1.16.1.md)
+adds the missing retry and ledger-ticket steps.
+
 Final native lifecycle, live image, candidate CI, peer dispositions and publication gates remain
 open. See [the gate record](gates-1.16.1.md). Do not install an unsigned branch as a signed release.
 

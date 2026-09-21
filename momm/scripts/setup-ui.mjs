@@ -847,7 +847,7 @@ function runClockActivity(event, work) {
   clockActivity.last_started_at = new Date().toISOString();
   clockInflight = Promise.resolve().then(work)
     .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
-    .catch((error) => { clockActivity.last_error = safeDetail(error.message); throw error; })
+    .catch((error) => { clockActivity.last_result = null; clockActivity.last_error = safeDetail(error.message); throw error; })
     .finally(() => { clockInflight = null; clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
   return clockInflight;
 }

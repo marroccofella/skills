@@ -1,5 +1,9 @@
 # 1.16.1 offline test catalog
 
+`momm/scripts/scope-closure.test.mjs` reproduces stale update results, native
+owner-only export/refusal (including forced companion overwrite), and checks
+the current acceptance guide's retry and ledger-ticket instructions.
+
 `momm/scripts/review-final-regressions.test.mjs` tests exact CI deadline matching and CLI diagnostics.
 `momm/scripts/review-refutations.test.mjs` tests disputed review boundaries and independent audit identities.
 `momm/scripts/review-followup.test.mjs` tests split-quorum reporting, bounded stdin,

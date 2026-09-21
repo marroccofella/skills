@@ -1,5 +1,11 @@
 # MOMM acceptance test plan
 
+**Historical 1.9.1 plan.** For 1.16.1 use
+[the current acceptance guide](third-party-test-plan-1.16.1.md), including
+`--retry-invalid` and the explicit `/api/ledger-ticket` expiry procedure. Do not
+use the old statuses, command inventory or raw-log publishing instructions below
+as the current release contract. Public results must be sanitized.
+
 A self-contained conformance plan for **momm 1.9.1**. Hand this whole file to a fresh agent session (any harness), have it run the exercises in order, and paste its filled-in results back to the requester for verification.
 
 ## How to use this plan
