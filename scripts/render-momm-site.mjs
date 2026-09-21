@@ -11,6 +11,8 @@ import { definition, answerSection, enhanceSearch, projectStory, evidenceBenefit
 import { watchOutputs } from './momm-site-videos.mjs';
 import {technicalBody, brandBadge, ensembleObservations} from './momm-site-technical.mjs';
 import {homeCinema,homeDiagrams} from './momm-site-home.mjs';
+import {mediaBody, improvementBody, normalizeNavigation, navigationLinks} from './momm-site-community.mjs';
+import {llmsText} from './momm-site-discovery.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = v => createHash("sha256").update(v).digest("hex");
@@ -52,7 +54,7 @@ export function stats(data) {
     dispositions: dispositions.length, decisions: counts(dispositions), coalition: { total: coalition.length, ...counts(coalition) },
     routes: routeRows, severity, by_day: byDay };
 }
-const nav = [["index.html", "Overview"], ["install.html", "Install"], ["start.html", "Get started"], ["updates.html", "Update safely"], ["evidence.html", "Evidence"], ["technical.html", "Architecture"], ["reference.html", "Reference"], ["releases/index.html", "Versions"]];
+const nav = navigationLinks;
 function shell(file, title, body, version) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="MOMM: multi-model review through your existing CLI logins. One driving agent, independent review claims, explicit decisions and a private evidence trail."><meta name="theme-color" content="#080a0a"><title>${esc(title)} · MOMM</title><link rel="stylesheet" href="site.css"><script src="site.js" defer></script></head>
@@ -67,7 +69,7 @@ function installBody(root) {
   return `<section class="page-hero"><p class="eyebrow">INSTALL OR UPGRADE</p><h1>One line.<br><span>Your agent does the rest.</span></h1><p class="lead">Paste this into Claude Code, Codex, Antigravity, Copilot or Grok. It works for a new installation and for an upgrade.</p></section>
 <div class="doc-body wide">
 <div class="code"><div class="code-label"><span>Paste into your coding agent</span><button type="button" data-copy="install-one-line" aria-label="Copy the install line">Copy</button></div><pre id="install-one-line" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>${esc(INSTALL_ONE_LINE)}</code></pre></div>
-<aside class="notice"><strong>Expect one question on a first install.</strong><p>MOMM checks that a release is genuine before it installs anything. That needs a small verifier called <code>gitsign</code>, from the Sigstore project (the signing system npm and Kubernetes use). Most machines do not have it yet, so your agent will stop and ask to install it, once, for your user account only. Say yes and it carries on. It is the safety check working, not a fault, and upgrades never ask again. <a href="releases/bootstrap.html#getting-the-verifier-gitsign-once">What it installs, per system →</a></p></aside>
+<aside class="notice"><strong>One prompt, several explicit choices.</strong><p>Your agent checks prerequisites and the signed release, shows an installation preview and asks before applying changes. If the signature verifier <code>gitsign</code> is missing, installing it needs separate approval. Read the protocol and default review-behavior changes before accepting them: these can affect future projects, not just this session. An upgrade can ask again when those terms or prerequisites change. Automatic updates are off by default; only you can opt in. <a href="releases/bootstrap.html#getting-the-verifier-gitsign-once">Verifier setup →</a></p></aside>
 <h2>What happens next</h2>
 <ol><li><strong>It looks first.</strong> Your agent finds any existing MOMM, your harness and your version, and tells you what would change.</li><li><strong>It verifies before it runs anything.</strong> The release is checked against its signed tag and package hash. If the verifier (gitsign) is missing, it stops and asks you; it never skips the check.</li><li><strong>It shows you a dry run and asks.</strong> Nothing is installed or replaced until you say yes.</li><li><strong>It keeps what is yours.</strong> Reviewer logins, other skills and your private review ledgers stay as they are. It never asks for an API key.</li></ol>
 <p>Prefer to read before you paste? <a href="releases/bootstrap.html">The complete installation guide</a> · <a href="updates.html">How updates and rollback work</a> · <a href="releases/index.html">Every version</a></p>
@@ -88,7 +90,7 @@ export function pages(data, s, version) {
   const snapshot = esc(data.generated.slice(0, 10));
   const overview = `<section class="hero"><div>${eyebrow("MIXTURE OF MODEL MODALITY")}
     <a class="release-pill" href="${link}"><span class="dot"></span> ${esc(version)} · version notes <span>↗</span></a>
-    <h1>One agent writes.<br><span>Others challenge it.</span><br>You keep the evidence.</h1>
+    <h1>Give your AI agent<br><span>a review team.</span></h1>
     <p class="lead">${esc(definition)}</p>
     <div class="actions"><a class="button primary" href="install.html">Install in one line <span>→</span></a><a class="button" href="start.html">Get started</a><a class="button" href="evidence.html#real-review">See a real review</a></div><p class="micro">Local orchestration · your existing account logins · no API-key setup</p></div>
     <div class="review-card" aria-label="Illustrative review flow, not a live run"><div class="card-bar"><span>REVIEW / THREE DISTINCT ROLES</span><span class="dot"></span></div><div class="flow-row"><span class="model governor">G</span><div><strong>Your current agent</strong><small>Writes the change. Does not review itself.</small></div><span class="role">governor</span></div><div class="flow-divider">↓ sanitized input to selected providers</div><div class="reviewers"><span class="model codex">CX</span><span class="model claude">CL</span><span class="model agy">AG</span><span class="model copilot">CP</span><span class="model grok">GK</span></div><p class="card-caption">Choose ready external reviewers.<br>These are CLI routes, not guaranteed model IDs.</p><div class="flow-divider">↓ claims, not instructions</div><div class="decision"><span>INVESTIGATE</span><span>VERIFY</span><span>RECORD</span></div><p class="card-foot">A vote is not a test. An ACCEPT is not proof.</p></div></section>
@@ -161,6 +163,8 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
   const output = { ...pages(data, s, version), ...releasePages(root),
     'docs/momm/install.html': shell('install.html', 'Install MOMM', installBody(root), version),
+    'docs/momm/media.html': shell('media.html', 'MOMM media gallery', mediaBody(tour, films, version), version).replace('</head>', '<link rel="stylesheet" href="home.css"></head>'),
+    'docs/momm/improvement.html': shell('improvement.html', 'How MOMM improves', improvementBody(), version),
     'docs/momm/technical.html': shell('technical.html', 'Architecture and reviewer-stacking evidence', technicalBody(data, s, version), version).replace('</head>', '<script type="module" src="stacking-model.mjs"></script></head>'),
     'docs/momm/data/ensemble-observations.json': JSON.stringify(ensembleObservations(data), null, 2) + '\n',
     "docs/evidence/momm-evidence.json": json,
@@ -176,10 +180,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   }
   output['docs/momm/index.html'] = output['docs/momm/index.html']
     .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
-    .replace('<section class="principles">', () => homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + homeDiagrams(data, s, version) + '<section class="principles">')
+    .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
     .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
-    .replace('</head>', '<link rel="stylesheet" href="home.css"><script type="module" src="home-player.mjs"></script></head>')
-    .replace('See a real review</a>', 'See a real review</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
+    .replace('</head>', '<link rel="stylesheet" href="home.css"><link rel="stylesheet" href="workflow.css"><script type="module" src="home-player.mjs"></script><script type="module" src="workflow.mjs"></script></head>')
+    .replace('See a real review</a>', 'See a real review</a><a class="button" href="#architecture-library">Explore the workflow ↓</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
   output['docs/momm/start.html'] = output['docs/momm/start.html'].replace('<section id="install">', `<section class="notice"><h2>Recommended: let your agent verify the release first</h2><p><a class="button primary" href="install.html">Install or upgrade in one line →</a></p><p>A clone starts on the default branch, which can contain unreleased work. Before executing the manual installer below, select the published signed release, verify its expected signing identity and package hash, and read its installer help. The copyable prompt covers those steps and asks before installing missing prerequisites.</p></section><section id="install">`);
   const releaseEvidence = releaseChecks(catalogue, version);
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html']
@@ -188,7 +192,8 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
     .replace('Read the release’s verification record →', 'Read the historical 1.13.0 fix record →');
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('<section id="privacy">', `<section id="modalities"><h2>Not just code: prose and supported attachments</h2><p>Use MOMM for manuscripts, specifications and other text when sharing with the selected providers is permitted. The same rule applies: reviewers make claims; the governor verifies and records decisions.</p><p>Text routes include Codex, Claude Code, Antigravity, Copilot and Grok. Verified attachment adapters differ: Codex supports images; Claude supports images and PDFs; Gemini supports images, PDFs, audio and video where the account is eligible. Other routes stay text-only until verified. Run preflight for the installed adapter’s actual capability; a provider logo is not evidence of multimedia support.</p><p>The historical public ledger contains the manuscript specimen <code>rev_20260904131823_wvxh</code>. <a href="../evidence/index.html">Inspect the sanitized specimen →</a> · <a href="https://github.com/marroccofella/skills/blob/main/momm/SKILL.md">Read the current protocol ↗</a></p><p>Strict review-contract rejection and input/source size ceilings remain possible. The source completion validator covers local text and supported Git text additions/modifications, not every binary, rename, deletion or media lifecycle.</p></section><section id="privacy">`);
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('</main>', () => answerSection()+'</main>');
-  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p></section><section class="cta">');
+  output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p><p>Reading with an assistant? <a href="llms.txt">Plain-text MOMM guide (llms.txt)</a> · <a href="../sitemap.xml">Site map</a>. The same workflow and safety boundaries are available in the written guides; no video or JavaScript is required to understand them.</p></section><section class="cta">');
+  output['docs/momm/llms.txt'] = llmsText(version);
   output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">', () => projectStory()+'<section class="cta">');
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html'].replace('<section id="real-review">', () => evidenceBenefits(s)+'<section id="real-review">');
   output['docs/momm/data/route-outcomes.json'] = JSON.stringify(chartSeries(data).routes, null, 2) + '\n';
@@ -250,6 +255,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
     delete pages['docs/video-sitemap.xml']; Object.assign(output,pages);
   }
   const videoEntries=videoSitemaps.filter(Boolean).flatMap(xml=>[...xml.matchAll(/<url>[\s\S]*?<\/url>/g)].map(m=>m[0]));
+  normalizeNavigation(output);
   output['docs/video-sitemap.xml']='<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">'+videoEntries.join('')+'</urlset>\n';
   // lastmod is optional. Do not mislabel the evidence snapshot date, build time
   // or a moving Git HEAD as the last meaningful edit of every generated page.

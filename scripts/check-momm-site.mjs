@@ -10,9 +10,14 @@ await import("./ledger-ui.test.mjs");
 await import("./momm-site-visuals.test.mjs");
 await import("./momm-site-videos.test.mjs");
 await import("./momm-site-search.test.mjs");
+await import("./momm-site-discovery.test.mjs");
 await import("./momm-site-regression.test.mjs");
 await import("./momm-site-technical.test.mjs");
 await import("./momm-site-home.test.mjs");
+await import("./momm-site-flow.test.mjs");
+await import("./momm-site-community.test.mjs");
+await import("./momm-release-observer.test.mjs");
+await import("./momm-improvement-regressions.test.mjs");
 await import("./preview-module.test.mjs");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

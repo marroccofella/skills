@@ -5,6 +5,20 @@ only sources. Today they say **1.16.0**, signed tag `momm-1.16.0`, 19 September 
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
+## Website and public feedback (separate repository maintenance)
+
+The September 2026 website proposal simplifies the homepage, groups approved films
+in a media gallery and adds a bounded public release-metadata observer. It is not
+an installed-skill update or a 1.16.1/1.17 release claim. Exact audit identities,
+version boundaries, reviewer rulings and deployment prerequisites are recorded in
+[the website improvement work record](../docs/momm/improvement-plan.md).
+The observer proposes follow-up in one GitHub issue per stable release; it never
+executes model suggestions, exports private ledgers or authorizes its own fixes.
+The homepage workflow extension adds an explicitly illustrative, browser-only
+prompt-to-evidence flow with one governor, read-only reviewers, quorum failure and
+claim-reproduction paths. It is website teaching material, not a new runtime feature
+or an independent benchmark; publication state belongs in the site changelog.
+
 ## Now / next / later
 
 - **Now: 1.16.1, in progress.** Close the holes 1.16.0 documented, prove the lifecycle 1.16.0

@@ -1,0 +1,116 @@
+{
+  "schema": "momm-video-preview/2",
+  "version": "1.16.0",
+  "release_checked": "2026-09-20",
+  "video_sha256": "304161e1f7081e3764c414c2da65aa2c11939ddfd890fe61696f2ef7625624da",
+  "video_bytes": 12596706,
+  "duration": 212.477125,
+  "resolution": "1920x1080",
+  "fps": 24,
+  "narration_speed": 1.5,
+  "voice": "consented synthetic Dom / local F5",
+  "audio_provenance": {
+    "job_id": "e39260fe7dc23081d117668b",
+    "source_sha256": "fdfefc7f741b41f4689c0b967a5fd18490240f4be67139f5c4355208601b676f",
+    "narration_sha256": "4c556a57a2fa0a8b0b7fc37b9c90fae37364c8d69ea9e3fc8257de1af564a2eb",
+    "processed_sha256": "3d3ee883daf0cf483441bb5c858b59d39996fcfb37bf116a8824e7cff92141e6",
+    "tempo": 1.5,
+    "pitch_preserved": true,
+    "source_seconds": 318.711,
+    "source_word_error_percent": 4.32,
+    "source_flags": [],
+    "human_listening": "pending"
+  },
+  "source_signal_flags": [],
+  "normalized_word_error_percent": 3.96,
+  "caption_alignment": "local Whisper word-aligned chapters and sentences; proportional phrase timing within sentences",
+  "caption_matched_words": 0.9747747747747748,
+  "timeline": [
+    {
+      "id": "hook",
+      "title": "Before your agent ships it… who checks it?",
+      "start": 0,
+      "end": 12.38
+    },
+    {
+      "id": "promise",
+      "title": "MOMM, in one sentence",
+      "start": 12.38,
+      "end": 26.9
+    },
+    {
+      "id": "analogy",
+      "title": "Think lead editor, inspectors and referee",
+      "start": 26.9,
+      "end": 42.96
+    },
+    {
+      "id": "name",
+      "title": "Why the name says modality",
+      "start": 42.96,
+      "end": 58.84
+    },
+    {
+      "id": "workflow",
+      "title": "The review loop, from change to decision",
+      "start": 58.84,
+      "end": 77.02
+    },
+    {
+      "id": "quorum",
+      "title": "Quorum is two signatures, not a vote",
+      "start": 77.02,
+      "end": 93.6
+    },
+    {
+      "id": "release",
+      "title": "What 1.16.0 adds",
+      "start": 93.6,
+      "end": 110.92
+    },
+    {
+      "id": "guard",
+      "title": "The governor keeps the boundary",
+      "start": 110.92,
+      "end": 128.02
+    },
+    {
+      "id": "evidence",
+      "title": "Claims become facts only after checking",
+      "start": 128.02,
+      "end": 145.74
+    },
+    {
+      "id": "beyond-code",
+      "title": "It is useful beyond pull requests",
+      "start": 145.74,
+      "end": 163.08
+    },
+    {
+      "id": "honesty",
+      "title": "What MOMM does not promise",
+      "start": 163.08,
+      "end": 178.48
+    },
+    {
+      "id": "verified",
+      "title": "The 1.16.0 release evidence",
+      "start": 178.48,
+      "end": 196.86
+    },
+    {
+      "id": "cta",
+      "title": "Keep your agent. Add the review team.",
+      "start": 196.86,
+      "end": 212.477125
+    }
+  ],
+  "human_listening": "pending",
+  "publicly_published": false,
+  "full_decode_passed": true,
+  "delivery_audio_verification": "passed",
+  "delivery_signal_flags": [],
+  "delivery_word_error_percent": 3.96,
+  "delivery_audio_sha256": "b9a0defecd8a7b0bdd15e7aa68d89844bdaf0b123b47ddbc7e4514422162c356",
+  "verified_at": "2026-09-20T01:12:32.410Z"
+}

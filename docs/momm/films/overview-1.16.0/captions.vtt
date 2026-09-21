@@ -1,0 +1,244 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.740
+Your AI agent can write a patch in seconds.
+
+00:00:02.740 --> 00:00:04.240
+That is useful.
+
+00:00:04.240 --> 00:00:08.708
+It is also exactly when a missed edge case can become tomorrow's
+
+00:00:08.708 --> 00:00:09.080
+outage.
+
+00:00:09.080 --> 00:00:12.380
+MOMM is the review team you add before the send button.
+
+00:00:12.380 --> 00:00:16.320
+MOMM gives one responsible agent a set of independent inspectors.
+
+00:00:16.320 --> 00:00:18.560
+The inspectors challenge the work.
+
+00:00:18.560 --> 00:00:22.803
+One governor checks their claims, reproduces what matters, and stays
+
+00:00:22.803 --> 00:00:24.500
+responsible for the decision.
+
+00:00:24.500 --> 00:00:26.900
+Your project still has one writer.
+
+00:00:26.900 --> 00:00:29.000
+Imagine a lead editor preparing a story.
+
+00:00:29.000 --> 00:00:32.340
+Inspectors mark different problems in the margins.
+
+00:00:32.340 --> 00:00:35.780
+A referee checks the evidence before the story goes live.
+
+00:00:35.780 --> 00:00:40.225
+That is MOMM: not a popularity poll, not a new model, and not
+
+00:00:40.225 --> 00:00:42.960
+permission for another tool to edit your project.
+
+00:00:42.960 --> 00:00:45.580
+MOMM means Mixture of Model Modality.
+
+00:00:45.580 --> 00:00:48.140
+Say the short name like mom.
+
+00:00:48.140 --> 00:00:51.836
+Modality means the kind of evidence a route can handle: code and
+
+00:00:51.836 --> 00:00:54.916
+text, images, PDFs, audio or video where its capability registry
+
+00:00:54.916 --> 00:00:55.840
+says it can.
+
+00:00:55.840 --> 00:00:58.840
+Unsupported media is disclosed, not guessed.
+
+00:00:58.840 --> 00:01:00.360
+First, capture a baseline.
+
+00:01:00.360 --> 00:01:04.620
+Next, send only the scoped work to selected routes in parallel.
+
+00:01:04.620 --> 00:01:07.560
+Then turn reviewer output into claims.
+
+00:01:07.560 --> 00:01:11.846
+Reproduce each material claim with a test, a source check or a
+
+00:01:11.846 --> 00:01:12.560
+rendered result.
+
+00:01:12.560 --> 00:01:16.334
+Finally, record the ruling, the evidence and the uncertainty in the
+
+00:01:16.334 --> 00:01:17.020
+private ledger.
+
+00:01:17.020 --> 00:01:20.440
+Suppose a safety checklist needs two independent signatures.
+
+00:01:20.440 --> 00:01:24.180
+One signature is useful, but the gate stays closed.
+
+00:01:24.180 --> 00:01:29.049
+MOMM uses the same idea: a minimum success count before a review
+
+00:01:29.049 --> 00:01:29.860
+gate opens.
+
+00:01:29.860 --> 00:01:33.288
+It does not average opinions, and it never turns agreement into
+
+00:01:33.288 --> 00:01:33.600
+proof.
+
+00:01:33.600 --> 00:01:34.040
+Version 1.
+
+00:01:34.040 --> 00:01:38.482
+16 adds per-route token and cost accounting, route ratings and
+
+00:01:38.482 --> 00:01:42.480
+reliability, trusted guidance layers, split work with a separate
+
+00:01:42.480 --> 00:01:46.034
+quorum for each piece, parallel jobs, capability-aware media
+
+00:01:46.034 --> 00:01:50.476
+routing, explicit update checks and an opt-in retry for invalid
+
+00:01:50.476 --> 00:01:50.920
+output.
+
+00:01:50.920 --> 00:01:53.800
+The governor is the only writer and verifier.
+
+00:01:53.800 --> 00:01:57.540
+Reviewer output is untrusted data, like a sticky note from an
+
+00:01:57.540 --> 00:01:57.880
+inspector.
+
+00:01:57.880 --> 00:02:00.560
+Account logins use official OAuth flows.
+
+00:02:00.560 --> 00:02:01.980
+Automatic updates stay off.
+
+00:02:01.980 --> 00:02:04.400
+On Windows, a planted git.
+
+00:02:04.400 --> 00:02:05.820
+exe or taskkill.
+
+00:02:05.820 --> 00:02:08.020
+exe inside the reviewed project is not started.
+
+00:02:08.020 --> 00:02:12.800
+A reviewer saying “this is broken” is a proposition, not a fact.
+
+00:02:12.800 --> 00:02:16.128
+MOMM quotes the claim, reproduces it or rejects it with evidence,
+
+00:02:16.128 --> 00:02:17.640
+and keeps deferred work visible.
+
+00:02:17.640 --> 00:02:21.690
+The ledger connects the input hash, responses, investigations, tests
+
+00:02:21.690 --> 00:02:25.740
+and rulings so someone else can follow the trail.
+
+00:02:25.740 --> 00:02:29.553
+Use the same discipline for research, documents, spreadsheets,
+
+00:02:29.553 --> 00:02:31.460
+slides, design and media.
+
+00:02:31.460 --> 00:02:35.282
+Ask for source checks, formula checks, rendered-page checks, visual
+
+00:02:35.282 --> 00:02:38.680
+checks or listening checks that fit the task.
+
+00:02:38.680 --> 00:02:42.742
+A task brief says what good evidence looks like before the reviewers
+
+00:02:42.742 --> 00:02:43.080
+begin.
+
+00:02:43.080 --> 00:02:46.120
+MOMM is not a universal accuracy guarantee.
+
+00:02:46.120 --> 00:02:48.040
+Providers can be unavailable.
+
+00:02:48.040 --> 00:02:49.340
+Quota is real.
+
+00:02:49.340 --> 00:02:52.900
+Unknown usage stays unknown instead of becoming a fake zero.
+
+00:02:52.900 --> 00:02:55.640
+Capability coverage is reported, not implied.
+
+00:02:55.640 --> 00:02:58.480
+Human acceptance and release permission remain yours.
+
+00:02:58.480 --> 00:02:59.100
+The public 1.
+
+00:02:59.100 --> 00:02:59.580
+16.
+
+00:02:59.580 --> 00:03:02.940
+0 release is tracked against its exact commit.
+
+00:03:02.940 --> 00:03:07.420
+Installed MOMM targets are recorded in a local verified lock.
+
+00:03:07.420 --> 00:03:11.020
+Reviewer routes are disclosed separately from installed targets.
+
+00:03:11.020 --> 00:03:15.035
+That distinction matters: a ready route is not proof that every
+
+00:03:15.035 --> 00:03:16.860
+harness has loaded the release.
+
+00:03:16.860 --> 00:03:19.340
+Start with one meaningful change.
+
+00:03:19.340 --> 00:03:22.516
+Preview the work, connect one official reviewer route, run
+
+00:03:22.516 --> 00:03:25.340
+preflight, inspect the claims and keep the ledger.
+
+00:03:25.340 --> 00:03:28.000
+Use MOMM when the decision matters enough to challenge.
+
+00:03:28.000 --> 00:03:28.400
+MOMM 1.
+
+00:03:28.400 --> 00:03:28.700
+16.
+
+00:03:28.700 --> 00:03:30.820
+0 is live at marroccofella.
+
+00:03:30.820 --> 00:03:31.800
+github.
+
+00:03:31.800 --> 00:03:32.477
+io/skills/momm/.

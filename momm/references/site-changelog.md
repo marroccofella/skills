@@ -6,6 +6,32 @@ These are dated records, kept as written. Where one says "candidate" it describe
 own date: 1.15.0 and 1.15.1 were released on 13 September 2026 and 1.16.0 on 19 September 2026.
 The current release is whatever `versions.json` and the newest `release-*.md` say, not this file.
 
+## Discovery documentation — September 20, prepared for publication
+
+Verified that host-root robots rules permit crawling, the project sitemap serves
+and core explanations are present in indexable HTML. Added a version-bound
+`docs/momm/llms.txt` guide, visible homepage links and regression checks in the site
+test suite. The guide separates zero-call preflight from modality probes, account
+access from API keys, and published capabilities from development plans.
+The [discovery checklist](../../docs/momm/discovery-status.md) records what was
+actually checked and the owner-side Google/Bing steps still required. No indexing,
+ranking or answer-engine citation guarantee is made. No host robots rules, skill
+protocol, release version, automatic updates or video approvals were changed.
+
+## Interactive homepage workflow — September 20, in development
+
+Replaces the static responsibility overview with a nine-stage, browser-only
+workflow: prompt, governor baseline/draft, readiness, scoped sharing, peer review,
+minimum-review gate, claim reproduction, verification/records and owner decision.
+Six governor illustrations exclude the active harness from the depicted peer team.
+Three teaching paths show a reproduced bug, an unmet review minimum and a disproved
+claim. The before/after price-summing fixture executes deterministic JavaScript;
+it is not a live-provider comparison or a claim that an unaided agent cannot test.
+Explicit play/pause and step controls stop at the end or failed gate. Reduced-motion
+users step manually; the complete written workflow remains available without JS.
+This work neither changes the installed skill nor approves an unfinished film.
+Deployment is pending review, privacy checks and owner publication approval.
+
 ## Homepage cinema and diagram library — September 14
 
 The first page presents the approved introduction with real scene thumbnails and
