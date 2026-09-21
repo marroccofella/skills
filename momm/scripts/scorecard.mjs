@@ -226,20 +226,28 @@ function parse(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i], next = () => { const v = args[++i]; if (v === undefined) throw new Error(`${a} needs a value`); return v; };
     if (a === "--dir") o.dir = path.resolve(next()); else if (a === "--json") o.mode = "json"; else if (a === "--markdown") o.mode = "markdown";
-    else if (a === "--html") { o.mode = "html"; o.html = path.resolve(next()); } else if (a === "--export-training") o.exportTo = path.resolve(next());
+    else if (a === "--html") { o.mode = "html"; o.html = path.resolve(next()); } else if (a === "--export-training") { const given = path.resolve(next()); o.exportTo = path.join(resolveOutput(path.dirname(given)), path.basename(given)); }
     else if (a === "--format") { o.format = next(); if (!["jsonl", "chat"].includes(o.format)) throw new Error("--format is jsonl or chat"); }
     else if (a === "--exclude-deferred") o.includeDeferred = false; else if (a === "--force") o.force = true; else throw new Error(`Unknown argument: ${clean(a, 80)}`);
   }
   return o;
 }
+// Where the output really goes. macOS reaches every temp folder through a system link, so a linked
+// ancestor cannot be refused outright. The path is resolved through its deepest existing folder to
+// the real location; THAT folder is then verified owner-only below, and the owner is told the real
+// path. A link to somewhere that is not private is refused by that verification, which is the threat.
+export function resolveOutput(file) {
+  const parts = []; let cursor = path.resolve(file);
+  for (;;) {
+    try { const real = fs.realpathSync.native(cursor); return parts.length ? path.join(real, ...parts.reverse()) : real; }
+    catch (e) { if (e.code !== 'ENOENT') throw e; }
+    const up = path.dirname(cursor); if (up === cursor) return path.resolve(file);
+    parts.push(path.basename(cursor)); cursor = up;
+  }
+}
 function prepareWrite(file, force) {
   // --force consents to content replacement, not arbitrary linked targets or
   // changing permissions on an existing owner file.
-  let parent = path.dirname(file);
-  while (true) {
-    if (fs.existsSync(parent) && fs.lstatSync(parent).isSymbolicLink()) throw new Error('Linked output parent refused');
-    const next = path.dirname(parent); if (next === parent) break; parent = next;
-  }
   let stat;
   try { stat = fs.lstatSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (stat) {

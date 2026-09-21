@@ -6,6 +6,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { preparePrivateEvidence } from './evidence-permissions.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulePath = path.join(here, 'scorecard.mjs');
@@ -135,6 +136,24 @@ try {
       const again = cli(['--export-training', out]); assert.notEqual(again.status, 0, 'an existing file is never overwritten silently');
       assert.equal(cli(['--export-training', out, '--format', 'chat', '--force']).status, 0);
       assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(out, 'utf8').split('\n')[0])), ['messages']);
+    });
+    // macOS reaches every temp folder through a link (/var -> /private/var, /tmp -> /private/tmp). Refusing
+    // any linked ancestor made every export fail there (CI run 35658394866, all four macOS jobs). The
+    // path is resolved to its real place instead, that place is verified owner-only, and the owner is told.
+    test('an output folder reached through a link is resolved, verified and reported; a linked FILE is still refused', () => {
+      const real = path.join(root, 'real-out'); preparePrivateEvidence(real); // created private the way MOMM creates it; a plain mkdir inherits broad access on Windows
+      const via = path.join(root, 'via-link'); fs.symlinkSync(real, via, process.platform === 'win32' ? 'junction' : 'dir');
+      const p = cli(['--export-training', path.join(via, 'train.jsonl')]); assert.equal(p.status, 0, p.stderr);
+      assert(fs.existsSync(path.join(real, 'train.jsonl')), 'the data is in the real folder');
+      const reported = JSON.parse(p.stdout).file;
+      assert.equal(fs.realpathSync.native(path.dirname(reported)), fs.realpathSync.native(real), 'the owner is told the real location: ' + reported);
+      assert(!reported.includes('via-link'), 'the reported path is the resolved one');
+      if (process.platform !== 'win32') { // a file symlink needs privileges on Windows; the rule is tested where it can be made
+        const target = path.join(real, 'elsewhere.jsonl'); fs.writeFileSync(target, 'keep me\n', { mode: 0o600 });
+        const linked = path.join(real, 'linked.jsonl'); fs.symlinkSync(target, linked);
+        const refused = cli(['--export-training', linked, '--force']); assert.notEqual(refused.status, 0);
+        assert.equal(fs.readFileSync(target, 'utf8'), 'keep me\n', 'the file behind the link is untouched');
+      }
     });
     test('command line: no evidence folder is a clear message, not a crash', () => {
       const empty = fs.mkdtempSync(path.join(root, 'empty-'));
