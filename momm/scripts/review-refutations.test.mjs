@@ -12,6 +12,7 @@ import {attemptRecord,persistAttempt} from './attempts.mjs';
 import {auditAttempts} from './attempt-audit.mjs';
 import {readMedia} from './media-bytes.mjs';
 import {fixturePng} from './media-fixtures.mjs';
+if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const read=name=>fs.readFileSync(path.join(repo,name),'utf8');
 const root=privateTestFixture('momm-review-refutations-');

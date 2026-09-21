@@ -12,6 +12,7 @@ import { recordCheck } from './checks.mjs';
 import { digest } from './governor.mjs';
 import { privateTestFixture } from './private-test-fixture.mjs';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
+if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] ?? 'all';
 const source = rel => fs.readFileSync(path.join(root, rel), 'utf8');

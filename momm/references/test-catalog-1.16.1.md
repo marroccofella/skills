@@ -9,6 +9,13 @@ the current acceptance guide's retry and ledger-ticket instructions.
 `momm/scripts/review-followup.test.mjs` tests split-quorum reporting, bounded stdin,
 201-file checks, scorecard/export correctness and unreadable-source refusal.
 
+Suites that arrived from `main` while 1.16.1 was in progress (website and release tooling, not the
+review product): `scripts/momm-improvement-regressions.test.mjs` reproduces governor-authored
+improvement findings with no provider traffic or GitHub writes; `scripts/momm-release-observer.test.mjs`
+checks the release observer; `scripts/momm-site-community.test.mjs`, `scripts/momm-site-discovery.test.mjs`
+and `scripts/momm-site-flow.test.mjs` check the media and improvement pages, the discovery guide and the
+workflow page against their data.
+
 This is a source inventory, not a claim that every gate passed. Run each suite with Node;
 record its own exit code. `.github/workflows/self-test.yml` is the authoritative CI selection,
 including `--self-test` entrypoints, syntax checks and inline integration fixtures.

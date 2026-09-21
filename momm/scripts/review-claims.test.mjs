@@ -9,6 +9,7 @@ import {auditAttempts} from './attempt-audit.mjs';
 import {digest,inspectCompletion} from './governor.mjs';
 import {git,stateDir,readLock} from './update.mjs';
 import {recordCheck} from './checks.mjs';
+if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
 const root=privateTestFixture('momm-review-claims-');
 const write=(name,value)=>{const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});fs.writeFileSync(file,typeof value==='string'?value:JSON.stringify(value),{mode:0o600});};
 try {
