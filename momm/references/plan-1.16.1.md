@@ -271,6 +271,15 @@ No 1.17 item starts before the signed `momm-1.16.1` tag exists.
   commit ids and to the head commit's file bytes; the completion state names the source and the
   pieces; 12 tests on a real temporary repository. Still owed for A3: `momm-check/1` verification
   manifests produced by a tool rather than by hand, and attempt ids (they arrive with C).
+- 22 September: pre-handoff scope audit against this plan, the closed set, the gates record, the
+  deferred list and the ideas register. Two documentation obligations were still open and are now
+  closed, each with a failing check first: `CONTRIBUTING.md` reached only ten of seventy-five suites,
+  so it now names the two authoritative sources (the workflow and the catalogue) and a check fails if
+  it names a suite that does not exist or that CI does not run; and the public 1.16.0 change list
+  implied every oversize hunk becomes governor scope, when line splitting is the default. The narrow
+  six-name assertion that allowed the drift is replaced by the complete rule. Sections A1 to A4, C,
+  E, F1, F2, G and H are implemented; items 7 and 9 (real lifecycle drills, final-tree live image
+  review) remain the release gates they were always meant to be.
 - 20 September: G built. `scorecard.mjs` and its training export, 17 tests. Run on the real 1.16 gate
   ledger: 10 runs, 482 findings, 440 ruled, 165 accepted; corroborated findings accepted 62% against
   36% single-source; 90% of accepted findings came from exactly one reviewer; per-piece reliability 71

@@ -37,24 +37,26 @@ Do not hand-edit generated HTML, tables, public-report hashes or CSVs. Change th
 renderer or the deliberately approved source snapshot, then regenerate:
 
 ```text
-node momm/scripts/multi-review.mjs --self-test
-node momm/scripts/transport.test.mjs
-node momm/scripts/process-scope.test.mjs
-node momm/scripts/entrypoint.test.mjs
-node momm/scripts/stabilisation.test.mjs
-node momm/scripts/governor.test.mjs
-node momm/scripts/update.test.mjs
-node momm/scripts/setup-ui.mjs --self-test
-node momm/scripts/setup-maintenance.test.mjs
-node momm/scripts/ledger.mjs --self-test
 node scripts/render-momm-site.mjs
 node scripts/render-momm-site.mjs --check
 node scripts/check-momm-site.mjs
-node scripts/momm-release-pages.test.mjs
-node scripts/public-export.test.mjs
 node scripts/doc-consistency.test.mjs
-node myrepo/scripts/publish.mjs --self-test
 ```
+
+### Run every check, not a list that goes stale
+
+The commands above cover the public pages only. **Before you push, run everything CI runs.**
+There are two authoritative sources, and no third list is kept by hand:
+
+- `.github/workflows/self-test.yml` is the authoritative selection. Every `node ...` line in its
+  steps is a required check, on Linux, macOS and Windows across Node 18 to 24.
+- `momm/references/test-catalog-1.16.1.md` is the complete source inventory and says what each
+  suite covers. `momm/scripts/review-workflow.test.mjs` fails if a suite is missing from it, so a
+  new `*.test.mjs` file cannot be added without being described.
+
+A hand-written verification list in this file is how the 1.16.0 gate found sixty-five suites
+unreachable by a contributor following the documentation. If you add a suite, add it to the
+workflow and the catalogue; do not paste it here.
 
 The public renderer is offline and deterministic; it never reads private ledgers
 or changes the snapshot timestamp. Positive updater fixtures inject the signature
