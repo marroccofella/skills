@@ -149,7 +149,7 @@ await test("overlay entry is written privately and atomically, bound to machine,
   const failed = cap.writeOverlayEntry(home, { route: "codex", direction: "output", modality: "image_gen", blocker: "probe_failed", cli_version: "0.154.0" }, { now, machine: "m1" }).entry;
   assert.equal(failed.expires_at, null);
   const upgrade = cap.writeOverlayEntry(home, { route: "grok", direction: "input", modality: "image", level: "verified", cli_version: "1.0.30" }, { now, machine: "m1" }).entry;
-  assert.equal(upgrade.expires_at, null);
+  assert.equal(upgrade.expires_at, new Date(now.getTime() + cap.SUCCESS_EXPIRY_MS).toISOString());
 });
 
 await test("overlay entries are invalidated by CLI upgrade, unknown version, login change or another machine", () => {
@@ -243,7 +243,8 @@ await test("invalidated entries never unblock: blockers become reprobe, verified
   assert.equal(m.routes.gemini.input.text.blocker, "reprobe");
   assert.match(m.routes.gemini.input.text.reason, /auth_tier .* cli_version_changed/);
   assert.equal(m.routes.grok.input.image.level, "documented");
-  assert.equal(m.routes.grok.input.image.source, "baseline");
+  assert.equal(m.routes.grok.input.image.source, "overlay");
+  assert.equal(m.routes.grok.input.image.blocker, "reprobe");
   assert.equal(m.routes.grok.installed_version, "1.0.31");
   // A login change alone has the same effect.
   const m2 = cap.effective({ home, baseline, machine: "m1", now, installedVersions: { gemini: "0.59.0", grok: "1.0.30" }, loginIdentity: { gemini: "someone-else", grok: "u" } });

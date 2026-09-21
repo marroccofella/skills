@@ -13,6 +13,9 @@ const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 await import('./update-safety.test.mjs');
 await import('./update-receipt.test.mjs');
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
+const originalHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+process.env.HOME = process.env.USERPROFILE = path.join(fixture, 'synthetic-home');
+fs.mkdirSync(process.env.HOME);
 const remote = path.join(fixture, "remote"), installed = path.join(fixture, "installed");
 const results = {};
 let failures = 0;
@@ -34,10 +37,10 @@ try {
     } finally { fs.unlinkSync(alias); }
   });
   git(remote, "init");
-  for (const file of ["momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
+  for (const file of ["momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
   write(remote, "momm/SKILL.md", "Original protocol\n");
   write(remote, "sibling/SKILL.md", "A separately installed sibling\n");
-  write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher one');\n");
+  write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.0.0'; console.log('fixture dispatcher one');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.0.0" }));
   write(remote, ".gitignore", "user-cache/\n");
   const first = commit(remote, "fixture one");
@@ -54,7 +57,7 @@ try {
   write(remote, 'intermediate.txt', 'first intervening change\n'); commit(remote, 'intermediate one');
   write(remote, 'intermediate.txt', 'second intervening change\n'); commit(remote, 'intermediate two');
   write(remote, "momm/SKILL.md", "Explicit new protocol\n");
-  write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher two');\n");
+  write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.1.0'; console.log('fixture dispatcher two');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.1.0" }));
   write(remote, ".gitignore", "# New release has different ignore rules\n");
   const second = commit(remote, "fixture two");
@@ -252,7 +255,7 @@ try {
   });
   await test("archive_install_links_but_reports_updater_unavailable", () => {
     const archive = path.join(fixture, "archive"), destination = path.join(fixture, "archive-harness");
-    for (const file of ["momm/SKILL.md", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
+    for (const file of ["momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/scripts/installations.mjs", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
     const output = JSON.parse(run(process.execPath, ["momm/scripts/install.mjs", "--custom-dir", destination], archive));
     assert.equal(output.installation.updater_available, false);
     assert(['ready_to_verify', 'prerequisites_missing'].includes(output.update_readiness.status));
@@ -489,5 +492,6 @@ try {
   if (failures) process.exitCode = 1;
   process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {
+  for (const [key, value] of Object.entries(originalHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true });
 }

@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./update.mjs";
 import { readiness } from "./bootstrap.mjs";
+import { installationCompletion } from "./installations.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -156,6 +157,16 @@ function main() {
       reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
     process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
     process.exitCode = 1;
+  }
+  try {
+    output.inventory = installationCompletion({ runningSkillRoot: skillRoot, customDirs: options.customDirs });
+    if (typeof output.inventory?.upgrade?.complete !== 'boolean') throw new Error('invalid inventory shape');
+  } catch {
+    output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
+  }
+  if (!output.inventory.upgrade.complete) {
+    process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.\n`);
+    if (!options.dryRun) process.exitCode = 1;
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;

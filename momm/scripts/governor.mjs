@@ -241,6 +241,22 @@ export function inspectCompletion(root, runId) {
       : { kind: snapshot.kind ?? "files_at_dispatch", files: snapshot.files.length };
     if (snapshot.kind === "git_range") demand(/^[0-9a-f]{40,64}$/.test(snapshot.base) && /^[0-9a-f]{40,64}$/.test(snapshot.head), "range snapshot lacks full commit ids");
     if (report.split?.pieces) state.pieces = report.split.pieces.map(p => ({ id: p.id, reviewers: p.reviewers ?? {} }));
+    if (report.attempt_evidence) {
+      demand(Array.isArray(report.attempt_evidence), 'malformed attempt evidence');
+      const ids = new Set();
+      state.attempts = report.attempt_evidence.map(a => {
+        demand(a?.evidence && typeof a.attempt_id === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(a.attempt_id) && !ids.has(a.attempt_id), 'missing or duplicate attempt identity'); ids.add(a.attempt_id);
+        const stored = JSON.parse(ref(a.evidence));
+        if (a.start) {
+          const begun = JSON.parse(ref(a.start));
+          demand(begun.event === 'started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>begun[k]===a[k]), 'attempt start binding mismatch');
+        }
+        const { evidence, ...expected } = a;
+        demand(JSON.stringify(stored) === JSON.stringify(expected) && stored.run_id === runId && stored.input_sha256 === report.input_sha256, 'attempt source or report binding mismatch');
+        demand(stored.piece === 'whole' ? !report.split : report.split?.pieces.some(p => p.id === stored.piece), 'attempt belongs to unknown piece');
+        return evidence;
+      });
+    }
     const routes = new Set();
     for (const r of report.reviewers) { demand(!routes.has(r.agent), "duplicate reviewer route"); routes.add(r.agent); }
     const successful = report.reviewers.filter(r => r.agent !== report.governor && r.status === "success");

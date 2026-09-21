@@ -8,6 +8,7 @@ import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, 
   runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent, relativeProbeRef } from "./probes.mjs";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { JPEG, MP4 } from './media-fixtures.mjs';
 
 const results = {}, failures = [];
 async function test(name, fn) {
@@ -543,7 +544,7 @@ try {
       assert.equal(r.verdict, "pass", JSON.stringify(r.summary));
       assert.equal(f.calls.length, 4, `${cli}: version + 3 input probes`);
       assert.equal(reg.entries.length, 3);
-      for (const { home, entry } of reg.entries) { assert.equal(home, path.join(fixture, "home")); assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null); assert.equal(entry.expires_at, null); assert.equal(entry.cli_version, "9.9.9"); assert.match(entry.machine_id, /^[0-9a-f]{32}$/); assert.equal(entry.direction, "input"); assert.equal(entry.evidence.probe, MODALITY_PROBE_SCHEMA); assert.match(entry.evidence.material_sha256, /^[0-9a-f]{64}$/); }
+      for (const { home, entry } of reg.entries) { assert.equal(home, path.join(fixture, "home")); assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null); assert.equal(Date.parse(entry.expires_at) - Date.parse(entry.at), 7 * 86_400_000); assert.equal(entry.cli_version, "9.9.9"); assert.match(entry.machine_id, /^[0-9a-f]{32}$/); assert.equal(entry.direction, "input"); assert.equal(entry.evidence.probe, MODALITY_PROBE_SCHEMA); assert.match(entry.evidence.material_sha256, /^[0-9a-f]{64}$/); }
       assert.deepEqual(reg.effectiveCalls[0].installedVersions, { [cli]: "9.9.9" });
       assert.equal(cellOf(r, "image").material.bytes, syntheticPng("red").length);
       assert.equal(fs.readdirSync(fixture).filter(n => n.startsWith("momm-modality-")).length, 0, "private probe directory removed");
@@ -697,7 +698,7 @@ try {
     assert.equal(routeDisclosure(cells).includes("image_gen"), false); assert.ok(routeDisclosure(cells).includes("video_gen"));
     const breg = fakeRegistry(blockedRoutes);
     const sentArgs = [];
-    const b = modalityExec({ generate: ({ args }) => { sentArgs.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "videos"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.mp4"), "mp4"); return ok(envelope("grok", "done")); } });
+    const b = modalityExec({ generate: ({ args }) => { sentArgs.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "videos"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.mp4"), MP4); return ok(envelope("grok", "done")); } });
     const br = await runModalityProbes("grok", mopts({ home, registry: breg, exec: b.exec, command: "grok", consent: true, now: Date.now, disclose: () => {} }));
     assert.equal(cellOf(br, "image_gen").status, "skipped"); assert.equal(cellOf(br, "image_gen").blocker, "zdr"); assert.match(cellOf(br, "image_gen").reason, /not sent/); assert.match(cellOf(br, "image_gen").clearing_action, /privacy/);
     assert.equal(sentArgs.length, 1, "exactly one request, for the unblocked cell"); assert.match(sentArgs[0], /image_to_video/); assert.equal(sentArgs.some(a => /image_gen tool/.test(a)), false);
@@ -817,7 +818,7 @@ try {
     const home = path.join(fixture, "reprobe-home"); fs.mkdirSync(home, { recursive: true });
     const reg = fakeRegistry({ grok: { input: {}, output: { image_gen: { ...base, blocker: "reprobe" }, video_gen: { level: "documented", blocker: "zdr", harvest: "~/.grok/sessions/**/*.mp4" } } } });
     const sent = [];
-    const f = modalityExec({ generate: ({ args }) => { sent.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "images"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.jpg"), "jpg"); return ok(envelope("grok", "done")); } });
+    const f = modalityExec({ generate: ({ args }) => { sent.push(args.join(" ")); const dir = path.join(home, ".grok", "sessions", "s", "images"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "1.jpg"), JPEG); return ok(envelope("grok", "done")); } });
     const r = await runModalityProbes("grok", mopts({ home, registry: reg, exec: f.exec, command: "grok", consent: true, now: Date.now, disclose: () => {} }));
     assert.equal(cellOf(r, "image_gen").status, "verified", cellOf(r, "image_gen").reason);
     assert.equal(sent.length, 1); assert.match(sent[0], /image_gen tool/);
@@ -918,7 +919,7 @@ try {
     const r2 = await runModalityProbes("gemini", mopts({ home, registry, exec: fixed.exec, command: "gemini", colour: "red", sentence: SENT }));
     assert.equal(cellOf(r2, "image").status, "verified", cellOf(r2, "image").reason);
     const v2 = view("gemini");
-    for (const [dir, mod] of [["input", "text"], ["input", "video"], ["output", "text"], ["output", "code_exec"]]) { assert.equal(v2[dir][mod].blocker, null, `${dir}.${mod} cleared with the route-level blocker`); assert.match(v2[dir][mod].reason ?? "", /^cleared: route_level:auth_tier/); assert.equal(v2[dir][mod].level, v1[dir][mod].level, "clearing changes no level"); }
+    for (const [dir, mod] of [["input", "text"], ["input", "video"], ["output", "text"], ["output", "code_exec"]]) { assert.equal(v2[dir][mod].blocker, 'probe_failed', `${dir}.${mod} still needs its own probe`); assert.match(v2[dir][mod].reason ?? "", /requires its own successful probe/); assert.equal(v2[dir][mod].level, v1[dir][mod].level, "clearing changes no level"); }
     for (const mod of ["image", "pdf", "audio"]) { assert.equal(v2.input[mod].blocker, null, mod); assert.equal(v2.input[mod].level, "verified", `${mod} has its own evidence`); }
     assert.equal(v2.output.web.blocker, "probe_failed", "a cell-level probe_failed elsewhere is not cleared by the route-level clearing");
     assert.ok(r2.route_level?.some(x => x.cleared?.includes("input.video")), "the run records what it cleared");

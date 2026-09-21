@@ -13,7 +13,7 @@ if (mode === 'envelope' || mode === 'rejection') {
   const classifierEnd = source.indexOf('  const problem = result.outputLimited ?', classifierStart);
   assert(classifierStart >= 0 && classifierEnd > classifierStart, 'Inspect changed classification boundaries; never test an empty extraction');
   const classifier = source.slice(classifierStart, classifierEnd);
-  const ctx = vm.createContext({ Buffer, sanitizeText: value => ({value}), result: {}, agent: 'claude' });
+  const ctx = vm.createContext({ Buffer, parseUsage:()=>null, sanitizeText: value => ({value}), result: {}, agent: 'claude' });
   vm.runInContext(helpers + '\nfunction classify(result) {' + classifier + '\nreturn {status:"success"};}', ctx);
   const review = JSON.stringify({review_status:'complete', verdict:'ACCEPT', confidence:1, findings:[], summary:'Synthetic evidence'});
   const envelopes = [{status:'ERROR',response:review},{status:'FAILED',response:review},{is_error:true,type:'result',result:review},{error:{message:'synthetic'},response:review}];

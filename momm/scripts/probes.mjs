@@ -16,6 +16,7 @@ import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readMedia, validateMedia } from "./media-bytes.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -335,7 +336,7 @@ export async function runProbes(cli, { exec = defaultExec, tmpdir = os.tmpdir(),
   // The canary lives OUTSIDE the project directory the CLI is granted (copilot
   // --add-dir, antigravity --new-project cwd), so a read of it is a real leak.
   // tmpdir is resolved first so a relative or unnormalized path still cleans up.
-  const root = path.resolve(tmpdir);
+  const root = fs.realpathSync(tmpdir);
   const base = fs.mkdtempSync(path.join(root, "momm-probe-"));
   const execOpts = extra => ({ input: "", timeout: timeoutMs, cwd: base, env, ...extra });
   try {
@@ -790,7 +791,7 @@ export function hashFile(file) {
 }
 export function harvest(pattern, { home, since }) {
   if (!pattern) return [];
-  return globFiles(pattern, { home, since }).map(f => ({ ...f, sha256: hashFile(f.path) }));
+  return globFiles(pattern, { home, since }).map(f => ({ ...f, sha256: sha256(readMedia(f.path).buffer) }));
 }
 
 // ---- overlay entries --------------------------------------------------------------------
@@ -809,8 +810,8 @@ export function overlayEntryFor(cli, cliVersion, at, cell, { machineId = null, l
   // machine_id / at / expires_at itself); `cli` and the rest travel for the probes ledger.
   const entry = { route: cli, cli, direction: cell.direction, modality: cell.modality, machine_id: machineId, cli_version: cliVersion, login_identity_sha256: loginIdentitySha256, at, probe_schema: MODALITY_PROBE_SCHEMA };
   entry.evidence = { probe: MODALITY_PROBE_SCHEMA, at, seconds: cell.seconds ?? null, material_sha256: cell.material?.sha256 ?? null, reply_sample: cell.reply_sample ?? null, harvested_sha256: (cell.harvested ?? []).map(f => f.sha256).filter(Boolean) };
-  if (cell.status === "verified") { entry.level = "verified"; entry.blocker = null; entry.expires_at = null; }
-  else if (cell.status === "cleared") { entry.blocker = null; entry.expires_at = null; entry.reason = cell.reason ?? null; } // clears a route-level blocker; the level is untouched
+  if (cell.status === "verified") { entry.level = "verified"; entry.blocker = null; entry.expires_at = new Date(atMs + 7 * 86_400_000).toISOString(); }
+  else if (cell.status === "cleared") { entry.blocker = "probe_failed"; entry.expires_at = null; entry.reason = cell.reason ?? null; }
   else {
     const blocker = cell.blocker ?? "probe_failed";
     if (cell.level_before && cell.level_before !== "no") entry.level = cell.level_before;
@@ -835,7 +836,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
   const clearing = blocker => (typeof registry.clearingAction === "function" ? registry.clearingAction(blocker, cli) : null) ?? clearingAction(blocker);
   const binary = command || resolveCommand(cli, { env, home });
   const result = { schema: MODALITY_PROBE_SCHEMA, cli, cli_version: null, at, consent: consent === true, cells: [], verdict: "unavailable", reason: null };
-  const root = path.resolve(tmpdir);
+  const root = fs.realpathSync(tmpdir);
   const base = fs.mkdtempSync(path.join(root, "momm-modality-"));
   const execOpts = extra => ({ input: "", timeout: timeoutMs, cwd: base, env, ...extra });
   const writeOverlay = cell => {
@@ -883,7 +884,9 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       if (iso.terminal_status) cell.terminal_status = iso.terminal_status;
       if (!iso.isolated) { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = `reply not isolated (${iso.detail}; exit ${r.code})`; cell.detail = clip(r.stdout || r.stderr, 300); return r; }
       cell.reply_sample = clip(iso.reply, 160);
-      const judged = judge(iso.reply, r, started);
+      let judged;
+      try { judged = judge(iso.reply, r, started); }
+      catch { judged = { confirmed: false, reason: "output file failed content or safe-read validation" }; }
       if (judged.confirmed) { cell.status = "verified"; cell.reason = judged.detail ?? "confirmed"; }
       else { cell.status = "probe_failed"; cell.blocker = "probe_failed"; cell.reason = judged.reason; }
       return r;
@@ -916,7 +919,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
         if (key === `${by.direction}.${by.modality}` || !cell?.blocker) continue;
         const gate = routeLevelGate(cell);
         if (!gate) continue;
-        const pseudo = { direction, modality, level_before: cell.level, status: "cleared", reason: `cleared: route_level:${gate} disproved by ${by.direction}.${by.modality} probe` };
+        const pseudo = { direction, modality, level_before: cell.level, status: "cleared", reason: `route_level:${gate} disproved by ${by.direction}.${by.modality}; this cell still requires its own successful probe` };
         writeOverlay(pseudo);
         if (pseudo.overlay_written) cleared.push(key);
       }
@@ -941,6 +944,7 @@ export async function runModalityProbes(cli, { registry, exec = defaultExec, tmp
       const material = syntheticMaterial(modality, { colour, sentence });
       if (!material) { cell.reason = "no synthetic material for this modality"; continue; }
       const filePath = path.join(projectDir, material.name);
+      validateMedia(material.bytes, material.name, { allowText: true });
       fs.writeFileSync(filePath, material.bytes, { mode: PRIVATE_FILE });
       cell.material = { kind: material.kind, bytes: material.bytes.length, sha256: material.sha256, description: material.description };
       const prompt = inputProbePrompt(modality, filePath);

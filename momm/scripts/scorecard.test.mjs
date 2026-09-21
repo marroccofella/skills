@@ -84,7 +84,8 @@ try {
     });
     test('cost is never invented: an unmetered route says unmetered, not zero', () => {
       assert.equal(who('codex').cost_usd, null); assert.equal(who('codex').cost_label, 'unmetered');
-      assert.equal(who('grok').cost_usd, 0.5); assert.equal(who('grok').cost_per_accepted_finding, 0.25);
+      assert.equal(who('grok').cost_usd, 0.5); assert.equal(who('grok').cost_per_accepted_finding, null);
+      assert.equal(who('grok').cost_label, 'partial');
       assert.equal(who('codex').tokens, 1000);
     });
     test('a score needs enough ruled findings; below the floor it says insufficient, never a number', () => {
@@ -139,6 +140,25 @@ try {
       const empty = fs.mkdtempSync(path.join(root, 'empty-'));
       const p = spawnSync(process.execPath, [modulePath, '--dir', empty, '--json'], { encoding: 'utf8', windowsHide: true });
       assert.equal(p.status, 0); assert.equal(JSON.parse(p.stdout).ensemble.runs, 0);
+    });
+    test('failed-attempt usage is counted without counting the final row twice', () => {
+      const file = path.join(er,'reports','rev_1.json');
+      const original = fs.readFileSync(file,'utf8'), value = JSON.parse(original);
+      value.attempt_evidence = [
+        {route:'grok',outcome:'invalid_output',usage:{reported:{total_tokens:40,cost_usd:0.2}}},
+        {route:'grok',outcome:'succeeded',usage:{reported:{total_tokens:50,cost_usd:0.3}}},
+        {route:'grok',outcome:'timeout',usage:null},
+      ];
+      fs.writeFileSync(file,JSON.stringify(value));
+      try {
+        const row = mod.buildScorecard(root).reviewers.find(r=>r.reviewer==='grok');
+        assert.equal(row.tokens,90); assert.equal(row.cost_usd,0.5);
+        assert.equal(row.cost_label,'partial');
+        assert.deepEqual(row.cost_coverage,{reported:2,attempts:4});
+        assert.equal(row.cost_per_accepted_finding,null,'partial spend must not look like the full cost of an accepted finding');
+        assert.match(mod.renderMarkdown(mod.buildScorecard(root)),/partial/);
+      }
+      finally { fs.writeFileSync(file,original); }
     });
   }
 } finally { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }

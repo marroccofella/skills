@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./momm/scripts/update.mjs";
 import { readiness } from "./momm/scripts/bootstrap.mjs";
+import { installationCompletion } from "./momm/scripts/installations.mjs";
 // Windows launch guard (see momm/scripts/launch-guard.mjs): a bare command launched without a shell is
 // looked up in THIS process's current directory before PATH unless this process carries the variable.
 if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
@@ -174,6 +175,18 @@ function main() {
       reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
     process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
     process.exitCode = 1;
+  }
+  if (skills.includes('momm')) {
+    try {
+      output.inventory = installationCompletion({ runningSkillRoot: path.join(repoRoot, 'momm'), customDirs: options.customDirs });
+      if (typeof output.inventory?.upgrade?.complete !== 'boolean') throw new Error('invalid inventory shape');
+    } catch {
+      output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
+    }
+    if (!output.inventory.upgrade.complete) {
+      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.\n`);
+      if (!options.dryRun) process.exitCode = 1;
+    }
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   const flat = results.flatMap((r) => r.links || []);

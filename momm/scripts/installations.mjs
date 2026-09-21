@@ -56,7 +56,12 @@ function declaredVersion(skillRoot, files) {
 }
 
 function inspectEntry(at, files) {
-  let stat; try { stat = files.lstatSync(at); } catch { return null; }
+  let stat;
+  try { stat = files.lstatSync(at); } catch (error) {
+    if (error.code === "ENOENT") return null;
+    // A denied or malformed discovery path is unknown, not evidence of absence.
+    return { kind: "unreadable", link_target: null, resolved: null, version: null, has_skill_md: false };
+  }
   const isLink = stat.isSymbolicLink();
   let resolved = null, target = null;
   if (isLink) { try { target = String(files.readlinkSync(at)); } catch { /* keep null */ } }
@@ -69,7 +74,7 @@ function inspectEntry(at, files) {
 }
 
 const key = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
-const usable = (e) => e.kind === "link" || e.kind === "directory";
+const usable = (e) => (e.kind === "link" || e.kind === "directory") && e.has_skill_md === true;
 
 export function inventory({ home = os.homedir(), customDirs = [], runningSkillRoot = null, fs: files = fs } = {}) {
   const places = [
@@ -98,7 +103,7 @@ export function inventory({ home = os.homedir(), customDirs = [], runningSkillRo
     const mine = entries.filter((e) => e.harness === harness), live = mine.filter(usable);
     const distinct = [...new Set(live.map((e) => key(e.resolved)))], names = [...new Set(live.map((e) => e.name))];
     let status, loads = null, detail = "";
-    if (!live.length) { status = "broken"; detail = `every MOMM entry for ${harness} is broken or unreadable: ${mine.map((e) => e.path).join(", ")}`; }
+    if (live.length !== mine.length) { status = "broken"; detail = `${harness} has broken, unreadable or incomplete MOMM entries: ${mine.filter(e => !usable(e)).map((e) => e.path).join(", ")}; its loaded copy cannot be confirmed`; }
     else if (names.length > 1) { status = "conflict"; detail = `${harness} would discover two skills side by side (${names.join(" and ")}); the older name multi-llm-review must be retired or kept only as a rollback backup outside discovery folders`; }
     else if (distinct.length === 1) { status = live.length === 1 ? "single" : "consistent"; loads = { resolved: live[0].resolved, version: live[0].version, via: live.map((e) => e.path) }; }
     else { status = "conflict"; detail = `${harness} has ${live.length} discovery entries on ${distinct.length} different copies (${live.map((e) => `${e.path} -> ${e.version ?? "unknown"}`).join("; ")}); MOMM cannot tell which one the harness prefers`; }
@@ -109,6 +114,7 @@ export function inventory({ home = os.homedir(), customDirs = [], runningSkillRo
   const harnessConflict = Object.entries(harnesses).find(([, h]) => h.status === "conflict");
   let verdict;
   if (!entries.length) verdict = { status: "none", consistent: true, versions: [], detail: "No MOMM entry was found in any known harness discovery folder." };
+  else if (entries.some(e => !usable(e))) verdict = { status: "broken", consistent: false, versions, detail: "Some MOMM discovery entries are broken, unreadable or missing SKILL.md. The active installation cannot be confirmed." };
   else if (harnessConflict || versions.length > 1) verdict = { status: "conflict", consistent: false, versions, detail: safe(harnessConflict && versions.length <= 1 ? harnessConflict[1].detail : `Active discovery paths load different MOMM versions: ${live.map((e) => `${e.path} -> ${e.version ?? "unknown"}`).join("; ")}.`) };
   else if (versions[0] === "unknown") verdict = { status: "conflict", consistent: false, versions, detail: "The version of the active copy could not be read, so it cannot be confirmed." };
   else if (copies.length > 1) verdict = { status: "duplicate_copies", consistent: false, versions, detail: safe(`${copies.length} separate copies are active on the same version (${copies.map((c) => c.resolved).join("; ")}). They will drift apart at the next upgrade; choose one and keep the others only as rollback backups.`) };
@@ -128,10 +134,17 @@ export function inventory({ home = os.homedir(), customDirs = [], runningSkillRo
     // An upgrade is complete only when EVERY active discovery path loads the expected version.
     upgrade_complete_for(expected) {
       if (!live.length) return { complete: false, reason: "no active MOMM entry was found" };
+      if (!verdict.consistent || entries.some(e => !usable(e))) return { complete: false, reason: `${verdict.detail} Conflicting, duplicate, broken or unreadable entries require owner action.` };
       const behind = live.filter((e) => e.version !== expected);
       return behind.length ? { complete: false, reason: safe(`not every active path loads ${expected}: ${behind.map((e) => `${e.path} -> ${e.version ?? "unknown"}`).join("; ")}`) } : { complete: true, reason: `every active path loads ${expected}` };
     },
   };
+}
+
+export function installationCompletion(options = {}) {
+  const report = inventory(options);
+  const expected = options.expected ?? report.running?.version;
+  return { ...report, expected, upgrade: expected ? report.upgrade_complete_for(expected) : { complete: false, reason: 'running version could not be read' } };
 }
 
 function parse(args) {

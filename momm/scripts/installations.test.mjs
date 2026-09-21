@@ -68,7 +68,7 @@ try {
       link(a, path.join(h, '.claude', 'skills', 'momm')); link(b, path.join(h, '.agents', 'skills', 'momm'));
       const r = inv(h);
       assert.equal(r.copies.length, 2); assert.equal(r.verdict.status, 'duplicate_copies'); assert.equal(r.verdict.consistent, false);
-      assert.equal(r.upgrade_complete_for('1.16.1').complete, true, 'every active path loads 1.16.1, so the upgrade itself is complete');
+      assert.equal(r.upgrade_complete_for('1.16.1').complete, false, 'ambiguous duplicate copies must not certify completion');
     });
     test('the legacy name beside the new name in one discovery folder is a conflict: the harness sees two skills', () => {
       const h = home('legacy'), a = copy('l-new', '1.16.1'), b = copy('l-old', '1.10.2', { skill: 'multi-llm-review' });
@@ -96,6 +96,40 @@ try {
       fs.mkdirSync(path.join(at, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(at, 'scripts', 'multi-review.mjs'), 'const MOMM_VERSION = "1.14.1";\n');
       const r = inv(h);
       assert.equal(r.entries[0].kind, 'directory'); assert.equal(r.entries[0].version, '1.14.1');
+    });
+    test('a dispatcher without SKILL.md is not a usable installation', () => {
+      const h = home('missing-protocol'), at = path.join(h, '.claude', 'skills', 'momm');
+      fs.mkdirSync(path.join(at, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(at, 'scripts', 'multi-review.mjs'), 'const MOMM_VERSION = "1.16.1";\n');
+      const r = inv(h);
+      assert.equal(r.entries[0].has_skill_md, false);
+      assert.equal(r.verdict.consistent, false);
+      assert.equal(r.harnesses.claude.loads, null);
+      assert.equal(r.upgrade_complete_for('1.16.1').complete, false);
+    });
+    test('unreadable discovery entries are recorded, not mistaken for absent installations', () => {
+      const h = home('denied'), a = copy('denied-a', '1.16.1');
+      link(a, path.join(h, '.claude', 'skills', 'momm'));
+      const blocked = path.join(h, '.agents', 'skills', 'momm');
+      const files = { ...fs, lstatSync(at, ...args) {
+        if (at === blocked) throw Object.assign(new Error('private diagnostic must not escape'), { code: 'EACCES' });
+        return fs.lstatSync(at, ...args);
+      } };
+      const r = inv(h, { fs: files });
+      assert.equal(r.entries.find(e => e.path === blocked)?.kind, 'unreadable');
+      assert.equal(r.verdict.consistent, false);
+      assert.equal(r.upgrade_complete_for('1.16.1').complete, false);
+      assert.doesNotMatch(JSON.stringify(r), /private diagnostic/);
+    });
+    test('a valid and an unusable entry for one harness do not certify its loaded copy', () => {
+      const h = home('partly-broken'), a = copy('partly-broken-a', '1.16.1');
+      link(a, path.join(h, '.agents', 'skills', 'momm'));
+      fs.mkdirSync(path.join(h, '.codex', 'skills', 'momm'), { recursive: true });
+      const r = inv(h);
+      assert.equal(r.verdict.consistent, false);
+      assert.equal(r.harnesses.codex.status, 'broken');
+      assert.equal(r.harnesses.codex.loads, null);
+      assert.equal(r.upgrade_complete_for('1.16.1').complete, false);
     });
     test('an unreadable or absent version is "unknown", and unknown never equals a real version', () => {
       const h = home('unknown'), a = copy('u-a', null, { dispatcher: '// no version here\n' }), b = copy('u-b', '1.16.1');

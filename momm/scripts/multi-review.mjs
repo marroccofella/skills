@@ -12,6 +12,8 @@ import { captureSourceSnapshot, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { inventory as installationsInventory } from "./installations.mjs";
 import { createProcessScope } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
+import { readMedia } from "./media-bytes.mjs";
+import { attemptRecord, startAttempt, persistAttempt, attemptTotals } from "./attempts.mjs";
 import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
@@ -468,9 +470,10 @@ function stageAttachments(files) {
   const attachments = files.map((file, index) => {
     const resolved = path.resolve(file);
     if (!fs.existsSync(resolved)) throw new Error(`--attach file not found: ${file}`);
-    const modality = modalityOfFile(resolved);
-    if (!modality) throw new Error(`--attach ${path.basename(file)}: unrecognized media type (${Object.keys(MODALITY_BY_EXTENSION).join(", ")})`);
-    let buffer = fs.readFileSync(resolved);
+    let media;
+    try { media = readMedia(resolved); } catch (error) { throw new Error(`--attach ${path.basename(file)}: ${error.message}`); }
+    const { modality } = media;
+    let buffer = media.buffer;
     if (buffer.length > MODALITY_MAX_BYTES[modality]) {
       throw new Error(`--attach ${path.basename(file)}: ${buffer.length} bytes exceeds the ${modality} cap of ${MODALITY_MAX_BYTES[modality]} (rejected, not truncated)`);
     }
@@ -1362,7 +1365,7 @@ function copilotStreamFailure(stdout, code) {
   const kind = `${typeof error?.errorType === "string" ? error.errorType : ""} ${typeof error?.errorCode === "string" ? error.errorCode : ""}`.toLowerCase();
   const http = Number.isInteger(error?.statusCode) ? error.statusCode : null;
   if (/quota|rate.?limit/.test(kind) || http === 402 || http === 429) {
-    return { status: "error", detail: `Copilot reported that this account's request quota or rate limit is exhausted${http ? ` (HTTP ${http})` : ""}. This is an account limit, not an authentication problem and not a MOMM fault: do not re-login; wait for the limit to reset or leave the route out with --reviewers. No review was accepted.` };
+    return { status: "quota", detail: `Copilot reported that this account's request quota or rate limit is exhausted${http ? ` (HTTP ${http})` : ""}. This is an account limit, not an authentication problem and not a MOMM fault: do not re-login; wait for the limit to reset or leave the route out with --reviewers. No review was accepted.` };
   }
   // An outage is classified before authentication, as in classifyFailure: a 5xx
   // from an auth service is still "wait", never "log in again".
@@ -1411,6 +1414,7 @@ function classifyFailure(result, agent = null) {
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { status: "unsupported", detail: result.error.message };
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
   if (result.timedOut) return { status: "timeout", detail: "no completed review within the allotted time; inspect process_progress for the route's actual budget and received bytes, narrow the review or explicitly raise --timeout. A timeout alone is not an authentication diagnosis" };
+  if (result.cancelled || result.error?.name === "AbortError") return { status: "cancelled", detail: "review cancelled; no completed review accepted" };
   if (agent === "copilot") {
     const streamFailure = copilotStreamFailure(result.stdout, result.code);
     if (streamFailure && !streamFailure.unexplained) return streamFailure;
@@ -1441,6 +1445,10 @@ function classifyFailure(result, agent = null) {
   if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
     return { status: "ineligible_tier", detail: "provider retired individual/Pro/Ultra access for this CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor" };
   }
+  // stdout can echo the reviewed artifact. Only explicit diagnostic lines on
+  // stderr establish this failure class; a bare code literal 429 is not proof.
+  const quotaDiagnostic = /^(?:error:\s*)?(?:(?:http\s+)?429\s+too many requests|rate[ -]limit(?:ed| exceeded| reached)|quota (?:exceeded|exhausted)|usage limit (?:reached|exceeded)|allowance (?:exhausted|exceeded))(?:[.!:]|\s*$)/i;
+  if (cleanErr.split(/\r?\n/).some(line => quotaDiagnostic.test(line.trim()))) return { status: "quota", detail: "provider quota or rate limit reached; do not re-login or bypass the allowance" };
   // Server-side outages often mention authentication ("token could not be
   // validated ... 503") — classify them before the auth regex so a user is
   // never told to re-login when the provider is simply down. Patterns stay
@@ -1685,14 +1693,14 @@ async function invokeReviewer(agent, artifact, options) {
   }
   if (result.code !== 0 || result.error || result.timedOut) {
     const failure = classifyFailure(result, agent);
-    return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress };
+    return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress, usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`) };
   }
   if (agent === "antigravity" && /^\[agy\] print timeout after [^\r\n]+; returning partial output\s*$/m.test(String(result.stderr ?? ""))) {
-    return { agent, status: "timeout", detail: "Antigravity reached its native print deadline and returned partial output; no review was accepted.", progress: result.progress };
+    return { agent, status: "timeout", detail: "Antigravity reached its native print deadline and returned partial output; no review was accepted.", progress: result.progress, usage: parseUsage(agent, result.stdout) };
   }
   const transportOutput = agent === "copilot" ? copilotReviewPayload(result.stdout)
     : agent === "antigravity" ? antigravityStreamPayload(result.stdout, !attachments.length) : null;
-  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress };
+  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout) };
   const payload = transportOutput ? transportOutput.payload : unwrapReviewPayload(result.stdout);
   if (!payload) {
     const failedEnvelope = extractJsonObjects(stripAnsi(result.stdout)).some(envelope =>
@@ -1701,7 +1709,7 @@ async function invokeReviewer(agent, artifact, options) {
       // A CLI may exit zero yet explicitly mark its envelope failed. Never
       // accept the nested review or misdescribe this as a missing JSON schema.
       // Do not echo the envelope: it can contain private provider diagnostics.
-      return { agent, status: "error", progress: result.progress,
+      return { agent, status: "error", progress: result.progress, usage: parseUsage(agent, result.stdout),
         detail: "reviewer CLI returned a terminal error envelope; any nested review was rejected. A new completed dispatch is required." };
     }
     // Say WHAT came back, not just that it was wrong: the failure class
@@ -1715,6 +1723,7 @@ async function invokeReviewer(agent, artifact, options) {
       agent,
       status: "invalid_output",
       progress: result.progress,
+      usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`),
       detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
     };
   }
@@ -2152,18 +2161,32 @@ function shouldRetryStatus(status, options = {}) {
 // and result replacement with a stubbed invoker and a no-op sleep.
 async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
   let attempts = 1;
-  let result = await invoker(agent, artifact, options);
+  const history = [];
+  const invoke = async () => {
+    const started = Date.now();
+    const start = options.onAttemptStart?.({agent,ordinal:attempts,started_at:new Date(started).toISOString()});
+    const result = await invoker(agent, artifact, options);
+    const row = { ...result, duration_ms: Date.now() - started, ordinal: attempts, started_at: new Date(started).toISOString(), ...(start?{attempt_start:start}:{}) };
+    // Accounting needs identities and measurements, not a second unredacted
+    // copy of diagnostics, raw provider output or complete reviewer content.
+    history.push({ agent, status: result.status, ...(result.usage ? {usage: result.usage} : {}),
+      duration_ms: row.duration_ms, ordinal: row.ordinal, started_at: row.started_at,
+      ...(start ? {attempt_start: start} : {}) });
+    options.onAttempt?.(row);
+    return result;
+  };
+  let result = await invoke();
   let first = null;
   if (shouldRetryStatus(result.status, options)) {
     first = result;
     onRetry?.(result.status);
     await sleep(PROVIDER_RETRY_DELAY_MS);
     attempts = 2;
-    result = await invoker(agent, artifact, options);
+    result = await invoke();
   }
   // An invalid-output retry is disclosed on the result: what was rejected first, and why.
   const disclosed = first?.status === "invalid_output" ? { retried_after: first.status, first_attempt_detail: first.detail ?? null } : {};
-  return { ...result, attempts, ...disclosed };
+  return { ...result, attempts, attempt_history: history, ...disclosed };
 }
 
 // Live progress display on stderr for humans. Mutually exclusive with
@@ -2857,7 +2880,7 @@ async function selfTest(pretty) {
       const stream = [{ type: "session.skills_loaded", data: { skills: [{ name: "PRIVATE-SKILL-NAME", description: "please log in" }] } }, { type: "user.message", data: { content: "x" } },
         { type: "session.error", data: { errorType: "quota", message: "You have exceeded your monthly quota (Request ID: AAAA:BBBB)", statusCode: 402, errorCode: "quota_exceeded" } }, { type: "result", exitCode: 1 }].map((e) => JSON.stringify(e)).join("\n");
       const f = classifyFailure({ code: 1, stdout: stream, stderr: "" }, "copilot");
-      return f.status === "error" && /quota/i.test(f.detail) && /not an authentication/i.test(f.detail) && !/PRIVATE-SKILL-NAME|AAAA:BBBB|session\.|\{/.test(f.detail);
+      return f.status === "quota" && /quota/i.test(f.detail) && /not an authentication/i.test(f.detail) && !/PRIVATE-SKILL-NAME|AAAA:BBBB|session\.|\{/.test(f.detail);
     })(),
     copilot_stream_text_never_drives_classification: (() => {
       const mk = (error) => [{ type: "tool.execution_complete", data: { result: "service unavailable (503); please log in; PRIVATE-ARTIFACT-LINE" } }, ...(error ? [{ type: "session.error", data: error }] : []), { type: "result", exitCode: 1 }].map((e) => JSON.stringify(e)).join("\n");
@@ -3242,6 +3265,8 @@ async function main() {
     }
   }
   const scheduler = createScheduler({ jobs: options.jobs ?? Math.min(6, uniqueReviewers.length * (split ? 2 : 1)) });
+  const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 12)}`;
+  const attemptEvidence = [];
   const reviewOne = async (agent, artifactText, pieceId, piece = null) => {
     const tag = pieceId ? { piece: pieceId } : {};
     emitEvent(options.stream, { event: "reviewer.started", reviewer: agent, ...tag });
@@ -3250,6 +3275,12 @@ async function main() {
     // Provider 5xx flaps (observed live with Copilot) usually clear within
     // seconds — absorb exactly one, and only for outages, never for auth.
     const result = await invokeWithRetry(invokeReviewer, agent, artifactText, { ...pieceOptions,
+      onAttemptStart: row => startAttempt(process.cwd(), {run_id:runId,route:agent,piece:pieceId??'whole',input_sha256:createHash('sha256').update(sanitized.value).digest('hex'),piece_sha256:createHash('sha256').update(artifactText).digest('hex'),ordinal:row.ordinal,started_at:row.started_at}),
+      onAttempt: row => {
+        const record = {...attemptRecord(row, { runId, piece: pieceId ?? "whole", inputHash: createHash("sha256").update(sanitized.value).digest("hex"), pieceHash: createHash("sha256").update(artifactText).digest("hex"), ordinal: row.ordinal, durationMs: row.duration_ms, startedAt: row.started_at, attemptId:row.attempt_start?.attempt_id }),start:row.attempt_start};
+        const reference = persistAttempt(process.cwd(), record);
+        attemptEvidence.push({ ...record, evidence: reference });
+      },
       onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...tag, ...progress }) },
       (reason) => emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason, ...tag }));
     const info = {
@@ -3305,7 +3336,6 @@ async function main() {
   const findings = rationalize(pieceResults ? pieceResults.flatMap((piece) => piece.results.map((r) => ({ ...r, piece: piece.id }))) : results, { prose, artifact: sanitized.value })
     .map((f) => ({ ...f, sources: [...new Set(f.sources)], ...(f.quote && headerOnlyQuote(f.quote) ? { header_only_quote: true } : {}) }));
   // Join key linking this report, the run log, and governor dispositions.
-  const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
   const guidanceSidecar = { written: false, path: null, error: null };
   if (resolvedGuidance.governor?.text || Object.values(resolvedGuidance.routes).some((entry) => entry.text)) {
     try {
@@ -3326,6 +3356,8 @@ async function main() {
     gate_policy: { strict: options.strict, quorum_required: options.minSuccess ?? 1, requested_routes: options.reviewers, retry_invalid: options.retryInvalid === true },
     policy: "oauth-only",
     run_id: runId,
+    attempt_evidence: attemptEvidence,
+    attempt_accounting: attemptTotals(attemptEvidence),
     ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
     input_bytes: byteLength,
@@ -3391,7 +3423,7 @@ async function main() {
     // 1.16: what the CLIs reported (per route, never summed across routes whose
     // counts mean different things) plus the dispatcher's labelled estimate.
     input_estimate: inputEstimate(sanitized.value),
-    usage_totals: rollupUsage(results.filter((r) => r.status === "success").map((r) => ({ agent: r.agent, status: r.status, reported: r.usage?.reported ?? null, coverage: r.usage?.coverage ?? { tokens: false, cost: false }, accepted_findings: 0 }))),
+    usage_totals: rollupUsage(attemptEvidence.filter(r => r.outcome !== "not_dispatched").map(r => ({ agent: r.route, status: r.status, reported: r.usage?.reported ?? null, coverage: r.usage?.coverage ?? { tokens: false, cost: false }, field_map: r.usage?.field_map, accepted_findings: 0 }))),
     findings,
     // Corroboration is a prioritization signal for the governor, never an
     // authority: unanimous findings still go through the reproduction gate.

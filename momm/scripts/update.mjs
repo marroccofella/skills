@@ -32,13 +32,11 @@ export const safeText = value => String(value).replace(/[\x00-\x08\x0b-\x1f\x7f-
 // chosen. System tools are named by their absolute System32 path, and any other bare
 // name is resolved here to an absolute PATH entry that lies outside the working directory.
 export const systemTool = (name, env = process.env) => [env.SystemRoot || env.windir || "C:\\Windows", "System32", name].join("\\");
-const resolvedTools = new Map();
 export function resolveTool(command, cwd, { env = process.env, platform = process.platform } = {}) {
   if (platform !== "win32" || /[\\/]/.test(command)) return command;
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
-  const real = p => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
-  const root = real(cwd || process.cwd()).toLowerCase(), key = `${command}\0${pathValue}\0${root}`;
-  if (resolvedTools.has(key)) return resolvedTools.get(key);
+  const real = p => fs.realpathSync.native(p);
+  const root = real(cwd || process.cwd()).toLowerCase();
   for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => path.win32.isAbsolute(d))) {
     for (const extension of path.extname(command) ? [""] : [".exe", ".com"]) {
       const candidate = path.join(directory, command + extension);
@@ -46,7 +44,7 @@ export function resolveTool(command, cwd, { env = process.env, platform = proces
         if (!fs.statSync(candidate).isFile()) continue;
         const relative = path.relative(root, real(candidate).toLowerCase());
         if (!relative || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) continue; // inside the working directory
-        resolvedTools.set(key, candidate); return candidate;
+        return real(candidate);
       } catch {}
     }
   }
@@ -360,6 +358,17 @@ function assertInstalled(root, expected) {
   if (git(root, "rev-parse", "HEAD") !== expected.commit || current(root).version !== expected.version) throw new Error("Checkout changed during harness replay; refusing to claim installation success.");
   clean(root);
 }
+export function replayResult(result) {
+  if (result.error || result.signal || ![0, 1].includes(result.status)) throw new Error('Installer replay failed before a complete result');
+  let output;
+  try { output = JSON.parse(result.stdout); } catch { throw new Error('Installer replay returned no complete JSON result'); }
+  if (!Array.isArray(output.results) || output.installation?.error) throw new Error('Installer replay did not preserve its installation receipt');
+  const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target })) : [r]);
+  // A global inventory conflict must not interrupt an otherwise verified scoped
+  // replay or undo its receipt. The updater reports it after the transaction.
+  if (result.status === 1 && !(output.inventory?.upgrade?.complete === false && rows.length && rows.every(okLink))) throw new Error('Installer replay failed; inventory is not its sole failure');
+  return rows;
+}
 function reinstall(root, lock) {
   if (!Array.isArray(lock.installations) || !lock.installations.length) throw new Error("Receipt lacks per-harness installation scopes; rerun the original explicit installer.");
   for (const scope of lock.installations) {
@@ -367,8 +376,8 @@ function reinstall(root, lock) {
     const args = [path.join(root, scope.installer)];
     if (scope.installer === "install.mjs") args.push("--skills", scope.skills.join(","));
     if (scope.target === "custom") args.push("--custom-dir", scope.custom_dir); else args.push("--target", scope.target);
-    const output = JSON.parse(run(process.execPath, args, root, { timeout: 180_000 }));
-    const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target })) : [r]);
+    const result = spawnSync(process.execPath, args, {cwd:root,encoding:'utf8',shell:false,windowsHide:true,timeout:180_000,maxBuffer:32*1024*1024});
+    const rows = replayResult(result);
     for (const skill of scope.skills) if (!rows.some(r => r.target === scope.target && (r.skill || "momm") === skill && okLink(r) && (scope.target !== "custom" || path.resolve(r.destination || "") === path.join(scope.custom_dir, skill)))) throw new Error(`Harness replay did not verify ${skill} for ${scope.target}`);
   }
 }
@@ -553,6 +562,15 @@ export async function update(argv, dependencies = {}) {
   const root = repoRoot(start), dir = stateDir(root), lock = readLock(root);
   const lockFile = path.join(dir, "momm.lock"), journalFile = path.join(dir, "transaction.json");
   const installer = dependencies.reinstall || reinstall;
+  const inventoryAtCompletion = dependencies.inventory || (expected => {
+    const currentHelper = path.join(root, 'momm', 'scripts', 'installations.mjs');
+    const retainedHelper = path.join(dir, 'installations.mjs');
+    const helper = fs.existsSync(currentHelper) ? currentHelper : retainedHelper;
+    if (!fs.existsSync(helper)) throw new Error('Installation inventory unavailable; this checkout was restored but all active harness versions remain unverified.');
+    const result = spawnSync(process.execPath, [helper, '--expect', expected, ...lock.custom_dirs.flatMap(p => ['--custom-dir', p])], { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 30_000, maxBuffer: 2_000_000 });
+    log(result.stdout || 'Installation inventory produced no report.');
+    if (result.status !== 0) throw new Error('Installation version conflict or inventory failure: inspect the inventory above. No other active copy was overwritten. The retained signed checkout and receipt are preserved.');
+  });
   if (o.check_all) {
     if (!o.json) log(`Network: GET ${MANIFEST_URL} and the npm registry "latest" documents for codex/claude/gemini/copilot; grok update --check runs locally. Release information only; nothing is installed or changed.`);
     const report = await checkAll(root, lock, dependencies);
@@ -581,6 +599,7 @@ export async function update(argv, dependencies = {}) {
     assertInstalled(root, previous.current);
     writeJSON(lockFile, { ...previous, current: { ...previous.current, ...current(root) }, previous: null, recovered_at: new Date().toISOString() });
     fs.unlinkSync(journalFile);
+    inventoryAtCompletion(previous.current.version);
     log("Rollback verified. Recovery command remains available outside the checkout.");
   });
   if (fs.existsSync(journalFile)) throw new Error("An interrupted update needs recovery. Run the retained update.mjs --rollback --yes before another update.");
@@ -648,6 +667,8 @@ export async function update(argv, dependencies = {}) {
       // Retain a stable local reference; Git GC must not discard rollback data.
       git(root, "update-ref", "refs/momm/rollback", before.current.commit);
       atomic(path.join(dir, "update.mjs"), fs.readFileSync(ENTRY));
+      const inventoryHelper = path.join(root, 'momm', 'scripts', 'installations.mjs');
+      if (fs.existsSync(inventoryHelper)) atomic(path.join(dir, 'installations.mjs'), fs.readFileSync(inventoryHelper));
       writeJSON(journalFile, { schema: "momm-transaction/1", before, candidate: commit, stage: "prepared" });
       try {
         git(root, "fetch", "--no-tags", temp, `${commit}:refs/momm/verified`);
@@ -660,7 +681,7 @@ export async function update(argv, dependencies = {}) {
           current: { ...current(root), tree_sha256: digest, verified: true, signer: SIGNER }, updated_at: new Date().toISOString() };
         writeJSON(lockFile, next);
         fs.unlinkSync(journalFile);
-        log(`Installed and verified ${next.current.version}. Rollback: node "${path.join(dir, "update.mjs")}" --rollback --yes`);
+        log(`Signed checkout verified at ${next.current.version}; active-harness inventory follows. Rollback: node "${path.join(dir, "update.mjs")}" --rollback --yes`);
       } catch (e) {
         // Never overwrite concurrent edits on the way back, either.
         try {
@@ -673,6 +694,7 @@ export async function update(argv, dependencies = {}) {
         throw new Error(`${e.message}\nPrevious installation restored; update not applied.`);
       }
     });
+    inventoryAtCompletion(candidateManifest.momm);
   } finally {
     // temp is a directory created by this invocation; never accept user paths.
     if (path.dirname(temp) === os.tmpdir() && path.basename(temp).startsWith("momm-update-")) fs.rmSync(temp, { recursive: true, force: true });

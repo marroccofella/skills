@@ -83,9 +83,16 @@ export function buildScorecard(project) {
       p.reviews_asked += asked;
       p.retries += Array.isArray(row.retried_pieces) ? row.retried_pieces.length : ((row.attempts ?? 1) > 1 ? 1 : 0);
       if (Number.isFinite(row.duration_ms)) { p.durations.push(row.duration_ms / asked); longest = Math.max(longest, row.duration_ms); }
-      const reported = row.usage?.reported;
-      if (Number.isFinite(reported?.total_tokens)) { p.tokens += reported.total_tokens; p.tokens_known = true; }
-      if (Number.isFinite(reported?.cost_usd)) { p.cost_usd += reported.cost_usd; p.cost_known = true; }
+      // New reports retain invalid/failed attempts too. Never add the merged
+      // final row again, which would double count successful attempts.
+      const usageRows = Array.isArray(report.attempt_evidence)
+        ? report.attempt_evidence.filter(a => a.route === row.agent && a.outcome !== 'not_dispatched').map(a => a.usage?.reported)
+        : [row.usage?.reported];
+      p.cost_attempts = (p.cost_attempts ?? 0) + usageRows.length;
+      for (const reported of usageRows) {
+        if (Number.isFinite(reported?.total_tokens)) { p.tokens += reported.total_tokens; p.tokens_known = true; }
+        if (Number.isFinite(reported?.cost_usd)) { p.cost_usd += reported.cost_usd; p.cost_known = true; p.cost_reported = (p.cost_reported ?? 0) + 1; }
+      }
     }
     if (longest) ensemble.durations.push(longest);
     for (const f of report.findings ?? []) {
@@ -116,10 +123,12 @@ export function buildScorecard(project) {
     const ruled = p.accepted + p.rejected, acceptance_rate = ratio(p.accepted, ruled), valid_rate = ratio(p.reviews_valid, p.reviews_asked);
     const unique_share = ratio(p.unique_catches, ensemble.accepted_findings), severity_inflation = p.critical_ruled ? p.critical_rejected / p.critical_ruled : (p.critical_raised ? null : 0);
     const { score, note } = scoreOf({ acceptance_rate, valid_rate, unique_share, severity_inflation: severity_inflation ?? 0, ruled });
-    const { durations, tokens_known, cost_known, ...rest } = p;
+    const { durations, tokens_known, cost_known, cost_attempts = 0, cost_reported = 0, ...rest } = p;
+    const completeCost = cost_attempts > 0 && cost_reported === cost_attempts;
     return { ...rest, ruled, acceptance_rate, valid_rate, unique_share, severity_inflation, median_seconds: median(durations) === null ? null : Math.round(median(durations) / 100) / 10,
-      tokens: tokens_known ? p.tokens : null, cost_usd: cost_known ? Math.round(p.cost_usd * 10000) / 10000 : null, cost_label: cost_known ? "reported" : "unmetered",
-      cost_per_accepted_finding: cost_known && p.accepted ? Math.round((p.cost_usd / p.accepted) * 10000) / 10000 : null,
+      tokens: tokens_known ? p.tokens : null, cost_usd: cost_known ? Math.round(p.cost_usd * 10000) / 10000 : null, cost_label: !cost_known ? "unmetered" : completeCost ? "reported" : "partial",
+      cost_coverage: {reported:cost_reported,attempts:cost_attempts},
+      cost_per_accepted_finding: completeCost && p.accepted ? Math.round((p.cost_usd / p.accepted) * 10000) / 10000 : null,
       rating_mean: ratings[p.reviewer]?.mean ?? null, rating_n: ratings[p.reviewer]?.n ?? 0, score, score_note: note };
   }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || (b.accepted - a.accepted) || a.reviewer.localeCompare(b.reviewer));
 
@@ -139,7 +148,7 @@ const COLUMNS = [
   ["Reviewer", (r) => r.reviewer], ["Score", (r) => (r.score === null ? "insufficient" : String(r.score))], ["Valid reviews", (r) => `${r.reviews_valid}/${r.reviews_asked} (${pct(r.valid_rate)})`],
   ["Findings", (r) => val(r.findings_raised)], ["Accepted", (r) => val(r.accepted)], ["Rejected", (r) => val(r.rejected)], ["Acceptance", (r) => pct(r.acceptance_rate)],
   ["Unique catches", (r) => val(r.unique_catches)], ["Critical inflation", (r) => pct(r.severity_inflation)], ["Median time", (r) => (r.median_seconds === null ? "n/a" : r.median_seconds + " s")],
-  ["Cost / accepted", (r) => (r.cost_label === "unmetered" ? "unmetered" : r.cost_per_accepted_finding === null ? "n/a" : "$" + r.cost_per_accepted_finding)], ["Rating", (r) => (r.rating_mean === null ? `n/a (${r.rating_n})` : `${r.rating_mean} (${r.rating_n})`)],
+  ["Cost / accepted", (r) => (r.cost_label === "unmetered" ? "unmetered" : r.cost_label === "partial" ? `partial (${r.cost_coverage.reported}/${r.cost_coverage.attempts} attempts)` : r.cost_per_accepted_finding === null ? "n/a" : "$" + r.cost_per_accepted_finding)], ["Rating", (r) => (r.rating_mean === null ? `n/a (${r.rating_n})` : `${r.rating_mean} (${r.rating_n})`)],
 ];
 const ensembleLines = (e) => [
   `Runs ${e.runs}; quorum met on ${e.quorum_met} (${pct(e.quorum_rate)}).`,

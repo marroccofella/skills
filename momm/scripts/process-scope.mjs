@@ -26,16 +26,17 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
   const system32 = win.join(value('systemroot') || value('windir') || 'C:\\Windows', 'System32');
   const system = SYSTEM_TOOLS.get(name.toLowerCase());
   if (system) return win.join(system32, system);
-  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return win.resolve(p); } };
+  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return null; } };
   const inside = (root, p) => { const rel = win.relative(root, p); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
-  const root = real(win.resolve(String(cwd || '.'))).toLowerCase();
+  const root = real(win.resolve(String(cwd || '.')))?.toLowerCase();
   const extensions = win.extname(name) ? [''] : ['.exe', '.com'];
   for (const entry of String(value('path') ?? '').split(';').map(d => d.replace(/^"|"$/g, '')).filter(d => d && win.isAbsolute(d))) {
     for (const extension of extensions) {
       const candidate = win.join(entry, name + extension);
       try {
         if (!files.statSync(candidate).isFile()) continue;
-        if (inside(root, real(candidate).toLowerCase())) continue;
+        const resolved = real(candidate)?.toLowerCase();
+        if (!root || !resolved || inside(root, resolved)) continue;
         return candidate;
       } catch { /* not here */ }
     }
@@ -48,9 +49,9 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
 // entry would still let cmd.exe, or a grandchild on an older runtime, pick a planted file.
 export function windowsChildEnv(sourceEnv, { cwd = process.cwd(), fs: files = nodeFs } = {}) {
   const win = nodePath.win32, env = { ...(sourceEnv ?? {}), NoDefaultCurrentDirectoryInExePath: '1' };
-  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return win.resolve(p); } };
-  const root = real(win.resolve(String(cwd || '.'))).toLowerCase();
-  const inside = p => { const rel = win.relative(root, real(p).toLowerCase()); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
+  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return null; } };
+  const root = real(win.resolve(String(cwd || '.')))?.toLowerCase();
+  const inside = p => { const resolved = real(p)?.toLowerCase(); if (!root || !resolved) return true; const rel = win.relative(root, resolved); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
   const keys = Object.keys(env).filter(k => k.toLowerCase() === 'path');
   if (keys.length) {
     const cleaned = keys.flatMap(k => String(env[k] ?? '').split(';')).filter(d => { const bare = d.replace(/^"|"$/g, ''); return bare && win.isAbsolute(bare) && !inside(bare); }).join(';');

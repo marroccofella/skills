@@ -18,7 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x, 22.x]
+        # 22/24 are primary; 18/20 are retained compatibility checks, not lifecycle proof.
+        node-version: [18.x, 20.x, 22.x, 24.x]
         # Reproduce the independently reported Windows fetch/forced-exit runtime.
         include:
           - os: windows-latest
@@ -33,6 +34,33 @@ jobs:
       - name: Safety self-test
         timeout-minutes: 2
         run: node momm/scripts/multi-review.mjs --self-test --pretty
+      - name: Media byte validation
+        timeout-minutes: 2
+        run: node momm/scripts/media-bytes.test.mjs
+      - name: Installation completion boundary
+        timeout-minutes: 2
+        run: node momm/scripts/install-completion.test.mjs
+      - name: Capability expiry refusal
+        timeout-minutes: 2
+        run: node momm/scripts/expiry-regression.test.mjs
+      - name: Attempt accounting and tool-produced checks
+        timeout-minutes: 2
+        run: node momm/scripts/attempts.test.mjs
+      - name: Fail-closed Windows PATH identity
+        timeout-minutes: 2
+        run: node momm/scripts/path-resolution.test.mjs
+      - name: Review-claim evidence regressions
+        timeout-minutes: 2
+        run: node momm/scripts/review-claims.test.mjs
+      - name: CI deadlines and test catalog
+        timeout-minutes: 2
+        run: node momm/scripts/review-workflow.test.mjs
+      - name: Final review regression controls
+        timeout-minutes: 2
+        run: node momm/scripts/review-final-regressions.test.mjs
+      - name: Disputed review boundary controls
+        timeout-minutes: 2
+        run: node momm/scripts/review-refutations.test.mjs
       - name: Reviewer transport and hostile-output regression
         timeout-minutes: 2
         run: node momm/scripts/transport.test.mjs

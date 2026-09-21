@@ -13,7 +13,7 @@ in this file gets to say "current". Website notes live in
 - Must ship or 1.16.1 does not tag: media type from bytes; capability expiry visible and manual;
   completion receipts for committed-range reviews; a per-piece attempt ledger with a closed set of
   outcomes; "installed somewhere" separated from "the version this harness loads"
-  (`--doctor --versions`, conflict refusal, one chosen active copy, rollback); named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
+  (`--doctor --versions` and conflict refusal; broader selection interfaces stay in 1.17); named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
   drills on real machines with a published OS by Node table.
 - Not in 1.16.1: new reviewer families, automatic updates by default, a dashboard redesign, new
   generation modalities, `--early-exit`, `--split auto`, ledger-learned caps, adaptive timeouts,
@@ -24,6 +24,24 @@ in this file gets to say "current". Website notes live in
   including what was refused and why: [references/ideas-register.md](references/ideas-register.md).
 - Deferred 1.16.0 findings are listed by name, with what became of each:
   [references/deferred-from-1.16.0.md](references/deferred-from-1.16.0.md).
+
+## 1.16.1 implementation checkpoint
+
+21 September implementation checkpoint (not a release): the 1.16.1 candidate adds byte-based
+media checks, seven-day successful-probe expiry, immutable attempt files, cumulative coverage
+audits, a governor-selected test runner producing verification records, failed-attempt accounting,
+installation completion checks and fail-closed PATH resolution. These changes require final
+regression and peer review. Native lifecycle, signed-artifact and live-image gates remain open:
+[gate record](references/gates-1.16.1.md), [draft notes](references/draft-1.16.1.md).
+
+The follow-up review reproduced quota false positives from echoed source and duplicate raw
+diagnostics in retry history. The candidate now classifies quota from explicit provider
+diagnostics and keeps accounting-only attempt summaries. Evidence validation refuses missing
+attempt identifiers and malformed strict policies. Governor-authored installation regressions
+also exposed missing SKILL.md and unreadable discovery paths being mistaken for a completed
+upgrade; both now prevent completion. Failing-before/passing-after observations are retained
+privately. These repairs still require completed review dispositions and a final source-bound
+gate; they are not a release or an update to the owner's installed skill.
 
 ## 1.17 (roadmap only, do not start)
 

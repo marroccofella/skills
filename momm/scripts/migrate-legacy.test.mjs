@@ -6,6 +6,8 @@ import { migrate,rollback,parse } from './migrate-legacy.mjs';
 import { execute,verifyCheckout } from './bootstrap.mjs';
 const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..'),root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-migration-tests-')),results={};
 const skipped={};
+const oldHome={HOME:process.env.HOME,USERPROFILE:process.env.USERPROFILE};
+const testHome=path.join(root,'home');fs.mkdirSync(testHome);process.env.HOME=testHome;process.env.USERPROFILE=testHome;
 const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,s);};
 // Inputs retain their caller spelling, including symlink/short-name temp roots.
 // Expected paths and race hooks use the OS-resolved parent of each entry.
@@ -21,8 +23,8 @@ async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,d
 function fixture(name,link=false){
   const base=path.join(root,name),repo=path.join(base,'prepared'),skill=path.join(base,'harness','skills','momm'),backup=path.join(base,'backups','old-momm');
   fs.mkdirSync(repo,{recursive:true});fs.mkdirSync(path.dirname(backup),{recursive:true});
-  for(const file of ['momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
-  write(path.join(repo,'momm/scripts/multi-review.mjs'),'// fixture dispatcher\n');write(path.join(repo,'momm/SKILL.md'),'# New protocol\n');write(path.join(repo,'versions.json'),'{"momm":"1.15.1"}');
+  for(const file of ['momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs','momm/scripts/installations.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
+  write(path.join(repo,'momm/scripts/multi-review.mjs'),'const MOMM_VERSION = "1.15.1"; // never executed\n');write(path.join(repo,'momm/SKILL.md'),'# New protocol\n');write(path.join(repo,'versions.json'),'{"momm":"1.15.1"}');
   const git=(...args)=>execute('git',args,repo).trim();git('-c','init.templateDir=','init','.');git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m','fixture');
   const commit=git('rev-parse','HEAD'),original=link?path.join(base,'original-clone','momm'):skill;
   write(path.join(original,'SKILL.md'),'# Old protocol\n');write(path.join(original,'.ensemble_reviews/ledger.html'),'PRIVATE fixture evidence');
@@ -190,4 +192,4 @@ try{
     const f=fixture('missing-old-protocol');fs.unlinkSync(path.join(f.skill,'SKILL.md'));await assert.rejects(migrate(f.options,f.dep),{code:'unsupported_scope'});assert(!fs.existsSync(f.backup));
   });
   console.log(JSON.stringify({passed:Object.values(results).every(v=>v===true),tests:Object.keys(results).length,results,skipped,note:'Signature service stubbed; real installers, receipts, Git files and discovery links exercised only in temporary synthetic projects. Platform or filesystem skips are reported explicitly.'},null,2));
-}finally{const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true,force:true,maxRetries:3});}
+}finally{for(const [key,value]of Object.entries(oldHome)){if(value===undefined)delete process.env[key];else process.env[key]=value;}const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true,force:true,maxRetries:3});}

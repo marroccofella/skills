@@ -29,18 +29,18 @@ the "done when" for each.
 
 | # | Required addition | Section | State |
 | --- | --- | --- | --- |
-| 1 | Media type from file bytes; the extension may label, never authorize | A1 | not started |
-| 2 | Capability expiry a human can act on: expired, when, why, exact re-probe command; no auto re-probe | A2 | not started |
-| 3 | Completion receipts for committed-range reviews | A3 | range binding built; tool-made `momm-check/1` manifests and attempt ids owed |
-| 4 | Closed-set failure classification; a wrong bucket fails a test | C1 | not started |
-| 5 | Partial quorum and retry as first-class evidence, per piece and per attempt | C2 | not started |
-| 6 | Attempt evidence persisted beside the run; a rerun appends, never rewrites | C3 | not started |
+| 1 | Media type from file bytes; the extension may label, never authorize | A1 | implemented; final candidate gate pending |
+| 2 | Capability expiry a human can act on: expired, when, why, exact re-probe command; no auto re-probe | A2 | implemented; final candidate gate pending |
+| 3 | Completion receipts for committed-range reviews | A3 | runner and attempt references implemented; final committed-range receipt pending |
+| 4 | Closed-set failure classification; a wrong bucket fails a test | C1 | normalized attempts and quota/cancellation classification implemented; final gate pending |
+| 5 | Partial quorum and retry as first-class evidence, per piece and per attempt | C2 | cumulative coverage audit implemented; does not replace completion or approve unresolved findings |
+| 6 | Attempt evidence persisted beside the run; a rerun appends, never rewrites | C3 | started/terminal records implemented; interrupted starts remain incomplete, never invented outcomes |
 | 7 | Real lifecycle drills on Windows, macOS and Linux, Node 18 and 24 at least | B | not started (last in the work order) |
-| 8 | Named security regressions as tests | E | not started |
-| 9 | One live image review on the final tree, with the checklist in `references/` | A4, gates | not started |
+| 8 | Named security regressions as tests | E | PATH fixtures added; native final OS/Node matrix pending |
+| 9 | One live image review on the final tree, with the checklist in `references/` | A4, gates | checklist written; live final-tree gate pending |
 | 10 | ROADMAP tells the truth | D | **done** |
-| 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | not started |
-| 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | not started |
+| 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | explicit untested cells in gates-1.16.1.md; CI now requests 13 cells |
+| 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | draft-1.16.1.md and gates-1.16.1.md; no version bump or release claim |
 
 **Constraints that are required non-additions:** the governor remains the only writer; account
 logins only, no API-key routes; automatic updates stay off and an agent never enables them;
@@ -249,13 +249,22 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
 2. Receipts, media type from bytes, capability expiry (A3, A1, A2).
 3. Outcome classification and the attempt ledger (C).
 4. Named security regressions (E).
-5. Installations and precedence (F): the read-only inventory first (it is also the last step of
-   every drill in B), then the conflict refusal, selection, preview, rollback and banner.
+5. Installation identity and conflict refusal (F1–F2). Selection, preview, link rollback and
+   broader management (F3–F8) remain in 1.17 under the settled scope boundary above.
 6. Lifecycle drills (B), last, because they certify the rest.
 
 No 1.17 item starts before the signed `momm-1.16.1` tag exists.
 
 ## Progress
+
+- 21 September: reliability implementation in an isolated candidate checkout. F2 now checks
+  all discovered active paths after installation/update and preserves transaction receipts when
+  an unrelated copy conflicts. Failed attempts contribute reported usage to the scorecard.
+  `checks.mjs` executes an explicitly governor-selected local Node test; it never executes
+  reviewer-supplied commands. `attempt-audit.mjs` hashes original sealed reports and attempt
+  files and combines only identical source/policy/piece identities; its output explicitly is
+  coverage, not completion. See [verification workflow](verification-checks.md). This is local
+  implementation progress, not evidence that release gates have passed.
 
 - 20 September: D (docs integrity) done. F1 (`--doctor --versions`) built: 16 tests on real links,
   green on all ten CI jobs. A3 first half built: `--range <base>..<head>` binds a review to both
@@ -278,4 +287,3 @@ No 1.17 item starts before the signed `momm-1.16.1` tag exists.
   bytes in `installations.mjs`, so Git classed the file as binary and the first real `--range` run
   refused it. `scripts/source-hygiene.test.mjs` fails if any tracked text source has a raw control
   byte or is binary to Git.
-

@@ -91,7 +91,7 @@ try {
     { agent: "grok", status: "success", review: core.normalizeReview("grok", peer({ verdict: "MODIFY", suggested_improvements: ["Keep fractional precision", "Change the public API"] })) },
   ];
   const findings = core.rationalize(responses, { artifact: buggy, prose: false });
-  const report = { ...base, test_fixture: "controlled reviewer transport; not real provider approval", run_id: "rev_fixture_lifecycle", source_snapshot: captureSourceSnapshot(fixture, buggy, "mean.cjs"),
+  const report = { ...base, attempt_evidence: undefined, attempt_accounting: undefined, test_fixture: "controlled reviewer transport; not real provider approval", run_id: "rev_fixture_lifecycle", source_snapshot: captureSourceSnapshot(fixture, buggy, "mean.cjs"),
     quorum: { required: 2, achieved: 2, met: true }, gate_policy: { strict: false, quorum_required: 2, requested_routes: ["claude", "grok"] },
     reviewers: responses.map(r => ({ agent: r.agent, status: r.status, verdict: r.review.verdict, confidence: r.review.confidence, summary: r.review.summary, review_contract: PEER_CONTRACT, reviewed_scope: r.review.reviewed_scope, suggested_improvements: r.review.improvements })),
     findings, outstanding: core.buildOutstanding(findings, responses, "rev_fixture_lifecycle", fixture, 2) };
@@ -100,7 +100,7 @@ try {
   const sealed = ref(reportPath);
   write(".ensemble_reviews/review-log.jsonl", JSON.stringify({ run_id: report.run_id, governor: "codex", report_path: reportPath, report_sha256: sealed.sha256, input_sha256: report.input_sha256, reviewer_status: { claude: "success", grok: "success" } }) + "\n");
   const pending = inspectCompletion(fixture, report.run_id);
-  test("quorum alone cannot complete governor work", () => { assert.equal(report.outstanding.complete, false); assert.equal(pending.complete, false); assert.equal(pending.items.length, 5); });
+  test("quorum alone cannot complete governor work", () => { assert.equal(report.outstanding.complete, false); assert.equal(pending.complete, false); assert.equal(pending.items.length, 5, JSON.stringify(pending.errors)); });
   test("duplicate text across reviewers has distinct obligations", () => assert.equal(new Set(pending.items.map(i => i.item_id)).size, 5));
   const defect = pending.items.find(i => i.kind === "finding");
   write("evidence/original.cjs", buggy);

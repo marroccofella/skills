@@ -10,6 +10,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import * as mod from "./modality.mjs";
 import { loadBaseline, effective, sha256 } from "./capabilities.mjs";
+import { fixturePng, JPEG, MP4 } from './media-fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];
@@ -31,9 +32,18 @@ const {privateTestFixture} = await import('./private-test-fixture.mjs');
 process.umask(0o077); // Only this synthetic test process.
 const tmp = privateTestFixture("momm-modality-tests-");
 const fresh = (name) => { const d = fs.mkdtempSync(path.join(tmp, `${name}-`)); return d; };
-const write = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file; };
+const write = (file, data) => {
+  // Tests that label a successful fake output as media must write media bytes.
+  if (typeof data === 'string') {
+    if (file.endsWith('.png')) data = fixturePng(data);
+    else if (file.endsWith('.jpg')) data = JPEG;
+    else if (file.endsWith('.mp4')) data = MP4;
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file;
+};
 const ok = (stdout) => ({ code: 0, stdout, stderr: "" });
-const PNG_A = Buffer.from("89504e470d0a1a0a-A-PNG-BYTES", "utf8"), MP4_B = Buffer.from("0000001c667479706d703432-B-MP4", "utf8");
+const PNG_A = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=", "base64");
+const MP4_B = Buffer.from('000000146674797069736f6d0000000069736f6d000000096d64617400000000086d6f6f76', 'hex');
 
 await test("native checkpoint budget: first running report shares the dispatch privacy inspection", async () => {
   const cwd = fresh("checkpoint-cwd"), home = fresh("checkpoint-home"), m = matrix();
@@ -378,10 +388,10 @@ await test("run: a generative step with no new file fails the chain; nothing is 
   // An unchanged pre-existing file that merely matches the glob is not output either; a rewritten one is.
   const touched = fresh("home2"), cwd2 = fresh("cwd2");
   const existing = write(path.join(touched, ".codex", "generated_images", "s", "exec-same.png"), "V1");
-  const rewrite = async () => { fs.writeFileSync(existing, "V2-longer"); return ok(""); };
+  const rewrite = async () => { fs.writeFileSync(existing, fixturePng("V2-longer")); return ok(""); };
   const second = await mod.run(mod.plan(m, { chain: ["text", "image"] }, { prompt: PROMPT }), { consent: true, exec: rewrite, home: touched, cwd: cwd2, effective: m });
   assert.equal(second.report.status, "complete");
-  assert.equal(second.report.steps[0].files[0].sha256, sha256("V2-longer"));
+  assert.equal(second.report.steps[0].files[0].sha256, sha256(fixturePng("V2-longer")));
   // A non-zero exit fails the step even when a file appeared.
   const crash = async () => { write(path.join(touched, ".codex", "generated_images", "s", "exec-crash.png"), "X"); return { code: 1, stdout: "", stderr: "boom \u001b[31mred\u001b[0m" }; };
   const third = await mod.run(mod.plan(m, { chain: ["text", "image"] }, { prompt: PROMPT }), { consent: true, exec: crash, home: touched, cwd: cwd2, effective: m });
@@ -403,8 +413,8 @@ await test("run: two concurrent chains into the same harvest glob keep separate 
   assert.equal(a.report.status, "complete"); assert.equal(b.report.status, "complete");
   assert.deepEqual(a.report.steps[0].files.map((f) => path.basename(f.path)), ["01-exec-a.png"]);
   assert.deepEqual(b.report.steps[0].files.map((f) => path.basename(f.path)), ["01-exec-b.png"]);
-  assert.equal(a.report.steps[0].files[0].sha256, sha256("PNG-a"));
-  assert.equal(b.report.steps[0].files[0].sha256, sha256("PNG-b"));
+  assert.equal(a.report.steps[0].files[0].sha256, sha256(fixturePng("PNG-a")));
+  assert.equal(b.report.steps[0].files[0].sha256, sha256(fixturePng("PNG-b")));
   assert.deepEqual(fs.readdirSync(path.join(home, ".momm", "harvest-locks")), [], "lock released by both");
 });
 
@@ -597,7 +607,7 @@ await test("finding codex-harvest-ignores-configured-home: CODEX_HOME and COPILO
   const exec = async () => { write(path.join(codexHome, "generated_images", "s", "exec-1.png"), "CUSTOM"); return ok(""); };
   const { report } = await mod.run(planned, { consent: true, exec, home, cwd, effective: m, env: { CODEX_HOME: codexHome } });
   assert.equal(report.status, "complete");
-  assert.equal(report.steps[0].files[0].sha256, sha256("CUSTOM"));
+  assert.equal(report.steps[0].files[0].sha256, sha256(fixturePng("CUSTOM")));
   assert.match(report.steps[0].files[0].harvested_from, /^\$CODEX_HOME\//);
 });
 

@@ -2218,7 +2218,8 @@ async function dashboardRegression() {
         const png = /This is a capability probe/.test(blob) ? blob.match(/(\S*probe\.png)\b/)?.[1]?.replace(/^@/, "") : null;
         if (png) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: colourOf(png) }) : colourOf(png), stderr: "" };
         if (/capability probe/.test(blob)) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "The page says something." }) : "The page says something.", stderr: "" };
-        fs.mkdirSync(path.dirname(generatedAt[route]), { recursive: true }); fs.writeFileSync(generatedAt[route], "bytes");
+        const {JPEG,fixturePng} = await import('./media-fixtures.mjs');
+        fs.mkdirSync(path.dirname(generatedAt[route]), { recursive: true }); fs.writeFileSync(generatedAt[route], generatedAt[route].endsWith('.jpg') ? JPEG : fixturePng());
         return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "written" }) : "written", stderr: "" };
       };
       const settle = async (job) => { for (let i = 0; i < 500 && job.status === "running"; i += 1) await new Promise((resolve) => setTimeout(resolve, 10)); return job; };

@@ -6,7 +6,7 @@ Skills in this collection follow a shared architecture. PRs are welcome if they 
 2. **OAuth-only, fail-closed.** No API-key adapters, fallbacks, or "just for convenience" key paths. Subprocesses run with key-scrubbed environments; unauthenticated backends return a structured status, never a workaround.
 3. **The driving agent is the sole writer.** Subordinate model calls are read-only diagnostic tools whose output is untrusted data. No skill may instruct a harness to execute reviewer-authored actions unexamined.
 4. **Deterministic core scripts, no npm dependencies.** Node 18+ standard library only. Git is required for repository workflows; explicit signed updates additionally need gitsign. Reviewer subprocesses must preserve timeout + process-tree-kill + hard-deadline containment (see `momm/scripts/multi-review.mjs` `runProcess`). Do not silently install prerequisites.
-5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI runs it on Linux/macOS/Windows × Node 18/20/22.
+5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI requests Linux/macOS/Windows × Node 18/20/22/24 plus Windows 24.15.0. Node 22/24 are primary targets; 18/20 are legacy compatibility checks. Configured jobs are not lifecycle proof.
 
 Run the checks locally before opening a PR:
 
@@ -62,6 +62,13 @@ service for transaction testing. They are not a substitute for live trusted-tag
 verification. The OS/Node CI matrix runs those fixtures without provider accounts.
 
 ## Release checklist
+
+The [1.16.1 test catalog](momm/references/test-catalog-1.16.1.md) names every MOMM and
+repository test suite. The safety workflow lists the selected commands and inline fixtures.
+Run each command with its own checked exit code: a later success must never mask a failure.
+New patch gates include byte-based media validation, expiry, immutable attempts/tool-produced
+checks, installation completion, and PATH-resolution refusals. Exact native-machine and
+signed-lifecycle results belong in the [gate record](momm/references/gates-1.16.1.md).
 
 1. Work in an isolated branch. Preserve unrelated skills and concurrent edits.
 2. Bump the dispatcher, manifest, README and release notes together. Regenerate
