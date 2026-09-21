@@ -26,7 +26,7 @@ const CAVEAT = "Labels are this project's governor decisions, not ground truth. 
 
 const CONTROL = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(8) + String.fromCharCode(11) + String.fromCharCode(12) + String.fromCharCode(14) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "-" + String.fromCharCode(159) + "]", "g");
 const clean = (value, max = 4000) => String(value ?? "").replace(CONTROL, " ").slice(0, max);
-const HOME_VARIANTS = () => { const h = os.homedir(); return [...new Set([h, h.split(path.sep).join("/"), h.split(path.sep).join("\\\\")])].filter(Boolean); };
+const HOME_VARIANTS = () => { const h = os.homedir(); if (!h || path.parse(h).root === h || /^[A-Za-z]:[\\/]*$/.test(h) || /^[\\/]+$/.test(h)) return []; return [...new Set([h, h.split(path.sep).join("/"), h.split(path.sep).join("\\\\")])].filter(Boolean); };
 export function scrub(value, max = 4000) { let s = clean(value, max * 2); for (const h of HOME_VARIANTS()) s = s.split(h).join("~"); return s.slice(0, max); }
 const lower = (s) => String(s ?? "").toLowerCase();
 const ACCEPTED = new Set(["applied", "applied-with-modification"]);
@@ -51,6 +51,7 @@ function readEvidence(project) {
 
 export function scoreOf({ acceptance_rate, valid_rate, unique_share, severity_inflation, ruled }) {
   if (!(ruled >= SCORE_MIN_RULED) || acceptance_rate === null || valid_rate === null) return { score: null, note: `insufficient evidence: ${ruled ?? 0} ruled findings, ${SCORE_MIN_RULED} needed` };
+  if (severity_inflation == null) return { score: null, note: 'insufficient evidence: critical findings have no calibration rulings' };
   const w = SCORE_WEIGHTS, value = w.acceptance * acceptance_rate + w.reliability * valid_rate + w.unique_share * (unique_share ?? 0) + w.calibration * (1 - (severity_inflation ?? 0));
   return { score: Math.round(100 * value), note: "40% acceptance, 25% reliability, 20% share of unique accepted catches, 15% severity calibration" };
 }
@@ -86,7 +87,7 @@ export function buildScorecard(project) {
       // New reports retain invalid/failed attempts too. Never add the merged
       // final row again, which would double count successful attempts.
       const usageRows = Array.isArray(report.attempt_evidence)
-        ? report.attempt_evidence.filter(a => a.route === row.agent && a.outcome !== 'not_dispatched').map(a => a.usage?.reported)
+        ? report.attempt_evidence.filter(a => lower(a.route) === lower(row.agent) && a.outcome !== 'not_dispatched').map(a => a.usage?.reported)
         : [row.usage?.reported];
       p.cost_attempts = (p.cost_attempts ?? 0) + usageRows.length;
       for (const reported of usageRows) {
@@ -122,7 +123,7 @@ export function buildScorecard(project) {
   const reviewers = [...people.values()].map((p) => {
     const ruled = p.accepted + p.rejected, acceptance_rate = ratio(p.accepted, ruled), valid_rate = ratio(p.reviews_valid, p.reviews_asked);
     const unique_share = ratio(p.unique_catches, ensemble.accepted_findings), severity_inflation = p.critical_ruled ? p.critical_rejected / p.critical_ruled : (p.critical_raised ? null : 0);
-    const { score, note } = scoreOf({ acceptance_rate, valid_rate, unique_share, severity_inflation: severity_inflation ?? 0, ruled });
+    const { score, note } = scoreOf({ acceptance_rate, valid_rate, unique_share, severity_inflation, ruled });
     const { durations, tokens_known, cost_known, cost_attempts = 0, cost_reported = 0, ...rest } = p;
     const completeCost = cost_attempts > 0 && cost_reported === cost_attempts;
     return { ...rest, ruled, acceptance_rate, valid_rate, unique_share, severity_inflation, median_seconds: median(durations) === null ? null : Math.round(median(durations) / 100) / 10,
@@ -176,7 +177,7 @@ body{margin:0;padding:32px 24px;font-family:system-ui,sans-serif;background:var(
 <div class="cards"><div class="card"><b>${esc(card.ensemble.runs)}</b><span>review runs, quorum met on ${esc(pct(card.ensemble.quorum_rate))}</span></div><div class="card"><b>${esc(card.ensemble.accepted_findings)}</b><span>findings accepted of ${esc(card.ensemble.ruled)} ruled (${esc(pct(card.ensemble.acceptance_rate))})</span></div><div class="card"><b>${esc(pct(card.ensemble.unique_catch_share))}</b><span>of accepted findings came from exactly one reviewer</span></div><div class="card"><b>${esc(pct(card.ensemble.corroborated_acceptance_rate))}</b><span>of corroborated findings accepted, against ${esc(pct(card.ensemble.single_source_acceptance_rate))} single-source</span></div></div>
 <div class="wrap" tabindex="0" role="region" aria-label="Reviewer scorecard"><table><thead><tr>${COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rows || '<tr><td colspan="12" class="muted">No reviews recorded yet.</td></tr>'}</tbody></table></div>
 <ul>${ensembleLines(card.ensemble).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
-<blockquote>${esc(card.caveat)} Score: ${esc(card.reviewers[0]?.score_note ?? "40% acceptance, 25% reliability, 20% unique catches, 15% severity calibration")}.</blockquote></main></body></html>\n`;
+<blockquote>${esc(card.caveat)} Score: 40% acceptance, 25% reliability, 20% unique catches, 15% severity calibration.</blockquote></main></body></html>\n`;
 }
 
 // ---- training export --------------------------------------------------------------------------------
@@ -185,7 +186,14 @@ body{margin:0;padding:32px 24px;font-family:system-ui,sans-serif;background:var(
 export function trainingRecords(project, { includeDeferred = true } = {}) {
   const { reports, decisions } = readEvidence(project), out = [];
   const keep = (d) => ["accepted", "rejected", ...(includeDeferred ? ["deferred"] : [])].includes(group(d.disposition));
-  for (const d of decisions.filter((x) => x.kind !== "review_rating" && typeof x.disposition === "string" && keep(x))) {
+  const latest = new Map();
+  for (const [index, d] of decisions.entries()) {
+    if (d.kind === 'review_rating' || typeof d.disposition !== 'string') continue;
+    // Identical legacy suggestion text is not enough to merge distinct items.
+    const identity = d.finding_id ? ['finding',d.run_id,d.finding_id] : d.item_id ? ['item',d.run_id,d.item_id] : ['legacy',index];
+    latest.set(JSON.stringify(identity), d);
+  }
+  for (const d of [...latest.values()].filter(keep)) {
     const report = reports.get(d.run_id); if (!report) continue;
     const base = { schema: "momm-training/1", run_id: clean(d.run_id, 80), momm_version: clean(report.dispatcher_version ?? "", 20) || null, governor: clean(report.governor ?? "", 40) || null, input_sha256: report.input_sha256 ?? null,
       label: d.disposition, label_group: group(d.disposition), label_reason: scrub(d.reason, 1200), label_source: "governor decision on this project; not ground truth", decided_at: d.timestamp ?? null };
@@ -223,9 +231,33 @@ function parse(args) {
   }
   return o;
 }
+function prepareWrite(file, force) {
+  // --force consents to content replacement, not arbitrary linked targets or
+  // changing permissions on an existing owner file.
+  let parent = path.dirname(file);
+  while (true) {
+    if (fs.existsSync(parent) && fs.lstatSync(parent).isSymbolicLink()) throw new Error('Linked output parent refused');
+    const next = path.dirname(parent); if (next === parent) break; parent = next;
+  }
+  let stat;
+  try { stat = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  if (!force) throw Object.assign(new Error('Output already exists; choose another name or pass --force'), {code:'EEXIST'});
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('Output must be an unlinked regular file');
+  if (process.platform !== 'win32' && (stat.mode & 0o077)) throw new Error('Existing output permissions are not owner-only; choose a new private output');
+  return stat;
+}
 function writePrivate(file, text, force) {
+  const before = prepareWrite(file, force);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, text, { flag: force ? "w" : "wx", mode: 0o600 });
+  const fd = fs.openSync(file, before ? fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW || 0) : 'wx', 0o600);
+  try {
+    const current = fs.fstatSync(fd);
+    // Some Windows Node versions expose dev=0 for path stats but a real device
+    // number for descriptor stats. The inode still has to match exactly.
+    if (!current.isFile() || current.nlink !== 1 || (before && ((before.dev !== 0 && current.dev !== before.dev) || current.ino !== before.ino))) throw new Error('Output changed before write');
+    if (process.platform !== 'win32' && (current.mode & 0o077)) throw new Error('Output permissions are not owner-only');
+    fs.ftruncateSync(fd, 0); fs.writeFileSync(fd, text);
+  } finally { fs.closeSync(fd); }
 }
 function entrypoint() { try { return Boolean(process.argv[1]) && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (entrypoint()) {
@@ -234,8 +266,9 @@ if (entrypoint()) {
     if (o.exportTo) {
       const records = trainingRecords(o.dir, { includeDeferred: o.includeDeferred });
       const body = records.map((r) => JSON.stringify(o.format === "chat" ? toChat(r) : r)).join("\n") + (records.length ? "\n" : "");
-      try { writePrivate(o.exportTo, body, o.force); } catch (e) { if (e.code === "EEXIST") throw new Error(`${o.exportTo} already exists; choose another name or pass --force`); throw e; }
-      writePrivate(o.exportTo + ".README.md", datasetCard(records, o.format), true);
+      prepareWrite(o.exportTo, o.force); prepareWrite(o.exportTo + '.README.md', o.force);
+      writePrivate(o.exportTo, body, o.force);
+      writePrivate(o.exportTo + ".README.md", datasetCard(records, o.format), o.force);
       process.stdout.write(JSON.stringify({ exported: records.length, format: o.format, file: o.exportTo, card: o.exportTo + ".README.md", note: "Labels are governor decisions, not ground truth. Check the file before sharing it." }) + "\n");
     } else {
       const card = buildScorecard(o.dir);

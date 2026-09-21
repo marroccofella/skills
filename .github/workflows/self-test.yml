@@ -61,6 +61,9 @@ jobs:
       - name: Disputed review boundary controls
         timeout-minutes: 2
         run: node momm/scripts/review-refutations.test.mjs
+      - name: Final candidate review follow-up regressions
+        timeout-minutes: 2
+        run: node momm/scripts/review-followup.test.mjs
       - name: Reviewer transport and hostile-output regression
         timeout-minutes: 2
         run: node momm/scripts/transport.test.mjs

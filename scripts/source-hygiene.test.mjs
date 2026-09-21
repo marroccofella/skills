@@ -20,7 +20,7 @@ check('the repository listing is available', () => assert(files.length > 50, 'gi
 check('no tracked text source contains a raw control byte', () => {
   const bad = [];
   for (const rel of files) {
-    let bytes; try { bytes = fs.readFileSync(path.join(root, rel)); } catch { continue; } // deleted in the working tree
+    let bytes; try { bytes = fs.readFileSync(path.join(root, rel)); } catch (error) { if (error.code === 'ENOENT') continue; throw error; } // only a working-tree deletion may be absent
     for (let i = 0; i < bytes.length; i++) { const c = bytes[i]; if (c < 9 || c === 11 || c === 12 || (c > 13 && c < 32) || c === 127) { bad.push(`${rel} offset ${i} byte 0x${c.toString(16).padStart(2, '0')}`); break; } }
   }
   assert.deepEqual(bad, [], 'write the character with String.fromCharCode or an escape that survives your tools');

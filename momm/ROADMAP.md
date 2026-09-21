@@ -43,6 +43,17 @@ upgrade; both now prevent completion. Failing-before/passing-after observations 
 privately. These repairs still require completed review dispositions and a final source-bound
 gate; they are not a release or an update to the owner's installed skill.
 
+The next full-draft review completed with quorum on seven of nine pieces, not a
+passing release gate. Reproduction tests exposed an inconsistent split-quorum
+summary, unbounded waiting on an idle input pipe, a 200-vs-2000-file check limit,
+and scorecard/export edge cases. The follow-up keeps all quorum summaries tied
+to the actual gate, bounds stdin, aligns range-check limits, exports only the
+latest identifiable ruling, withholds scores when severity calibration is unknown,
+and refuses existing companion files or broad POSIX outputs before writing.
+Unreadable tracked source now fails the hygiene check. These are candidate fixes;
+their new tests, final-source peer coverage and native lifecycle gates still have
+to pass. No tag, installed-skill update or public release follows from local tests.
+
 ## 1.17 (roadmap only, do not start)
 
 Possible themes, each opt-in and fail-closed: `--early-exit` after quorum (needs in-flight

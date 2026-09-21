@@ -2,6 +2,8 @@
 
 `momm/scripts/review-final-regressions.test.mjs` tests exact CI deadline matching and CLI diagnostics.
 `momm/scripts/review-refutations.test.mjs` tests disputed review boundaries and independent audit identities.
+`momm/scripts/review-followup.test.mjs` tests split-quorum reporting, bounded stdin,
+201-file checks, scorecard/export correctness and unreadable-source refusal.
 
 This is a source inventory, not a claim that every gate passed. Run each suite with Node;
 record its own exit code. `.github/workflows/self-test.yml` is the authoritative CI selection,

@@ -37,6 +37,7 @@ function scanFile(file, visit = () => {}) {
 // it takes the diff itself, so "the diff MOMM reviewed" and "the diff Git gives for that range" are
 // comparable byte for byte. --no-renames: a rename is a delete plus an add, never a guessed pairing.
 export const RANGE_DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary"];
+export const MAX_RANGE_SOURCE_FILES = 2000;
 const REVISION = /^[A-Za-z0-9][A-Za-z0-9._\/~^@{}-]{0,199}$/;          // never starts with "-": it cannot be read as an option
 const RANGE_PATH = /^[A-Za-z0-9._][A-Za-z0-9._\/ -]{0,399}$/;          // plain relative paths only; no pathspec magic, no options
 
@@ -132,7 +133,7 @@ function captureRangeSnapshot(root, artifact, range) {
       demand(bytes.length <= 8_000_000, "source scope is not a bounded file");
       files.push({ path: name, sha256: digest(bytes) });
     }
-    demand(files.length + deleted.length > 0 && files.length <= 2000, "source scope needs at least one file and at most 2000");
+    demand(files.length + deleted.length > 0 && files.length <= MAX_RANGE_SOURCE_FILES, `source scope needs at least one file and at most ${MAX_RANGE_SOURCE_FILES}`);
     demand(files.length > 0, "the range only deletes files; nothing remains at the head commit to bind");
     return { complete: true, kind: "git_range", base, head, paths, flags: RANGE_DIFF_FLAGS, files, deleted };
   } catch (error) { return { complete: false, kind: "git_range", files: [], reason: error.message }; }

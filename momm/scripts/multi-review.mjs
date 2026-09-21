@@ -1950,7 +1950,7 @@ const SEVERITY_RANK = { CRITICAL: 3, WARNING: 2, NITPICK: 1 };
 // governor could finish a run believing it was done while every suggestion sat
 // untriaged and dispositions.jsonl stayed empty. This block makes the
 // outstanding work explicit, counted, and impossible to miss.
-function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, completionScript = null) {
+function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, completionScript = null, quorum = null) {
   const byReviewer = {};
   let total = 0;
   for (const result of results) {
@@ -1972,12 +1972,14 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, complet
   const actions = [];
   const completed = results.filter(result => result.status === "success").length;
   const required = Math.max(1, minSuccess || 1);
+  // Merged route success means at least one piece, not every piece.
+  const quorumMet = quorum === null ? completed >= required : quorum.met === true;
   // This is a display command, never executed from reviewer data. Production
   // supplies the actual installed path; single-quote for the documented shell.
   const completionCheck = completionScript
     ? `node '${completionScript.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}' --run ${runId}`
     : `node <installed-momm>/scripts/governor.mjs --run ${runId}`;
-  if (completed < required) actions.push(`Review quorum not met: ${completed}/${required} completed external reviews. Do not declare the review finished; resolve route failures or obtain the required completed reviews.`);
+  if (!quorumMet) actions.push(`Review quorum not met for the full reviewed scope (minimum ${required} per piece). Do not declare the review finished; inspect the quorum block and resolve the missing coverage.`);
   if (material) actions.push(`Reproduce each of the ${material} CRITICAL/WARNING finding(s) with a failing test before authoring any fix.`);
   if (total) actions.push(`Triage all ${total} suggested_improvements — apply-and-verify or reject with a reason. None may be silently dropped.`);
   if (total || material) actions.push(`Append one JSONL line per ruling to .ensemble_reviews/dispositions.jsonl with run_id ${runId}, then present the disposition table.`);
@@ -1987,9 +1989,9 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, complet
     suggestions_by_reviewer: byReviewer,
     material_findings_awaiting_reproduction: material,
     dispositions_logged_for_this_run: logged,
-    review_quorum_met: completed >= required,
+    review_quorum_met: quorumMet,
     complete: false,
-    review_phase_complete: completed >= required,
+    review_phase_complete: quorumMet,
     completion_check: completionCheck,
     required_next_actions: actions,
   };
@@ -2034,10 +2036,25 @@ function buildInsights(findings, results) {
   };
 }
 
-async function readAllStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf8");
+async function readAllStdin(timeoutMs = 30_000) {
+  // Non-TTY can be an idle inherited pipe. Never ignore potentially mismatched
+  // input, but refuse on a fixed deadline rather than wait indefinitely.
+  const input = process.stdin;
+  if (input.readableEnded) return "";
+  return new Promise((resolve, reject) => {
+    const chunks = []; let bytes = 0;
+    const cleanup = () => { clearTimeout(timer); input.off('data', data); input.off('end', end); input.off('error', error); input.pause(); };
+    const error = e => { cleanup(); reject(e); };
+    const end = () => { cleanup(); resolve(Buffer.concat(chunks).toString('utf8')); };
+    const data = chunk => {
+      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += value.length;
+      if (bytes > 8_000_000) return error(new Error('stdin exceeds the 8 MB input limit'));
+      chunks.push(value);
+    };
+    const timer = setTimeout(() => error(new Error('stdin deadline exceeded; close the input pipe or use a completed input file')), timeoutMs);
+    input.on('data', data); input.once('end', end); input.once('error', error);
+  });
 }
 
 async function collectArtifact(options) {
@@ -3435,7 +3452,7 @@ async function main() {
     // What the GOVERNOR still owes: reproduction of material findings and an
     // explicit ruling on every suggestion. This immutable initial report is
     // never completion evidence; governor.mjs revalidates current evidence.
-    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess, fileURLToPath(new URL("./governor.mjs", import.meta.url))),
+    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess, fileURLToPath(new URL("./governor.mjs", import.meta.url)), { met: pieceQuorum ? pieceQuorum.met : externalSuccesses >= (options.minSuccess ?? 1) }),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
   // Durable evidence, persisted BEFORE the stdout report so the emitted

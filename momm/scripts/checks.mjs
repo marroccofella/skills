@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { digest } from './governor.mjs';
+import { digest, MAX_RANGE_SOURCE_FILES } from './governor.mjs';
 import { defaultExec } from './probes.mjs';
 import { requirePrivateEvidence } from './evidence-permissions.mjs';
 const demand = (ok, why) => { if (!ok) throw new Error(why); };
@@ -26,7 +26,7 @@ export async function recordCheck(root, { runId, itemId = 'run', phase = 'final'
   demand(report.run_id === runId && report.source_snapshot?.complete, 'report has no complete source identity');
   const source = report.source_snapshot.files;
   const names = artifacts ?? source.map(f => f.path);
-  demand(names.length > 0 && names.length <= 200 && new Set(names).size === names.length && names.every(n => source.some(f => f.path === n)), 'artifacts must select reviewed source files');
+  demand(names.length > 0 && names.length <= MAX_RANGE_SOURCE_FILES && new Set(names).size === names.length && names.every(n => source.some(f => f.path === n)), `artifacts must select 1–${MAX_RANGE_SOURCE_FILES} unique reviewed source files`);
   demand(/\.(?:mjs|cjs|js)$/.test(test), 'choose a local Node test file');
   const testRef = ref(test), bound = names.map(ref);
   const id = randomUUID(), folder = `.ensemble_reviews/checks/${id}`;
