@@ -37,10 +37,12 @@ The workflow requests these cells; a configuration entry is not a pass. The resu
 
 | Candidate | Workflow run | Result |
 | --- | --- | --- |
+| **`eea8189dc793f5fb1624374d9b46828b31f8a5a7` (current)** | [35735446353](https://github.com/marroccofella/skills/actions/runs/35735446353) | 13 of 13 jobs passed |
 | `a5a37b5c8b935ca0740aa94e79ada6ee1bc1f616` | [35664942450](https://github.com/marroccofella/skills/actions/runs/35664942450) | 13 of 13 jobs passed |
 | `be12bc569ab6ceacc41f6ce544fddf3673818c0d` | 35650200906 | **failed on all 13 jobs**; superseded, do not test |
 
-A later candidate supersedes this table. Populate exact versions, run URLs, commit SHA and receipt
+Only the row marked **current** is the candidate under test; the others are history, kept so a
+superseded commit is never picked up by mistake. A later candidate supersedes this table. Populate exact versions, run URLs, commit SHA and receipt
 hashes only after reading completed job output.
 
 ## Defect found by independent audit of `a5a37b5`, fixed
