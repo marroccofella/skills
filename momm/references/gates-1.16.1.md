@@ -4,16 +4,34 @@ This record separates implementation from release evidence. The published releas
 
 ## Compatibility and lifecycle
 
-| OS | Node 18 legacy | Node 20 legacy | Node 22 primary | Node 24 primary |
+### Offline CI (the workflow's own jobs)
+
+| OS | Node 18 | Node 20 | Node 22 (primary) | Node 24 (primary) |
 | --- | --- | --- | --- | --- |
 | Windows | offline CI green | offline CI green | offline CI green; local full run on 22.16.0 | offline CI green (24.x and 24.15.0) |
 | macOS | offline CI green | offline CI green | offline CI green | offline CI green |
 | Linux | offline CI green | offline CI green | offline CI green | offline CI green |
 
 "Offline CI green" means every job of the workflow passed on the named candidate, read from the job
-logs and not from the badge. It is **not** a lifecycle result: no signed install, upgrade, rollback
-or re-upgrade has been run on any native machine, so every cell in the lifecycle table below stays
-untested. A green offline matrix and a completed lifecycle drill are different claims.
+logs and not from the badge. It is **not** a lifecycle result. A green offline matrix and a
+completed lifecycle drill are different claims, so they have separate tables.
+
+### Installation lifecycle (signed install, upgrade, rollback, re-upgrade, damaged-payload refusal)
+
+| OS | Node 18 | Node 20 | Node 22 | Node 24 |
+| --- | --- | --- | --- | --- |
+| Windows | untested | untested | untested | untested |
+| macOS | untested | untested | untested | untested |
+| Linux | untested | untested | untested | untested |
+
+Every cell is untested: no signed install, upgrade, rollback or re-upgrade has been run on any
+native machine. Nothing below changes that until a cell is filled with a receipt.
+
+**Node versions, said once.** Node 22 and Node 24 are the primary targets; Node 18 and Node 20 are
+past end of life and are kept as compatibility targets. "Primary" describes support priority, not
+which drills are owed: Node 18 and Node 24 lifecycle drills remain required on Windows, macOS and
+Linux by charter B, and the primary label does not waive the Node 18 obligation. Node 20 is an offline CI target only, with no lifecycle
+obligation.
 
 The workflow requests these cells; a configuration entry is not a pass. The results above are:
 
@@ -35,9 +53,6 @@ paths: a component is refused when it is a link and the real location of its par
 or inside it. Folders above the project remain the machine's own layout and are not refused. The
 reproduction is in `momm/scripts/media-bytes.test.mjs` and fails against the audited commit.
 
-Node 18 and Node 24 lifecycle drills remain required on Windows, macOS and Linux by charter B.
-Node 22 is also a primary lifecycle target; the primary label does not waive Node 18's regression
-obligation. Node 20 remains an offline CI compatibility target, not a completed lifecycle claim.
 Record the actual machine architecture alongside the exact runtime version in each receipt.
 
 For each required lifecycle cell above, in an isolated user environment, record fresh signed installation,

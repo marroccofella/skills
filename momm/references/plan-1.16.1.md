@@ -167,9 +167,12 @@ verifies both.
 8. **Duplicate protection.** Two active links never silently point at different MOMM versions:
    the installer refuses to add a second active copy without the selection step in 3.
 
-*Done when* each numbered line has a test on real folders (junctions on Windows, symlinks
+*Done when* **F1 and F2** each have a test on real folders (junctions on Windows, symlinks
 elsewhere), the lifecycle drills in B end with `--doctor --versions --expect <version>` exiting 0,
-and the owner's five-folder case above is reproduced as a fixture.
+and the owner's five-folder case above is reproduced as a fixture. F3 to F8 are **not** conditions of
+this tag: the owner's scope boundary of 20 September keeps installation identity and conflict
+detection here and sends broad installation-management interfaces to 1.17, where they are recorded
+by name in the [ideas register](ideas-register.md).
 
 ### G. What the evidence is worth (owner addition, 20 September)
 
@@ -278,8 +281,9 @@ No 1.17 item starts before the signed `momm-1.16.1` tag exists.
   it names a suite that does not exist or that CI does not run; and the public 1.16.0 change list
   implied every oversize hunk becomes governor scope, when line splitting is the default. The narrow
   six-name assertion that allowed the drift is replaced by the complete rule. Sections A1 to A4, C,
-  E, F1, F2, G and H are implemented; items 7 and 9 (real lifecycle drills, final-tree live image
-  review) remain the release gates they were always meant to be.
+  E, F1, F2, G and H are implemented, except that A4 is implemented only as its checklist: the live
+  image review it describes is a gate on the final tree, not code. Items 7 and 9 (real lifecycle
+  drills, that final-tree live image review) remain the release gates they were always meant to be.
 - 20 September: G built. `scorecard.mjs` and its training export, 17 tests. Run on the real 1.16 gate
   ledger: 10 runs, 482 findings, 440 ruled, 165 accepted; corroborated findings accepted 62% against
   36% single-source; 90% of accepted findings came from exactly one reviewer; per-piece reliability 71
