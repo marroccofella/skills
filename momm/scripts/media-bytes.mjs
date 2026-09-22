@@ -110,10 +110,21 @@ export function readMedia(file, options) {
   // a reviewed project could point at the user's private files. Folders ABOVE the project are the
   // machine's own layout (macOS reaches every temp folder through /var -> /private/var) and are not
   // refused. The file itself is never followed, wherever it lies.
-  const root = path.resolve(options?.root ?? process.cwd());
-  const within = (p) => { const rel = path.relative(root, p); return rel !== '' && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
+  // Containment is decided on REAL paths. Deciding it on the literal path let an alias of the project
+  // defeat the check: every component of /alias/... looked outside a root of /real/..., so no component
+  // was inspected (independent audit of a5a37b5). A component is refused when it is a link AND the real
+  // location of its parent is the project or inside it; folders above the project are the machine's own
+  // layout (macOS reaches every temp folder through /var -> /private/var) and are not refused.
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  const key = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  const realRoot = key(real(path.resolve(options?.root ?? process.cwd())));
+  const inProject = (p) => { const rel = path.relative(realRoot, key(real(p))); return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)); };
   if (fs.lstatSync(absolute).isSymbolicLink()) return refuse('symlink or junction path');
-  for (let p = path.dirname(absolute); within(p); p = path.dirname(p)) if (fs.lstatSync(p).isSymbolicLink()) return refuse('symlink or junction path');
+  for (let p = path.dirname(absolute); ; p = path.dirname(p)) {
+    let entry; try { entry = fs.lstatSync(p); } catch { break; }
+    if (entry.isSymbolicLink() && inProject(path.dirname(p))) return refuse('symlink or junction path');
+    if (p === path.dirname(p)) break;
+  }
   const before = fs.lstatSync(absolute);
   if (!before.isFile() || before.size > Math.max(...Object.values(MEDIA_CAPS))) return refuse('not a bounded regular file');
   const fd = fs.openSync(absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));

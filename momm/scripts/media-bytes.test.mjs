@@ -29,6 +29,25 @@ try {
     assert.throws(() => readMedia(path.join(project, 'alias.png'), { root: path.join(tmp, 'somewhere-else') }), /symlink|junction/, 'also when it lies outside the project');
   }
   fs.unlinkSync(outerAlias);
+  // Independent audit of a5a37b5: a link planted INSIDE the project escaped the check when the project
+  // was reached through an alias. Containment was decided on literal paths against a resolved root, so
+  // every component of an aliased path looked "outside" and none was inspected. Node's process.cwd()
+  // resolves links on POSIX, so the real CLI could be given exactly this shape.
+  {
+    const realProject = path.join(tmp, 'aliased', 'project'), secret = path.join(tmp, 'aliased', 'secret');
+    fs.mkdirSync(realProject, { recursive: true }); fs.mkdirSync(secret, { recursive: true });
+    fs.writeFileSync(path.join(secret, 'private.png'), png);
+    const planted = path.join(realProject, 'evil');                       // a link inside the project...
+    fs.symlinkSync(secret, planted, process.platform === 'win32' ? 'junction' : 'dir');
+    const projectAlias = path.join(tmp, 'aliased', 'by-another-name');    // ...and another name for the project
+    fs.symlinkSync(realProject, projectAlias, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.throws(() => readMedia(path.join(planted, 'private.png'), { root: realProject }), /symlink|junction/, 'a link inside the project is refused by its own name');
+    assert.throws(() => readMedia(path.join(projectAlias, 'evil', 'private.png'), { root: realProject }), /symlink|junction/, 'and through an alias of the project: containment must be decided on real paths');
+    assert.throws(() => readMedia(path.join(projectAlias, 'evil', 'private.png'), { root: projectAlias }), /symlink|junction/, 'and when the root is given by its aliased name too');
+    // The other name for the project is not itself an escape: an ordinary file under it still reads.
+    fs.writeFileSync(path.join(realProject, 'ok.png'), png);
+    assert.equal(readMedia(path.join(projectAlias, 'ok.png'), { root: realProject }).format, 'png', 'an alias of the project root is just another name, not a refusal');
+  }
   fs.unlinkSync(linked);
   assert.throws(() => validateMedia(jpeg, 'one.txt', { allowText: true }), /Media refused/);
   console.log('PASS: content identification, extension mismatch, truncation, HTML, empty, junction and text-bypass regressions');

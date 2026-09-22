@@ -6,12 +6,34 @@ This record separates implementation from release evidence. The published releas
 
 | OS | Node 18 legacy | Node 20 legacy | Node 22 primary | Node 24 primary |
 | --- | --- | --- | --- | --- |
-| Windows | untested final candidate | untested final candidate | local development tests on 22.16.0; final gate pending | untested final candidate (CI also requests 24.15.0) |
-| macOS | untested final candidate | untested final candidate | untested final candidate | untested final candidate |
-| Linux | untested final candidate | untested final candidate | untested final candidate | untested final candidate |
+| Windows | offline CI green | offline CI green | offline CI green; local full run on 22.16.0 | offline CI green (24.x and 24.15.0) |
+| macOS | offline CI green | offline CI green | offline CI green | offline CI green |
+| Linux | offline CI green | offline CI green | offline CI green | offline CI green |
 
-The workflow requests these cells; a configuration entry is not a pass. Populate exact versions,
-run URLs, commit SHA and receipt hashes only after reading completed job output.
+"Offline CI green" means every job of the workflow passed on the named candidate, read from the job
+logs and not from the badge. It is **not** a lifecycle result: no signed install, upgrade, rollback
+or re-upgrade has been run on any native machine, so every cell in the lifecycle table below stays
+untested. A green offline matrix and a completed lifecycle drill are different claims.
+
+The workflow requests these cells; a configuration entry is not a pass. The results above are:
+
+| Candidate | Workflow run | Result |
+| --- | --- | --- |
+| `a5a37b5c8b935ca0740aa94e79ada6ee1bc1f616` | [35664942450](https://github.com/marroccofella/skills/actions/runs/35664942450) | 13 of 13 jobs passed |
+| `be12bc569ab6ceacc41f6ce544fddf3673818c0d` | 35650200906 | **failed on all 13 jobs**; superseded, do not test |
+
+A later candidate supersedes this table. Populate exact versions, run URLs, commit SHA and receipt
+hashes only after reading completed job output.
+
+## Defect found by independent audit of `a5a37b5`, fixed
+
+A link planted inside a reviewed project escaped the attachment check when the project was reached
+through an alias of itself: containment was decided on literal paths against a resolved root, so
+every component of the aliased path looked "outside" the project and none was inspected. The real
+CLI accepted a file from outside the project through that shape. Containment is now decided on real
+paths: a component is refused when it is a link and the real location of its parent is the project
+or inside it. Folders above the project remain the machine's own layout and are not refused. The
+reproduction is in `momm/scripts/media-bytes.test.mjs` and fails against the audited commit.
 
 Node 18 and Node 24 lifecycle drills remain required on Windows, macOS and Linux by charter B.
 Node 22 is also a primary lifecycle target; the primary label does not waive Node 18's regression
