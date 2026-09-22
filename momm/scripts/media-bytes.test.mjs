@@ -34,11 +34,11 @@ try {
   // every component of an aliased path looked "outside" and none was inspected. Node's process.cwd()
   // resolves links on POSIX, so the real CLI could be given exactly this shape.
   {
-    const realProject = path.join(tmp, 'aliased', 'project'), secret = path.join(tmp, 'aliased', 'secret');
-    fs.mkdirSync(realProject, { recursive: true }); fs.mkdirSync(secret, { recursive: true });
-    fs.writeFileSync(path.join(secret, 'private.png'), png);
+    const realProject = path.join(tmp, 'aliased', 'project'), outsideProject = path.join(tmp, 'aliased', 'outside');
+    fs.mkdirSync(realProject, { recursive: true }); fs.mkdirSync(outsideProject, { recursive: true });
+    fs.writeFileSync(path.join(outsideProject, 'private.png'), png);
     const planted = path.join(realProject, 'evil');                       // a link inside the project...
-    fs.symlinkSync(secret, planted, process.platform === 'win32' ? 'junction' : 'dir');
+    fs.symlinkSync(outsideProject, planted, process.platform === 'win32' ? 'junction' : 'dir');
     const projectAlias = path.join(tmp, 'aliased', 'by-another-name');    // ...and another name for the project
     fs.symlinkSync(realProject, projectAlias, process.platform === 'win32' ? 'junction' : 'dir');
     assert.throws(() => readMedia(path.join(planted, 'private.png'), { root: realProject }), /symlink|junction/, 'a link inside the project is refused by its own name');
