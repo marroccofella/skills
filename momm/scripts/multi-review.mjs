@@ -1443,7 +1443,11 @@ function classifyFailure(result, agent = null) {
   // Deliberately narrow: bare "unsupported_client" is a generic OAuth error
   // code any provider can emit and must not trigger tier-specific advice.
   if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
-    return { status: "ineligible_tier", detail: "provider retired individual/Pro/Ultra access for this CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor" };
+    // Route-specific: the Gemini retirement and its antigravity successor are facts about Gemini, and
+    // saying them for another route sends the user to fix the wrong thing (seen live on codex).
+    return { status: "ineligible_tier", detail: agent === "gemini"
+      ? "provider retired individual/Pro/Ultra access for the gemini CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor"
+      : `the ${agent ?? "provider"} account tier no longer covers this CLI; check that account's plan with the provider. This is an account state, not a MOMM failure, and no other route is affected` };
   }
   // stdout can echo the reviewed artifact. Only explicit diagnostic lines on
   // stderr establish this failure class; a bare code literal 429 is not proof.
@@ -2949,6 +2953,15 @@ async function selfTest(pretty) {
       return failure.status === "authentication_required" && failure.login_hint === LOGIN_HINTS.codex && !failure.detail.includes("synthetic-private-marker");
     })(),
     classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
+    // A retired tier is a per-route fact. The advice must name the route that failed and must not
+    // tell a Codex user that Gemini Code Assist retired (seen live: rev_20260922100526, codex).
+    retired_tier_advice_is_route_specific: (() => {
+      const tier = (agent) => classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for individuals." }, agent);
+      const gemini = tier("gemini"), codex = tier("codex");
+      return gemini.status === "ineligible_tier" && codex.status === "ineligible_tier"
+        && /gemini/i.test(gemini.detail) && !/gemini/i.test(codex.detail) && /codex/i.test(codex.detail)
+        && !/antigravity route/i.test(codex.detail);
+    })(),
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
       && effectiveTimeoutMs(14_000, 120_000, false) > 140_000
