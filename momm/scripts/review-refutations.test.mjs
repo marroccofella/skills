@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
+import {createHash, randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {privateTestFixture} from './private-test-fixture.mjs';
 import {preparePrivateEvidence} from './evidence-permissions.mjs';
@@ -34,13 +34,21 @@ try {
   assert.equal(digest(readMedia(path.join(root,'source.png')).buffer),digest(fs.readFileSync(path.join(root,'source.png'))));
   // A staging collision is a refusal, not permission to overwrite another file.
   const stage=vm.runInNewContext(extract(read('momm/scripts/modality.mjs'),'function stageCopy(','// ---- runner')+';stageCopy',{
-    fs,path,process,readMedia,sha256:digest,hashFile:p=>digest(fs.readFileSync(p)),fail:(message,code)=>Object.assign(new Error(message),{code})
+    fs,path,process,randomBytes,readMedia,sha256:digest,hashFile:p=>digest(fs.readFileSync(p)),fail:(message,code)=>Object.assign(new Error(message),{code})
   });
   const dir=path.join(root,'stage');fs.mkdirSync(dir);
-  const tmp=path.join(dir,`01-source.png.${process.pid}.tmp`);fs.writeFileSync(tmp,'reserved');
-  assert.throws(()=>stage(path.join(root,'source.png'),dir,0),/EEXIST/);
-  assert.equal(fs.readFileSync(tmp,'utf8'),'reserved');
-  fs.unlinkSync(tmp);
+  // Until 1.16.1 the temporary name was the target plus the pid, so a temp left behind by an earlier
+  // crashed stage made every later stage of that artefact fail with EEXIST. That refusal was asserted
+  // here as if it were the contract. The name now carries a per-call nonce, so a leftover is inert.
+  const stale=path.join(dir,`01-source.png.${process.pid}.tmp`);fs.writeFileSync(stale,'left behind by an earlier run');
+  assert.equal(stage(path.join(root,'source.png'),dir,0).sha256,digest(fixturePng('one')),'a stale temporary file does not block staging');
+  assert.equal(fs.readFileSync(stale,'utf8'),'left behind by an earlier run','staging does not touch a file it did not create');
+  fs.unlinkSync(stale);
+  // A stage that fails part way removes its own temporary file rather than leaving the bytes behind.
+  const blocked=path.join(dir,'01-source.png');fs.rmSync(blocked,{force:true});fs.mkdirSync(blocked);
+  assert.throws(()=>stage(path.join(root,'source.png'),dir,0));
+  assert.deepEqual(fs.readdirSync(dir).filter(n=>n.endsWith('.tmp')),[],'a failed stage leaves no staged bytes behind');
+  fs.rmSync(blocked,{recursive:true,force:true});
   assert.equal(stage(path.join(root,'source.png'),dir,0).sha256,digest(fixturePng('one')));
   const cycle=path.join(root,'cycle');fs.mkdirSync(cycle);
   fs.symlinkSync(cycle,path.join(cycle,'alias'),process.platform==='win32'?'junction':'dir');

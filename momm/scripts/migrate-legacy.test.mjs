@@ -6,8 +6,11 @@ import { migrate,rollback,parse } from './migrate-legacy.mjs';
 import { execute,verifyCheckout } from './bootstrap.mjs';
 const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..'),root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-migration-tests-')),results={};
 const skipped={};
-const oldHome={HOME:process.env.HOME,USERPROFILE:process.env.USERPROFILE};
-const testHome=path.join(root,'home');fs.mkdirSync(testHome);process.env.HOME=testHome;process.env.USERPROFILE=testHome;
+// Every variable a harness path can be built from, not just HOME: the env spread kept the
+// real APPDATA, so a Windows discovery path could still have left the temporary home.
+const HOME_KEYS=['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME'];
+const oldHome=Object.fromEntries(HOME_KEYS.map(k=>[k,process.env[k]]));
+const testHome=path.join(root,'home');fs.mkdirSync(testHome);for(const k of HOME_KEYS)process.env[k]=testHome;
 const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,s);};
 // Inputs retain their caller spelling, including symlink/short-name temp roots.
 // Expected paths and race hooks use the OS-resolved parent of each entry.

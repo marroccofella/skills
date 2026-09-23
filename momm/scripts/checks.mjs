@@ -41,7 +41,11 @@ export async function recordCheck(root, { runId, itemId = 'run', phase = 'final'
   // Only this explicit CLI invocation supplies args. Reports contain data, never commands.
   const result = await execute(process.execPath, [local(test), ...args], { cwd: root, timeout, input: '' });
   requirePrivateEvidence(evidence);
-  demand(ref(reportName).sha256 === reportRef.sha256 && ref(test).sha256 === testRef.sha256 && bound.every(f => ref(f.path).sha256 === f.sha256), 'source, report or test changed during the check; no success receipt');
+  // The baseline copy is part of the receipt, so it is re-hashed with everything else: re-checking
+  // only the live file left the snapshot the receipt cites free to change during the run.
+  demand(ref(reportName).sha256 === reportRef.sha256 && ref(test).sha256 === testRef.sha256
+    && bound.every(f => ref(f.path).sha256 === f.sha256 && (!f.snapshot || ref(f.snapshot.path).sha256 === f.snapshot.sha256)),
+    'source, report, test or baseline snapshot changed during the check; no success receipt');
   const outputName = `${folder}/output.txt`;
   const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
   demand(Buffer.byteLength(output) <= 8_000_000, 'test output exceeds receipt limit');

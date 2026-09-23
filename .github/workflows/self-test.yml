@@ -61,6 +61,9 @@ jobs:
       - name: Final review regression controls
         timeout-minutes: 2
         run: node momm/scripts/review-final-regressions.test.mjs
+      - name: Triage regressions from review rev_20260922162715
+        timeout-minutes: 2
+        run: node momm/scripts/review-triage-1161.test.mjs
       - name: Disputed review boundary controls
         timeout-minutes: 2
         run: node momm/scripts/review-refutations.test.mjs

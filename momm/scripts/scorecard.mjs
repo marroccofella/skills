@@ -79,7 +79,12 @@ export function buildScorecard(project) {
       // A split run merges a route's pieces into one row that reads "success" if ANY piece succeeded.
       // Reliability is counted per piece, from the per-status piece counts the row carries.
       const pieces = row.pieces && typeof row.pieces === "object" ? Object.entries(row.pieces).filter(([, n]) => Number.isInteger(n) && n > 0) : null;
-      const asked = pieces?.length ? pieces.reduce((sum, [, n]) => sum + n, 0) : 1;
+      // A piece that was never put to this route is not a review it was asked for. The row-level
+      // check above already drops those routes; the per-piece counts have to drop them too, or a
+      // split run charges a route with pieces it was never sent and understates its reliability.
+      const requested = pieces?.length ? pieces.filter(([status]) => !NOT_A_REVIEW.has(status)) : null;
+      const asked = pieces?.length ? requested.reduce((sum, [, n]) => sum + n, 0) : 1;
+      if (pieces?.length && asked === 0) continue; // every piece was withheld: nothing was asked of this route
       if (pieces?.length) { for (const [status, n] of pieces) { p.outcomes[status] = (p.outcomes[status] ?? 0) + n; if (status === "success") p.reviews_valid += n; } }
       else { p.outcomes[row.status] = (p.outcomes[row.status] ?? 0) + 1; if (row.status === "success") p.reviews_valid++; }
       p.reviews_asked += asked;
@@ -114,7 +119,12 @@ export function buildScorecard(project) {
       }
     }
   }
-  for (const d of rulings.filter((x) => !x.finding_id && x.reviewer)) { const g = group(d.disposition), p = get(d.reviewer); if (g === "accepted") p.suggestions_accepted++; else if (g === "rejected") p.suggestions_rejected++; }
+  // One suggestion, one ruling. A revised decision on the same item supersedes the earlier one
+  // exactly as it does for findings above; counting every row let a reconsidered suggestion be
+  // counted twice and inflated a reviewer's accepted and rejected totals against the same item.
+  const bySuggestion = new Map(); // run_id + item -> ruling (the latest wins)
+  for (const d of rulings) if (!d.finding_id && d.reviewer) bySuggestion.set(`${d.run_id}\n${d.reviewer}\n${d.item_id ?? d.suggestion ?? ""}`, d);
+  for (const d of bySuggestion.values()) { const g = group(d.disposition), p = get(d.reviewer); if (g === "accepted") p.suggestions_accepted++; else if (g === "rejected") p.suggestions_rejected++; }
 
   const ratings = {};
   const latest = new Map(); for (const r of ratingRows) latest.set(r.run_id + "\n" + lower(r.reviewer), r);
@@ -226,7 +236,7 @@ function parse(args) {
   for (let i = 0; i < args.length; i++) {
     const a = args[i], next = () => { const v = args[++i]; if (v === undefined) throw new Error(`${a} needs a value`); return v; };
     if (a === "--dir") o.dir = path.resolve(next()); else if (a === "--json") o.mode = "json"; else if (a === "--markdown") o.mode = "markdown";
-    else if (a === "--html") { o.mode = "html"; o.html = path.resolve(next()); } else if (a === "--export-training") { const given = path.resolve(next()); o.exportTo = path.join(resolveOutput(path.dirname(given)), path.basename(given)); }
+    else if (a === "--html") { o.mode = "html"; const given = path.resolve(next()); o.html = path.join(resolveOutput(path.dirname(given)), path.basename(given)); } else if (a === "--export-training") { const given = path.resolve(next()); o.exportTo = path.join(resolveOutput(path.dirname(given)), path.basename(given)); }
     else if (a === "--format") { o.format = next(); if (!["jsonl", "chat"].includes(o.format)) throw new Error("--format is jsonl or chat"); }
     else if (a === "--exclude-deferred") o.includeDeferred = false; else if (a === "--force") o.force = true; else throw new Error(`Unknown argument: ${clean(a, 80)}`);
   }

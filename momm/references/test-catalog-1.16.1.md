@@ -5,6 +5,8 @@ owner-only export/refusal (including forced companion overwrite), and checks
 the current acceptance guide's retry and ledger-ticket instructions.
 
 `momm/scripts/review-final-regressions.test.mjs` tests exact CI deadline matching and CLI diagnostics.
+
+`momm/scripts/review-triage-1161.test.mjs` holds the regressions from the governor triage of review rev_20260922162715_cc7e49c40234: a harvest that discarded every readable artefact when one was refused, and the containment scan that decides which Git verifies a committed range on POSIX.
 `momm/scripts/review-refutations.test.mjs` tests disputed review boundaries and independent audit identities.
 `momm/scripts/review-followup.test.mjs` tests split-quorum reporting, bounded stdin,
 201-file checks, scorecard/export correctness and unreadable-source refusal.

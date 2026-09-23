@@ -15,7 +15,7 @@ export function outcomeFor(result) {
 }
 const digest = value => createHash('sha256').update(value).digest('hex');
 export function startAttempt(root, metadata) {
-  const record = {schema:'momm-attempt-start/1',...metadata,attempt_id:randomUUID(),event:'started'};
+  const record = {...metadata,schema:'momm-attempt-start/1',attempt_id:randomUUID(),event:'started'};
   return persistAttempt(root, record);
 }
 export function attemptRecord(result, { runId, piece = 'whole', inputHash, pieceHash, ordinal, durationMs, startedAt, attemptId = randomUUID() }) {
@@ -42,6 +42,6 @@ export function attemptTotals(attempts) {
   for (const a of attempts) { if (!groups.has(a.route)) groups.set(a.route, []); groups.get(a.route).push(a); }
   return [...groups].map(([route, rows]) => {
     const costs = rows.map(r => r.usage?.reported?.cost_usd).filter(Number.isFinite);
-    return { route, attempts: rows.length, duration_ms: rows.reduce((n, r) => n + r.duration_ms, 0), cost_usd_reported: costs.length ? costs.reduce((a, b) => a + b, 0) : null, cost_coverage: `${costs.length} of ${rows.length}`, complete_cost: costs.length === rows.length };
+    return { route, attempts: rows.length, duration_ms: rows.reduce((n, r) => n + (Number.isFinite(r.duration_ms) ? r.duration_ms : 0), 0), cost_usd_reported: costs.length ? costs.reduce((a, b) => a + b, 0) : null, cost_coverage: `${costs.length} of ${rows.length}`, complete_cost: costs.length === rows.length };
   });
 }

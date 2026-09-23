@@ -333,8 +333,11 @@ export function effective({ home = os.homedir(), installedVersions, loginIdentit
   for (const { entry, reason } of [...(read.invalidated ?? []), ...(read.stale ?? [])]) {
     const cell = result.routes[entry.route]?.[entry.direction]?.[entry.modality];
     if (!cell || cell.level === "no") continue;
+    // `reprobe` is what makes the probe path offer this cell again, so it stays the blocker. The
+    // blocker it displaces is the more specific statement and is kept in the reason rather than lost.
+    const displaced = cell.blocker ?? null;
     cell.blocker = "reprobe";
-    cell.reason = `${entry.blocker ?? "successful probe"} recorded ${entry.at} is ${reason}; expires ${entry.expires_at ?? "on binding change"}; probe before routing${entry.reason ? ` (${entry.reason})` : ""}`;
+    cell.reason = `${entry.blocker ?? "successful probe"} recorded ${entry.at} is ${reason}; expires ${entry.expires_at ?? "on binding change"}; probe before routing${entry.reason ? ` (${entry.reason})` : ""}${displaced && displaced !== "reprobe" ? `; the ${displaced} blocker already recorded against this cell still stands until a probe says otherwise` : ""}`;
     stamp(cell, entry);
     result.overlay.reprobe++;
   }

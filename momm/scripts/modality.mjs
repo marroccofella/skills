@@ -341,10 +341,18 @@ function stageCopy(source, dir, index, expectedSha = null) {
   const name = `${String(index + 1).padStart(2, "0")}-${path.basename(source).replace(/[^A-Za-z0-9._-]/g, "_")}`;
   const target = path.join(dir, name);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const tmp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, media.buffer, { mode: 0o600, flag: "wx" });
-  fs.chmodSync(tmp, 0o600);
-  fs.renameSync(tmp, target);
+  // The suffix is unique per call, not just per process: two stages of the same artefact running
+  // concurrently in one process would otherwise collide on the pid. A stage that fails part way
+  // removes its temporary file, so the bytes are not left behind and the retry is not met by EEXIST.
+  const tmp = `${target}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    fs.writeFileSync(tmp, media.buffer, { mode: 0o600, flag: "wx" });
+    fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, target);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* never created, or already gone */ }
+    throw e;
+  }
   if (hashFile(target) !== sha) throw fail(`artefact ${path.basename(source)} changed while being staged`, "MOMM_ARTEFACT_CHANGED");
   return { target, sha256: sha, bytes: fs.statSync(target).size };
 }

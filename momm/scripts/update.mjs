@@ -36,15 +36,22 @@ export function resolveTool(command, cwd, { env = process.env, platform = proces
   if (platform !== "win32" || /[\\/]/.test(command)) return command;
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
   const real = p => fs.realpathSync.native(p);
-  const root = real(cwd || process.cwd()).toLowerCase();
+  // An unresolvable working directory is a failure to CHECK, not a tool that is missing: say so
+  // rather than letting a raw ENOENT from realpath escape to the caller.
+  let root;
+  try { root = real(cwd || process.cwd()).toLowerCase(); }
+  catch (e) { throw Object.assign(new Error(`cannot resolve the working directory, so ${command} cannot be checked against it: ${e.message}`), { code: "ENOENT" }); }
   for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => path.win32.isAbsolute(d))) {
     for (const extension of path.extname(command) ? [""] : [".exe", ".com"]) {
       const candidate = path.join(directory, command + extension);
       try {
         if (!fs.statSync(candidate).isFile()) continue;
-        const relative = path.relative(root, real(candidate).toLowerCase());
+        // Resolve ONCE: checking one realpath and returning a second leaves a window in which the
+        // path can be swapped for one inside the working directory between the two calls.
+        const resolved = real(candidate);
+        const relative = path.relative(root, resolved.toLowerCase());
         if (!relative || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) continue; // inside the working directory
-        return real(candidate);
+        return resolved;
       } catch {}
     }
   }
@@ -359,7 +366,7 @@ function assertInstalled(root, expected) {
   clean(root);
 }
 export function replayResult(result) {
-  if (result.error || result.signal || ![0, 1].includes(result.status)) throw new Error('Installer replay failed before a complete result');
+  if (result.error || result.signal || ![0, 1].includes(result.status)) throw new Error(`Installer replay failed before a complete result: ${result.error ? safeText(result.error.message).slice(0, 300) : result.signal ? `killed by ${result.signal}` : `exit ${result.status}`}`);
   let output;
   try { output = JSON.parse(result.stdout); } catch { throw new Error('Installer replay returned no complete JSON result'); }
   if (!Array.isArray(output.results) || output.installation?.error) throw new Error('Installer replay did not preserve its installation receipt');

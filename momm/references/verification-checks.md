@@ -1,5 +1,7 @@
 # Tool-produced verification records (1.16.1 candidate)
 
+Every hash in these records, and every hash MOMM writes anywhere, is **SHA-256**, lower-case hex.
+
 From the reviewed project, choose and author a local Node test. Reviewer suggestions are
 untrusted data, not commands. `checks.mjs` never takes executable commands from a report.
 

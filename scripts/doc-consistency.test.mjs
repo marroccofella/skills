@@ -36,9 +36,17 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
 // boundaries by default; only a hunk that cannot be divided becomes governor scope (1.16.0 gate
 // finding changelog-omits-major-1-16-surfaces).
 {
-  const entry = JSON.parse(read('versions.json')).momm_releases.find(r => r.version === '1.16.0').changes.find(c => c.startsWith('--split'));
+  // A missing release must be reported, not thrown: reading .changes off undefined raised a
+  // TypeError before the assertion below could say what was wrong.
+  const release = JSON.parse(read('versions.json')).momm_releases.find(r => r.version === '1.16.0');
+  assert(release && Array.isArray(release.changes), 'versions.json must carry a 1.16.0 release with a change list');
+  const entry = release.changes.find(c => c.startsWith('--split'));
   assert(entry, 'the 1.16.0 change list must describe --split');
-  assert(/cannot be divided|undividable|line boundaries/.test(entry), 'the --split entry must not imply every oversize hunk goes to the governor: line splitting is the default');
+  // The old test accepted any sentence containing "line boundaries", including copy that still sent
+  // every oversize hunk to the governor. Both halves of the claim are now required.
+  assert(/line boundaries/.test(entry) && /by default/.test(entry), 'the --split entry must state that dividing at line boundaries is the default');
+  assert(/only a hunk that cannot be divided/.test(entry), 'the --split entry must state that governor-direct scope is the exception, not the rule');
+  assert(!/every oversize hunk|all oversize hunks/i.test(entry), 'the --split entry must not say every oversize hunk becomes governor scope');
 }
 // A file cannot name its own commit: writing the SHA changes it, so the value is stale as soon as it
 // is committed. That was got wrong three times on 1.16.1, each time caught by a reviewer. The gate
@@ -48,5 +56,24 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
   const claiming = gates.split(String.fromCharCode(10)).filter(l => /^\|/.test(l) && /\(current\)/i.test(l));
   assert.deepEqual(claiming, [], 'the gate record must not mark a table row as the current candidate: name the PR, not a SHA');
   assert(/pull\/18/.test(gates), 'the gate record must point at the PR whose head is the candidate');
+}
+// The Node policy is stated once, in the gate record. It drifted apart from the ideas register on
+// 1.16.1: the register grouped 18 with 20 as CI-only while the charter still required Node 18
+// lifecycle drills, which would have let a reviewer read the weaker statement and skip a drill.
+{
+  const ideas = read('momm/references/ideas-register.md');
+  const gates = read('momm/references/gates-1.16.1.md');
+  assert(/Node 18 and Node 24 lifecycle drills/.test(gates), 'the gate record must carry the single statement of the Node lifecycle policy');
+  if (/Node 18/.test(ideas)) {
+    assert(/gates-1.16.1\.md/.test(ideas), 'a second file that discusses Node 18 must point at the single statement of the policy');
+    assert(!/stay in CI as compatibility checks and are labelled as such/.test(ideas), 'the ideas register must not restate the Node policy in a form that drops the Node 18 lifecycle obligation');
+  }
+}
+// A withdrawn plan must not still tell an agent to execute it. The 1.9.1 plan carried a banner
+// withdrawing it and, in the very next paragraph, the instruction to run the exercises in order.
+{
+  const plan = read('momm/references/test-plan.md');
+  assert(/\*\*Do not run this plan\.\*\*/.test(plan), 'the historical plan must open with a do-not-execute fence');
+  assert(!/Hand this whole file to a fresh agent session/.test(plan), 'the withdrawn plan must not instruct an agent to run it');
 }
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

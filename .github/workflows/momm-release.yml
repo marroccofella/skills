@@ -23,7 +23,11 @@ jobs:
   release:
     if: github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # The safety matrix spreads these suites over thirteen parallel jobs; this job runs all of them
+    # in sequence. Measured end to end at 527s on the maintainer machine (61 suites, 23 September
+    # 2026), so 45 minutes leaves room for a runner several times slower. The point is that a
+    # signed release must never be killed AFTER the suites passed.
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: read
@@ -111,6 +115,7 @@ jobs:
           node momm/scripts/review-claims.test.mjs
           node momm/scripts/review-workflow.test.mjs
           node momm/scripts/review-final-regressions.test.mjs
+          node momm/scripts/review-triage-1161.test.mjs
           node momm/scripts/review-refutations.test.mjs
           node momm/scripts/review-followup.test.mjs
           node momm/scripts/copilot-transport.test.mjs

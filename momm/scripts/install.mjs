@@ -165,7 +165,12 @@ function main() {
     output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
   }
   if (!output.inventory.upgrade.complete) {
-    process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.\n`);
+    // A dry run changes nothing, so it keeps exit 0 and callers that preview an install are not
+    // broken by a predicted state. The message says so, rather than leaving the text and the exit
+    // code contradicting each other. An inventory module that omits its reason is named as such.
+    const reason = output.inventory.upgrade.reason ?? 'the inventory gave no reason';
+    const preview = options.dryRun ? ' This is a dry run: nothing was changed and the exit code stays 0.' : '';
+    process.stderr.write(`Installation is not complete across active harnesses: ${reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.${preview}\n`);
     if (!options.dryRun) process.exitCode = 1;
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);

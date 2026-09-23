@@ -67,6 +67,13 @@ complete while an older copy is active) stops a false claim and fits the set's o
 verification, duplicate protection) change links or add surfaces; by the closed set's rule they
 belong in 1.17 unless the owner says otherwise. They are not started.
 
+**Sections G and H are owner additions too, and the set is still twelve.** G (what the evidence is
+worth) and H (the remainder of the owner's 20 September proposal) were added after the set was
+closed, on the owner's instruction. They appear under *must ship* because the owner asked for them,
+not because the twelve grew: the closed set is unchanged at twelve items, and F, G and H are named
+additions recorded alongside it. Anything in G or H that would add a surface rather than close a
+hole 1.16.0 documented goes to the ideas register on the same rule that sends F3 to F8 to 1.17.
+
 ## In scope: must ship, or 1.16.1 does not tag
 
 ### A. Documented 1.16.0 follow-ups

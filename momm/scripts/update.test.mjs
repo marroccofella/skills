@@ -10,12 +10,17 @@ import { spawnSync } from "node:child_process";
 import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// The synthetic home is installed BEFORE the imported suites run. Neither of them reads HOME today,
+// so nothing was written to the real profile, but that was a property of those suites rather than
+// anything enforced here; an added home-reading assertion would have inherited the real profile.
+const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
+const HOME_KEYS = ["HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"];
+const originalHome = Object.fromEntries(HOME_KEYS.map(k => [k, process.env[k]]));
+const syntheticHome = path.join(fixture, 'synthetic-home');
+for (const key of HOME_KEYS) process.env[key] = syntheticHome;
+fs.mkdirSync(syntheticHome);
 await import('./update-safety.test.mjs');
 await import('./update-receipt.test.mjs');
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
-const originalHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
-process.env.HOME = process.env.USERPROFILE = path.join(fixture, 'synthetic-home');
-fs.mkdirSync(process.env.HOME);
 const remote = path.join(fixture, "remote"), installed = path.join(fixture, "installed");
 const results = {};
 let failures = 0;

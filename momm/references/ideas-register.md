@@ -79,8 +79,48 @@ while an older copy is active.
   route opt-in. What remains open is separate: account, adapter and authentication failures on
   that route are investigated on their own evidence, not blamed on the retirement.
 - **Node versions.** Node 18 and Node 20 are past end of life. Node 22 and Node 24 are the primary
-  lifecycle targets; 18 and 20 stay in CI as compatibility checks and are labelled as such. The
-  Windows launch defect of 1.16.0 was specific to 18 and 20, which is exactly why they stay tested.
+  support targets. That label does not waive a drill: charter item B still requires Node 18 and
+  Node 24 lifecycle drills on Windows, macOS and Linux, and Node 20 is an offline CI target with no
+  lifecycle obligation. The single statement of this policy lives in
+  [gates-1.16.1.md](gates-1.16.1.md); this entry records why, and must not be read as relaxing it.
+  The Windows launch defect of 1.16.0 was specific to 18 and 20, which is exactly why they stay tested.
 - **Code patterns offered with the 20 September proposal** were read as intent, not as a
   specification: MOMM skills have no `package.json` to compare, so runtime identity is checked
   against the dispatcher source and the discovery folders instead (`--doctor --versions`).
+
+## Deferred from the 1.16.1 triage of review `rev_20260922162715_cc7e49c40234`
+
+Twenty-seven reviewer suggestions were judged correct but out of scope for a patch release. They are
+recorded here so the reason is a decision rather than an omission. Each one is in
+`.ensemble_reviews/dispositions.jsonl` against that run id with its reason.
+
+- **Stop slicing product source in tests.** Several suites extract a function from a `.mjs` file with
+  `indexOf` between two names and evaluate it in a VM. This broke twice in one afternoon during this
+  triage: adding `export` to `resolveGit` invalidated a slice in `governor.test.mjs`, and adding a
+  `randomBytes` call to `stageCopy` invalidated one in `review-refutations.test.mjs`. Both tests had
+  to be repaired to land correct fixes, which is precisely the wrong incentive. Export the small
+  helpers and import them instead. The largest single cleanup on this list.
+- **Media fixtures.** The 23-byte positive JPEG fixture declares a SOF0 component and omits its
+  component descriptor, so it does not exercise acceptance of a decodable JPEG; some per-outcome
+  fixtures are byte-identical where they should differ. Changing shared fixtures days before a tag
+  risks more than it proves.
+- **More focused tests**: inventory exceptions and malformed inventory; capability lifecycle
+  boundaries (legacy entries without `expires_at`, the exact expiry instant, a reprobe that restores
+  an expired cell); shared aliases and `--expect`; retry accounting and incomplete split coverage.
+- **Evidence indexing.** Index review-log seals by run id once rather than filtering the whole JSONL
+  per id, and pre-index split pieces by id. Performance only today; worth doing when the ledger grows.
+- **Diagnostics and shape.** Report orthogonal installation flags (opaque path, version skew,
+  duplicate copies) instead of one if-else chain; sanitize control characters per path inside `safe()`
+  so a multi-path conflict still names every copy; strip a leading extended-length prefix before
+  `path.win32.relative`; normalise CRLF before comparing stdin against a generated diff; reject a
+  symmetric `a...b` range during argument parsing rather than at Git resolution.
+- **Workflow extraction.** Count a suite only when the `node *.test.mjs` match sits on a `run:` step,
+  and strip a leading `./` when comparing CONTRIBUTING paths. No miss has been observed.
+- **Source hygiene at HEAD.** The binary-classification check asks Git about HEAD while the control
+  byte check reads the working tree. Scanning HEAD blobs for control bytes too would close the gap.
+- **Test isolation ordering.** `migrate-legacy.test.mjs` assigns the synthetic home after its static
+  imports. Neither imported module reads `HOME` at load time and a sentinel home stayed empty, so
+  nothing leaked; the equivalent ordering was fixed in `update.test.mjs`, and both suites now redirect
+  `APPDATA`, `LOCALAPPDATA` and `XDG_CONFIG_HOME` as well.
+- **Acceptance matrix.** Give each row a column naming the suite that asserts it, and give the image
+  review the same copyable fenced command as the source review.

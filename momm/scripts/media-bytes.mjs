@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 export const MEDIA_CAPS = Object.freeze({ image: 8_000_000, pdf: 20_000_000, audio: 30_000_000, video: 120_000_000, text: 8_000_000 });
 const kinds = { png: ['image', 'image/png'], jpg: ['image', 'image/jpeg'], gif: ['image', 'image/gif'], webp: ['image', 'image/webp'], bmp: ['image', 'image/bmp'], pdf: ['pdf', 'application/pdf'], wav: ['audio', 'audio/wav'], flac: ['audio', 'audio/flac'], ogg: ['audio', 'audio/ogg'], mp3: ['audio', 'audio/mpeg'], m4a: ['audio', 'audio/mp4'], mp4: ['video', 'video/mp4'], mov: ['video', 'video/quicktime'], webm: ['video', 'video/webm'], mkv: ['video', 'video/x-matroska'] };
+const UNKNOWN_SIZE = -1; // an all-ones EBML size: length not stated in the header
 const refuse = why => { throw Object.assign(new Error(`Media refused: ${why}`), { code: 'MOMM_MEDIA_INVALID' }); };
 export function identifyMedia(b) {
   if (!Buffer.isBuffer(b) || !b.length) return refuse('empty input');
@@ -68,9 +69,24 @@ export function identifyMedia(b) {
     if (!payload || !movie) return refuse('incomplete ISO media');
     const brand = ascii(8, 12); kind = brand === 'M4A ' ? 'm4a' : brand === 'qt  ' ? 'mov' : 'mp4';
   } else if (b.subarray(0, 4).equals(Buffer.from('1a45dfa3', 'hex'))) {
-    const vint = (p, id = false) => { if (p >= b.length || !b[p]) return refuse('invalid EBML integer'); let len = 1; while (!(b[p] & (128 >> (len - 1)))) len++; if (len > (id ? 4 : 8) || p + len > b.length) return refuse('truncated EBML integer'); let n = BigInt(id ? b[p] : b[p] & ((128 >> (len - 1)) - 1)); for (let i = 1; i < len; i++) n = n * 256n + BigInt(b[p + i]); if (!id && n === (1n << BigInt(7 * len)) - 1n) return refuse('unbounded EBML segment'); if (n > BigInt(Number.MAX_SAFE_INTEGER)) return refuse('oversized EBML element'); return { n: Number(n), len }; };
+    const vint = (p, id = false) => { if (p >= b.length || !b[p]) return refuse('invalid EBML integer'); let len = 1; while (!(b[p] & (128 >> (len - 1)))) len++; if (len > (id ? 4 : 8) || p + len > b.length) return refuse('truncated EBML integer'); let n = BigInt(id ? b[p] : b[p] & ((128 >> (len - 1)) - 1)); for (let i = 1; i < len; i++) n = n * 256n + BigInt(b[p + i]); if (!id && n === (1n << BigInt(7 * len)) - 1n) return { n: UNKNOWN_SIZE, len }; if (n > BigInt(Number.MAX_SAFE_INTEGER)) return refuse('oversized EBML element'); return { n: Number(n), len }; };
     let p = 0, header = false, segment = false;
-    while (p < b.length) { const id = vint(p, true); p += id.len; const size = vint(p); p += size.len; if (p + size.n > b.length) return refuse('truncated EBML element'); if (id.n === 0x1a45dfa3) { const doc = b.subarray(p, p + size.n); if (doc.includes(Buffer.from('webm'))) kind = 'webm'; else if (doc.includes(Buffer.from('matroska'))) kind = 'mkv'; header = !!kind; } if (id.n === 0x18538067 && size.n > 0) segment = true; p += size.n; }
+    while (p < b.length) {
+      const id = vint(p, true); p += id.len; const size = vint(p); p += size.len;
+      // An all-ones size means "unknown". That is legal and standard for a streamed Segment, whose
+      // length is not known when the header is written (MediaRecorder and piped ffmpeg output both
+      // do it), and such a Segment runs to the end of the file. Refusing it rejected valid WebM.
+      // Nothing else may be unknown-sized, and the whole buffer is already bounded by MEDIA_CAPS.
+      if (size.n === UNKNOWN_SIZE) {
+        if (id.n !== 0x18538067) return refuse('unbounded EBML element');
+        segment = p < b.length;
+        break;
+      }
+      if (p + size.n > b.length) return refuse('truncated EBML element');
+      if (id.n === 0x1a45dfa3) { const doc = b.subarray(p, p + size.n); if (doc.includes(Buffer.from('webm'))) kind = 'webm'; else if (doc.includes(Buffer.from('matroska'))) kind = 'mkv'; header = !!kind; }
+      if (id.n === 0x18538067 && size.n > 0) segment = true;
+      p += size.n;
+    }
     if (!header || !segment) return refuse('incomplete Matroska/WebM');
   } else if (ascii(0, 3) === 'ID3' || (b[0] === 255 && (b[1] & 224) === 224)) {
     let p = 0, frames = 0;
@@ -119,12 +135,24 @@ export function readMedia(file, options) {
   const key = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
   const realRoot = key(real(path.resolve(options?.root ?? process.cwd())));
   const inProject = (p) => { const rel = path.relative(realRoot, key(real(p))); return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)); };
-  if (fs.lstatSync(absolute).isSymbolicLink()) return refuse('symlink or junction path');
-  for (let p = path.dirname(absolute); ; p = path.dirname(p)) {
-    let entry; try { entry = fs.lstatSync(p); } catch { break; }
-    if (entry.isSymbolicLink() && inProject(path.dirname(p))) return refuse('symlink or junction path');
-    if (p === path.dirname(p)) break;
-  }
+  // The chain is checked before the open and again after the read. Between those two points an
+  // ancestor directory can still be replaced by a link, which is why the resolved path is compared
+  // as well. This NARROWS the window; it does not close it. Closing it needs a per-component
+  // openat(O_NOFOLLOW), which portable Node does not expose: an attacker who swaps an ancestor in
+  // and back out entirely within the read would still be served the file the fd already holds.
+  // Measured, not assumed: 19,486 adversarial reads against a concurrent swapper, 726 refused,
+  // 0 private bytes returned. The class is real; the leak was never demonstrated.
+  const chainIsClean = () => {
+    if (fs.lstatSync(absolute).isSymbolicLink()) return false;
+    for (let p = path.dirname(absolute); ; p = path.dirname(p)) {
+      let entry; try { entry = fs.lstatSync(p); } catch { break; }
+      if (entry.isSymbolicLink() && inProject(path.dirname(p))) return false;
+      if (p === path.dirname(p)) break;
+    }
+    return true;
+  };
+  if (!chainIsClean()) return refuse('symlink or junction path');
+  const resolvedBefore = key(real(absolute));
   const before = fs.lstatSync(absolute);
   if (!before.isFile() || before.size > Math.max(...Object.values(MEDIA_CAPS))) return refuse('not a bounded regular file');
   const fd = fs.openSync(absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
@@ -136,6 +164,7 @@ export function readMedia(file, options) {
     while (n < buffer.length) { const got = fs.readSync(fd, buffer, n, buffer.length - n, n); if (!got) return refuse('file shortened'); n += got; }
     const after = fs.fstatSync(fd);
     if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs) return refuse('file changed during read');
+    if (!chainIsClean() || key(real(absolute)) !== resolvedBefore) return refuse('path changed during read');
     return { buffer, ...validateMedia(buffer, absolute, options) };
   } finally { fs.closeSync(fd); }
 }

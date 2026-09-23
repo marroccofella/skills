@@ -142,13 +142,24 @@ function captureRangeSnapshot(root, artifact, range) {
 // Node 18 and 20 on Windows look for a bare name in the child's working directory first (the project
 // under review) and ignore the guard variable, so Git is named by an absolute PATH entry outside the
 // project, or not at all. Inline because this file is also run as a single copied file.
-function resolveGit(root) {
-  if (process.platform !== "win32") return "git";
-  const inside = p => { const rel = path.relative(fs.realpathSync.native(root).toLowerCase(), p.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)); };
-  const pathValue = Object.entries(process.env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
-  for (const dir of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => d && path.isAbsolute(d))) {
-    const candidate = path.join(dir, "git.exe");
-    try { if (fs.statSync(candidate).isFile() && !inside(fs.realpathSync.native(candidate))) return candidate; } catch { /* not here */ }
+// The repository under review must never supply the Git that verifies it. On Windows the implicit
+// working-directory search makes that reachable; on POSIX a PATH carrying "." or a project-relative
+// entry does the same, and returning the bare name "git" left that decision to PATH. Both platforms
+// now get the same scan: absolute PATH entries only, and never an executable inside the project.
+export function resolveGit(root, { platform = process.platform, env = process.env, fs: files = fs, path: paths = path } = {}) {
+  const win = platform === "win32";
+  const real = p => { try { return String(win ? files.realpathSync.native(p) : files.realpathSync(p)); } catch { return null; } };
+  const key = p => (win ? p.toLowerCase() : p);
+  const rootReal = key(real(root) ?? paths.resolve(root));
+  const inside = p => { const rel = paths.relative(rootReal, key(p)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + paths.sep) && !paths.isAbsolute(rel)); };
+  const pathValue = Object.entries(env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
+  const name = win ? "git.exe" : "git";
+  for (const dir of pathValue.split(win ? ";" : ":").map(d => d.replace(/^"|"$/g, "")).filter(d => d && paths.isAbsolute(d))) {
+    const candidate = paths.join(dir, name);
+    try {
+      const resolved = real(candidate);
+      if (files.statSync(candidate).isFile() && resolved && !inside(resolved)) return candidate;
+    } catch { /* not here */ }
   }
   return null;
 }

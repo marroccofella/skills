@@ -2153,7 +2153,13 @@ async function preflightCheck(reviewers, governor) {
     const ready = auth === "ok" || auth === "present";
     const entry = { agent, installed: true, version: version.version, ready, auth, modalities: ["text", ...(ADAPTER_MEDIA[agent] ?? [])].filter((m) => m in (MODALITY_SUPPORT[agent] ?? { text: true })) };
     if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
-    if (agent === "gemini") entry.note = "fails closed on individual accounts (enterprise Code Assist only)";
+    // Deprecation notice, not a removal (owner decision, 1.16.1). The route still works on an
+    // enterprise Code Assist licence and is not being withdrawn; individual tiers were retired by
+    // the provider on 2026-06-18, and Gemini models under an account login belong on antigravity.
+    if (agent === "gemini") {
+      entry.deprecated = true;
+      entry.note = "deprecated route: individual Code Assist tiers were retired 2026-06-18, so this fails closed on individual accounts (enterprise Code Assist only). For Gemini models under an account login, route through antigravity. The route is not being removed.";
+    }
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
     return entry;
   }));

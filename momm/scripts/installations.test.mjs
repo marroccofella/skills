@@ -172,6 +172,38 @@ try {
       assert.equal(p2.status, 1, p2.stderr); assert.equal(JSON.parse(p2.stdout).verdict.status, 'conflict');
       assert.match(p2.stderr, /different MOMM versions/i);
     });
+    // Triage of rev_20260922162715 F23/F72: the version is read from the source text, so a mention
+    // in a comment or a string must not be able to impersonate the declaration. An unanchored match
+    // took whichever came first, letting a stale copy claim any version its comments named.
+    test('a version named in a comment or a string never becomes the installed version', () => {
+      const h = home('decoy');
+      const decoy = '// const MOMM_VERSION = "9.9.9";' + String.fromCharCode(10)
+        + 'const NOTE = `const MOMM_VERSION = "8.8.8";`;' + String.fromCharCode(10)
+        + 'const MOMM_VERSION = "1.16.0";' + String.fromCharCode(10);
+      link(copy('decoy', null, { dispatcher: decoy }), path.join(h, '.claude', 'skills', 'momm'));
+      assert.equal(inv(h).entries[0].version, '1.16.0', 'the real declaration wins over a comment and a string');
+    });
+    // F24: the dispatcher is opened to read the version. Opening a named pipe blocks until something
+    // writes to it, which would hang the whole inventory; only a regular file is read. A directory
+    // stands in for the pipe because Windows has no mkfifo. This is a guard against an unchecked
+    // open being reintroduced, not a reproduction: a directory already failed the old open too.
+    test('a dispatcher that is not a regular file leaves the version unknown instead of blocking', () => {
+      const h = home('pipe'), skillRoot = path.join(root, 'clones', 'pipe', 'momm');
+      fs.mkdirSync(path.join(skillRoot, 'scripts', 'multi-review.mjs'), { recursive: true });
+      fs.writeFileSync(path.join(skillRoot, 'SKILL.md'), '---' + String.fromCharCode(10) + 'name: momm' + String.fromCharCode(10) + '---' + String.fromCharCode(10));
+      link(skillRoot, path.join(h, '.claude', 'skills', 'momm'));
+      assert.equal(inv(h).entries[0].version, null, 'a non-regular dispatcher reports no version');
+    });
+    // F72: a short read must not split the declaration. The declaration is placed past a chunk
+    // boundary and the reader is forced to return one byte at a time.
+    test('a dispatcher read in short chunks still yields the declared version', () => {
+      const h = home('short');
+      const padding = '// padding'.repeat(4000) + String.fromCharCode(10);
+      link(copy('short', null, { dispatcher: padding + 'const MOMM_VERSION = "1.16.0";' + String.fromCharCode(10) }), path.join(h, '.claude', 'skills', 'momm'));
+      const dribble = Object.create(fs);
+      dribble.readSync = (fd, buffer, offset, length, position) => fs.readSync(fd, buffer, offset, Math.min(length, 1), position);
+      assert.equal(inv(h, { fs: dribble }).entries[0].version, '1.16.0', 'the reader keeps going until the buffer is full');
+    });
   }
 } finally { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 

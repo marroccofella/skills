@@ -12,7 +12,7 @@ This is a release check, not a claim of completed live coverage.
    reviewers and a synthetic local text brief. Do not change containment or run peer commands.
 5. Record the run id, exact source/image hashes, exit, every attempt, failures, quorum and which
    routes identified the visual defect. A provider rejection is not a valid visual review.
-6. Run the correct-image negative control if the prompt/adapter was changed. Reproduce and
+6. Run the correct-image negative control if the prompt or adapter was changed, or if the attachment path or container handling changed: those decide which bytes reach the provider, so they can substitute one image for another just as a prompt change can. Reproduce and
    adjudicate findings; bind the final source to a tool-produced verification receipt.
 7. Put only redacted, concise results on the 1.16.1 PR. Keep raw input, reports and ledger private.
 

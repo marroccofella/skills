@@ -58,5 +58,24 @@ try {
   const audited=auditAttempts(root,['rev_audit_1','rev_audit_3']);assert.equal(audited.cumulative_quorum_met,true);assert.equal(audited.completion,false);
   write('.ensemble_reviews/reports/rev_audit_3.json',JSON.stringify({...other,input_sha256:'c'.repeat(64)}));
   assert.throws(()=>auditAttempts(root,['rev_audit_1','rev_audit_3']),/seal mismatch/);
+  // Triage of rev_20260922162715 F11 and F12. A cumulative audit must not let the governor's own
+  // review count as a peer vote, and a strict policy that names no peer route must be refused
+  // rather than silently satisfied because [].every(...) is true.
+  const policyRun = (id,route,extra) => {
+    const row=attemptRecord({agent:route,status:'success'},{...base,runId:id});
+    const evidence=persistAttempt(root,row);
+    const value={...report,run_id:id,governor:'codex',gate_policy:{quorum_required:1},reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/2',reviewed_scope:[{synthetic:true}]}],attempt_evidence:[{...row,evidence}],...extra};
+    write(`.ensemble_reviews/reports/${id}.json`,JSON.stringify(value));
+    fs.appendFileSync(path.join(root,'.ensemble_reviews/review-log.jsonl'),JSON.stringify({run_id:id,input_sha256:value.input_sha256,report_path:`.ensemble_reviews/reports/${id}.json`,report_sha256:digest(JSON.stringify(value))})+String.fromCharCode(10),{mode:0o600});return value;
+  };
+  policyRun('rev_audit_nogov','codex',{governor:undefined});
+  assert.throws(()=>auditAttempts(root,['rev_audit_nogov']),/governor/,'a run with no recorded governor must be refused, not treated as one whose governor can never match a route');
+  policyRun('rev_audit_selfonly','codex',{gate_policy:{quorum_required:1,strict:true,requested_routes:['codex']}});
+  assert.throws(()=>auditAttempts(root,['rev_audit_selfonly']),/peer route/,'a strict policy naming only the governor must be refused, not satisfied by an empty required-route list');
+  // F31: a malformed report must be refused with a diagnosis, not crash the audit with a TypeError.
+  policyRun('rev_audit_noreviewers','codex',{reviewers:undefined});
+  assert.throws(()=>auditAttempts(root,['rev_audit_noreviewers']),/malformed report/,'a report without a reviewers array must be refused, not throw TypeError');
+  policyRun('rev_audit_nopieces','codex',{split:{}});
+  assert.throws(()=>auditAttempts(root,['rev_audit_nopieces']),/malformed report/,'a split report without a pieces array must be refused, not throw TypeError');
   console.log('PASS: closed outcomes, immutable attempts, failed cost/time, actual failing/passing test receipts and preserved history');
 } finally { fs.rmSync(root,{recursive:true,force:true,maxRetries:3}); }

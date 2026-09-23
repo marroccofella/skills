@@ -24,6 +24,8 @@ export function auditAttempts(root, ids) {
     const seals = log.filter(entry => entry.run_id === id && !entry.event);
     demand(seals.length === 1 && seals[0].report_sha256 === report.sha256 && seals[0].input_sha256 === r.input_sha256 && seals[0].report_path === report.path, 'original report/log seal mismatch');
     demand(r.run_id===id && r.source_snapshot?.complete && r.attempt_evidence?.length,'run has no bound attempt evidence');
+    demand(typeof r.governor==='string' && r.governor.trim().length>0,'run records no governor: a governor self-vote cannot be excluded');
+    demand(Array.isArray(r.reviewers) && (!r.split || Array.isArray(r.split.pieces)),'malformed report: reviewers, and split pieces when split is present, must be arrays');
     const binding=JSON.stringify({input:r.input_sha256,source:r.source_snapshot,attachments:r.attachments??[],governor:r.governor,policy:r.gate_policy});
     if(identity===null)identity=binding;else demand(binding===identity,'different source, attachments, governor or gate policy; cannot combine');
     demand(!(r.split?.governor_direct?.length),'governor-direct pieces need separate adjudication, not cumulative approval');
@@ -52,6 +54,7 @@ export function auditAttempts(root, ids) {
   demand(Number.isInteger(required)&&required>0,'no explicit quorum policy');
   demand(!policy.strict || (Array.isArray(policy.requested_routes) && policy.requested_routes.length>0 && policy.requested_routes.every(x=>typeof x==='string' && x.trim().length>0)), 'invalid strict policy: requested_routes must name the required reviewer routes');
   const requiredRoutes=policy.strict?policy.requested_routes.filter(x=>x!==governor):[];
+  demand(!policy.strict || requiredRoutes.length>0,'invalid strict policy: requested_routes must name at least one peer route other than the governor');
   const coverage=[...pieces].map(([piece,p])=>({piece,piece_sha256:p.hash,routes:[...p.routes].sort(),required,met:p.routes.size>=required && requiredRoutes.every(x=>p.routes.has(x))}));
   return {schema:'momm-attempt-audit/1',source_binding_sha256:digest(identity),reports,attempts,coverage,cumulative_quorum_met:coverage.length>0&&coverage.every(p=>p.met),completion:false,
     caveat:'Cumulative coverage only. This does not replace original per-run failures, disposition checks, final verification or release approval. Retrying one route never creates a second reviewer.'};
