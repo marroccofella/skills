@@ -37,12 +37,19 @@ The workflow requests these cells; a configuration entry is not a pass. The resu
 
 | Candidate | Workflow run | Result |
 | --- | --- | --- |
-| **`eea8189dc793f5fb1624374d9b46828b31f8a5a7` (current)** | [35735446353](https://github.com/marroccofella/skills/actions/runs/35735446353) | 13 of 13 jobs passed |
+| `eea8189dc793f5fb1624374d9b46828b31f8a5a7` | [35735446353](https://github.com/marroccofella/skills/actions/runs/35735446353) | 13 of 13 jobs passed |
 | `a5a37b5c8b935ca0740aa94e79ada6ee1bc1f616` | [35664942450](https://github.com/marroccofella/skills/actions/runs/35664942450) | 13 of 13 jobs passed |
 | `be12bc569ab6ceacc41f6ce544fddf3673818c0d` | 35650200906 | **failed on all 13 jobs**; superseded, do not test |
 
-Only the row marked **current** is the candidate under test; the others are history, kept so a
-superseded commit is never picked up by mistake. A later candidate supersedes this table. Populate exact versions, run URLs, commit SHA and receipt
+**No row here is "the current candidate".** This table is CI history: each row is a fact about one
+past run. The candidate under test is the head of
+[PR #18](https://github.com/marroccofella/skills/pull/18) and of `release/momm-1.16.1`, and is named
+in that PR's title and in Discussion #22 — pointers that move with the branch.
+
+This file deliberately does not name the current commit, because it cannot: writing a SHA into a
+file changes the commit, so the value is stale the moment it is committed. That mistake was made
+three times on this release; `scripts/doc-consistency.test.mjs` now fails if a "(current)" marker
+reappears here. Populate exact versions, run URLs, commit SHA and receipt
 hashes only after reading completed job output.
 
 ## Defect found by independent audit of `a5a37b5`, fixed

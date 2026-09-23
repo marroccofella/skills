@@ -40,4 +40,13 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
   assert(entry, 'the 1.16.0 change list must describe --split');
   assert(/cannot be divided|undividable|line boundaries/.test(entry), 'the --split entry must not imply every oversize hunk goes to the governor: line splitting is the default');
 }
+// A file cannot name its own commit: writing the SHA changes it, so the value is stale as soon as it
+// is committed. That was got wrong three times on 1.16.1, each time caught by a reviewer. The gate
+// record therefore carries CI history only, and points at the PR for the candidate under test.
+{
+  const gates = read('momm/references/gates-1.16.1.md');
+  const claiming = gates.split(String.fromCharCode(10)).filter(l => /^\|/.test(l) && /\(current\)/i.test(l));
+  assert.deepEqual(claiming, [], 'the gate record must not mark a table row as the current candidate: name the PR, not a SHA');
+  assert(/pull\/18/.test(gates), 'the gate record must point at the PR whose head is the candidate');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));
