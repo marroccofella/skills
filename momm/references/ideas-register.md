@@ -135,3 +135,17 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   with `pathEntryOutside` / `executableOutside` and scrub the child PATH on every platform, as it
   already does on Windows. Expect users whose CLI is installed only inside the project they review
   to be told it is not installed; say so in that release's notes.
+- **Preflight version checks time out during every review.** Found 25 September 2026: in each recent
+  report every route's in-review preflight reads `version_status: "timeout"` (so `ready: false`,
+  `auth: unknown`) although the same routes then review normally, and a standalone `--preflight`
+  answers for all of them in about a second. The results arrived 35 s after dispatch and route
+  launches were seconds apart, so something blocks the event loop while reviewers launch; each
+  `--version` spawn alone takes 10 to 18 ms. Next step: profile one ordinary review with
+  `node --cpu-prof` (no extra provider calls) and move the blocking work off the loop, or run
+  preflight before dispatch. The report's preflight rows are informational and gate nothing.
+- **Isolate the Codex route.** Codex runs in the reviewed project's directory with the user's whole
+  `~/.codex` setup: six MCP servers, hooks, plugins, apps, global instructions and skills, and the
+  project's own `AGENTS.md` as instructions. `-c mcp_servers={}` merges rather than clears; `codex exec
+  --ignore-user-config --ignore-rules` in a temporary directory is the documented route, but it also
+  drops the model and effort shared with the Codex desktop app. Owner decision pending (25 September
+  2026); needs one synthetic probe to confirm login and valid output without the user config.

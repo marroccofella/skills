@@ -82,4 +82,16 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
   assert(/Known limitation:\*\* on macOS and Linux, reviewer CLIs/.test(read('momm/references/draft-1.16.1.md')), 'the release notes must state the macOS/Linux reviewer-launch limitation');
   assert(/## Accepted risk \(owner decision, 24 September 2026\)/.test(read('momm/references/gates-1.16.1.md')), 'the gate record must carry the accepted risk');
 }
+// Delta review rev_20260924234524_89d8189794c3 (Grok findings deep-2x-vs-360-cap, grok-736-valid-vs-timeout,
+// five-of-five-unused-prompt): the Grok budget, the lab conditions and the sample behind the default
+// must be stated so the numbers cannot be read two ways.
+{
+  const cap = /Grok receives 2x headroom, capped at 360 seconds unless `--timeout` is explicit/;
+  assert(cap.test(read('momm/SKILL.md')), 'SKILL must state the 360 s cap on Grok headroom');
+  assert(/Grok: 2x, capped at 360/.test(read('momm/README.md')), 'README must state the 360 s cap on Grok headroom');
+  const gates = read('momm/references/gates-1.16.1.md');
+  assert(/lab runs had no MOMM deadline/i.test(gates), 'the gate record must say the lab runs had no MOMM deadline');
+  assert(/3 of 3 in the shipped setup/.test(gates), 'the gate record must give the shipped setup its own sample');
+  assert(!/valid in 5 of 5 measured runs/.test(read('momm/SKILL.md')), 'SKILL must not credit the shipped Grok setup with runs it did not make');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

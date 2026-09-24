@@ -238,7 +238,7 @@ Each is a fix to something 1.16.x already claimed, not a new surface:
   setup is unchanged. Grok's skill list cannot be hidden per run (only the user's global config can),
   so skills remain advertised to the reviewer but cannot be invoked.
 - **Grok speed.** At its default high reasoning effort Grok took 736 s on a 5 KB review against a
-  budget of about 270 s, so every Grok review timed out. MOMM uses `grok-4.7-build-fast` (the same
+  budget of about 270 s, so every MOMM Grok review timed out. MOMM uses `grok-4.7-build-fast` (the same
   model on faster serving) when the account lists it, at medium effort, with 2x headroom (360 s);
   the measurements are in the gate record.
 - **Codex advice.** "Model is not supported when using Codex with a ChatGPT account" was the Codex CLI

@@ -221,7 +221,7 @@ try{
       ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.6\n', null],
       ['', null],
     ]) {
-      const c = context(); c.ctx.GROK_MODEL_CACHE = undefined;
+      const c = context();
       let review = null;
       await c.ctx.invoke('grok', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
         runProcess: async (_command, args) => { if (args[0] === 'models') return { code: listing ? 0 : 1, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
@@ -230,7 +230,7 @@ try{
     }
   });
   // Measured 25 September 2026 on the same 5 KB review, isolated: grok-4.7-build-fast at medium effort was
-  // valid in 5 of 5 runs (194 to 311 s). Medium is therefore Grok's default only with the fast model; an
+  // valid in every run (3 of 3 shipped setup, 194 to 308 s). Medium is therefore the default only with the fast model; an
   // explicit --effort default still keeps the provider's own setting, and the plain model is left alone.
   await test('grok defaults to medium effort with the fast model, and --effort default keeps the provider setting', async () => {
     const fast = 'Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n';
@@ -248,6 +248,31 @@ try{
         runProcess: async (_command, args) => { if (args[0] === 'models') return { code: 0, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
       const k = review.indexOf('--reasoning-effort');
       assert.equal(k === -1 ? null : review[k + 1], expected, `${listing === fast ? 'fast' : 'plain'} model, effort ${effort} -> ${expected}`);
+    }
+  });
+  // Delta review rev_20260924234524_89d8189794c3 (antigravity suggestion 1): split pieces run in parallel
+  // and share one options object. A second Grok piece that started while the first was still asking
+  // `grok models` saw the placeholder null and ran the plain model at high effort, the 736 s case.
+  await test('parallel grok pieces all wait for the one model probe and all use the fast model', async () => {
+    const c = context();
+    const shared = { governor: 'other', timeoutMs: 1000 };
+    let probes = 0, release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const reviews = [];
+    shared.runProcess = async (_command, args) => {
+      if (args[0] === 'models') { probes += 1; await gate; return { code: 0, stdout: 'Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n', stderr: '' }; }
+      reviews.push(args); return { code: 1, stdout: '', stderr: 'authentication required' };
+    };
+    const first = c.ctx.invoke('grok', 'export const one = 1;', shared);
+    const second = c.ctx.invoke('grok', 'export const two = 2;', shared);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    release();
+    await Promise.all([first, second]);
+    assert.equal(probes, 1, 'one probe per run');
+    assert.equal(reviews.length, 2);
+    for (const args of reviews) {
+      assert.equal(args[args.indexOf('--model') + 1], 'grok-4.7-build-fast', 'every piece uses the fast model');
+      assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'medium');
     }
   });
 }finally{

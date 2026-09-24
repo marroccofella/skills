@@ -1689,17 +1689,15 @@ async function invokeReviewer(agent, artifact, options) {
     // grok-4.7-build-fast is the same model on faster serving (xAI: about twice as fast). At its default
     // high effort grok-4.7 took 736 s on a 5 KB review against a budget of about 276 s, so every Grok
     // review timed out (25 September 2026). It is used only when this account lists it, because it is
-    // not in every plan. `grok models` makes no model call; the answer is kept for the rest of the run.
-    if (options.grokModelChoice === undefined) {
-      options.grokModelChoice = null;
-      try {
-        const listed = await (options.runProcess ?? runProcess)(command, ["models"], { input: "", timeoutMs: 20_000, env: { ...cleanOauthEnv(), GROK_DISABLE_AUTOUPDATER: "1" }, cwd: temporaryDirectory });
-        if (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast\b/m.test(String(listed.stdout ?? ""))) options.grokModelChoice = "grok-4.7-build-fast";
-      } catch { /* keep the account default */ }
-    }
+    // not in every plan. `grok models` makes no model call. The pending answer is kept on the options it
+    // was asked with, so calls sharing them wait for one listing instead of racing past it to the plain
+    // model (delta review rev_20260924234524_89d8189794c3); each piece's own options copy asks once.
+    options.grokModelProbe ??= (options.runProcess ?? runProcess)(command, ["models"], { input: "", timeoutMs: 20_000, env: { ...cleanOauthEnv(), GROK_DISABLE_AUTOUPDATER: "1" }, cwd: temporaryDirectory })
+      .then((listed) => (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast\b/m.test(String(listed.stdout ?? "")) ? "grok-4.7-build-fast" : null), () => null);
+    const grokModel = await options.grokModelProbe;
     args = [
       "--prompt-file", promptPath,
-      ...(options.grokModelChoice ? ["--model", options.grokModelChoice] : []),
+      ...(grokModel ? ["--model", grokModel] : []),
       // Preserve the full supplied prompt instead of an offloaded summary;
       // retain plan-mode containment and disallow delegated subagents.
       "--verbatim", "--no-subagents",
@@ -1714,9 +1712,9 @@ async function invokeReviewer(agent, artifact, options) {
       "--output-format", "json",
       "--permission-mode", "plan",
       "--disable-web-search",
-      // Medium with the fast model was valid in 5 of 5 measured runs; Grok's own default is high, which
-      // took 736 s on the plain model. An explicit --effort default keeps the provider setting.
-      ...(options.effort === "medium" || (!options.effort && options.grokModelChoice) ? ["--reasoning-effort", "medium"] : []),
+      // Medium with the fast model was valid in every measured run (gate record); Grok's own default is
+      // high, which took 736 s on the plain model. An explicit --effort default keeps the provider setting.
+      ...(options.effort === "medium" || (!options.effort && grokModel) ? ["--reasoning-effort", "medium"] : []),
     ];
     input = "";
     cwd = temporaryDirectory;

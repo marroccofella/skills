@@ -82,6 +82,8 @@ and authorized native-machine runs**. Synthetic transaction tests are not substi
 
 Same 5 KB review each time (the delta `238584b..7a970f7`), Grok CLI 1.0.41; the reviewed text is project
 source already public on PR #18. Wall time is the whole CLI run; "valid" means MOMM accepted the review.
+The lab runs had no MOMM deadline, so a run is listed as valid even where it outlasted the old 270 s
+budget; inside MOMM the 736 s and 290 s runs would have been cut off.
 
 | Model | Effort | Setup | Runs | Wall time | Valid | Cost per run |
 |---|---|---|---|---|---|---|
@@ -94,8 +96,11 @@ source already public on PR #18. Wall time is the whole CLI run; "valid" means M
 | grok-4.7-build-fast | medium | isolated, every tool denied | 3 | 194 to 308 s | 3 of 3 | $0.14 to $0.19 |
 | grok-4.7-build-fast | medium | isolated, own system prompt | 2 | 237 to 311 s | 2 of 2 | $0.17 to $0.21 |
 
-Chosen: the fast model when the account lists it, at medium effort unless the user passes `--effort`
-(5 of 5 valid, 194 to 311 s), with 2x headroom on the 180 s base (360 s, the existing cap). The system
+Chosen: the fast model when the account lists it, at medium effort unless the user passes `--effort`:
+3 of 3 in the shipped setup (194 to 308 s), and 2 of 2 more with a replaced system prompt (237 to
+311 s). Budget: 2x headroom, capped at 360 s unless `--timeout` is explicit, so default and deep Grok
+reviews both get 360 s. The first MOMM review on this setup (the delta review of these changes, run
+`rev_20260924234524_89d8189794c3`, pieces of 15 KB and 40 KB) was valid on both pieces in 154 s and 22 s. The system
 prompt override is not used: no faster, and dearer. Low effort was faster but has one run each, so it
 is not the default. Isolation cut the input of a one-line prompt from 19,751 to 17,174 tokens and
 start-up from 5.5 to 4.0 s. The Setup Center connectivity budget rose from 240 to 300 s to match.
@@ -103,8 +108,8 @@ start-up from 5.5 to 4.0 s. The Setup Center connectivity budget rose from 240 t
 Known limits: Grok's skill list cannot be hidden per run (only the user's global config can), so
 skills are still advertised to the reviewer but every tool, including the skill tool, is denied. The
 report's `requested_effort` records what the user asked for; with the fast model and no `--effort`,
-the effective Grok effort is medium. Timings vary between runs by about 1.6x; the budget has 49 s
-over the slowest measured run.
+the effective Grok effort is medium. Timings vary between runs by about 1.6x; the budget has 52 s
+over the slowest run in the shipped setup.
 
 ## Accepted risk (owner decision, 24 September 2026)
 
