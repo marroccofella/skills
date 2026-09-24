@@ -99,7 +99,8 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   triage: adding `export` to `resolveGit` invalidated a slice in `governor.test.mjs`, and adding a
   `randomBytes` call to `stageCopy` invalidated one in `review-refutations.test.mjs`. A third followed
   in the next round: routing `source-hygiene.test.mjs` through `resolveGit` broke the slice of it in
-  `review-followup.test.mjs`. All three had to be repaired to land correct fixes, which is precisely
+  `review-followup.test.mjs`. A fourth: keeping the end of a failed route's output added a helper the
+  classifier slice in `stabilisation.test.mjs` did not carry. All four had to be repaired to land correct fixes, which is precisely
   the wrong incentive. Export the small
   helpers and import them instead. The largest single cleanup on this list.
 - **Media fixtures.** The 23-byte positive JPEG fixture declares a SOF0 component and omits its
@@ -126,3 +127,11 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   `APPDATA`, `LOCALAPPDATA` and `XDG_CONFIG_HOME` as well.
 - **Acceptance matrix.** Give each row a column naming the suite that asserts it, and give the image
   review the same copyable fenced command as the source review.
+
+## Planned for 1.17
+
+- **Resolve reviewer launches on macOS and Linux.** Accepted as a documented risk for 1.16.1 (owner
+  decision, 24 September 2026; see the gate record). `processScope.spawn` should resolve a bare name
+  with `pathEntryOutside` / `executableOutside` and scrub the child PATH on every platform, as it
+  already does on Windows. Expect users whose CLI is installed only inside the project they review
+  to be told it is not installed; say so in that release's notes.

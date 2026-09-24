@@ -23,6 +23,11 @@ directory or companion file is refused, even with `--force`. Existing permission
 are not changed. The current [acceptance guide](third-party-test-plan-1.16.1.md)
 adds the missing retry and ledger-ticket steps.
 
+A reviewed project can no longer choose the executable MOMM runs on Windows, or the Git that
+verifies a committed range on any platform. **Known limitation:** on macOS and Linux, reviewer CLIs
+are still found through PATH, so a PATH folder inside the reviewed project could supply one.
+Review untrusted projects from a shell whose PATH contains no folder inside them; the fix is due in 1.17.
+
 Final native lifecycle, live image, candidate CI, peer dispositions and publication gates remain
 open. See [the gate record](gates-1.16.1.md). Do not install an unsigned branch as a signed release.
 

@@ -371,3 +371,37 @@ jobs:
           } finally {
             for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
           }
+
+  # Owner decision, 24 September 2026. These thirteen suites passed locally but no workflow ran them,
+  # so a green run implied coverage it did not have (independent review of 5f91a36). They are
+  # platform-independent, make no network calls and take about four seconds together, so one Linux
+  # job carries them. bash stops at the first failure; PowerShell would report only the last one.
+  site-and-ledger:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      NO_UPDATE_CHECK: '1'
+      MOMM_NO_UPDATE_CHECK: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.x
+      - name: Site, ledger, preview, release-observer and improvement suites
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          node scripts/ledger-ui.test.mjs
+          node scripts/momm-improvement-regressions.test.mjs
+          node scripts/momm-release-observer.test.mjs
+          node scripts/momm-site-community.test.mjs
+          node scripts/momm-site-discovery.test.mjs
+          node scripts/momm-site-flow.test.mjs
+          node scripts/momm-site-home.test.mjs
+          node scripts/momm-site-regression.test.mjs
+          node scripts/momm-site-search.test.mjs
+          node scripts/momm-site-technical.test.mjs
+          node scripts/momm-site-videos.test.mjs
+          node scripts/momm-site-visuals.test.mjs
+          node scripts/preview-module.test.mjs

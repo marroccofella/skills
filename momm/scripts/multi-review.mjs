@@ -1308,6 +1308,14 @@ function antigravityStreamPayload(stdout, stream = true) {
 function clipped(value, length) {
   return typeof value === "string" ? value.trim().slice(0, length) : "";
 }
+// Keeps the END of the text and marks the cut. A CLI that echoes its banner and the prompt before
+// failing puts the real error last; clipping from the start stored the prompt and lost the error,
+// which is why every codex failure on 23 and 24 September 2026 was undiagnosable.
+function clippedTail(value, length) {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return text.length > length ? `…${text.slice(-(length - 1))}` : text;
+}
 
 function normalizeReview(agent, payload) {
   const verdict = String(payload.verdict || "MODIFY").toUpperCase();
@@ -1470,7 +1478,7 @@ function classifyFailure(result, agent = null) {
     // contain device codes, URLs, account identifiers and session metadata.
     return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
   }
-  return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
+  return { status: "error", detail: clippedTail(meaningful || `exit ${result.code}`, 1200) };
 }
 
 async function invokeReviewer(agent, artifact, options) {

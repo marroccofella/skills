@@ -198,11 +198,11 @@ function main() {
     const dry = options.dryRun, n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
     const name = (r) => `${r.skill ? `${r.skill} for ` : ""}${r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""}`;
     const conflicts = refused.filter((r) => r.status === "conflict"), errors = refused.filter((r) => r.status === "error"), unsupported = refused.filter((r) => r.status === "unsupported");
-    const parts = [];
-    if (conflicts.length) parts.push(`${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`);
-    if (errors.length) parts.push(`${n(errors.length, "link", "links")} failed (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`);
-    if (unsupported.length) parts.push(`${n(unsupported.length, "target is", "targets are")} not supported (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`);
-    output.exit_reason = parts.map((p) => p.split(" (")[0]).join("; ");
+    const parts = [], summaries = [];
+    if (conflicts.length) { const head = `${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists`; summaries.push(head); parts.push(`${head} (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`); }
+    if (errors.length) { const head = `${n(errors.length, "link", "links")} failed`; summaries.push(head); parts.push(`${head} (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`); }
+    if (unsupported.length) { const head = `${n(unsupported.length, "target is", "targets are")} not supported`; summaries.push(head); parts.push(`${head} (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`); }
+    output.exit_reason = summaries.join("; ");
     process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);

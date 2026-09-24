@@ -76,4 +76,10 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
   assert(/\*\*Do not run this plan\.\*\*/.test(plan), 'the historical plan must open with a do-not-execute fence');
   assert(!/Hand this whole file to a fresh agent session/.test(plan), 'the withdrawn plan must not instruct an agent to run it');
 }
+// Owner decision, 24 September 2026: the macOS/Linux reviewer-launch gap ships as an accepted,
+// documented risk. It must stay stated where users and reviewers read, until 1.17 closes it.
+{
+  assert(/Known limitation:\*\* on macOS and Linux, reviewer CLIs/.test(read('momm/references/draft-1.16.1.md')), 'the release notes must state the macOS/Linux reviewer-launch limitation');
+  assert(/## Accepted risk \(owner decision, 24 September 2026\)/.test(read('momm/references/gates-1.16.1.md')), 'the gate record must carry the accepted risk');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

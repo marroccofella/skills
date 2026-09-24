@@ -23,7 +23,8 @@ jobs:
   release:
     if: github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # The safety matrix spreads these suites over fourteen parallel jobs; this job runs all of them
+    # The safety workflow spreads these suites over fifteen parallel jobs (a fourteen-cell matrix and one
+    # Linux job); this job runs all of them
     # in sequence. Measured end to end at 527s on the maintainer machine (61 suites, 23 September
     # 2026), so 45 minutes leaves room for a runner several times slower. The point is that a
     # signed release must never be killed AFTER the suites passed.
@@ -117,6 +118,19 @@ jobs:
           node momm/scripts/review-final-regressions.test.mjs
           node momm/scripts/review-triage-1161.test.mjs
           node momm/scripts/executable-resolution.test.mjs
+          node scripts/ledger-ui.test.mjs
+          node scripts/momm-improvement-regressions.test.mjs
+          node scripts/momm-release-observer.test.mjs
+          node scripts/momm-site-community.test.mjs
+          node scripts/momm-site-discovery.test.mjs
+          node scripts/momm-site-flow.test.mjs
+          node scripts/momm-site-home.test.mjs
+          node scripts/momm-site-regression.test.mjs
+          node scripts/momm-site-search.test.mjs
+          node scripts/momm-site-technical.test.mjs
+          node scripts/momm-site-videos.test.mjs
+          node scripts/momm-site-visuals.test.mjs
+          node scripts/preview-module.test.mjs
           node momm/scripts/review-refutations.test.mjs
           node momm/scripts/review-followup.test.mjs
           node momm/scripts/copilot-transport.test.mjs

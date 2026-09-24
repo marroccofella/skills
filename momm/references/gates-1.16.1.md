@@ -78,6 +78,17 @@ working skill, enable automatic updates or run `evidence --protect` as an agent.
 Real signed 1.16.1 lifecycle drills are **blocked pending a reviewed signed candidate artifact
 and authorized native-machine runs**. Synthetic transaction tests are not substitutes.
 
+## Accepted risk (owner decision, 24 September 2026)
+
+On macOS and Linux, MOMM starts reviewer CLIs (`codex`, `claude`, `grok` and the others) by name,
+so the operating system searches PATH. If the user's own PATH contains a folder inside the project
+being reviewed (for example one added by direnv, or a virtual environment activated inside it), a
+file in that project could be launched in place of the reviewer. Windows is not affected: every
+launch there is resolved to an absolute path outside the project. The Git that verifies a
+committed range is resolved that way on every platform. Deferred to 1.17; tracked in the
+[ideas register](ideas-register.md). Until then, review untrusted projects from a shell whose
+PATH contains no folder inside them.
+
 ## Still required before tag
 
 - Full candidate suites and exact OS/Node CI outputs.

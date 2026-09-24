@@ -14,6 +14,7 @@ function test(name, fn) { try { fn(); passed.push(name); } catch (e) { failed.pu
 function between(source, first, last) { const a = source.indexOf(first), b = source.indexOf(last, a); assert(a >= 0 && b > a, "fixture source boundaries moved"); return source.slice(a, b); }
 const classify = vm.runInNewContext(between(read("momm/scripts/multi-review.mjs"), "function classifyFailure(", "async function invokeReviewer(") + ";classifyFailure", {
   stripAnsi: s => String(s ?? ""), clipped: (s, n) => String(s ?? "").slice(0, n),
+  clippedTail: (s, n) => { const t = String(s ?? "").trim(); return t.length > n ? `…${t.slice(-(n - 1))}` : t; },
 });
 test("CLI/model incompatibility is not a login failure even when diagnostics mention OAuth", () => {
   const result = classify({ code: 1, stdout: "", stderr: "failed to load models cache: missing field supports_parallel_tool_calls\nOAuth session present; browser login available" });

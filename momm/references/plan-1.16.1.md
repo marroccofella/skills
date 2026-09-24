@@ -242,7 +242,10 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
    `ineligible_tier`. Proposed for 1.16.1: a deprecation notice in preflight, the Setup Center and
    the docs only; removal itself touches 51 files and is a later release.
    Decided: notice only; shipped in preflight and SKILL.md.
-3. **Reviewer launches on macOS and Linux still trust any PATH directory.** The independent
+3. **Decided 24 September 2026: deferred to 1.17 as an accepted, documented risk.** It was not a hole
+   1.16.0 documented, so it is outside the closed set, and closing it changes launch behaviour for
+   every macOS and Linux user. Stated in the release notes and the gate record.
+   **Reviewer launches on macOS and Linux still trust any PATH directory.** The independent
    review of 3d7a8be showed a repository could choose which executable ran. Every resolver now
    refuses a PATH directory inside the project, and on Windows `processScope.spawn` routes every
    launch through that rule and scrubs the child PATH. On macOS and Linux it still passes a bare
@@ -252,7 +255,9 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
    exist. Closing it changes launch behaviour for every macOS and Linux user, including anyone
    whose CLI is installed only inside the project they are reviewing, so it is the owner's call
    whether it lands in 1.16.1 or 1.17. It is recorded here rather than left in a transcript.
-4. **Thirteen suites run by no workflow.** The site, ledger, preview, release-observer and
+4. **Decided 24 September 2026: added to CI** as one Linux job (`site-and-ledger`) and to the signed
+   release job.
+   **Thirteen suites run by no workflow.** The site, ledger, preview, release-observer and
    improvement-regression suites (for example `scripts/momm-site-home.test.mjs`,
    `scripts/ledger-ui.test.mjs`, `scripts/preview-module.test.mjs`) pass locally but no
    workflow runs them, so a regression in them would only be found by hand. Adding them to one

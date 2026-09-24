@@ -16,4 +16,18 @@ for(const [text,status] of [['OAuth session refreshed successfully; unrelated fa
  context.input={code:1,stdout:text,stderr:''};assert.equal(vm.runInContext('classifyFailure(input).status',context),status);
 }
 context.input={...result,timedOut:true};assert.equal(vm.runInContext('classifyFailure(input).status',context),'timeout');
+// A CLI that echoes its session banner and the whole prompt to stderr before failing puts the real
+// error LAST. Keeping the first 1200 characters stored the banner and the prompt and never the error:
+// every codex failure on 23 and 24 September 2026 looked exactly like that, so neither the governor
+// nor an independent reviewer could say why the route failed.
+{
+  const echoed = 'OpenAI Codex v0.154.0\n--------\nworkdir: /synthetic\nuser\n' + 'You are a read-only peer code reviewer. '.repeat(400);
+  context.input = { code: 1, stdout: '', stderr: echoed + '\nERROR: synthetic-final-diagnostic: the run ended unexpectedly' };
+  const failure = vm.runInContext('classifyFailure(input)', context);
+  assert.equal(failure.status, 'error');
+  assert.match(failure.detail, /synthetic-final-diagnostic/, 'the end of the output, where the error is, must survive');
+  assert.ok(failure.detail.length <= 1200, 'the detail stays bounded');
+  context.input = { code: 1, stdout: '', stderr: 'short failure' };
+  assert.equal(vm.runInContext('classifyFailure(input)', context).detail, 'short failure', 'short output is kept whole, with no marker');
+}
 console.log('Expired OAuth sessions receive safe browser-login guidance; outage and timeout precedence remain unchanged.');
