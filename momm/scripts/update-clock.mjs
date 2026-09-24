@@ -321,7 +321,10 @@ export const defaultSources = () => [skillSource(), ...Object.keys(NPM_PACKAGES)
 
 // ---- the clock -----------------------------------------------------------------
 export function createUpdateClock({ home, stateFile = defaultStateFile(), installedVersions = { skill: localSkillVersion() }, sources = defaultSources(), fetcher = defaultFetcher, exec = defaultExec, now = Date.now, random = Math.random, listModels = async () => null, routes = CLIS, isAlive = pidAlive, env = process.env } = {}) {
-  const installedFor = s => installedVersions[s.cli || (s.kind === "skill" ? "skill" : "")] || null;
+  // An injected version wins (the Setup Center passes the ones it just read). Otherwise a CLI falls
+  // back to the version this clock read and cached itself. Before 1.16.2 there was no fallback, and
+  // `update-clock.mjs trigger` injects only the skill version, so no CLI update was ever reported.
+  const installedFor = (s, entry) => installedVersions[s.cli || (s.kind === "skill" ? "skill" : "")] || entry?.installed_version || null;
   const jitter = ms => Math.round(ms * (0.9 + 0.2 * random()));
   function schedule(entry, outcome, t, clock) {
     // A hand-edited or partly written row may lack a finite interval: NaN would make
@@ -340,7 +343,7 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
       const r = (await source.check(ctx, entry)) || {};
       if (r.notModified) outcome = "unchanged";
       else {
-        const latest = r.latest || null, seen = entry.last_seen_version, installed = installedFor(source);
+        const latest = r.latest || null, seen = entry.last_seen_version, installed = installedFor(source, entry);
         // A version that differs from the last one seen is a release. On first sight
         // there is nothing seen yet, so a latest newer than the installed version is
         // the release (it opens the 24 h tight window); latest == installed is a baseline.
@@ -356,8 +359,20 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
       entry.last_error = null;
     } catch (e) { outcome = "error"; entry.last_error = safeText(e.message).slice(0, 300); }
     delete entry.last_error_from; // whatever stands now came from this check, not from an apply
+    // One local `--version` per CLI: on first sight, when a new release is seen, and otherwise at most
+    // once a day, since the user may update by other means. A few process starts a day, no network.
+    if (source.kind === "cli" && !installedVersions[source.cli]) {
+      const due = !Number.isFinite(entry.installed_checked_at) || outcome === "changed" || t - entry.installed_checked_at >= DAY;
+      if (due) {
+        try {
+          const p = await ctx.exec(cliBinary(source.cli), ["--version"], { timeout: 15_000 });
+          entry.installed_version = p && p.code === 0 ? semver(p.stdout) || semver(p.stderr) : null;
+        } catch { entry.installed_version = null; }
+        entry.installed_checked_at = t;
+      }
+    }
     schedule(entry, outcome, t, settings.clock);
-    return { name: source.name, outcome, latest: entry.last_seen_version, installed: installedFor(source), error: entry.last_error };
+    return { name: source.name, outcome, latest: entry.last_seen_version, installed: installedFor(source, entry), error: entry.last_error };
   }
   // Every state read-modify-write goes through here: trigger, record and applyUpdates
   // share one lock so their writes cannot interleave. `fn` receives the lock notices
@@ -387,7 +402,7 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
     // own hint (grok's `update --check`) only stands in while one side is unknown,
     // otherwise a hint recorded before an update would re-trigger it forever.
     updateAvailable(source, entry) {
-      const installed = installedFor(source), latest = entry.last_seen_version;
+      const installed = installedFor(source, entry), latest = entry.last_seen_version;
       if (latest && installed) return newer(latest, installed);
       if (entry.update_available_hint !== undefined) return entry.update_available_hint;
       return null;
@@ -416,7 +431,7 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
     record: entries => withLock(async lockNotices => { const { state } = open(lockNotices, now(), "record"); state.history.push(...entries); writeState(stateFile, state); return { recorded: true, skipped_reason: null }; }, { recorded: false, skipped_reason: "locked" }),
     status() {
       const settings = readSettings(home), state = readState(stateFile), iso = ms => (ms ? new Date(ms).toISOString() : null);
-      const rows = sources.map(s => { const e = state.sources[s.name] || freshEntry(settings.clock.min_interval_ms); return { name: s.name, kind: s.kind, last_checked_at: iso(e.last_checked_at), next_due_at: iso(e.next_due_at), interval_ms: e.interval_ms, latest: e.last_seen_version, installed: installedFor(s), update_available: clock.updateAvailable(s, e), last_error: e.last_error, status: e.status || null, new_models: e.new_models || null, needs_protocol_acceptance: e.needs_protocol_acceptance || false }; });
+      const rows = sources.map(s => { const e = state.sources[s.name] || freshEntry(settings.clock.min_interval_ms); return { name: s.name, kind: s.kind, last_checked_at: iso(e.last_checked_at), next_due_at: iso(e.next_due_at), interval_ms: e.interval_ms, latest: e.last_seen_version, installed: installedFor(s, e), update_available: clock.updateAvailable(s, e), last_error: e.last_error, status: e.status || null, new_models: e.new_models || null, needs_protocol_acceptance: e.needs_protocol_acceptance || false }; });
       return { auto_update: settings.auto_update, clock: settings.clock, sources: rows, overhead_estimate_per_day: rows.filter(r => r.kind !== "models" && r.name !== "cli:antigravity").reduce((n, r) => n + Math.ceil(DAY / r.interval_ms), 0), history_entries: state.history.length };
     },
   };
@@ -605,4 +620,50 @@ export async function cliMain(argv, deps = {}) {
 function isEntrypoint() { try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isEntrypoint()) {
   cliMain(process.argv.slice(2)).then(r => process.stdout.write(`${JSON.stringify(r, null, 2)}\n`)).catch(e => { process.stderr.write(`MOMM update clock stopped: ${safeText(e.message)}\n`); process.exitCode = 1; });
+}
+
+// ---- pending-update notice ---------------------------------------------------------
+// The clock only records what it finds; before 1.16.2 nothing told the user, so reviewer CLIs fell
+// behind unnoticed (codex 0.154.0 could not use a model the desktop app had already selected). This is
+// the part that tells them: a short stderr block after preflight and at the end of a review, listing
+// each reviewer CLI that is behind with its official update command, automatic installs offered as
+// the user's own switch, and the Setup Center for guidance. It installs nothing and enables nothing.
+// MOMM's own version keeps its existing line, so it is not repeated here.
+export function pendingUpdateNotice(rows, { scripts = HERE, autoEnabled = false } = {}) {
+  const behind = (rows || []).filter((r) => r && r.kind === "cli" && r.update_available === true);
+  if (!behind.length) return null;
+  // Plain double quotes, not JSON: JSON doubles every Windows backslash, which looks broken when copied.
+  const q = (p) => `"${p}"`;
+  const name = (r) => String(r.name).replace(/^cli:/, "");
+  const lines = [`momm: reviewer updates available: ${behind.map((r) => `${name(r)} ${r.installed ?? "?"} -> ${r.latest ?? "newer"}`).join("; ")}.`];
+  const commands = behind.map((r) => UPDATE_COMMANDS[name(r)]).filter(Boolean);
+  if (commands.length) lines.push(`  Install now: ${commands.join("; ")}`);
+  lines.push(autoEnabled
+    ? "  Automatic installs are on; they run after the next review finishes."
+    : `  Or install automatically from now on: node ${q(path.join(scripts, "update-clock.mjs"))} enable  (off until you turn it on)`);
+  lines.push(`  Or open the Setup Center for guidance: node ${q(path.join(scripts, "setup-ui.mjs"))}`);
+  if ((rows || []).some((r) => r && r.name === "cli:antigravity" && r.update_available == null)) lines.push("  antigravity cannot be checked automatically: run agy update to check it.");
+  return lines.join("\n") + "\n";
+}
+
+// Delivery: once per day for the same set of versions, and at once when a newer one appears. Never in
+// --stream mode (NDJSON stays pure), never under NO_UPDATE_CHECK / DO_NOT_TRACK, and a notice can never
+// break or delay a review: any failure is swallowed.
+export async function maybeUpdateNotice({ stream = false, env = process.env, clock = null, noticeFile = null, now = Date.now } = {}) {
+  try {
+    if (stream || updateCheckDisabled(env)) return null;
+    const c = clock || createUpdateClock({ home: os.homedir() });
+    const status = c.status();
+    const text = pendingUpdateNotice(status.sources, { autoEnabled: status.auto_update?.enabled === true });
+    if (!text) return null;
+    const key = status.sources.filter((r) => r.kind === "cli" && r.update_available === true).map((r) => `${r.name}@${r.latest}`).sort().join(",");
+    const file = noticeFile || path.join(path.dirname(c.stateFile || defaultStateFile()), "update-notice.json");
+    let last = null;
+    try { last = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* first notice */ }
+    const t = now();
+    if (last && last.key === key && Number.isFinite(last.at) && t - last.at < DAY) return null;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ key, at: t }), { mode: 0o600 });
+    return text;
+  } catch { return null; }
 }
