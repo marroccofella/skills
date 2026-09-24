@@ -8,12 +8,18 @@ This record separates implementation from release evidence. The published releas
 
 | OS | Node 18 | Node 20 | Node 22 (primary) | Node 24 (primary) |
 | --- | --- | --- | --- | --- |
-| Windows | offline CI green | offline CI green | offline CI green; local full run on 22.16.0 | offline CI green (24.x and 24.15.0) |
+| Windows | offline CI green | offline CI green | offline CI green; local full run on 22.16.0 | offline CI green (24.x, 24.15.0 and 24.19.0) |
 | macOS | offline CI green | offline CI green | offline CI green | offline CI green |
 | Linux | offline CI green | offline CI green | offline CI green | offline CI green |
 
 "Offline CI green" means every job of the workflow passed on the named candidate, read from the job
-logs and not from the badge. It is **not** a lifecycle result. A green offline matrix and a
+logs and not from the badge. It is **not** a lifecycle result.
+
+`24.x` is whatever patch the runner happens to hold that day: on 23 September 2026 it resolved to
+**24.20.0**, so the matrix had never once run 24.19, the version on which a reviewer reported an
+attachment-cleanup timeout. A green `24.x` column was therefore not evidence about 24.19. Windows
+now pins 24.15.0 and 24.19.0 alongside `24.x` so each reported runtime is actually exercised.
+It is **not** a lifecycle result. A green offline matrix and a
 completed lifecycle drill are different claims, so they have separate tables.
 
 ### Installation lifecycle (signed install, upgrade, rollback, re-upgrade, damaged-payload refusal)

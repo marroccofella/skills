@@ -20,10 +20,15 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         # 22/24 are primary; 18/20 are retained compatibility checks, not lifecycle proof.
         node-version: [18.x, 20.x, 22.x, 24.x]
-        # Reproduce the independently reported Windows fetch/forced-exit runtime.
+        # Pinned patch releases, because 24.x resolves to whatever the runner has that day.
+        # 24.15.0: the independently reported Windows fetch/forced-exit runtime.
+        # 24.19.0: a reviewer reported an attachment-cleanup timeout there, and the matrix had
+        # gone straight from 24.x = 24.20.0 past it, so nothing had ever run 24.19.
         include:
           - os: windows-latest
             node-version: '24.15.0'
+          - os: windows-latest
+            node-version: '24.19.0'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
