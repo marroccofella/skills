@@ -1455,6 +1455,9 @@ function classifyFailure(result, agent = null, sent = "") {
     const trimmed = line.trim();
     if (!trimmed || !sentText) return false;
     if (sentLines.has(trimmed) || (trimmed.length >= 12 && sentText.includes(trimmed))) return true;
+    // Short sent lines echoed behind a prefix (">", "|", "#", "*", or an ISO timestamp and a log level).
+    const unprefixed = trimmed.replace(/^(?:\d{4}-\d\d-\d\dT[\d:.]+Z?\s+(?:[A-Za-z]+:?\s+)?|[>|#*]+\s?)/, "").trim();
+    if (unprefixed !== trimmed && sentLines.has(unprefixed)) return true;
     const unescaped = unescapeJson(trimmed);
     return sentLong.some((part) => trimmed.includes(part) || unescaped.includes(part));
   };
@@ -1463,17 +1466,17 @@ function classifyFailure(result, agent = null, sent = "") {
     let size = 0;
     for (let i = lines.length - 1, seen = 0; i >= 0 && size < limit && seen < 500; i--, seen++) {
       if (carriesSent(lines[i])) continue;
-      kept.unshift(lines[i]);
+      kept.push(lines[i]);
       size += lines[i].length + 1;
     }
-    return clippedTail(kept.join("\n"), limit);
+    return clippedTail(kept.reverse().join("\n"), limit);
   };
   const meaningful = cleanErr || cleanOut || result.error?.message;
   const combined = `${cleanOut}\n${cleanErr}`.toLowerCase();
   // Local model/cache compatibility failures can include OAuth diagnostics or
   // echoed source. They are not evidence that the account needs a new login.
   if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported|model is not supported when using/.test(combined)) {
-    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${quote(meaningful, 700)}` };
+    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${quote(meaningful, 700) || "(nothing left to quote once what MOMM sent was removed)"}` };
   }
   // A retired account tier is a permanent condition, not an auth problem —
   // classify it first (its message contains "authenticating") so the user is

@@ -74,4 +74,31 @@ context.input={...result,timedOut:true};assert.equal(vm.runInContext('classifyFa
     assert.match(detail, /synthetic-final-diagnostic/, `${shape}: the provider's own error survives`);
   }
 }
+// Delta review of 238584b (codex): a sent line shorter than eight characters, echoed with a prefix,
+// survived, because only longer sent lines are searched for inside other lines. A prefix is now
+// stripped and the rest must not equal ANY sent line. The provider error must still survive even
+// though it ends in "}}" and the artifact holds a bare "}" line.
+{
+  const artifact = ['function check(input) {', '  pin=42;', '  x = 1;', '}'].join('\n');
+  context.sent = 'You are a read-only peer code reviewer.\n--- ARTIFACT TO REVIEW ---\n' + artifact;
+  const error = 'ERROR: {"type":"error","status":400,"error":{"message":"synthetic-final-diagnostic"}}';
+  for (const [shape, echo] of Object.entries({
+    'prefixed lines': context.sent.split('\n').map((l) => '> ' + l).join('\n'),
+    'timestamped log lines': context.sent.split('\n').map((l) => '2026-09-24T20:00:00Z INFO ' + l).join('\n'),
+  })) {
+    context.input = { code: 1, stdout: '', stderr: echo + '\n' + error };
+    const detail = vm.runInContext('classifyFailure(input, "codex", sent)', context).detail;
+    assert.ok(!detail.includes('pin=42'), `${shape}: a short sent line was kept`);
+    assert.ok(!/(^|\n)(> |\S+ INFO )x = 1;/.test(detail), `${shape}: a short sent line was kept`);
+    assert.match(detail, /synthetic-final-diagnostic/, `${shape}: the provider's own error survives`);
+  }
+  // When every line is filtered, the compatibility branch says so instead of ending in 'Provider said: '.
+  // The provider line is classified (it survives exact-line removal) but carries a sent line, so the
+  // quote filter removes it and nothing is left to quote.
+  context.input = { code: 1, stdout: '', stderr: 'function check(input) { -- The model is not supported when using Codex with a ChatGPT account.' };
+  const allSent = vm.runInContext('classifyFailure(input, "codex", sent)', context).detail;
+  assert.match(allSent, /CLI\/model compatibility/, 'the case reaches the compatibility branch');
+  assert.doesNotMatch(allSent, /Provider said: *$/, 'no dangling Provider said:');
+  assert.ok(!allSent.includes('function check'), 'and the sent line is still not quoted');
+}
 console.log('Expired OAuth sessions receive safe browser-login guidance; outage and timeout precedence remain unchanged.');
