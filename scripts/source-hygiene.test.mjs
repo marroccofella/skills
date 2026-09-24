@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 // Both digests quoted anywhere in this repository are SHA-256.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const gitAvailable = spawnSync('git', ['--version'], { encoding: 'utf8', windowsHide: true }).status === 0;
-if (!gitAvailable) { console.error('source-hygiene: git is not on PATH, so the binary-classification check cannot run here.'); process.exitCode = 1; }
+if (!gitAvailable) {
+  console.error('source-hygiene: git is not on PATH, so neither the repository listing nor the binary-classification check can run.');
+  process.exit(1);
+}
 const results = [];
 const check = (name, fn) => { try { fn(); results.push({ name, passed: true }); } catch (e) { results.push({ name, passed: false, error: String(e.message).slice(0, 1200) }); process.exitCode = 1; } };
 const TEXT = /\.(?:mjs|cjs|js|json|md|yml|yaml|html|css|txt|svg|vtt|csv|xml|sha256)$/i;

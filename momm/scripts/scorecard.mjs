@@ -85,7 +85,7 @@ export function buildScorecard(project) {
       const requested = pieces?.length ? pieces.filter(([status]) => !NOT_A_REVIEW.has(status)) : null;
       const asked = pieces?.length ? requested.reduce((sum, [, n]) => sum + n, 0) : 1;
       if (pieces?.length && asked === 0) continue; // every piece was withheld: nothing was asked of this route
-      if (pieces?.length) { for (const [status, n] of pieces) { p.outcomes[status] = (p.outcomes[status] ?? 0) + n; if (status === "success") p.reviews_valid += n; } }
+      if (pieces?.length) { for (const [status, n] of requested) { p.outcomes[status] = (p.outcomes[status] ?? 0) + n; if (status === "success") p.reviews_valid += n; } }
       else { p.outcomes[row.status] = (p.outcomes[row.status] ?? 0) + 1; if (row.status === "success") p.reviews_valid++; }
       p.reviews_asked += asked;
       p.retries += Array.isArray(row.retried_pieces) ? row.retried_pieces.length : ((row.attempts ?? 1) > 1 ? 1 : 0);

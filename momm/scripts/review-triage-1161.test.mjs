@@ -47,6 +47,18 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
   assert.equal(at('/proj/bin'), null, 'a checkout-supplied Git is never returned');
   assert.equal(at('bin:.'), null, 'relative PATH entries are not searched');
   assert.equal(at(''), null, 'an empty PATH resolves nothing rather than falling back to the bare name');
+  // Delta review of 99d612f..99db87d, antigravity: the check ran on the RESOLVED path while the
+  // unresolved candidate was returned. A repo-internal PATH entry holding a link that currently
+  // points outward passes the check, and spawning the candidate would follow that link again at
+  // exec time, when it need no longer point outward. Return the path that was actually checked.
+  {
+    const linked = {
+      statSync: (q) => { if (q !== '/proj/bin/git') { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return { isFile: () => true }; },
+      realpathSync: Object.assign((q) => (q === '/proj/bin/git' ? '/opt/real/git' : q), { native: (q) => q }),
+    };
+    assert.equal(resolveGit('/proj', { platform: 'linux', env: { PATH: '/proj/bin' }, fs: linked, path: posix }), '/opt/real/git',
+      'the resolved path is returned, never the in-project name that was resolved through');
+  }
 }
 
 // F21. An all-ones EBML size means "length not stated". A Segment written that way is legal and is

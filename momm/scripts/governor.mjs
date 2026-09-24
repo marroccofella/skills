@@ -158,7 +158,7 @@ export function resolveGit(root, { platform = process.platform, env = process.en
     const candidate = paths.join(dir, name);
     try {
       const resolved = real(candidate);
-      if (files.statSync(candidate).isFile() && resolved && !inside(resolved)) return candidate;
+      if (files.statSync(candidate).isFile() && resolved && !inside(resolved)) return resolved;
     } catch { /* not here */ }
   }
   return null;
