@@ -959,6 +959,83 @@ await test("cliMain trigger never runs real executors under an injected clock, a
   assert.equal(manual.ran, true);
 });
 
+// Production path. Every other case here supplies installedVersions, and production never does:
+// `update-clock.mjs trigger` builds the clock with the skill version only, so every CLI row read
+// installed: null and update_available: null, and no CLI update was ever reported (seen on a real
+// machine on 24 September 2026: codex 0.154.0 behind 0.156.1, claude, gemini and grok behind too).
+// Built here exactly as production builds it, with only --version stubbed.
+await test("production path: CLI installed versions are read, cached, and turn into update_available", async () => {
+  const dir = path.join(fixture, `case-${n++}`); fs.mkdirSync(dir);
+  const home = path.join(dir, "home"), stateFile = path.join(dir, "state", "update-clock.json");
+  const time = { t: 1_800_000_000_000 }, versionCalls = [];
+  const fetcher = async () => ({ status: 200, ok: true, headers: new Headers({ etag: '"v1"' }), text: async () => JSON.stringify({ version: "0.156.1" }) });
+  const exec = async (bin, args) => {
+    if (args[0] === "--version") { versionCalls.push(String(bin)); return { code: 0, stdout: "codex-cli 0.154.0\n", stderr: "" }; }
+    return { code: 1, stdout: "", stderr: "unexpected command" };
+  };
+  const clock = createUpdateClock({ home, stateFile, fetcher, exec, env: {}, now: () => time.t, random: () => 0.5, sources: [npmSource("codex"), antigravitySource()] });
+  await clock.trigger("manual");
+  const row = () => clock.status().sources.find((r) => r.name === "cli:codex");
+  assert.equal(row().installed, "0.154.0", "the installed version is read from the CLI");
+  assert.equal(row().latest, "0.156.1");
+  assert.equal(row().update_available, true, "an older installed CLI is reported as having an update");
+  const codexReads = () => versionCalls.filter((b) => /codex/i.test(b)).length;
+  assert.equal(codexReads(), 1);
+  time.t += 2 * 3_600_000; await clock.trigger("manual");
+  assert.equal(codexReads(), 1, "cached: not re-read on every check");
+  time.t += 25 * 3_600_000; await clock.trigger("manual");
+  assert.equal(codexReads(), 2, "refreshed at least daily, since the user may have updated");
+  const agy = clock.status().sources.find((r) => r.name === "cli:antigravity");
+  assert.equal(agy.update_available, null, "antigravity has no check-only command, so no claim either way");
+});
+
+// The check records what it finds; this is the part that tells the user. The notice lists each reviewer
+// CLI that is behind, gives its official update command, offers automatic installs as the user's own
+// switch, and points at the Setup Center. It is delivered at most once a day, or at once when a new
+// version appears, never in --stream mode, never under the opt-out variables, and it installs nothing.
+await test("pending-update notice: lists what is behind with the user's three choices", async () => {
+  const rows = [
+    { name: "skill", kind: "skill", installed: "1.16.0", latest: "1.16.1", update_available: true },
+    { name: "cli:codex", kind: "cli", installed: "0.154.0", latest: "0.156.1", update_available: true },
+    { name: "cli:grok", kind: "cli", installed: "1.0.30", latest: "1.0.41", update_available: true },
+    { name: "cli:copilot", kind: "cli", installed: "1.0.88", latest: "1.0.88", update_available: false },
+    { name: "cli:antigravity", kind: "cli", installed: "1.2.10", latest: null, update_available: null },
+  ];
+  const text = UC.pendingUpdateNotice(rows, { scripts: "/momm/scripts" });
+  assert.match(text, /codex 0\.154\.0 -> 0\.156\.1/); assert.match(text, /grok 1\.0\.30 -> 1\.0\.41/);
+  assert.doesNotMatch(text, /copilot/, "an up-to-date CLI is not listed");
+  assert.doesNotMatch(text, /skill 1\.16/, "MOMM itself is reported by its own existing line, not twice");
+  assert.ok(text.includes(UC.UPDATE_COMMANDS.codex) && text.includes(UC.UPDATE_COMMANDS.grok), "each official update command is given");
+  assert.match(text, /update-clock\.mjs" enable/); assert.match(text, /off until you turn it on/);
+  assert.match(text, /setup-ui\.mjs/, "the Setup Center is offered for guidance");
+  assert.match(text, /antigravity cannot be checked automatically/);
+  assert.equal(UC.pendingUpdateNotice(rows.map((r) => ({ ...r, update_available: r.kind === "skill" }))), null, "nothing behind among the CLIs: no notice");
+  assert.match(UC.pendingUpdateNotice(rows, { autoEnabled: true }), /Automatic installs are on/);
+});
+
+await test("pending-update notice: delivered at most daily, again for a new version, never in stream mode or when opted out", async () => {
+  const dir = path.join(fixture, `case-${n++}`); fs.mkdirSync(dir);
+  let rows = [{ name: "cli:codex", kind: "cli", installed: "0.154.0", latest: "0.156.1", update_available: true }];
+  const clock = { stateFile: path.join(dir, "update-clock.json"), status: () => ({ auto_update: { enabled: false }, sources: rows }) };
+  const time = { t: 1_800_000_000_000 }, opts = () => ({ clock, env: {}, now: () => time.t });
+  assert.match(await UC.maybeUpdateNotice(opts()), /codex 0\.154\.0 -> 0\.156\.1/, "first sight is delivered");
+  assert.equal(await UC.maybeUpdateNotice(opts()), null, "not repeated on the next review");
+  time.t += 2 * 3_600_000;
+  assert.equal(await UC.maybeUpdateNotice(opts()), null, "not repeated within the day");
+  rows = [{ ...rows[0], latest: "0.157.0" }];
+  assert.match(await UC.maybeUpdateNotice(opts()), /0\.157\.0/, "a newer release is delivered at once");
+  time.t += 25 * 3_600_000;
+  assert.match(await UC.maybeUpdateNotice(opts()) ?? "", /0\.157\.0/, "and reminded again after a day");
+  assert.equal(await UC.maybeUpdateNotice({ ...opts(), stream: true }), null, "never in --stream mode");
+  assert.equal(await UC.maybeUpdateNotice({ ...opts(), env: { NO_UPDATE_CHECK: "1" } }), null, "never when opted out");
+  assert.equal(await UC.maybeUpdateNotice({ clock: { stateFile: clock.stateFile, status: () => { throw new Error("broken state"); } }, env: {}, now: () => time.t }), null, "a broken state never breaks a review");
+});
+
+await test("pending-update notice: the dispatcher shows it after preflight and at the end of a review", async () => {
+  const dispatcher = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "multi-review.mjs"), "utf8");
+  assert.ok((dispatcher.match(/maybeUpdateNotice\(\{ stream: options\.stream \}\)/g) || []).length >= 2, "called after preflight and at review end");
+});
+
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(JSON.stringify({ passed, failures, skipped }, null, 2));
 if (failures.length) process.exitCode = 1;

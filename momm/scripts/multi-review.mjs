@@ -17,7 +17,7 @@ import { attemptRecord, startAttempt, persistAttempt, attemptTotals } from "./at
 import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
-import { createUpdateClock } from "./update-clock.mjs";
+import { createUpdateClock, maybeUpdateNotice } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
 
 // Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
@@ -3240,6 +3240,7 @@ async function main() {
         }
       }
     }
+    { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
     return;
   }
 
@@ -3646,6 +3647,8 @@ async function main() {
   // update notice if a newer release is published.
   const newer = await checkForUpdate(MOMM_VERSION, { stream: options.stream });
   clockTrigger("review.finish", options.stream);
+  // Reviewer CLIs that are behind, from what the clock last recorded (a file read, no network).
+  { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
   if (!options.stream) {
     process.stderr.write(`  momm ${MOMM_VERSION}${newer ? `  ↑ update available: ${newer} — run node momm/scripts/multi-review.mjs update in the skills clone; nothing installs automatically` : ""}\n`);
   }

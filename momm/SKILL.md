@@ -58,6 +58,8 @@ It binds to `127.0.0.1`, reads no credential contents, accepts only fixed allowl
    node "<installed-momm>/scripts/multi-review.mjs" --preflight --governor <current-harness>
    ```
 
+   If MOMM prints `momm: reviewer updates available` (after preflight or at the end of a review), relay it to the user with its three choices: install now with the listed official commands, turn on automatic installs, or open the Setup Center for guidance. Run an update command only with the user's approval, and never turn on automatic installs yourself; that switch is the user's.
+
    Zero model calls: every requested route is probed for install state and OAuth evidence. Relay every `login_hint` to the user verbatim (each is the provider's official browser-login command) and let them bring routes online before dispatching. Presence evidence does not prove a live session — routes still fail closed at dispatch, and a dispatch-time `authentication_required` also carries the exact login command.
 3. Keep the working directory in the user's project. Invoke the bundled dispatcher by its absolute installed path (replace the placeholder below). Do not change into the skill directory: that would review the skills repository and put the evidence in the wrong project.
 
