@@ -169,7 +169,7 @@ function main() {
     // broken by a predicted state. The message says so, rather than leaving the text and the exit
     // code contradicting each other. An inventory module that omits its reason is named as such.
     const reason = output.inventory.upgrade.reason ?? 'the inventory gave no reason';
-    const preview = options.dryRun ? ' This is a dry run: nothing was changed and the exit code stays 0.' : '';
+    const preview = options.dryRun ? ' This is a dry run: nothing was changed, and an incomplete inventory alone does not fail it.' : '';
     process.stderr.write(`Installation is not complete across active harnesses: ${reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.${preview}\n`);
     if (!options.dryRun) process.exitCode = 1;
   }
@@ -179,8 +179,15 @@ function main() {
   // line describes what this command did or, in a dry run, would do.
   const refused = results.filter((r) => ["error", "conflict", "unsupported"].includes(r.status));
   if (refused.length) {
-    output.exit_reason = `${refused.length} requested link${refused.length === 1 ? "" : "s"} ${options.dryRun ? "would be" : "were"} refused`;
-    process.stderr.write(`${options.dryRun ? "Dry run: " : ""}exit code 1 because ${output.exit_reason}: ${refused.map((r) => `${r.skill ?? r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""} (${r.status}${r.detail ? `: ${r.detail}` : ""})`).join("; ")}. Existing paths are never overwritten; move or remove the existing entry yourself, then rerun. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
+    const dry = options.dryRun, n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+    const name = (r) => `${r.skill ? `${r.skill} for ` : ""}${r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""}`;
+    const conflicts = refused.filter((r) => r.status === "conflict"), errors = refused.filter((r) => r.status === "error"), unsupported = refused.filter((r) => r.status === "unsupported");
+    const parts = [];
+    if (conflicts.length) parts.push(`${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`);
+    if (errors.length) parts.push(`${n(errors.length, "link", "links")} failed (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`);
+    if (unsupported.length) parts.push(`${n(unsupported.length, "target is", "targets are")} not supported (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`);
+    output.exit_reason = parts.map((p) => p.split(" (")[0]).join("; ");
+    process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;

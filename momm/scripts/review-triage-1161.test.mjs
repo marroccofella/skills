@@ -99,10 +99,21 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
     for (const [label, args] of [['skill installer', ['momm/scripts/install.mjs', '--target', 'codex', '--dry-run']], ['repository installer', ['install.mjs', '--skills', 'momm', '--target', 'codex', '--dry-run']]]) {
       const r = spawnSync(process.execPath, args, { cwd: repo, env, encoding: 'utf8', windowsHide: true, timeout: 60_000 });
       assert.equal(r.status, 1, `${label}: a refused link still exits 1`);
-      assert.match(r.stderr, /exit code 1 because 1 requested link would be refused/, `${label}: the non-zero exit is explained`);
+      assert.match(r.stderr, /exit code 1: 1 link would be refused because the path already exists/, `${label}: the non-zero exit is explained`);
+      assert.doesNotMatch(r.stderr, /stays 0/, `${label}: no line may claim exit 0 when the exit is 1`);
       assert.match(r.stderr, /not the result of this command/, `${label}: the inventory is not presented as the outcome`);
       assert.match(JSON.parse(r.stdout).exit_reason, /would be refused/, `${label}: machine readers get the reason too`);
       assert.ok(fs.lstatSync(path.join(home, '.agents', 'skills', 'momm')).isSymbolicLink() || process.platform === 'win32', `${label}: the existing link is untouched`);
+    }
+    // Delta review of b0a2dfe (antigravity and grok, independently): an unknown target was reported as
+    // "a requested link would be refused" with advice to delete an existing entry that did not exist.
+    for (const [label, args] of [['skill installer', ['momm/scripts/install.mjs', '--target', 'no-such-harness', '--dry-run']], ['repository installer', ['install.mjs', '--skills', 'momm', '--target', 'no-such-harness', '--dry-run']]]) {
+      const r = spawnSync(process.execPath, args, { cwd: repo, env, encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+      assert.equal(r.status, 1, `${label}: an unsupported target still exits 1`);
+      assert.match(r.stderr, /1 target is not supported \(no-such-harness\)/, `${label}: an unsupported target is named as such`);
+      assert.doesNotMatch(r.stderr, /move or remove|already exists|refused/, `${label}: no advice to delete an entry that does not exist`);
+      assert.doesNotMatch(r.stderr, /stays 0/, `${label}: no line may claim exit 0 when the exit is 1`);
+      assert.match(JSON.parse(r.stdout).exit_reason, /not supported/, `${label}: machine readers get the real reason`);
     }
   } finally {
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 3 });

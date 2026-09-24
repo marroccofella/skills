@@ -426,7 +426,7 @@ try {
     fs.writeFileSync(path.join(shims, "claude.cmd"), "@echo off\r\n"); fs.writeFileSync(path.join(native, "claude.exe"), "MZ");
     const env = { PATH: [shims, native].join(path.delimiter) };
     const launch = windowsLauncher("claude", ["-p", "x"], env, "win32");
-    assert.equal(launch.error, undefined, launch.error?.message); assert.equal(launch.command, path.join(native, "claude.exe"));
+    assert.equal(launch.error, undefined, launch.error?.message); assert.equal(launch.command, fs.realpathSync(path.join(native, "claude.exe")), "the checked, resolved path is returned");
     const onlyShim = windowsLauncher("claude", [], { PATH: shims }, "win32");
     assert.equal(onlyShim.error?.code, "MOMM_UNSUPPORTED_LAUNCHER", "an unverifiable shim with no native fallback is still refused");
     assert.deepEqual(windowsLauncher("claude", ["a"], env, "linux"), { command: "claude", args: ["a"] });
@@ -438,8 +438,8 @@ try {
     const bin = path.join(fixture, "launcher-bin"); fs.mkdirSync(bin);
     fs.writeFileSync(path.join(bin, "grok.exe"), "MZ");
     const env = { PATH: [".", "relative\\dir", bin].join(path.delimiter) };
-    assert.equal(windowsLauncher("grok", ["x"], env, "win32").command, path.join(bin, "grok.exe"));
-    assert.equal(windowsLauncher("grok.exe", ["x"], env, "win32").command, path.join(bin, "grok.exe"), "a bare .exe name is resolved too");
+    assert.equal(windowsLauncher("grok", ["x"], env, "win32").command, fs.realpathSync(path.join(bin, "grok.exe")), "the checked, resolved path is returned, also through an aliased temp folder");
+    assert.equal(windowsLauncher("grok.exe", ["x"], env, "win32").command, fs.realpathSync(path.join(bin, "grok.exe")), "a bare .exe name is resolved too");
     for (const missing of ["codex", "codex.exe"]) {
       const refused = windowsLauncher(missing, [], env, "win32");
       assert.equal(refused.command, undefined, "no bare fallback"); assert.equal(refused.error?.code, "ENOENT");

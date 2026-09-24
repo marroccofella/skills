@@ -81,6 +81,30 @@ and capture each exit status immediately; a final passing command must not mask
 an earlier failure. Expected exit is zero unless a named negative fixture says
 otherwise. Continue independent safe suites after a failure; do not fix the tree.
 
+**Before running anything on Windows, remove the launch-guard variable from your shell.** A shell
+that already carries `NoDefaultCurrentDirectoryInExePath` hides the executable-resolution class
+completely: a planted `git.exe` in the checkout is simply never found, so every check in that
+class passes whether or not it is fixed. That is how it went unseen on the maintainer machine.
+
+```text
+Remove-Item Env:NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinue   # PowerShell
+```
+
+Then confirm the named security regression actually exercised the hazard: on Windows,
+`node momm/scripts/executable-resolution.test.mjs` must report `"skipped": []`. A skipped
+planted-`git.exe` control means this runtime did not reproduce the hazard, so the check beside it
+proved nothing there.
+
+**macOS reaches its temporary folder through a link** (`/var` to `/private/var`), and tests that
+compare a resolved path with an unresolved one pass on Linux and Windows and fail only there. On
+Windows the same condition can be produced by pointing `TEMP` and `TMP` at a directory junction
+before running a suite; the maintainer used this to reproduce the four macOS failures on
+`b0a2dfe` and to sweep the steps those jobs skipped.
+
+Expected, not defects, until the owner seals the release: the dispatcher declares `1.16.0`, and
+`scripts/momm-release.mjs --check` fails on the package hash. A dry-run install that meets an
+existing MOMM link exits 1 and now says why on stderr.
+
 ```text
 node momm/scripts/multi-review.mjs --self-test --pretty
 node momm/scripts/scope-closure.test.mjs

@@ -184,7 +184,7 @@ function main() {
       output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
     }
     if (!output.inventory.upgrade.complete) {
-      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason ?? "the inventory gave no reason"}. Requested link and receipt results are retained below; conflicting copies were left untouched.${options.dryRun ? " This is a dry run: nothing was changed and the exit code stays 0." : ""}\n`);
+      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason ?? "the inventory gave no reason"}. Requested link and receipt results are retained below; conflicting copies were left untouched.${options.dryRun ? " This is a dry run: nothing was changed, and an incomplete inventory alone does not fail it." : ""}\n`);
       if (!options.dryRun) process.exitCode = 1;
     }
   }
@@ -192,13 +192,21 @@ function main() {
   // in the output was the inventory's "every active path loads <version>", which reads as success
   // (independent review of 3d7a8be). The inventory describes copies that are ALREADY installed; this
   // line describes what this command did or, in a dry run, would do.
-  const refused = [...results.flatMap((r) => r.links || []).filter((l) => l.status === "error" || l.status === "conflict"), ...results.filter((r) => r.status === "unsupported")];
+  const flatLinks = results.flatMap((r) => (r.links || []).map((l) => ({ target: r.target, ...l })));
+  const refused = [...flatLinks.filter((l) => l.status === "error" || l.status === "conflict"), ...results.filter((r) => r.status === "unsupported")];
   if (refused.length) {
-    output.exit_reason = `${refused.length} requested link${refused.length === 1 ? "" : "s"} ${options.dryRun ? "would be" : "were"} refused`;
-    process.stderr.write(`${options.dryRun ? "Dry run: " : ""}exit code 1 because ${output.exit_reason}: ${refused.map((r) => `${r.skill ?? r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""} (${r.status}${r.detail ? `: ${r.detail}` : ""})`).join("; ")}. Existing paths are never overwritten; move or remove the existing entry yourself, then rerun. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
+    const dry = options.dryRun, n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+    const name = (r) => `${r.skill ? `${r.skill} for ` : ""}${r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""}`;
+    const conflicts = refused.filter((r) => r.status === "conflict"), errors = refused.filter((r) => r.status === "error"), unsupported = refused.filter((r) => r.status === "unsupported");
+    const parts = [];
+    if (conflicts.length) parts.push(`${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`);
+    if (errors.length) parts.push(`${n(errors.length, "link", "links")} failed (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`);
+    if (unsupported.length) parts.push(`${n(unsupported.length, "target is", "targets are")} not supported (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`);
+    output.exit_reason = parts.map((p) => p.split(" (")[0]).join("; ");
+    process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
-  const flat = results.flatMap((r) => r.links || []);
+  const flat = flatLinks;
   // Non-zero exit on any failure OR an unsupported target, so a typo'd
   // --target does not look like success to automation.
   if (flat.some((l) => l.status === "error" || l.status === "conflict") || results.some((r) => r.status === "unsupported")) process.exitCode = 1;

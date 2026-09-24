@@ -1,7 +1,10 @@
 // Named security regression (1.16.1 charter item 8): executable resolution.
 //
-// A repository under review must never choose which executable MOMM, or MOMM's own test suites, run.
-// The independent review of 3d7a8be found two ways it could:
+// What this covers: none of MOMM's five executable resolvers may take an executable from a PATH
+// directory inside the project, and nothing in this repository may launch a bare `git`. What it does
+// NOT cover: reviewer launches on macOS and Linux still pass a bare name to spawn, so a PATH entry
+// inside the project could supply a reviewer CLI there (owner decision 3 in plan-1.16.1.md).
+// The independent review of 3d7a8be found two ways a repository could choose the executable:
 //   1. A PATH directory INSIDE the project holding a `git` link to any executable outside it. The
 //      resolvers checked only where the executable resolved to, so the project picked the binary,
 //      and it was then run with Git's arguments.
