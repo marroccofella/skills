@@ -1418,7 +1418,7 @@ function scratchAccessRoutes(results) {
   return [...new Set((results ?? []).filter((result) => result?.scratch_access?.tolerated?.length).map((result) => result.agent))];
 }
 
-function classifyFailure(result, agent = null) {
+function classifyFailure(result, agent = null, sent = "") {
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { status: "unsupported", detail: result.error.message };
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
   if (result.timedOut) return { status: "timeout", detail: "no completed review within the allotted time; inspect process_progress for the route's actual budget and received bytes, narrow the review or explicitly raise --timeout. A timeout alone is not an authentication diagnosis" };
@@ -1429,7 +1429,7 @@ function classifyFailure(result, agent = null) {
     // Copilot's stdout never takes part in pattern matching and is never echoed, whether or
     // not it parsed as an event stream (it can hold the artifact either way); stderr alone
     // may still say signed-out or outage.
-    const fromStderr = classifyFailure({ ...result, stdout: "" }, null);
+    const fromStderr = classifyFailure({ ...result, stdout: "" }, null, sent);
     if (fromStderr.status !== "error" || String(result.stderr ?? "").trim() || result.error) return fromStderr;
     return { status: "error", detail: streamFailure?.detail ?? `Copilot ended with exit ${result.code} and said nothing on stderr; its stdout is not echoed. Run the same copilot command by hand to read the provider's message. No review was accepted.` };
   }
@@ -1437,13 +1437,19 @@ function classifyFailure(result, agent = null) {
   // back through stdout before surrendering to the bare exit code.
   const dropWarnings = (text) => stripAnsi(text)
     .split(/\r?\n/).filter((line) => line.trim() && !/^(?:Warning:|(?:\d{4}-\d\d-\d\dT\S+\s+)?WARN\b)/i.test(line.trim())).join("\n");
-  const cleanErr = dropWarnings(result.stderr), cleanOut = dropWarnings(result.stdout);
+  // Never keep, or classify on, a line MOMM itself sent. A CLI that echoes the prompt before failing
+  // would otherwise put the reviewed artifact into the stored report, which keeps the artifact only
+  // with --store-input (a live probe of 13315f2 showed it). Inline rather than a helper: several
+  // suites evaluate this function on its own.
+  const sentLines = new Set(String(sent ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const unsent = (text) => sentLines.size ? text.split("\n").filter((line) => !sentLines.has(line.trim())).join("\n") : text;
+  const cleanErr = unsent(dropWarnings(result.stderr)), cleanOut = unsent(dropWarnings(result.stdout));
   const meaningful = cleanErr || cleanOut || result.error?.message;
   const combined = `${cleanOut}\n${cleanErr}`.toLowerCase();
   // Local model/cache compatibility failures can include OAuth diagnostics or
   // echoed source. They are not evidence that the account needs a new login.
-  if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported/.test(combined)) {
-    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${clipped(meaningful, 700)}` };
+  if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported|model is not supported when using/.test(combined)) {
+    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${clippedTail(meaningful, 700)}` };
   }
   // A retired account tier is a permanent condition, not an auth problem —
   // classify it first (its message contains "authenticating") so the user is
@@ -1704,7 +1710,8 @@ async function invokeReviewer(agent, artifact, options) {
       : "reviewer setup failed before dispatch; no provider call was made" };
   }
   if (result.code !== 0 || result.error || result.timedOut) {
-    const failure = classifyFailure(result, agent);
+    // Everything this route was sent: the full prompt when it went by stdin, and always the artifact.
+    const failure = classifyFailure(result, agent, [input, artifact].filter((text) => typeof text === "string").join("\n"));
     return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress, usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`) };
   }
   if (agent === "antigravity" && /^\[agy\] print timeout after [^\r\n]+; returning partial output\s*$/m.test(String(result.stderr ?? ""))) {

@@ -30,4 +30,25 @@ context.input={...result,timedOut:true};assert.equal(vm.runInContext('classifyFa
   context.input = { code: 1, stdout: '', stderr: 'short failure' };
   assert.equal(vm.runInContext('classifyFailure(input)', context).detail, 'short failure', 'short output is kept whole, with no marker');
 }
+// Keeping the END of a failure (above) must not keep what MOMM itself sent. Codex echoes the whole
+// prompt, reviewed artifact included, before its error; a report keeps the artifact only with
+// --store-input, and a live probe of 13315f2 showed the reviewed code inside a failure detail without
+// it. Every line MOMM sent is removed before anything is classified or kept.
+{
+  const artifact = 'export const add = (a, b) => a + b;\nconst PRIVATE_MARKER_LINE = 42;';
+  context.sent = 'You are a read-only peer code reviewer.\n--- ARTIFACT TO REVIEW ---\n' + artifact;
+  // Real Codex output carries a long preamble MOMM did not send (banner, workdir, model, session id),
+  // so the provider's reason is far from the start; a short fixture would hide which end is kept.
+  const preamble = Array.from({ length: 30 }, (_, i) => 'synthetic codex preamble line ' + i + ' that MOMM did not send').join('\n');
+  const echo = 'OpenAI Codex v0.154.0\n' + preamble + '\nuser\n' + context.sent + '\n';
+  context.input = { code: 1, stdout: '', stderr: echo + 'ERROR: synthetic-final-diagnostic: the run ended unexpectedly' };
+  const generic = vm.runInContext('classifyFailure(input, "codex", sent)', context);
+  assert.match(generic.detail, /synthetic-final-diagnostic/, 'the provider error survives');
+  assert.doesNotMatch(generic.detail, /PRIVATE_MARKER_LINE|export const add/, 'no line of the reviewed artifact is kept without --store-input');
+  context.input = { code: 1, stdout: '', stderr: echo + 'ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-luna\' model is not supported when using Codex with a ChatGPT account."}}' };
+  const model = vm.runInContext('classifyFailure(input, "codex", sent)', context);
+  assert.match(model.detail, /CLI\/model compatibility/, 'a model the account cannot use is a configuration error with fixed advice');
+  assert.doesNotMatch(model.detail, /PRIVATE_MARKER_LINE|export const add/, 'and it keeps no line of the reviewed artifact');
+  assert.match(model.detail, /model is not supported when using Codex with a ChatGPT account/, 'the provider\'s own reason is quoted, not the preamble before it');
+}
 console.log('Expired OAuth sessions receive safe browser-login guidance; outage and timeout precedence remain unchanged.');
