@@ -220,6 +220,35 @@ and the scorecard's numbers match the hand counts in the 1.16.0 release record.
    valid XML listing only published pages; generated section links resolve to real pages;
    compatibility claims match exact CI matrix cells.
 
+## Scope widened (owner decision, 25 September 2026)
+
+The owner asked for every reviewer-route improvement found during candidate testing to ship in this
+release rather than a separate one, and chose to fold them into 1.16.1, which had not been published.
+Each is a fix to something 1.16.x already claimed, not a new surface:
+
+- **Reviewer CLI update notice.** The update clock claimed to watch reviewer CLIs but could never
+  say one was behind: it held no installed version for any CLI, and nothing told the user. It now
+  reads and caches each CLI's own `--version` (at most daily), and prints one notice after preflight
+  and at the end of a review with the official update command, automatic installs as the user's own
+  switch, and the Setup Center for guidance. Found when Codex, Claude, Gemini and Grok were all behind.
+- **Grok isolation.** Grok imports the user's Claude Code and Cursor setup by default: global
+  instructions, skills, MCP servers (the GitHub server started with the user's credentials) and hooks,
+  plus cross-session memory. MOMM now switches every import off for its own Grok runs through Grok's
+  documented per-process variables, and denies every tool class (`--deny "*"`). The user's own Grok
+  setup is unchanged. Grok's skill list cannot be hidden per run (only the user's global config can),
+  so skills remain advertised to the reviewer but cannot be invoked.
+- **Grok speed.** At its default high reasoning effort Grok took 736 s on a 5 KB review against a
+  budget of about 270 s, so every Grok review timed out. MOMM uses `grok-4.7-build-fast` (the same
+  model on faster serving) when the account lists it, at medium effort, with 2x headroom (360 s);
+  the measurements are in the gate record.
+- **Codex advice.** "Model is not supported when using Codex with a ChatGPT account" was the Codex CLI
+  being older than the model the Codex desktop app had selected in their shared config. The failure
+  now says to update the CLI, and not to change the shared model or switch to an API key.
+- **Failure details keep nothing MOMM sent**, in any echo form, including the two short-line prefix
+  cases deferred from the delta review of 7a970f7.
+
+Copilot needed no change: its 402 was confirmed as the monthly quota on every model the account offers.
+
 ## Explicitly out of 1.16.1
 
 New reviewer families. Automatic updates on by default, or any path by which an agent enables

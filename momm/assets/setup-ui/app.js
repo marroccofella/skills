@@ -87,10 +87,10 @@ let refreshAgain = false;
 // the card until it settles or is superseded.
 const runningTests = new Map();
 const TEST_POLL_MS = 1800;
-// The server's connectivity budget is 240 s (CONNECTIVITY_TIMEOUT_MS) plus a
+// The server's connectivity budget is 300 s (CONNECTIVITY_TIMEOUT_MS) plus a
 // report flush; a job still "running" after this is shown as timed out rather
 // than polled forever.
-const TEST_DEADLINE_MS = 300_000;
+const TEST_DEADLINE_MS = 360_000;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);

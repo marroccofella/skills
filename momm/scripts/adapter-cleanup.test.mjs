@@ -191,6 +191,65 @@ try{
     assert.equal(fs.readFileSync(original,'utf8'),'SYNTHETIC_MEDIA_BYTES');
     assert.equal(fs.readFileSync(path.join(sibling,'keep'),'utf8'),'keep');
   });
+  // Grok imports the user's Claude Code and Cursor setup by default: global instructions, skills, MCP
+  // servers (the GitHub one starts with the user's credentials), hooks, plus cross-session memory.
+  // Found on 25 September 2026 with `grok inspect`: the reviewer MOMM hired was told how to run MOMM.
+  // MOMM turns every import off for its own Grok runs only, through Grok's documented per-process
+  // switches, and denies every tool class. No other route receives these variables.
+  await test('grok runs isolated: no imported Claude or Cursor setup, no memory, no tool class allowed', async () => {
+    const seen = {};
+    for (const route of ['grok', 'codex', 'antigravity']) {
+      const c = context();
+      await c.ctx.invoke(route, 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+        runProcess: async (_command, args, options) => { seen[route] = { args, env: options.env || {} }; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+    }
+    const env = seen.grok.env;
+    for (const vendor of ['CLAUDE', 'CURSOR']) for (const kind of ['SKILLS', 'RULES', 'AGENTS', 'MCPS', 'HOOKS'])
+      assert.equal(env[`GROK_${vendor}_${kind}_ENABLED`], 'false', `GROK_${vendor}_${kind}_ENABLED must be false for a MOMM review`);
+    assert.equal(env.GROK_MEMORY, 'false', 'cross-session memory is off');
+    assert.equal(env.GROK_DISABLE_AUTOUPDATER, '1', 'a review never updates the CLI');
+    const denied = seen.grok.args.flatMap((a, k, all) => (all[k - 1] === '--deny' ? [a] : []));
+    assert.ok(denied.includes('*'), 'every tool class is denied, including ones added in future');
+    for (const route of ['codex', 'antigravity']) assert.ok(!Object.keys(seen[route].env).some((k) => k.startsWith('GROK_')), `${route} receives no Grok switches`);
+  });
+  // Grok's default model thinks at high effort and took 736 s on a 5 KB review, against a budget of about
+  // 276 s, so every Grok review timed out. grok-4.7-build-fast is the same model on faster serving
+  // (xAI: about twice as fast). It is used only when this account lists it; otherwise the default stays.
+  await test('grok uses the fast model when the account lists it, and the default model when it does not', async () => {
+    for (const [listing, expected] of [
+      ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n  - grok-4.6\n', 'grok-4.7-build-fast'],
+      ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.6\n', null],
+      ['', null],
+    ]) {
+      const c = context(); c.ctx.GROK_MODEL_CACHE = undefined;
+      let review = null;
+      await c.ctx.invoke('grok', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+        runProcess: async (_command, args) => { if (args[0] === 'models') return { code: listing ? 0 : 1, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+      const k = review.indexOf('--model');
+      assert.equal(k === -1 ? null : review[k + 1], expected, `listing ${JSON.stringify(listing.slice(0, 40))} -> ${expected}`);
+    }
+  });
+  // Measured 25 September 2026 on the same 5 KB review, isolated: grok-4.7-build-fast at medium effort was
+  // valid in 5 of 5 runs (194 to 311 s). Medium is therefore Grok's default only with the fast model; an
+  // explicit --effort default still keeps the provider's own setting, and the plain model is left alone.
+  await test('grok defaults to medium effort with the fast model, and --effort default keeps the provider setting', async () => {
+    const fast = 'Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n';
+    const plain = 'Available models:\n  * grok-4.7 (default)\n';
+    for (const [listing, effort, expected] of [
+      [fast, undefined, 'medium'],
+      [fast, 'default', null],
+      [fast, 'medium', 'medium'],
+      [plain, undefined, null],
+      [plain, 'medium', 'medium'],
+    ]) {
+      const c = context();
+      let review = null;
+      await c.ctx.invoke('grok', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000, ...(effort ? { effort } : {}),
+        runProcess: async (_command, args) => { if (args[0] === 'models') return { code: 0, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+      const k = review.indexOf('--reasoning-effort');
+      assert.equal(k === -1 ? null : review[k + 1], expected, `${listing === fast ? 'fast' : 'plain'} model, effort ${effort} -> ${expected}`);
+    }
+  });
 }finally{
   const resolved=path.resolve(root),temporary=path.resolve(os.tmpdir());
   assert(resolved.startsWith(temporary+path.sep)&&path.basename(resolved).startsWith('momm-adapter-cleanup-test-'));

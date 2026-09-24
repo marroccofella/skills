@@ -23,6 +23,14 @@ directory or companion file is refused, even with `--force`. Existing permission
 are not changed. The current [acceptance guide](third-party-test-plan-1.16.1.md)
 adds the missing retry and ledger-ticket steps.
 
+Reviewer routes: MOMM now tells you when a reviewer CLI is behind its latest release, after preflight
+and at the end of a review, with its update command, an off-by-default automatic option and the Setup
+Center for guidance. Grok runs isolated from your Claude Code and Cursor setup (no imported
+instructions, skills, MCP servers or memory; every tool denied) and uses its faster serving when your
+account has it, so reviews finish instead of timing out. A Codex "model is not supported" failure now
+says to update the Codex CLI rather than change the model it shares with the Codex desktop app. A failed
+route never stores what MOMM sent it.
+
 A reviewed project can no longer choose the executable MOMM runs on Windows, or the Git that
 verifies a committed range on any platform. **Known limitation:** on macOS and Linux, reviewer CLIs
 are still found through PATH, so a PATH folder inside the reviewed project could supply one.

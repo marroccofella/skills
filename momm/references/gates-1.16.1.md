@@ -78,6 +78,34 @@ working skill, enable automatic updates or run `evidence --protect` as an agent.
 Real signed 1.16.1 lifecycle drills are **blocked pending a reviewed signed candidate artifact
 and authorized native-machine runs**. Synthetic transaction tests are not substitutes.
 
+## Grok route measurements (25 September 2026)
+
+Same 5 KB review each time (the delta `238584b..7a970f7`), Grok CLI 1.0.41; the reviewed text is project
+source already public on PR #18. Wall time is the whole CLI run; "valid" means MOMM accepted the review.
+
+| Model | Effort | Setup | Runs | Wall time | Valid | Cost per run |
+|---|---|---|---|---|---|---|
+| grok-4.7 | high (Grok default) | inherited | 1 | 736 s | 1 of 1 | $0.14 |
+| grok-4.7 | medium | inherited | 1 | 395 s | 0 of 1 | n/a |
+| grok-4.7 | low | inherited | 1 | 153 s | 1 of 1 | $0.05 |
+| grok-4.7-build-fast | high | inherited | 1 | 290 s | 1 of 1 | $0.22 |
+| grok-4.7-build-fast | medium | inherited | 1 | 201 s | 1 of 1 | $0.14 |
+| grok-4.7-build-fast | low | inherited | 1 | 134 s | 1 of 1 | $0.12 |
+| grok-4.7-build-fast | medium | isolated, every tool denied | 3 | 194 to 308 s | 3 of 3 | $0.14 to $0.19 |
+| grok-4.7-build-fast | medium | isolated, own system prompt | 2 | 237 to 311 s | 2 of 2 | $0.17 to $0.21 |
+
+Chosen: the fast model when the account lists it, at medium effort unless the user passes `--effort`
+(5 of 5 valid, 194 to 311 s), with 2x headroom on the 180 s base (360 s, the existing cap). The system
+prompt override is not used: no faster, and dearer. Low effort was faster but has one run each, so it
+is not the default. Isolation cut the input of a one-line prompt from 19,751 to 17,174 tokens and
+start-up from 5.5 to 4.0 s. The Setup Center connectivity budget rose from 240 to 300 s to match.
+
+Known limits: Grok's skill list cannot be hidden per run (only the user's global config can), so
+skills are still advertised to the reviewer but every tool, including the skill tool, is denied. The
+report's `requested_effort` records what the user asked for; with the fast model and no `--effort`,
+the effective Grok effort is medium. Timings vary between runs by about 1.6x; the budget has 49 s
+over the slowest measured run.
+
 ## Accepted risk (owner decision, 24 September 2026)
 
 On macOS and Linux, MOMM starts reviewer CLIs (`codex`, `claude`, `grok` and the others) by name,

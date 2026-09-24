@@ -696,11 +696,13 @@ function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
 
 // Some routes read dense code slower than others — measured, not assumed:
 // grok exceeded every 120s window it was given while peers finished in
-// 30-100s. Its cap gets 1.5x headroom, bounded at 6 minutes for AUTO-scaled
+// 30-100s. Its cap gets 2x headroom, bounded at 6 minutes for AUTO-scaled
 // budgets only. An explicit --timeout is the user's judgment call and is
 // honored above the cap (observed 2026-08-23: the clamp silently defeated
 // --timeout 420 on a dense 63KB patch, so codex could never finish).
-const AGENT_TIMEOUT_MULTIPLIER = { grok: 1.5 };
+// Grok on grok-4.7-build-fast at medium effort took 194 to 311 s on a 5 KB review (five isolated runs,
+// 25 September 2026); 1.5x of the 180 s base (270 s) cut the slower runs off, 2x reaches the 360 s cap.
+const AGENT_TIMEOUT_MULTIPLIER = { grok: 2 };
 function agentTimeoutMs(agent, baseMs, explicit = false) {
   const scaled = Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1));
   return explicit ? scaled : Math.min(360_000, scaled);
@@ -835,8 +837,8 @@ Options:
   --capabilities [--json]   Print this machine's effective capability matrix (baseline plus valid overlay):
                             per route and modality the level, blocker, invocation and evidence, then the
                             pipelines derived from it. --json for agents. Zero model calls (1.16 E7)
-  --timeout <seconds>       Base timeout (default: 180; deep: 240; Grok gets 1.5x)
-  --effort <default|medium> Explicit Claude/Grok effort; default keeps provider settings
+  --timeout <seconds>       Base timeout (default: 180; deep: 240; Grok gets 2x)
+  --effort <default|medium> Claude/Grok effort; default keeps provider settings (Grok on its fast model uses medium unless --effort default)
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
   --min-success <n>         Exit 3 unless at least n external reviews succeeded (quorum
@@ -1456,7 +1458,7 @@ function classifyFailure(result, agent = null, sent = "") {
     if (!trimmed || !sentText) return false;
     if (sentLines.has(trimmed) || (trimmed.length >= 12 && sentText.includes(trimmed))) return true;
     // Short sent lines echoed behind a prefix (">", "|", "#", "*", or an ISO timestamp and a log level).
-    const unprefixed = trimmed.replace(/^(?:\d{4}-\d\d-\d\dT[\d:.]+Z?\s+(?:[A-Za-z]+:?\s+)?|[>|#*]+\s?)/, "").trim();
+    const unprefixed = trimmed.replace(/^(?:\d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:?\d\d)?\s+(?:\[?[A-Za-z]+\]?:?\s+)?|\[[A-Za-z]+\]:?\s+|(?:[>|#*]\s?)+)/, "").trim();
     if (unprefixed !== trimmed && sentLines.has(unprefixed)) return true;
     const unescaped = unescapeJson(trimmed);
     return sentLong.some((part) => trimmed.includes(part) || unescaped.includes(part));
@@ -1476,6 +1478,11 @@ function classifyFailure(result, agent = null, sent = "") {
   // Local model/cache compatibility failures can include OAuth diagnostics or
   // echoed source. They are not evidence that the account needs a new login.
   if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported|model is not supported when using/.test(combined)) {
+    const codexModelGap = agent === "codex" && /model is not supported when using codex with a chatgpt account/.test(combined);
+    // Seen live on 23 and 24 September 2026: the Codex CLI was older than the model the Codex desktop
+    // app had selected in the config file the two share. Updating the CLI fixed it; changing the model
+    // would have changed the desktop app too.
+    if (codexModelGap) return { status: "error", detail: `CLI/model compatibility error: the Codex CLI does not support the model it is configured to use. A newer model usually needs a newer CLI: update it with npm install -g @openai/codex@latest (with the user's approval) and retry. ~/.codex/config.toml is shared with the Codex desktop app, so do not change the model there to work around this, and never switch to an API key. Provider said: ${quote(meaningful, 700) || "(nothing left to quote once what MOMM sent was removed)"}` };
     return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${quote(meaningful, 700) || "(nothing left to quote once what MOMM sent was removed)"}` };
   }
   // A retired account tier is a permanent condition, not an auth problem —
@@ -1530,6 +1537,7 @@ async function invokeReviewer(agent, artifact, options) {
   let command;
   let args;
   let input;
+  let routeEnv = null;
   let cwd = process.cwd();
   let temporaryDirectory = null;
   // Repository rules (.reviewrules) and any assigned persona ride along with
@@ -1678,8 +1686,20 @@ async function invokeReviewer(agent, artifact, options) {
     const promptPath = path.join(temporaryDirectory, "prompt.txt");
     fs.writeFileSync(promptPath, assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact), { encoding: "utf8", mode: 0o600 });
     command = grokCommand();
+    // grok-4.7-build-fast is the same model on faster serving (xAI: about twice as fast). At its default
+    // high effort grok-4.7 took 736 s on a 5 KB review against a budget of about 276 s, so every Grok
+    // review timed out (25 September 2026). It is used only when this account lists it, because it is
+    // not in every plan. `grok models` makes no model call; the answer is kept for the rest of the run.
+    if (options.grokModelChoice === undefined) {
+      options.grokModelChoice = null;
+      try {
+        const listed = await (options.runProcess ?? runProcess)(command, ["models"], { input: "", timeoutMs: 20_000, env: { ...cleanOauthEnv(), GROK_DISABLE_AUTOUPDATER: "1" }, cwd: temporaryDirectory });
+        if (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast\b/m.test(String(listed.stdout ?? ""))) options.grokModelChoice = "grok-4.7-build-fast";
+      } catch { /* keep the account default */ }
+    }
     args = [
       "--prompt-file", promptPath,
+      ...(options.grokModelChoice ? ["--model", options.grokModelChoice] : []),
       // Preserve the full supplied prompt instead of an offloaded summary;
       // retain plan-mode containment and disallow delegated subagents.
       "--verbatim", "--no-subagents",
@@ -1687,21 +1707,32 @@ async function invokeReviewer(agent, artifact, options) {
       // Deny named tool classes explicitly; allow enough turns to return a
       // final answer after a denied attempt. This is CLI policy, not an OS sandbox.
       ...["Read", "Grep", "Bash", "Edit", "MCPTool", "WebFetch", "WebSearch"].flatMap(tool => ["--deny", tool]),
+      // A bare "*" matches every tool class (grok-build permissions reference), so a class added in a
+      // later Grok release is denied too. The named rules above stay for older CLIs.
+      "--deny", "*",
       "--max-turns", "4",
       "--output-format", "json",
       "--permission-mode", "plan",
       "--disable-web-search",
-      ...(options.effort === "medium" ? ["--reasoning-effort", "medium"] : []),
+      // Medium with the fast model was valid in 5 of 5 measured runs; Grok's own default is high, which
+      // took 736 s on the plain model. An explicit --effort default keeps the provider setting.
+      ...(options.effort === "medium" || (!options.effort && options.grokModelChoice) ? ["--reasoning-effort", "medium"] : []),
     ];
     input = "";
     cwd = temporaryDirectory;
+    // Grok imports the user's Claude Code and Cursor setup by default (global instructions, skills, MCP
+    // servers started with the user's credentials, hooks) and cross-session memory, so the reviewer
+    // inherited the whole harness (grok inspect, 25 September 2026). These documented per-process
+    // switches turn that off for MOMM's runs only; the user's own Grok setup is unchanged.
+    routeEnv = { GROK_MEMORY: "false", GROK_DISABLE_AUTOUPDATER: "1" };
+    for (const vendor of ["CLAUDE", "CURSOR"]) for (const kind of ["SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"]) routeEnv[`GROK_${vendor}_${kind}_ENABLED`] = "false";
   } else {
     return { agent, status: "unsupported", detail: "no reviewed adapter exists" };
   }
 
     setupComplete = true;
     // options.runProcess is a test seam only (argv binding is proven with a fake).
-    result = await (options.runProcess ?? runProcess)(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd,
+    result = await (options.runProcess ?? runProcess)(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: routeEnv ? { ...cleanOauthEnv(), ...routeEnv } : cleanOauthEnv(), cwd,
       onProgress: options.onProgress ? progress => options.onProgress(agent, progress) : null });
   } catch {
     // Unexpected filesystem/launcher exceptions are terminal route failures.
@@ -2679,7 +2710,7 @@ async function selfTest(pretty) {
         && buffer.includes(Buffer.from("IDAT", "latin1")) && buffer.includes(Buffer.from("IEND", "latin1"));
     })(),
     explicit_timeout_honored_above_cap: agentTimeoutMs("codex", 480_000, true) === 480_000
-      && agentTimeoutMs("grok", 480_000, true) === 720_000
+      && agentTimeoutMs("grok", 480_000, true) === 960_000
       && agentTimeoutMs("grok", 480_000, false) === 360_000
       && agentTimeoutMs("codex", 120_000, false) === 120_000,
     every_default_reviewer_has_tuned_persona: ["codex", "claude", "gemini", "antigravity", "copilot", "grok"]
@@ -3016,7 +3047,7 @@ async function selfTest(pretty) {
       && effectiveTimeoutMs(36_227, 120_000, false) > 220_000
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
-    slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
+    slow_routes_get_headroom: agentTimeoutMs("grok", 150_000) === 300_000 && agentTimeoutMs("grok", 180_000) === 360_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
     every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
     private_evidence_modes_configured: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
     // A unanimous coalition must SCORE as unanimous: four reviewers describing

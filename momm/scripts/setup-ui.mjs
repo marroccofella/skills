@@ -44,12 +44,12 @@ let ledgerWatcher = null; // idem
 let setupPointer = null;  // .ensemble_reviews/setup-center.json while the server runs
 
 // Connectivity checks must outlive the slowest legitimate route: the
-// dispatcher grants grok 1.5x of the 120s base (180s), its kill path allows a
+// dispatcher grants grok 2x of the 120s base (240s), its kill path allows a
 // 5s hard-deadline settle, and the ledger rebuild takes up to 15s before the
-// report is written to stdout. 240s covers 180+5+15 with margin; a shorter
+// report is written to stdout. 300s covers 240+5+15 with margin; a shorter
 // wrapper SIGKILLs a *successful* check before its report flushes and
 // misreports it as failed.
-const CONNECTIVITY_TIMEOUT_MS = 240_000;
+const CONNECTIVITY_TIMEOUT_MS = 300_000;
 
 // `modalities` mirrors what the dispatcher's adapters bind for --attach
 // (multi-review.mjs MODALITY_SUPPORT ∩ ADAPTER_MEDIA) — the self-test keeps the
@@ -2304,7 +2304,8 @@ async function selfTest() {
         return [...governors].filter((name) => name !== "other").every((name) => html.includes(`value="${name}"`));
       } catch { return false; }
     })(),
-    connectivity_budget_covers_slowest_route: CONNECTIVITY_TIMEOUT_MS >= 200_000,
+    // Grok: 2x the 120 s base, a 5 s settle and a 15 s ledger rebuild.
+    connectivity_budget_covers_slowest_route: CONNECTIVITY_TIMEOUT_MS >= 240_000 + 5_000 + 15_000,
     every_provider_declares_modalities: Object.values(providers).every((p) => Array.isArray(p.modalities) && p.modalities.includes("text")),
     modalities_match_dispatcher: dispatcherModalities !== null && Object.keys(providers).every((agent) => JSON.stringify([...providers[agent].modalities].sort()) === JSON.stringify([...(dispatcherModalities[agent] ?? [])].sort())),
     // 1.16 E7: the Modalities panel markup, its script and styles are present.

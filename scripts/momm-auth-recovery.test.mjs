@@ -101,4 +101,30 @@ context.input={...result,timedOut:true};assert.equal(vm.runInContext('classifyFa
   assert.doesNotMatch(allSent, /Provider said: *$/, 'no dangling Provider said:');
   assert.ok(!allSent.includes('function check'), 'and the sent line is still not quoted');
 }
+// Codex, 23 and 24 September 2026: "model is not supported when using Codex with a ChatGPT account" was
+// the CLI being too old for the model the desktop app had selected, not a model the plan lacked. The
+// advice must say to update the CLI, and must warn that the config is shared with the desktop app.
+{
+  context.sent = '';
+  context.input = { code: 1, stdout: '', stderr: 'ERROR: {"type":"error","status":400,"error":{"message":"The \'gpt-6-luna\' model is not supported when using Codex with a ChatGPT account."}}' };
+  const codex = vm.runInContext('classifyFailure(input, "codex", sent)', context);
+  assert.equal(codex.status, 'error');
+  assert.match(codex.detail, /CLI\/model compatibility/);
+  assert.match(codex.detail, /npm install -g @openai\/codex@latest/, 'names the Codex CLI update');
+  assert.match(codex.detail, /shared with the Codex desktop app/, 'warns against changing the shared model');
+  const other = vm.runInContext('classifyFailure(input, "antigravity", sent)', context);
+  assert.doesNotMatch(other.detail, /@openai\/codex/, 'Codex advice is never given for another route');
+}
+// Deferred from the delta review of 7a970f7 (antigravity): short sent lines behind a bracketed log
+// level, a numeric timezone offset, or nested quote markers.
+{
+  context.sent = 'You are a read-only peer code reviewer.\n--- ARTIFACT TO REVIEW ---\nfunction check(input) {\n  pin=42;\n}';
+  const error = 'ERROR: {"type":"error","status":400,"error":{"message":"synthetic-final-diagnostic"}}';
+  for (const [shape, prefix] of [['bracketed level', '[INFO] '], ['timezone offset', '2026-09-24T20:00:00+01:00 INFO '], ['nested quotes', '> > '], ['bracketed level after a timestamp', '2026-09-24T20:00:00Z [warn] ']]) {
+    context.input = { code: 1, stdout: '', stderr: context.sent.split('\n').map((l) => prefix + l).join('\n') + '\n' + error };
+    const detail = vm.runInContext('classifyFailure(input, "codex", sent)', context).detail;
+    assert.ok(!detail.includes('pin=42'), `${shape}: a short sent line was kept`);
+    assert.match(detail, /synthetic-final-diagnostic/, `${shape}: the provider's own error survives`);
+  }
+}
 console.log('Expired OAuth sessions receive safe browser-login guidance; outage and timeout precedence remain unchanged.');
