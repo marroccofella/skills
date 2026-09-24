@@ -6,6 +6,8 @@ the current acceptance guide's retry and ledger-ticket instructions.
 
 `momm/scripts/review-final-regressions.test.mjs` tests exact CI deadline matching and CLI diagnostics.
 
+`momm/scripts/executable-resolution.test.mjs` is a named security regression: a repository under review must never choose which executable MOMM or its suites run. It holds all five resolvers (`windowsTool`, `windowsChildEnv`, `resolveGit` on Windows and POSIX, `windowsLauncher`, and the updater's own `resolveTool`) to one attack matrix of project-planted links, junctions and aliases; on Windows it runs a planted-interpreter `git.exe` with the launch-guard variable removed and proves checkout code never executes; and it fails if anything in the repository launches a bare `git`.
+
 `momm/scripts/review-triage-1161.test.mjs` holds the regressions from the governor triage of review rev_20260922162715_cc7e49c40234: a harvest that discarded every readable artefact when one was refused, and the containment scan that decides which Git verifies a committed range on POSIX.
 `momm/scripts/review-refutations.test.mjs` tests disputed review boundaries and independent audit identities.
 `momm/scripts/review-followup.test.mjs` tests split-quorum reporting, bounded stdin,

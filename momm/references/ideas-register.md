@@ -97,8 +97,10 @@ recorded here so the reason is a decision rather than an omission. Each one is i
 - **Stop slicing product source in tests.** Several suites extract a function from a `.mjs` file with
   `indexOf` between two names and evaluate it in a VM. This broke twice in one afternoon during this
   triage: adding `export` to `resolveGit` invalidated a slice in `governor.test.mjs`, and adding a
-  `randomBytes` call to `stageCopy` invalidated one in `review-refutations.test.mjs`. Both tests had
-  to be repaired to land correct fixes, which is precisely the wrong incentive. Export the small
+  `randomBytes` call to `stageCopy` invalidated one in `review-refutations.test.mjs`. A third followed
+  in the next round: routing `source-hygiene.test.mjs` through `resolveGit` broke the slice of it in
+  `review-followup.test.mjs`. All three had to be repaired to land correct fixes, which is precisely
+  the wrong incentive. Export the small
   helpers and import them instead. The largest single cleanup on this list.
 - **Media fixtures.** The 23-byte positive JPEG fixture declares a SOF0 component and omits its
   component descriptor, so it does not exercise acceptance of a decodable JPEG; some per-outcome

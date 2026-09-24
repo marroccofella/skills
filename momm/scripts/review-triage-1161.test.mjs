@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { harvest } from './probes.mjs';
 import { resolveGit } from './governor.mjs';
 import { identifyMedia } from './media-bytes.mjs';
@@ -47,17 +49,18 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
   assert.equal(at('/proj/bin'), null, 'a checkout-supplied Git is never returned');
   assert.equal(at('bin:.'), null, 'relative PATH entries are not searched');
   assert.equal(at(''), null, 'an empty PATH resolves nothing rather than falling back to the bare name');
-  // Delta review of 99d612f..99db87d, antigravity: the check ran on the RESOLVED path while the
-  // unresolved candidate was returned. A repo-internal PATH entry holding a link that currently
-  // points outward passes the check, and spawning the candidate would follow that link again at
-  // exec time, when it need no longer point outward. Return the path that was actually checked.
+  // This assertion used to expect '/opt/real/git' here, and in doing so enshrined the defect: a
+  // `git` link in a PATH directory INSIDE the project let the project choose any executable outside
+  // it, which was then run with Git's arguments. Returning the resolved path (the delta review's
+  // suggestion) only stopped the link being followed twice; the independent review of 3d7a8be showed
+  // the directory itself has to be refused. The full attack matrix is in executable-resolution.test.mjs.
   {
     const linked = {
       statSync: (q) => { if (q !== '/proj/bin/git') { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return { isFile: () => true }; },
       realpathSync: Object.assign((q) => (q === '/proj/bin/git' ? '/opt/real/git' : q), { native: (q) => q }),
     };
-    assert.equal(resolveGit('/proj', { platform: 'linux', env: { PATH: '/proj/bin' }, fs: linked, path: posix }), '/opt/real/git',
-      'the resolved path is returned, never the in-project name that was resolved through');
+    assert.equal(resolveGit('/proj', { platform: 'linux', env: { PATH: '/proj/bin' }, fs: linked, path: posix }), null,
+      'a PATH directory inside the project is refused even when its git resolves outside the project');
   }
 }
 
@@ -76,6 +79,35 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
   // Any other element with an unknown size is still refused: the bound has to come from somewhere.
   const elsewhere = Buffer.concat([ebml, Buffer.from([0x1f, 0x43, 0xb6, 0x75]), unknown, Buffer.from([1, 2, 3, 4])]);
   assert.throws(() => identifyMedia(elsewhere), /unbounded EBML element/, 'only the Segment may omit its length');
+}
+
+
+// Independent review of 3d7a8be: a dry run that met an existing MOMM link exited 1 with nothing on
+// stderr, and the only readable line in its output was the inventory's "every active path loads
+// 1.16.0" with complete: true. Both installers must now say why the exit code is 1, and that the
+// inventory describes what is already installed rather than what the command did.
+{
+  const home = temp('momm-triage-installer-'), other = temp('momm-triage-other-copy-');
+  try {
+    fs.mkdirSync(path.join(other, 'momm', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(other, 'momm', 'scripts', 'multi-review.mjs'), 'const MOMM_VERSION = "1.16.0";' + String.fromCharCode(10));
+    fs.writeFileSync(path.join(other, 'momm', 'SKILL.md'), ['---', 'name: momm', '---', ''].join(String.fromCharCode(10)));
+    fs.mkdirSync(path.join(home, '.agents', 'skills'), { recursive: true });
+    fs.symlinkSync(path.join(other, 'momm'), path.join(home, '.agents', 'skills', 'momm'), process.platform === 'win32' ? 'junction' : 'dir');
+    const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const env = { ...process.env, HOME: home, USERPROFILE: home, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1' };
+    for (const [label, args] of [['skill installer', ['momm/scripts/install.mjs', '--target', 'codex', '--dry-run']], ['repository installer', ['install.mjs', '--skills', 'momm', '--target', 'codex', '--dry-run']]]) {
+      const r = spawnSync(process.execPath, args, { cwd: repo, env, encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+      assert.equal(r.status, 1, `${label}: a refused link still exits 1`);
+      assert.match(r.stderr, /exit code 1 because 1 requested link would be refused/, `${label}: the non-zero exit is explained`);
+      assert.match(r.stderr, /not the result of this command/, `${label}: the inventory is not presented as the outcome`);
+      assert.match(JSON.parse(r.stdout).exit_reason, /would be refused/, `${label}: machine readers get the reason too`);
+      assert.ok(fs.lstatSync(path.join(home, '.agents', 'skills', 'momm')).isSymbolicLink() || process.platform === 'win32', `${label}: the existing link is untouched`);
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 3 });
+    fs.rmSync(other, { recursive: true, force: true, maxRetries: 3 });
+  }
 }
 
 console.log('PASS: triage regressions from rev_20260922162715_cc7e49c40234');

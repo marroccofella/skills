@@ -910,7 +910,7 @@ function createServerClock() {
 // piped because the codex and grok vectors feed the prompt that way.
 function probeExec(command, args = [], { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env } = {}) {
   const env = childEnvironment(sourceEnv);
-  const launch = windowsLauncher(command, args, env);
+  const launch = windowsLauncher(command, args, env, process.platform, cwd);
   if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
   return new Promise((resolve) => {
     let child;

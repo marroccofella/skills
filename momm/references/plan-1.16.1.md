@@ -241,6 +241,22 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
    organisation licences remain. The owner asked for its removal. It is already opt-in and reports
    `ineligible_tier`. Proposed for 1.16.1: a deprecation notice in preflight, the Setup Center and
    the docs only; removal itself touches 51 files and is a later release.
+   Decided: notice only; shipped in preflight and SKILL.md.
+3. **Reviewer launches on macOS and Linux still trust any PATH directory.** The independent
+   review of 3d7a8be showed a repository could choose which executable ran. Every resolver now
+   refuses a PATH directory inside the project, and on Windows `processScope.spawn` routes every
+   launch through that rule and scrubs the child PATH. On macOS and Linux it still passes a bare
+   name to `spawn`, so a PATH entry inside the reviewed project (for example one added by direnv,
+   or an activated virtual environment inside the project) could supply `codex`, `claude` or
+   `grok`. There is no working-directory search on those systems, so it needs that PATH entry to
+   exist. Closing it changes launch behaviour for every macOS and Linux user, including anyone
+   whose CLI is installed only inside the project they are reviewing, so it is the owner's call
+   whether it lands in 1.16.1 or 1.17. It is recorded here rather than left in a transcript.
+4. **Thirteen suites run by no workflow.** The site, ledger, preview, release-observer and
+   improvement-regression suites (for example `scripts/momm-site-home.test.mjs`,
+   `scripts/ledger-ui.test.mjs`, `scripts/preview-module.test.mjs`) pass locally but no
+   workflow runs them, so a regression in them would only be found by hand. Adding them to one
+   Linux job is small; it is listed here because it widens what the release gate asserts.
 
 ## Release gates
 

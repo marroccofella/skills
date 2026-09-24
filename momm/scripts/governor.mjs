@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { pathEntryOutside, executableOutside } from "./process-scope.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -147,18 +148,20 @@ function captureRangeSnapshot(root, artifact, range) {
 // entry does the same, and returning the bare name "git" left that decision to PATH. Both platforms
 // now get the same scan: absolute PATH entries only, and never an executable inside the project.
 export function resolveGit(root, { platform = process.platform, env = process.env, fs: files = fs, path: paths = path } = {}) {
-  const win = platform === "win32";
+  // The directory must be outside the project as well as the executable. Checking only where the
+  // executable resolved to let a `git` link in a project directory on PATH pick ANY executable
+  // outside the project and run it with Git's arguments; an interpreter such as node or python then
+  // loads `rev-parse` or `ls-files` from the checkout as a script (independent review of 3d7a8be).
+  const win = platform === "win32", where = { platform, fs: files };
   const real = p => { try { return String(win ? files.realpathSync.native(p) : files.realpathSync(p)); } catch { return null; } };
-  const key = p => (win ? p.toLowerCase() : p);
-  const rootReal = key(real(root) ?? paths.resolve(root));
-  const inside = p => { const rel = paths.relative(rootReal, key(p)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + paths.sep) && !paths.isAbsolute(rel)); };
   const pathValue = Object.entries(env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
   const name = win ? "git.exe" : "git";
-  for (const dir of pathValue.split(win ? ";" : ":").map(d => d.replace(/^"|"$/g, "")).filter(d => d && paths.isAbsolute(d))) {
+  for (const dir of pathValue.split(win ? ";" : ":").map(d => d.replace(/^"|"$/g, "")).filter(d => pathEntryOutside(d, root, where))) {
     const candidate = paths.join(dir, name);
     try {
+      if (!files.statSync(candidate).isFile()) continue;
       const resolved = real(candidate);
-      if (files.statSync(candidate).isFile() && resolved && !inside(resolved)) return resolved;
+      if (resolved && executableOutside(resolved, root, where)) return resolved;
     } catch { /* not here */ }
   }
   return null;

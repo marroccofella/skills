@@ -173,6 +173,15 @@ function main() {
     process.stderr.write(`Installation is not complete across active harnesses: ${reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.${preview}\n`);
     if (!options.dryRun) process.exitCode = 1;
   }
+  // Say why the exit code is non-zero. A refused link used to exit 1 in silence, while the only prose
+  // in the output was the inventory's "every active path loads <version>", which reads as success
+  // (independent review of 3d7a8be). The inventory describes copies that are ALREADY installed; this
+  // line describes what this command did or, in a dry run, would do.
+  const refused = results.filter((r) => ["error", "conflict", "unsupported"].includes(r.status));
+  if (refused.length) {
+    output.exit_reason = `${refused.length} requested link${refused.length === 1 ? "" : "s"} ${options.dryRun ? "would be" : "were"} refused`;
+    process.stderr.write(`${options.dryRun ? "Dry run: " : ""}exit code 1 because ${output.exit_reason}: ${refused.map((r) => `${r.skill ?? r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""} (${r.status}${r.detail ? `: ${r.detail}` : ""})`).join("; ")}. Existing paths are never overwritten; move or remove the existing entry yourself, then rerun. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;
 }

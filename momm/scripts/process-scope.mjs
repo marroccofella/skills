@@ -19,6 +19,39 @@ if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExeP
 const SYSTEM_TOOLS = new Map([['cmd', 'cmd.exe'], ['cmd.exe', 'cmd.exe'],
   ...['taskkill', 'tasklist', 'schtasks', 'where', 'icacls'].flatMap(n => [[n, n + '.exe'], [n + '.exe', n + '.exe']]),
   ['powershell.exe', 'WindowsPowerShell\\v1.0\\powershell.exe'], ['powershell', 'WindowsPowerShell\\v1.0\\powershell.exe']]);
+// A PATH directory may supply an executable only if it lies outside the project by BOTH its literal
+// path and its real path, and the project is compared in both of its spellings too. Checking only the
+// real path let a directory inside the project that is itself a link point anywhere the project
+// chose; checking only the literal path let an alias that lands inside the project through. Relative
+// entries are never searched, and anything that cannot be resolved is refused, not assumed safe.
+// One rule for every resolver: before 1.16.1 each had its own loop, and a fix applied to one of them
+// was missed in the next (independent review of 3d7a8be).
+export function pathEntryOutside(entry, root, { platform = process.platform, fs: files = nodeFs } = {}) {
+  const win = platform === 'win32', p = win ? nodePath.win32 : nodePath.posix;
+  const bare = String(entry ?? '').replace(/^"|"$/g, '');
+  if (!bare || !p.isAbsolute(bare)) return false;
+  const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
+  const key = q => (win ? q.toLowerCase() : q);
+  const rootLiteral = p.resolve(String(root || '.')), rootReal = real(rootLiteral);
+  if (!rootReal) return false;
+  const resolved = real(bare);
+  if (!resolved) return false;
+  const within = (base, q) => { const rel = p.relative(key(base), key(q)); return rel === '' || (rel !== '..' && !rel.startsWith('..' + p.sep) && !p.isAbsolute(rel)); };
+  for (const base of [rootLiteral, rootReal]) if (within(base, p.resolve(bare)) || within(base, resolved)) return false;
+  return true;
+}
+
+// The resolved executable must also lie outside the project in both of its spellings.
+export function executableOutside(resolved, root, { platform = process.platform, fs: files = nodeFs } = {}) {
+  const win = platform === 'win32', p = win ? nodePath.win32 : nodePath.posix;
+  const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
+  const key = q => (win ? q.toLowerCase() : q);
+  const rootLiteral = p.resolve(String(root || '.')), rootReal = real(rootLiteral);
+  if (!rootReal || !resolved) return false;
+  const within = (base, q) => { const rel = p.relative(key(base), key(q)); return rel === '' || (rel !== '..' && !rel.startsWith('..' + p.sep) && !p.isAbsolute(rel)); };
+  return !within(rootLiteral, resolved) && !within(rootReal, resolved);
+}
+
 export function windowsTool(command, { env = process.env, cwd = process.cwd(), platform = process.platform, fs: files = nodeFs } = {}) {
   const name = String(command);
   if (platform !== 'win32' || /[\\/]/.test(name)) return command;
@@ -27,17 +60,18 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
   const system = SYSTEM_TOOLS.get(name.toLowerCase());
   if (system) return win.join(system32, system);
   const real = p => { try { return String(files.realpathSync.native(p)); } catch { return null; } };
-  const inside = (root, p) => { const rel = win.relative(root, p); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
-  const root = real(win.resolve(String(cwd || '.')))?.toLowerCase();
+  const root = win.resolve(String(cwd || '.')), where = { platform: 'win32', fs: files };
   const extensions = win.extname(name) ? [''] : ['.exe', '.com'];
-  for (const entry of String(value('path') ?? '').split(';').map(d => d.replace(/^"|"$/g, '')).filter(d => d && win.isAbsolute(d))) {
+  for (const entry of String(value('path') ?? '').split(';').map(d => d.replace(/^"|"$/g, '')).filter(d => pathEntryOutside(d, root, where))) {
     for (const extension of extensions) {
       const candidate = win.join(entry, name + extension);
       try {
         if (!files.statSync(candidate).isFile()) continue;
-        const resolved = real(candidate)?.toLowerCase();
-        if (!root || !resolved || inside(root, resolved)) continue;
-        return candidate;
+        // Return the path that was checked. Returning the candidate let a link be followed a
+        // second time at exec time, when it need no longer point where it did when checked.
+        const resolved = real(candidate);
+        if (!resolved || !executableOutside(resolved, root, where)) continue;
+        return resolved;
       } catch { /* not here */ }
     }
   }
@@ -48,13 +82,12 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
 // guard variable only stops cmd.exe's implicit working-directory search; an explicit "." or an in-project
 // entry would still let cmd.exe, or a grandchild on an older runtime, pick a planted file.
 export function windowsChildEnv(sourceEnv, { cwd = process.cwd(), fs: files = nodeFs } = {}) {
-  const win = nodePath.win32, env = { ...(sourceEnv ?? {}), NoDefaultCurrentDirectoryInExePath: '1' };
-  const real = p => { try { return String(files.realpathSync.native(p)); } catch { return null; } };
-  const root = real(win.resolve(String(cwd || '.')))?.toLowerCase();
-  const inside = p => { const resolved = real(p)?.toLowerCase(); if (!root || !resolved) return true; const rel = win.relative(root, resolved); return rel === '' || (rel !== '..' && !rel.startsWith('..\\') && !win.isAbsolute(rel)); };
+  const env = { ...(sourceEnv ?? {}), NoDefaultCurrentDirectoryInExePath: '1' };
   const keys = Object.keys(env).filter(k => k.toLowerCase() === 'path');
   if (keys.length) {
-    const cleaned = keys.flatMap(k => String(env[k] ?? '').split(';')).filter(d => { const bare = d.replace(/^"|"$/g, ''); return bare && win.isAbsolute(bare) && !inside(bare); }).join(';');
+    // Same rule as the resolvers: a directory inside the project by its literal OR its real path is
+    // removed, so a junction inside the project that points elsewhere no longer survives.
+    const cleaned = keys.flatMap(k => String(env[k] ?? '').split(';')).filter(d => pathEntryOutside(d, cwd, { platform: 'win32', fs: files })).join(';');
     for (const k of keys.slice(1)) delete env[k];
     env[keys[0]] = cleaned;
   }

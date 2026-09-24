@@ -18,6 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readMedia, validateMedia } from "./media-bytes.mjs";
 import { SUCCESS_EXPIRY_MS } from "./capabilities.mjs";
+import { pathEntryOutside, executableOutside } from "./process-scope.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -220,7 +221,7 @@ export function resolveCommand(cli, { env = process.env, platform = process.plat
   }
   return cli;
 }
-export function windowsLauncher(command, args, env, platform = process.platform) {
+export function windowsLauncher(command, args, env, platform = process.platform, cwd = process.cwd()) {
   // A command that already names a location (absolute, or a relative path the caller chose) is used
   // as given. A bare NAME is never handed to spawn on Windows: older libuv looks for it in the
   // working directory first, and a probe's working directory is a project that is not trusted. It
@@ -228,11 +229,19 @@ export function windowsLauncher(command, args, env, platform = process.platform)
   if (platform !== "win32" || path.isAbsolute(command) || /[\\/]/.test(command)) return { command, args };
   const namesExe = /\.exe$/i.test(command);
   const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
-  const dirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p));
+  const dirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p))
+    // The shared rule: no directory inside the working directory, by literal or real path. A probe
+    // runs in an untrusted project, and before 1.16.1 this loop took the first match on ANY absolute
+    // PATH entry, including one inside that project. Host path rules, because tests force win32.
+    .filter(p => pathEntryOutside(p, cwd, { platform: process.platform }));
   let refusedShim = null;
   for (const dir of dirs) {
     const native = path.join(dir, namesExe ? command : `${command}.exe`);
-    if (fs.existsSync(native)) return { command: native, args };
+    if (fs.existsSync(native)) {
+      let resolved = null; try { resolved = fs.realpathSync(native); } catch { /* unresolvable: refused */ }
+      if (resolved && executableOutside(resolved, cwd, { platform: process.platform })) return { command: resolved, args };
+      continue;
+    }
     if (namesExe) continue;
     if (![".cmd", ".bat"].some(ext => fs.existsSync(path.join(dir, command + ext)))) continue;
     try {
@@ -271,7 +280,7 @@ function cleanEnv(source = process.env) {
 // temporary directory open. The caller's env is always secret-scrubbed first.
 export function defaultExec(command, args, { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env, killGraceMs = 5_000 } = {}) {
   const env = cleanEnv(sourceEnv);
-  const launch = windowsLauncher(command, args, env);
+  const launch = windowsLauncher(command, args, env, process.platform, cwd);
   if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
   return new Promise(resolve => {
     const win32 = process.platform === "win32";

@@ -184,9 +184,18 @@ function main() {
       output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
     }
     if (!output.inventory.upgrade.complete) {
-      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.\n`);
+      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason ?? "the inventory gave no reason"}. Requested link and receipt results are retained below; conflicting copies were left untouched.${options.dryRun ? " This is a dry run: nothing was changed and the exit code stays 0." : ""}\n`);
       if (!options.dryRun) process.exitCode = 1;
     }
+  }
+  // Say why the exit code is non-zero. A refused link used to exit 1 in silence, while the only prose
+  // in the output was the inventory's "every active path loads <version>", which reads as success
+  // (independent review of 3d7a8be). The inventory describes copies that are ALREADY installed; this
+  // line describes what this command did or, in a dry run, would do.
+  const refused = [...results.flatMap((r) => r.links || []).filter((l) => l.status === "error" || l.status === "conflict"), ...results.filter((r) => r.status === "unsupported")];
+  if (refused.length) {
+    output.exit_reason = `${refused.length} requested link${refused.length === 1 ? "" : "s"} ${options.dryRun ? "would be" : "were"} refused`;
+    process.stderr.write(`${options.dryRun ? "Dry run: " : ""}exit code 1 because ${output.exit_reason}: ${refused.map((r) => `${r.skill ?? r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""} (${r.status}${r.detail ? `: ${r.detail}` : ""})`).join("; ")}. Existing paths are never overwritten; move or remove the existing entry yourself, then rerun. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   const flat = results.flatMap((r) => r.links || []);

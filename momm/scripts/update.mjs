@@ -32,25 +32,48 @@ export const safeText = value => String(value).replace(/[\x00-\x08\x0b-\x1f\x7f-
 // chosen. System tools are named by their absolute System32 path, and any other bare
 // name is resolved here to an absolute PATH entry that lies outside the working directory.
 export const systemTool = (name, env = process.env) => [env.SystemRoot || env.windir || "C:\\Windows", "System32", name].join("\\");
+// The updater imports nothing from MOMM on purpose: it is the component that has to keep working in
+// a partly broken installation, since it is how a user gets out of one. So it carries its own copy of
+// the executable rule in process-scope.mjs (pathEntryOutside / executableOutside) rather than importing
+// it. executable-resolution.test.mjs runs the same attack matrix against both, so the copies cannot
+// drift apart unnoticed; drift between resolvers is exactly how this hole survived a previous fix.
+function updaterEntryOutside(entry, root) {
+  const win = path.win32, bare = String(entry ?? "").replace(/^"|"$/g, "");
+  if (!bare || !win.isAbsolute(bare)) return false;
+  const real = q => { try { return String(fs.realpathSync.native(q)); } catch { return null; } };
+  const rootLiteral = win.resolve(String(root || ".")), rootReal = real(rootLiteral), resolved = real(bare);
+  if (!rootReal || !resolved) return false;
+  const within = (base, q) => { const rel = win.relative(base.toLowerCase(), q.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith("..\\") && !win.isAbsolute(rel)); };
+  return ![rootLiteral, rootReal].some(base => within(base, win.resolve(bare)) || within(base, resolved));
+}
+function updaterExecutableOutside(resolved, root) {
+  const win = path.win32;
+  const real = q => { try { return String(fs.realpathSync.native(q)); } catch { return null; } };
+  const rootLiteral = win.resolve(String(root || ".")), rootReal = real(rootLiteral);
+  if (!rootReal || !resolved) return false;
+  const within = (base, q) => { const rel = win.relative(base.toLowerCase(), q.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith("..\\") && !win.isAbsolute(rel)); };
+  return !within(rootLiteral, resolved) && !within(rootReal, resolved);
+}
 export function resolveTool(command, cwd, { env = process.env, platform = process.platform } = {}) {
   if (platform !== "win32" || /[\\/]/.test(command)) return command;
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
   const real = p => fs.realpathSync.native(p);
   // An unresolvable working directory is a failure to CHECK, not a tool that is missing: say so
   // rather than letting a raw ENOENT from realpath escape to the caller.
-  let root;
-  try { root = real(cwd || process.cwd()).toLowerCase(); }
+  const root = cwd || process.cwd();
+  try { real(root); }
   catch (e) { throw Object.assign(new Error(`cannot resolve the working directory, so ${command} cannot be checked against it: ${e.message}`), { code: "ENOENT" }); }
-  for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => path.win32.isAbsolute(d))) {
+  // The PATH directory as well as the executable must lie outside the working directory, by literal
+  // and by real path. Checking only the executable let a link in a project directory on PATH pick
+  // any executable outside the project (independent review of 3d7a8be).
+  for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => updaterEntryOutside(d, root))) {
     for (const extension of path.extname(command) ? [""] : [".exe", ".com"]) {
       const candidate = path.join(directory, command + extension);
       try {
         if (!fs.statSync(candidate).isFile()) continue;
-        // Resolve ONCE: checking one realpath and returning a second leaves a window in which the
-        // path can be swapped for one inside the working directory between the two calls.
+        // Resolve ONCE and return what was checked.
         const resolved = real(candidate);
-        const relative = path.relative(root, resolved.toLowerCase());
-        if (!relative || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))) continue; // inside the working directory
+        if (!updaterExecutableOutside(resolved, root)) continue;
         return resolved;
       } catch {}
     }

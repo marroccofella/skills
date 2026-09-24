@@ -9,6 +9,9 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
+import { resolveGit as resolveGitForTest } from './governor.mjs';
+// Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
+const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
@@ -258,7 +261,7 @@ try {
   });
   test("fresh Git scope accepted; stale, deleted and binary scope refused", () => {
     const cwd = path.join(fixture, "scope"); fs.mkdirSync(cwd);
-    const git = args => { const r = spawnSync("git", ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
+    const git = args => { const r = spawnSync(GIT, ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
     git(["init", "-q"]); fs.writeFileSync(path.join(cwd, "x.txt"), "before\n"); fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2]));
     git(["add", "."]); git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture baseline"]);
     fs.writeFileSync(path.join(cwd, "x.txt"), "after\n"); const diff = git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]);
@@ -297,6 +300,7 @@ try {
   test('receipt success cannot hide dashboard rebuild failure',()=>{
     const copy=write('isolated/governor.mjs',fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8'));
     write('isolated/evidence-permissions.mjs',fs.readFileSync(path.join(scripts,'evidence-permissions.mjs'),'utf8'));
+    write('isolated/process-scope.mjs',fs.readFileSync(path.join(scripts,'process-scope.mjs'),'utf8'));
     const result=run([copy,'--run',report.run_id,'--record']),body=JSON.parse(result.stdout);
     assert.equal(result.status,5,result.stdout+result.stderr);assert.equal(body.complete,true);assert.equal(body.ledger_rebuilt,false);assert.equal(body.ledger_url,null);assert(body.ledger_error);
   });

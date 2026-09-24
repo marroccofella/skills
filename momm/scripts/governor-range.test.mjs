@@ -10,6 +10,9 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { captureSourceSnapshot, inspectCompletion } from './governor.mjs';
+import { resolveGit as resolveGitForTest } from './governor.mjs';
+// Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
+const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dispatcher = path.join(here, 'multi-review.mjs');
@@ -19,7 +22,7 @@ const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 const repo = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'momm-range-'));
 const gitEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' };
-const git = (...args) => { const p = spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: gitEnv, windowsHide: true }); if (p.status !== 0) throw new Error(`git ${args.join(' ')}: ${p.stderr}`); return p.stdout; };
+const git = (...args) => { const p = spawnSync(GIT, args, { cwd: repo, encoding: 'utf8', env: gitEnv, windowsHide: true }); if (p.status !== 0) throw new Error(`git ${args.join(' ')}: ${p.stderr}`); return p.stdout; };
 const write = (rel, text) => { const f = path.join(repo, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
 const FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', '--binary'];
 const rangeDiff = (base, head, ...paths) => git('diff', ...FLAGS, base, head, '--', ...paths);

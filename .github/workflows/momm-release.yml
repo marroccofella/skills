@@ -116,6 +116,7 @@ jobs:
           node momm/scripts/review-workflow.test.mjs
           node momm/scripts/review-final-regressions.test.mjs
           node momm/scripts/review-triage-1161.test.mjs
+          node momm/scripts/executable-resolution.test.mjs
           node momm/scripts/review-refutations.test.mjs
           node momm/scripts/review-followup.test.mjs
           node momm/scripts/copilot-transport.test.mjs

@@ -7,6 +7,9 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveGit as resolveGitForTest } from './governor.mjs';
+// Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
+const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { createProcessScope } from "./process-scope.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
@@ -24,7 +27,7 @@ const fixture = privateTestFixture("momm-transport-");
 try {
   await test("default review collects a real Git diff without shell wrappers", () => {
     const repo = path.join(fixture, "git-repo"); fs.mkdirSync(repo);
-    const git = (...args) => { const r=spawnSync("git", args, {cwd:repo,encoding:"utf8",windowsHide:true,timeout:10000}); assert.equal(r.status,0,r.stderr); };
+    const git = (...args) => { const r=spawnSync(GIT, args, {cwd:repo,encoding:"utf8",windowsHide:true,timeout:10000}); assert.equal(r.status,0,r.stderr); };
     git("init"); fs.writeFileSync(path.join(repo,"code.cjs"),"module.exports = 1;\n"); git("add","code.cjs");
     // A user's explicit color setting must not inject ANSI into machine input.
     git("config","color.ui","always");
