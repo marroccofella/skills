@@ -51,4 +51,27 @@ context.input={...result,timedOut:true};assert.equal(vm.runInContext('classifyFa
   assert.doesNotMatch(model.detail, /PRIVATE_MARKER_LINE|export const add/, 'and it keeps no line of the reviewed artifact');
   assert.match(model.detail, /model is not supported when using Codex with a ChatGPT account/, 'the provider\'s own reason is quoted, not the preamble before it');
 }
+// The synthetic artifact avoids names that read as credentials (secret, token, key, password):
+// the publication scanner refuses such assignments in any file, and it refused an earlier draft.
+// Line-exact removal is not enough (independent review of 7212f33): a CLI may prefix, timestamp,
+// JSON-escape or wrap what it echoes, and each of those kept the reviewed code in the stored detail.
+// Whatever the echo looks like, no fragment of the artifact may be kept, and the error must survive.
+{
+  const artifact = ['export function transferFunds(fromAccount, toAccount, amountInPence) {', '  const ROUTING_MARKER_FOR_TEST = "ledger-route-7731";', '  return ledger.move(fromAccount, toAccount, amountInPence);', '}'].join('\n');
+  context.sent = 'You are a read-only peer code reviewer.\n--- ARTIFACT TO REVIEW ---\n' + artifact;
+  const error = 'ERROR: synthetic-final-diagnostic: the run ended unexpectedly';
+  const shapes = {
+    'exact lines': context.sent,
+    'prefixed lines': context.sent.split('\n').map((l) => '> ' + l).join('\n'),
+    'timestamped log lines': context.sent.split('\n').map((l) => '2026-09-24T20:00:00Z INFO ' + l).join('\n'),
+    'one JSON-escaped event line': JSON.stringify({ type: 'user_message', text: context.sent }),
+    'lines wrapped at 40 columns': context.sent.replace(/(.{40})/g, '$1\n'),
+  };
+  for (const [shape, echo] of Object.entries(shapes)) {
+    context.input = { code: 1, stdout: '', stderr: echo + '\n' + error };
+    const detail = vm.runInContext('classifyFailure(input, "codex", sent)', context).detail;
+    for (const marker of ['ROUTING_MARKER_FOR_TEST', 'transferFunds', 'ledger.move', 'ledger-route-7731']) assert.ok(!detail.includes(marker), `${shape}: "${marker}" from the reviewed code was kept`);
+    assert.match(detail, /synthetic-final-diagnostic/, `${shape}: the provider's own error survives`);
+  }
+}
 console.log('Expired OAuth sessions receive safe browser-login guidance; outage and timeout precedence remain unchanged.');

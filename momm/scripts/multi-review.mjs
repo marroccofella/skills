@@ -1444,12 +1444,36 @@ function classifyFailure(result, agent = null, sent = "") {
   const sentLines = new Set(String(sent ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
   const unsent = (text) => sentLines.size ? text.split("\n").filter((line) => !sentLines.has(line.trim())).join("\n") : text;
   const cleanErr = unsent(dropWarnings(result.stderr)), cleanOut = unsent(dropWarnings(result.stdout));
+  // Exact-line removal misses an echo that is prefixed, timestamped, JSON-escaped or wrapped, and
+  // each of those kept reviewed code in the stored detail (independent review of 7212f33). Anything
+  // QUOTED therefore drops a line that contains a sent line of eight or more characters (raw or
+  // JSON-unescaped) or that is itself a twelve-plus-character piece of what was sent. Quotes are taken
+  // from the end, walking back at most 500 lines, so the check stays bounded on a large output.
+  const sentText = String(sent ?? ""), sentLong = [...sentLines].filter((line) => line.length >= 8);
+  const unescapeJson = (text) => text.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\r/g, "").replace(/\\(["\\/])/g, "$1");
+  const carriesSent = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed || !sentText) return false;
+    if (sentLines.has(trimmed) || (trimmed.length >= 12 && sentText.includes(trimmed))) return true;
+    const unescaped = unescapeJson(trimmed);
+    return sentLong.some((part) => trimmed.includes(part) || unescaped.includes(part));
+  };
+  const quote = (text, limit) => {
+    const kept = [], lines = String(text ?? "").split("\n");
+    let size = 0;
+    for (let i = lines.length - 1, seen = 0; i >= 0 && size < limit && seen < 500; i--, seen++) {
+      if (carriesSent(lines[i])) continue;
+      kept.unshift(lines[i]);
+      size += lines[i].length + 1;
+    }
+    return clippedTail(kept.join("\n"), limit);
+  };
   const meaningful = cleanErr || cleanOut || result.error?.message;
   const combined = `${cleanOut}\n${cleanErr}`.toLowerCase();
   // Local model/cache compatibility failures can include OAuth diagnostics or
   // echoed source. They are not evidence that the account needs a new login.
   if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported|model is not supported when using/.test(combined)) {
-    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${clippedTail(meaningful, 700)}` };
+    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${quote(meaningful, 700)}` };
   }
   // A retired account tier is a permanent condition, not an auth problem —
   // classify it first (its message contains "authenticating") so the user is
@@ -1473,7 +1497,7 @@ function classifyFailure(result, agent = null, sent = "") {
   // phrase-qualified ("returned: no server", not bare "no server") so local
   // configuration errors never masquerade as outages.
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
-    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${quote(meaningful, 400) || "(no output)"}` };
   }
   // Copilot's signed-out response uses this exact line rather than "login
   // required". Match a whole diagnostic line, not quoted source or a generic
@@ -1484,7 +1508,7 @@ function classifyFailure(result, agent = null, sent = "") {
     // contain device codes, URLs, account identifiers and session metadata.
     return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
   }
-  return { status: "error", detail: clippedTail(meaningful || `exit ${result.code}`, 1200) };
+  return { status: "error", detail: quote(meaningful, 1200) || `exit ${result.code}` };
 }
 
 async function invokeReviewer(agent, artifact, options) {
