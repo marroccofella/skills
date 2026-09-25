@@ -120,6 +120,7 @@ node momm/scripts/review-refutations.test.mjs
 node momm/scripts/review-followup.test.mjs
 node momm/scripts/transport.test.mjs
 node momm/scripts/process-scope.test.mjs
+node momm/scripts/executable-resolution.test.mjs
 node momm/scripts/entrypoint.test.mjs
 node momm/scripts/stabilisation.test.mjs
 node momm/scripts/update.test.mjs
@@ -182,6 +183,19 @@ node myskills/scripts/health-contract-test.mjs
 node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
 node multi-llm-review/scripts/multi-review.mjs --self-test --pretty
 node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
+node scripts/ledger-ui.test.mjs
+node scripts/momm-improvement-regressions.test.mjs
+node scripts/momm-release-observer.test.mjs
+node scripts/momm-site-community.test.mjs
+node scripts/momm-site-discovery.test.mjs
+node scripts/momm-site-flow.test.mjs
+node scripts/momm-site-home.test.mjs
+node scripts/momm-site-regression.test.mjs
+node scripts/momm-site-search.test.mjs
+node scripts/momm-site-technical.test.mjs
+node scripts/momm-site-videos.test.mjs
+node scripts/momm-site-visuals.test.mjs
+node scripts/preview-module.test.mjs
 ```
 
 Also execute the workflow's inline checks for zero-call onboarding/unknown routes,
@@ -262,7 +276,7 @@ An account/quota-limited one-review result must not claim the two-review minimum
 
 For image review, use a small synthetic chart with a known visual inconsistency
 (for example bars contradicting their printed values), and a written ground-truth
-record. Read the final candidate's image checklist. After confirming two eligible
+record. Read the final candidate's image checklist, `momm/references/image-review-checklist.md` in the pinned clone. After confirming two eligible
 image routes, review with `--attach <synthetic-image>` plus the same governor,
 explicit reviewer list and minimum. Record input hash, route capability evidence,
 region-specific finding and your visual verification. If the checklist or eligible
@@ -278,7 +292,7 @@ Assign reviewers to Windows, macOS and Linux. Ask at least one to use a differen
 governor where available. No reviewer may claim another person's matrix cells.
 Record exact Node patch versions; primary Node22/24 versus legacy18/20 must be
 separate rows, not “18–24 supported.” CI requests 18/20/22/24 on three OSes plus
-Windows24.15.0, thirteen cells. Configuration does not prove a completed run or
+Windows 24.15.0 and 24.19.0, fourteen cells. Configuration does not prove a completed run or
 native signed lifecycle drills. Node18 and Node24 lifecycle evidence remains required.
 
 Use clean disposable VMs or user profiles with no working installations. Signed

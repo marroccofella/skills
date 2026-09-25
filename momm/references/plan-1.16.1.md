@@ -39,7 +39,7 @@ the "done when" for each.
 | 8 | Named security regressions as tests | E | PATH fixtures added; native final OS/Node matrix pending |
 | 9 | One live image review on the final tree, with the checklist in `references/` | A4, gates | checklist written; live final-tree gate pending |
 | 10 | ROADMAP tells the truth | D | **done** |
-| 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | explicit untested cells in gates-1.16.1.md; CI now requests 13 cells |
+| 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | explicit untested cells in gates-1.16.1.md; CI now requests 14 cells |
 | 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | draft-1.16.1.md and gates-1.16.1.md; no version bump or release claim |
 
 **Constraints that are required non-additions:** the governor remains the only writer; account
@@ -132,7 +132,8 @@ release line and now, next, later; everything written before the signed tags sit
 HISTORICAL banner; website notes moved to `references/site-changelog.md`; a short 1.17 section;
 deferred 1.16.0 findings listed by name in `references/deferred-from-1.16.0.md`.
 Still to do: `release-1.16.1.md` is one page for a user (shipped, proven, still refused, how to
-upgrade) with the gate record below it or in a separate file; `CONTRIBUTING.md` names every suite;
+upgrade) with the gate record below it or in a separate file; `CONTRIBUTING.md` points to the
+workflow and the test catalogue instead of naming every suite (done 22 September);
 the changelog covers the modality registry and the private evidence folder.
 
 ### E. Security regressions, named
@@ -249,6 +250,11 @@ Each is a fix to something 1.16.x already claimed, not a new surface:
 - **Codex advice.** "Model is not supported when using Codex with a ChatGPT account" was the Codex CLI
   being older than the model the Codex desktop app had selected in their shared config. The failure
   now says to update the CLI, and not to change the shared model or switch to an API key.
+- **Quotation rule (owner decision, 25 September 2026).** In the 1.16.1 range review most failed
+  pieces were answers refused because a model retyped a curly quote, a dash or a non-breaking space
+  when quoting documentation. Typographic look-alikes and runs of whitespace now compare equal; every
+  other character, including diff markers, must still match. This reverses the 1.15 rule that a
+  reindented quote is refused.
 - **Failure details keep nothing MOMM sent**, in any echo form, including the two short-line prefix
   cases deferred from the delta review of 7a970f7.
 
@@ -264,7 +270,7 @@ first, adaptation later). Corroboration across divergent finding ids, unless it 
 merging, rewriting or dropping an original finding. Changing Grok's `--deny Read` containment:
 because containment does not change, Grok image and PDF cells stay `missing_flag`.
 
-## Owner decisions pending (not in scope until decided)
+## Owner decisions (item 1 pending; items 2 to 4 decided)
 
 1. **First-install friction.** Every new user is stopped within a minute to install the `gitsign`
    verifier, and on Windows it has no installer. The guide now has per-system steps. A proposed
@@ -287,14 +293,14 @@ because containment does not change, Grok image and PDF cells stay `missing_flag
    or an activated virtual environment inside the project) could supply `codex`, `claude` or
    `grok`. There is no working-directory search on those systems, so it needs that PATH entry to
    exist. Closing it changes launch behaviour for every macOS and Linux user, including anyone
-   whose CLI is installed only inside the project they are reviewing, so it is the owner's call
-   whether it lands in 1.16.1 or 1.17. It is recorded here rather than left in a transcript.
+   whose CLI is installed only inside the project they are reviewing. (Question as first put to the
+   owner, before the decision above.)
 4. **Decided 24 September 2026: added to CI** as one Linux job (`site-and-ledger`) and to the signed
    release job.
    **Thirteen suites run by no workflow.** The site, ledger, preview, release-observer and
    improvement-regression suites (for example `scripts/momm-site-home.test.mjs`,
-   `scripts/ledger-ui.test.mjs`, `scripts/preview-module.test.mjs`) pass locally but no
-   workflow runs them, so a regression in them would only be found by hand. Adding them to one
+   `scripts/ledger-ui.test.mjs`, `scripts/preview-module.test.mjs`) passed locally but ran in no
+   workflow before this decision, so a regression in them would only be found by hand. Adding them to one
    Linux job is small; it is listed here because it widens what the release gate asserts.
 
 ## Release gates

@@ -34,19 +34,24 @@ const buggy = good.replace("/ a.length", "/ (a.length + 1)");
 const peer = (changes = {}) => ({ review_status: "complete", reviewed_scope: [{ quote: "a.length", assessment: "The denominator determines the arithmetic mean." }], verdict: "ACCEPT", confidence: 0, summary: "The arithmetic mean calculation is assessed below.", findings: [], suggested_improvements: [], ...changes });
 try {
   test("completed clean review and zero confidence remain valid", () => assert.equal(reviewProblem(peer(), good), null));
-  test('quotation matching tolerates only platform line endings', () => {
+  // Owner decision, 25 September 2026: line endings, typographic look-alikes and runs of whitespace
+  // compare equal (review-contract.mjs lookAlike); any other changed character is still refused.
+  test('quotation matching tolerates line endings and whitespace runs, never a changed character', () => {
     const sample='const x = 1;\nconst y = 2;';
     const p=peer({reviewed_scope:[{quote:sample,assessment:'Two constant declarations.'}]});
     assert.equal(reviewProblem(p,sample.replaceAll('\n','\r\n')),null);
     assert.equal(reviewProblem({...p,reviewed_scope:[{quote:sample.replaceAll('\n','\r\n'),assessment:'Two declarations.'}]},sample),null);
     assert(reviewProblem(p,sample.replace('x = 1','x = 9')));
-    assert(reviewProblem(p,sample.replace('x = 1','x  = 1')));
+    assert.equal(reviewProblem(p,sample.replace('x = 1','x  = 1')),null);
+    assert(reviewProblem(p,sample.replace('x = 1','x = 1;')));
   });
   test('a literal excerpt ending between CR and LF still matches', () => {
     const quote='const x = 1;\r';
     const p=peer({reviewed_scope:[{quote,assessment:'Literal source excerpt ending at CR.'}]});
     assert.equal(reviewProblem(p,'const x = 1;\r\nconst y = 2;'),null);
-    assert(reviewProblem(p,'const x = 1;\nconst y = 2;'),'lone CR must not become an invented LF');
+    // Whitespace-only differences compare equal since the owner decision of 25 September 2026.
+    assert.equal(reviewProblem(p,'const x = 1;\nconst y = 2;'),null,'a trailing CR is whitespace');
+    assert(reviewProblem(p,'const x = 2;\nconst y = 2;'),'a changed character is still refused');
   });
   test('diff scope preserves prefixes instead of reconstructing source', () => {
     const artifact = '+  const value = read();\n+  return value;\n';
@@ -54,7 +59,10 @@ try {
     assert.equal(check('+  const value = read();\n+  return value;'), null);
     assert.equal(check('const value = read();'), null, 'a literal single-line substring is valid');
     assert(check('  const value = read();\n  return value;'), 'stripping diff prefixes must remain invalid');
-    assert(check('+ const value = read();\n+ return value;'), 'reindentation must remain invalid');
+    // Owner decision, 25 September 2026: runs of whitespace compare equal, so a reindented quote is
+    // accepted as evidence of scope; the diff markers are characters and must still be kept.
+    assert.equal(check('+ const value = read();\n+ return value;'), null, 'reindentation is a whitespace-run difference');
+    assert(check('+ const value = read();\n  return value;'), 'a dropped diff marker is still refused');
     assert.match(source, /short single-line excerpts/);
     assert.match(source, /do not remove diff markers, reindent, or reformat/);
   });

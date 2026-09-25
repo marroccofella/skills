@@ -509,7 +509,10 @@ Added to the candidate on 2026-09-13 evening at the owner's direction: MOMM must
   the dated entries above: privacy and history scans, independent confirmations, the signed tag and
   the live pages were completed before or at release on 19 September; `momm-check/1` completion
   receipts for gate runs on committed ranges were not produced and are a stated limit, carried to
-  1.16.1. The original line: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
+  1.16.1. [Added 25 September 2026: the E7 modality work shipped in 1.16.0 (section above); the
+  public evidence page was not refreshed and remains the dated 4 September snapshot; the Grok
+  exact-quote rejection rate was carried to 1.16.1, which accepts typographic look-alikes in
+  quotations (owner decision, 25 September 2026).] The original line: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
 
 ## Suggestions carried forward
 

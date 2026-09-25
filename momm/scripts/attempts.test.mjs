@@ -79,3 +79,12 @@ try {
   assert.throws(()=>auditAttempts(root,['rev_audit_nopieces']),/malformed report/,'a split report without a pieces array must be refused, not throw TypeError');
   console.log('PASS: closed outcomes, immutable attempts, failed cost/time, actual failing/passing test receipts and preserved history');
 } finally { fs.rmSync(root,{recursive:true,force:true,maxRetries:3}); }
+
+// Range review rev_20260925004814_1ed9f58c2c3a (empty-outcome-regex-unanchored): a reviewer-controlled sample
+// containing "— empty stdout" misfiled a non-empty invalid reply as empty.
+{
+  const { outcomeFor } = await import('./attempts.mjs');
+  assert.equal(outcomeFor({ status: 'invalid_output', detail: 'reviewer did not return the required JSON schema — no JSON object in stdout; sample: "— empty stdout"' }), 'invalid_output');
+  assert.equal(outcomeFor({ status: 'invalid_output', detail: 'reviewer did not return the required JSON schema — empty stdout; stderr tail: x' }), 'empty');
+  assert.equal(outcomeFor({ status: 'invalid_output', detail: 'empty reply' }), 'empty');
+}

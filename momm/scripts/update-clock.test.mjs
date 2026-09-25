@@ -1007,6 +1007,10 @@ await test("pending-update notice: lists what is behind with the user's three ch
   assert.doesNotMatch(text, /skill 1\.16/, "MOMM itself is reported by its own existing line, not twice");
   assert.ok(text.includes(UC.UPDATE_COMMANDS.codex) && text.includes(UC.UPDATE_COMMANDS.grok), "each official update command is given");
   assert.match(text, /update-clock\.mjs" enable/); assert.match(text, /off until you turn it on/);
+  // Range review rev_20260925004814_1ed9f58c2c3a (grok suggestion 68): `enable` also applies signed MOMM and
+  // model updates, not only the reviewer CLIs this notice lists. The notice says so and how to narrow it.
+  assert.match(text, /enable also applies signed MOMM updates and model updates/);
+  assert.ok(text.includes('update-clock.mjs" set skill false') && text.includes('update-clock.mjs" set models false'), "the narrowing commands are given");
   assert.match(text, /setup-ui\.mjs/, "the Setup Center is offered for guidance");
   assert.match(text, /antigravity cannot be checked automatically/);
   assert.equal(UC.pendingUpdateNotice(rows.map((r) => ({ ...r, update_available: r.kind === "skill" }))), null, "nothing behind among the CLIs: no notice");

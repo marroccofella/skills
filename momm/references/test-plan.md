@@ -11,7 +11,7 @@ that release was held to. The banner above withdraws it, and the instruction tha
 here — hand the file to a fresh agent session and have it run the exercises in order — applied to
 1.9.1 only. Its statuses, command inventory and raw-log publishing steps are withdrawn with it.
 
-## How to use this plan
+## How this plan was used (1.9.1 archive)
 
 **For the tester (the fresh session):**
 

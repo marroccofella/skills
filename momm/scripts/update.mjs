@@ -629,8 +629,9 @@ export async function update(argv, dependencies = {}) {
     assertInstalled(root, previous.current);
     writeJSON(lockFile, { ...previous, current: { ...previous.current, ...current(root) }, previous: null, recovered_at: new Date().toISOString() });
     fs.unlinkSync(journalFile);
-    inventoryAtCompletion(previous.current.version);
+    // Say the rollback finished before the harness inventory runs: the inventory may still refuse.
     log("Rollback verified. Recovery command remains available outside the checkout.");
+    inventoryAtCompletion(previous.current.version);
   });
   if (fs.existsSync(journalFile)) throw new Error("An interrupted update needs recovery. Run the retained update.mjs --rollback --yes before another update.");
   if (o.channel && !o.apply && !o.dry_run && !o.version) {

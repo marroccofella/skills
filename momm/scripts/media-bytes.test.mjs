@@ -52,3 +52,9 @@ try {
   assert.throws(() => validateMedia(jpeg, 'one.txt', { allowText: true }), /Media refused/);
   console.log('PASS: content identification, extension mismatch, truncation, HTML, empty, junction and text-bypass regressions');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+
+// Range review rev_20260925004814_1ed9f58c2c3a (binary-media-accepted-as-text; codex suggestion 7): an EBML
+// (Matroska/WebM) header or an ISO media box type is valid UTF-8 without a NUL byte and was relabelled text.
+assert.throws(() => validateMedia(Buffer.from('1a45dfa3', 'hex'), 'input.md', { allowText: true }), undefined, 'EBML magic is never text');
+assert.throws(() => validateMedia(Buffer.from('abcdftypisom-text', 'latin1'), 'input.txt', { allowText: true }), undefined, 'an ISO ftyp box type is never text');
+assert.equal(validateMedia(Buffer.from('plain notes about ftyp boxes', 'utf8'), 'input.txt', { allowText: true }).modality, 'text', 'the word ftyp elsewhere is ordinary text');

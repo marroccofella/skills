@@ -59,7 +59,7 @@ export function auditAttempts(root, ids) {
   return {schema:'momm-attempt-audit/1',source_binding_sha256:digest(identity),reports,attempts,coverage,cumulative_quorum_met:coverage.length>0&&coverage.every(p=>p.met),completion:false,
     caveat:'Cumulative coverage only. This does not replace original per-run failures, disposition checks, final verification or release approval. Retrying one route never creates a second reviewer.'};
 }
-if(process.argv[1]&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url))){
+if((()=>{try{return Boolean(process.argv[1])&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url));}catch{return false;}})()){
   try{const report=auditAttempts(process.cwd(),process.argv.slice(2));const name=`.ensemble_reviews/attempt-audit-${randomUUID()}.json`;fs.writeFileSync(name,JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});console.log(JSON.stringify({path:name,sha256:digest(fs.readFileSync(name)),cumulative_quorum_met:report.cumulative_quorum_met,completion:false}));process.exitCode=report.cumulative_quorum_met?0:3;}
   catch(e){console.error(e.message);process.exitCode=1;}
 }

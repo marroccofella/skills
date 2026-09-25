@@ -830,6 +830,7 @@ Options:
   --input, --patch <file>    Review a file instead of git diff HEAD/stdin
   --range <base>..<head>     Review a COMMITTED range. MOMM takes the diff itself and binds the report (and any
                              completion receipt) to both full commit ids. A diff on stdin must be identical.
+                             A two-tip diff (git diff base head), not merge-base: pick a base head descends from.
   --range-path <path>        Limit --range to a path (repeatable); part of the recorded identity
   --reviewers <csv|auto>    Requested peers (default: codex,claude,antigravity,copilot,grok). auto (1.16 E7):
                             with --attach, the intersection of routes whose effective capability cells take
@@ -913,7 +914,7 @@ function parseArgs(argv) {
     else if (arg === "--input" || arg === "--patch") options.input = next();
     else if (arg === "--range") {
       const match = /^([^.\s][^\s]*?)\.\.([^.\s][^\s]*)$/.exec(next());
-      if (!match || match[1].startsWith("-") || match[2].startsWith("-")) throw new Error("--range needs <base>..<head> (two dots), for example main..HEAD");
+      if (!match || match[1].startsWith("-") || match[2].startsWith("-") || match[1].endsWith(".")) throw new Error("--range needs <base>..<head> (two dots), for example main..HEAD");
       options.range = { base: match[1], head: match[2], paths: options.range?.paths ?? [] };
     }
     else if (arg === "--range-path") { options.rangePaths = [...(options.rangePaths ?? []), next()]; }
@@ -2118,9 +2119,12 @@ function buildInsights(findings, results) {
   };
 }
 
-async function readAllStdin(timeoutMs = 30_000) {
+async function readAllStdin(timeoutMs = 30_000, { silentIsEmpty = false } = {}) {
   // Non-TTY can be an idle inherited pipe. Never ignore potentially mismatched
-  // input, but refuse on a fixed deadline rather than wait indefinitely.
+  // input, but refuse on a fixed deadline rather than wait indefinitely. A caller
+  // that has its own authoritative input (--range) may treat a pipe that sent
+  // nothing at all by the deadline as no stdin; any byte keeps the strict rule.
+  const deadline = /^\d{3,5}$/.test(process.env.MOMM_STDIN_DEADLINE_MS ?? "") ? Math.min(30_000, Number(process.env.MOMM_STDIN_DEADLINE_MS)) : timeoutMs;
   const input = process.stdin;
   if (input.readableEnded) return "";
   return new Promise((resolve, reject) => {
@@ -2134,7 +2138,7 @@ async function readAllStdin(timeoutMs = 30_000) {
       if (bytes > 8_000_000) return error(new Error('stdin exceeds the 8 MB input limit'));
       chunks.push(value);
     };
-    const timer = setTimeout(() => error(new Error('stdin deadline exceeded; close the input pipe or use a completed input file')), timeoutMs);
+    const timer = setTimeout(() => (silentIsEmpty && bytes === 0 ? (cleanup(), resolve(null)) : error(new Error('stdin deadline exceeded; close the input pipe or use a completed input file'))), deadline);
     input.on('data', data); input.once('end', end); input.once('error', error);
   });
 }
@@ -2151,8 +2155,10 @@ async function collectArtifact(options) {
     if (result.code !== 0 || result.error) throw new Error(`--range: git could not produce the diff for ${options.range.base}..${options.range.head}`);
     if (!result.stdout.trim()) throw new Error("--range: that range has no changes in the named paths");
     if (!process.stdin.isTTY) {
-      const supplied = await readAllStdin();
-      if (supplied.trim() && supplied !== result.stdout) throw new Error("The diff on stdin is not the diff of the declared --range (same flags and path limits). Refusing: the report would name one tree and review another.");
+      // Range review rev_20260925004814_1ed9f58c2c3a: an open, silent pipe is not a diff.
+      const supplied = await readAllStdin(30_000, { silentIsEmpty: true });
+      if (supplied === null) process.stderr.write("momm: stdin stayed open and silent; reviewing the range's own diff\n");
+      if (supplied?.trim() && supplied !== result.stdout) throw new Error("The diff on stdin is not the diff of the declared --range (same flags and path limits). Refusing: the report would name one tree and review another.");
     }
     return result.stdout;
   }

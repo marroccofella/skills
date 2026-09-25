@@ -114,6 +114,8 @@ export function validateMedia(buffer, filename, { allowText = false } = {}) {
     try { new TextDecoder('utf-8', { fatal: true }).decode(buffer); } catch { throw error; }
     // Recognizable binary signatures must never be relabelled as text.
     if (buffer[0] === 255 || buffer[0] === 137 || /^(?:%PDF-|GIF8|RIFF|fLaC|OggS|ID3|BM)/.test(buffer.subarray(0, 8).toString('latin1'))) throw error;
+    // EBML (Matroska/WebM) and ISO media (ftyp box at offset 4) are valid UTF-8 without a NUL when short.
+    if (buffer.subarray(0, 4).equals(Buffer.from('1a45dfa3', 'hex')) || buffer.subarray(4, 8).toString('latin1') === 'ftyp') throw error;
     detected = { format: ext, modality: 'text', mime: 'text/plain' };
   }
   if ((ext === 'jpeg' ? 'jpg' : ext) !== detected.format) return refuse(`bytes identify ${detected.format}, not .${ext || '(none)'}`);

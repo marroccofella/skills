@@ -297,6 +297,22 @@ try{
     assert.equal(seen.args.at(-1), '-', 'the prompt still arrives on stdin');
     assert.ok(!seen.args.includes('--ignore-user-config'), 'the shared model and effort stay as the user set them');
   });
+  // Owner decision, 25 September 2026, from range review rev_20260925004814_1ed9f58c2c3a: most failed pieces
+  // were answers rejected because a model retyped a curly quote, a dash or a non-breaking space in its
+  // quotation of documentation. Typographic look-alikes and whitespace runs now compare equal; every
+  // other character still has to match.
+  await test('quoted scope tolerates typographic look-alikes and whitespace, nothing else', async () => {
+    const artifact = 'Intro line.\nHe said \u201chi\u201d \u2014 and left.\u00a0It\u2019s done.\n  indented   code(x);\n';
+    const review = (quote) => ({ review_status: 'complete', verdict: 'ACCEPT', confidence: 0.9, summary: 'Synthetic.',
+      reviewed_scope: [{ quote, assessment: 'Checked.' }], suggested_improvements: [], findings: [] });
+    assert.equal(reviewProblem(review('He said \u201chi\u201d \u2014 and left.'), artifact), null, 'an exact quote passes');
+    assert.equal(reviewProblem(review('He said "hi" - and left. It\'s done.'), artifact), null, 'straight quotes, a hyphen and a plain space match their look-alikes');
+    assert.equal(reviewProblem(review('He said \u201chi\u201d \u2013 and left.'), artifact), null, 'an en dash matches an em dash');
+    assert.equal(reviewProblem(review('indented code(x);'), artifact), null, 'a whitespace run matches a single space');
+    assert.match(reviewProblem(review('He said "bye" - and left.'), artifact) ?? '', /quote the supplied artifact/, 'a different word is still refused');
+    assert.match(reviewProblem(review('He said hi and left.'), artifact) ?? '', /quote the supplied artifact/, 'dropped punctuation is still refused');
+    assert.match(reviewProblem(review('indented code(y);'), artifact) ?? '', /quote the supplied artifact/, 'code still matches literally');
+  });
 }finally{
   const resolved=path.resolve(root),temporary=path.resolve(os.tmpdir());
   assert(resolved.startsWith(temporary+path.sep)&&path.basename(resolved).startsWith('momm-adapter-cleanup-test-'));

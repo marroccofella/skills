@@ -167,7 +167,7 @@ if (isWindows) {
 } else skip('planted git.exe code-execution check', 'the working-directory search is Windows behaviour');
 
 // ---- 4. Static: nothing in this repository launches a bare git -----------------------------------------
-check('no script or suite launches a bare `git`; every launch goes through a resolver', () => {
+check('no script or suite launches a literal bare `git` (spawn, execFile, execSync); computed names are not detected by this check', () => {
   const self = path.resolve(fileURLToPath(import.meta.url));
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);

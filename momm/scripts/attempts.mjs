@@ -8,7 +8,7 @@ export function outcomeFor(result) {
   const s = result.status;
   if (s === 'success') return 'succeeded';
   if (['timeout', 'quota', 'authentication_required', 'ineligible_tier', 'cancelled', 'provider_unavailable', 'empty'].includes(s)) return s;
-  if (s === 'invalid_output') return /(?:^empty(?:\b|_)|— empty stdout)/i.test(result.detail ?? '') ? 'empty' : 'invalid_output';
+  if (s === 'invalid_output') return /(?:^empty(?:\b|_)|required JSON schema — empty stdout)/i.test(result.detail ?? '') ? 'empty' : 'invalid_output';
   if (['self_excluded', 'disabled', 'disabled_no_oauth', 'missing', 'unsupported', 'not_dispatched'].includes(s)) return 'not_dispatched';
   if (s === 'error') return 'failed';
   throw new Error(`Unclassified reviewer status: ${String(s)}`);

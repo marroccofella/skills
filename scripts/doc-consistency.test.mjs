@@ -94,4 +94,35 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
   assert(/3 of 3 in the shipped setup/.test(gates), 'the gate record must give the shipped setup its own sample');
   assert(!/valid in 5 of 5 measured runs/.test(read('momm/SKILL.md')), 'SKILL must not credit the shipped Grok setup with runs it did not make');
 }
+// Range review rev_20260925004814_1ed9f58c2c3a (standing-rules-outside-dry-run): the install prompt told the
+// agent to write the user's standing instructions without showing them first, while the page promises
+// nothing is installed or replaced until the user says yes. Checked in the source and the rendered page.
+{
+  for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/references/upgrade-prompt.md').replace(/\s+/g, ' ')], ['docs/momm/install.html', read('docs/momm/install.html').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')]]) {
+    const at = text.indexOf('documented user-level standing instructions');
+    assert(at > 0, file + ' carries the standing-instructions step');
+    const step = text.slice(Math.max(0, at - 200), at + 900);
+    assert(/show me the exact section and where it goes, and wait for my yes/i.test(step), file + ': the standing-instructions step must be shown and approved before it is written');
+  }
+}
+// Range review rev_20260925004814_1ed9f58c2c3a (posix-promoted-and-deferred): the deferred-findings snapshot
+// still promoted the POSIX PATH-shadowing finding into 1.16.1 E after the owner deferred it to 1.17.
+{
+  const row = read('momm/references/deferred-from-1.16.0.md').split('\n').find(l => l.startsWith('| `posix-relative-path-command-shadowing`'));
+  assert(row && /deferred to 1\.17/.test(row), 'the POSIX PATH-shadowing row must record the 24 September deferral to 1.17');
+}
+// Range review rev_20260925004814_1ed9f58c2c3a (offline-ci-green-without-named-run): the gate record called
+// Windows 24.19.0 offline CI green while every recorded run predated that pin (13 jobs). A green claim
+// for the current matrix needs a recorded run of at least the current matrix's size.
+{
+  const gates = read('momm/references/gates-1.16.1.md');
+  if (/24\.19\.0\)? *\|?/.test(gates) && /offline CI green \([^)]*24\.19\.0/.test(gates)) {
+    const counts = [...gates.matchAll(/\| (\d+) of \1 jobs passed/g)].map(m => Number(m[1]));
+    assert(counts.some(n => n >= 15), 'a recorded CI run of the current 15-job workflow must back the 24.19.0 green claim');
+  }
+  assert(!/The results above are:/.test(gates), 'the CI history must not point at the lifecycle table above it');
+}
+// Range review rev_20260925004814_1ed9f58c2c3a (grok suggestion 52): ROADMAP rule 5 says versions.json decides
+// "current"; its opening line must say the same version.
+assert(read('momm/ROADMAP.md').includes('Today they say **' + JSON.parse(read('versions.json')).momm + '**'), 'ROADMAP must state the versions.json version');
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

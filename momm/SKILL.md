@@ -58,7 +58,7 @@ It binds to `127.0.0.1`, reads no credential contents, accepts only fixed allowl
    node "<installed-momm>/scripts/multi-review.mjs" --preflight --governor <current-harness>
    ```
 
-   If MOMM prints `momm: reviewer updates available` (after preflight or at the end of a review), relay it to the user with its three choices: install now with the listed official commands, turn on automatic installs, or open the Setup Center for guidance. Run an update command only with the user's approval, and never turn on automatic installs yourself; that switch is the user's.
+   If MOMM prints `momm: reviewer updates available` (after preflight or at the end of a review), relay it to the user with its three choices: install now with the listed official commands, turn on automatic installs (which also applies signed MOMM and model updates unless narrowed as the notice shows), or open the Setup Center for guidance. Run an update command only with the user's approval, and never turn on automatic installs yourself; that switch is the user's.
 
    Zero model calls: every requested route is probed for install state and OAuth evidence. Relay every `login_hint` to the user verbatim (each is the provider's official browser-login command) and let them bring routes online before dispatching. Presence evidence does not prove a live session — routes still fail closed at dispatch, and a dispatch-time `authentication_required` also carries the exact login command.
 3. Keep the working directory in the user's project. Invoke the bundled dispatcher by its absolute installed path (replace the placeholder below). Do not change into the skill directory: that would review the skills repository and put the evidence in the wrong project.
@@ -107,7 +107,7 @@ to capture governor-chosen test executions with `checks.mjs`. Keep all attempt r
 failed and interrupted work; unavailable usage is not zero. A cumulative attempt audit reports
 coverage only and never overrides an original failed run or grants completion.
 
-Quoted scope permits CRLF/LF line-ending equivalence only; every other character must match literally. Report/input hashes still bind the original sanitized bytes. This is a portability rule, not fuzzy quote matching or proof of the reviewer's reasoning.
+Quoted scope treats line endings, typographic look-alikes (curly and straight quotes, dash variants, the ellipsis, non-breaking spaces) and runs of whitespace as equal; every other character, including diff markers, must match literally. Report/input hashes still bind the original sanitized bytes. This is a narrow, listed equivalence, not fuzzy quote matching or proof of the reviewer's reasoning.
 
 For new reviews, read [references/governor-completion.md](references/governor-completion.md) before recording decisions. Run `node "<installed-momm>/scripts/governor.mjs" --run <run_id>` from the reviewed project, replacing `<installed-momm>` with the absolute skill directory, to obtain stable item IDs and outstanding evidence. Match every finding and suggestion to exactly one decision, record governor-authored investigation/test observations, and validate the final source manifest even on a clean review. Never execute peer-authored snippets automatically. Then use `--record` to save a separate completion receipt and rebuild the private ledger. Exit 4 means unresolved or invalid evidence, not completion. Deferred work stays open.
 

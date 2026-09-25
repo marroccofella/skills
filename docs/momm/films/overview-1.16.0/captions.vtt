@@ -102,11 +102,8 @@ It does not average opinions, and it never turns agreement into
 00:01:33.288 --> 00:01:33.600
 proof.
 
-00:01:33.600 --> 00:01:34.040
-Version 1.
-
-00:01:34.040 --> 00:01:38.482
-16 adds per-route token and cost accounting, route ratings and
+00:01:33.600 --> 00:01:38.482
+Version 1.16 adds per-route token and cost accounting, route ratings and
 
 00:01:38.482 --> 00:01:42.480
 reliability, trusted guidance layers, split work with a separate
@@ -135,14 +132,8 @@ Account logins use official OAuth flows.
 00:02:00.560 --> 00:02:01.980
 Automatic updates stay off.
 
-00:02:01.980 --> 00:02:04.400
-On Windows, a planted git.
-
-00:02:04.400 --> 00:02:05.820
-exe or taskkill.
-
-00:02:05.820 --> 00:02:08.020
-exe inside the reviewed project is not started.
+00:02:01.980 --> 00:02:08.020
+On Windows, a planted git.exe or taskkill.exe inside the reviewed project is not started.
 
 00:02:08.020 --> 00:02:12.800
 A reviewer saying “this is broken” is a proposition, not a fact.
@@ -195,14 +186,8 @@ Capability coverage is reported, not implied.
 00:02:55.640 --> 00:02:58.480
 Human acceptance and release permission remain yours.
 
-00:02:58.480 --> 00:02:59.100
-The public 1.
-
-00:02:59.100 --> 00:02:59.580
-16.
-
-00:02:59.580 --> 00:03:02.940
-0 release is tracked against its exact commit.
+00:02:58.480 --> 00:03:02.940
+The public 1.16.0 release is tracked against its exact commit.
 
 00:03:02.940 --> 00:03:07.420
 Installed MOMM targets are recorded in a local verified lock.
@@ -228,17 +213,5 @@ preflight, inspect the claims and keep the ledger.
 00:03:25.340 --> 00:03:28.000
 Use MOMM when the decision matters enough to challenge.
 
-00:03:28.000 --> 00:03:28.400
-MOMM 1.
-
-00:03:28.400 --> 00:03:28.700
-16.
-
-00:03:28.700 --> 00:03:30.820
-0 is live at marroccofella.
-
-00:03:30.820 --> 00:03:31.800
-github.
-
-00:03:31.800 --> 00:03:32.477
-io/skills/momm/.
+00:03:28.000 --> 00:03:32.477
+MOMM 1.16.0 is live at marroccofella.github.io/skills/momm/.

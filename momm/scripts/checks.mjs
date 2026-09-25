@@ -71,7 +71,7 @@ export async function recordCheck(root, { runId, itemId = 'run', phase = 'final'
   }
   return { ...ref(observationName), exit_code: observation.exit_code };
 }
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+if ((() => { try { return Boolean(process.argv[1]) && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })()) {
   const argv = process.argv.slice(2), options = {}, artifacts = [];
   try {
     for (let i = 0; i < argv.length; i++) {

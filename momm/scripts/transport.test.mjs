@@ -12,6 +12,7 @@ import { resolveGit as resolveGitForTest } from './governor.mjs';
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { createProcessScope } from "./process-scope.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
+if (!path.isAbsolute(GIT)) throw new Error('no trusted Git was found outside the checkout; this suite never launches a bare name');
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
 const start = source.indexOf("function platformCommand("), end = source.indexOf("function clipped(");
 assert(start >= 0 && end > start, "transport fixture boundaries moved; update the production extraction");

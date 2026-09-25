@@ -126,7 +126,9 @@ requires an explicit `--version`. Release hashing currently bounds each blob to
 when a reviewer CLI is behind its latest release, for example
 `momm: reviewer updates available: codex 0.154.0 -> 0.156.1`, followed by three choices: the
 official update command for each CLI, `update-clock.mjs enable` to install automatically from then
-on (off until you turn it on), or the Setup Center for guidance. It appears at most once a day, and
+on (off until you turn it on), or the Setup Center for guidance. `enable` also applies signed MOMM
+updates and model updates; the notice gives `set skill false` and `set models false` to keep it to
+reviewer CLIs. It appears at most once a day, and
 at once when a newer release appears; never in `--stream` mode or under the opt-out variables below.
 The installed version comes from each CLI's own `--version`, read at most once a day or when a new
 release is seen. antigravity has no check-only command, so it is reported as unknown with the advice

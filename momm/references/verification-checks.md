@@ -26,14 +26,17 @@ check refuses a success record. Zero is the test's result, not proof the chosen 
 Append decisions to the project's private dispositions log using the returned check references.
 Every original report and attempt remains unchanged. Completion still requires the separate
 governor validator, full source coverage, all dispositions and the required review quorum.
-For committed work use the candidate dispatcher's `--range <base>..<head>`; an empty working
+For committed work use the candidate dispatcher's `--range <base>..<head>` (a two-tip diff,
+`git diff base head`, not a merge-base diff: choose a base that head descends from); an empty working
 tree diff is not evidence for a committed release. Do not run `evidence --protect` automatically.
 Committed-range snapshots and checks share a 2,000-source-file ceiling (ordinary
 working-tree snapshots retain their 200-file limit). Run the check in the reviewed
 checkout: the before observation must match the reviewed bytes, and final
 verification binds the actual current files rather than a historical blob.
 An inherited stdin pipe must close within 30 seconds and input is bounded to 8 MB;
-otherwise the dispatcher refuses instead of ignoring possibly different input.
+otherwise the dispatcher refuses instead of ignoring possibly different input. With `--range`,
+a pipe that sends nothing at all by then is treated as no input (MOMM reviews the range's own
+diff and says so); any bytes it does send must still be the identical diff.
 
 For an explicit cumulative coverage audit, run
 `node <candidate>/momm/scripts/attempt-audit.mjs <run_id> <other_run_id>`.

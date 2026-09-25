@@ -5,7 +5,7 @@
 // log, and the governor's decisions. Nothing here calls a provider, touches the network, or changes
 // the ledger.
 //
-//   node momm/scripts/scorecard.mjs [--dir <project>] [--json | --markdown | --html <file>]
+//   node momm/scripts/scorecard.mjs [--dir <project>] [--json | --markdown | --html <file> [--force]]
 //   node momm/scripts/scorecard.mjs --export-training <file> [--format jsonl|chat] [--exclude-deferred] [--force]
 //
 // What the numbers mean. "Accepted" is the GOVERNOR'S decision on this project (applied, or applied
@@ -123,7 +123,7 @@ export function buildScorecard(project) {
   // exactly as it does for findings above; counting every row let a reconsidered suggestion be
   // counted twice and inflated a reviewer's accepted and rejected totals against the same item.
   const bySuggestion = new Map(); // run_id + item -> ruling (the latest wins)
-  for (const d of rulings) if (!d.finding_id && d.reviewer) bySuggestion.set(`${d.run_id}\n${d.reviewer}\n${d.item_id ?? d.suggestion ?? ""}`, d);
+  for (const d of rulings) if (!d.finding_id && d.reviewer) bySuggestion.set(`${d.run_id}\n${lower(d.reviewer)}\n${d.item_id ?? d.suggestion ?? ""}`, d);
   for (const d of bySuggestion.values()) { const g = group(d.disposition), p = get(d.reviewer); if (g === "accepted") p.suggestions_accepted++; else if (g === "rejected") p.suggestions_rejected++; }
 
   const ratings = {};
@@ -296,7 +296,7 @@ if (entrypoint()) {
     } else {
       const card = buildScorecard(o.dir);
       if (o.mode === "json") process.stdout.write(JSON.stringify(card, null, 2) + "\n");
-      else if (o.mode === "html") { let theme = ""; try { theme = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "setup-ui", "momm-theme.css"), "utf8"); } catch { /* the page carries its own fallbacks */ } writePrivate(o.html, renderHtml(card, theme), true); process.stdout.write(JSON.stringify({ written: o.html }) + "\n"); }
+      else if (o.mode === "html") { let theme = ""; try { theme = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "setup-ui", "momm-theme.css"), "utf8"); } catch { /* the page carries its own fallbacks */ } writePrivate(o.html, renderHtml(card, theme), o.force); process.stdout.write(JSON.stringify({ written: o.html }) + "\n"); }
       else process.stdout.write(renderMarkdown(card));
     }
   } catch (error) { process.stderr.write(JSON.stringify({ error: clean(error.message, 600) }) + "\n"); process.exitCode = 1; }

@@ -25,7 +25,7 @@ try {
   assert.match(workflow,/node-version: \[18.x, 20.x, 22.x, 24.x\]/);
   assert.match(workflow,/include:\s+- os: windows-latest\s+node-version: '24\.15\.0'/);
   assert.match(read('CONTRIBUTING.md'),/test-catalog-1\.16\.1\.md/);
-  assert.match(read('momm/references/plan-1.16.1.md'),/13 cells/);
+  assert.match(read('momm/references/plan-1.16.1.md'),/14 cells/);
   assert.match(read('momm/scripts/review-workflow.test.mjs'),/test-catalog-1\.16\.1\.md/);
   assert(fs.existsSync(path.join(repo,'momm/scripts/installations.mjs')));
   assert.notDeepEqual(fixturePng('one'),fixturePng('two'));

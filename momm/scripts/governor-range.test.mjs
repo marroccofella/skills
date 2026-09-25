@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { captureSourceSnapshot, inspectCompletion } from './governor.mjs';
 import { resolveGit as resolveGitForTest } from './governor.mjs';
@@ -114,6 +114,27 @@ try {
     for (const bad of ['HEAD', '..HEAD', 'a...b', 'a..', '--x..HEAD']) assert.notEqual(run(['--governor', 'codex', '--reviewers', 'codex', '--range', bad], '').status, 0, bad);
     assert.notEqual(run(['--governor', 'codex', '--reviewers', 'codex', '--range', `${base}..${head}`, '--input', 'docs/note.md'], '').status, 0);
   });
+  // Range review rev_20260925004814_1ed9f58c2c3a (range-stdin-hang-non-tty, range-regex-three-dots-bypass):
+  // a harness that leaves stdin open and silent made --range fail after the deadline although MOMM takes the
+  // range's own diff; and a three-dot range got a vague git error instead of the two-dots rule.
+  test('dispatcher --range names the two-dots rule for a three-dot range', () => {
+    const p = run(['--governor', 'codex', '--reviewers', 'codex', '--range', 'main...HEAD'], '');
+    assert.notEqual(p.status, 0); assert.match(p.stderr + p.stdout, /two dots/);
+  });
+  {
+    const name = 'dispatcher --range proceeds on its own diff when stdin stays open and silent';
+    try {
+      const child = spawn(process.execPath, [dispatcher, '--governor', 'codex', '--reviewers', 'codex', '--range', `${base}..${head}`], { cwd: repo, env: { ...process.env, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1', MOMM_STDIN_DEADLINE_MS: '1500' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      let out = '', err = '';
+      child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { err += d; });
+      const code = await new Promise((resolve) => { const guard = setTimeout(() => { child.kill(); resolve('hung'); }, 60000); child.on('close', (c) => { clearTimeout(guard); resolve(c); }); });
+      child.stdin.destroy();
+      assert.equal(code, 0, err.slice(-600));
+      assert.equal(JSON.parse(out).source_snapshot.kind, 'git_range');
+      assert.match(err, /stdin/i, 'the run says it used the range\'s own diff because stdin stayed silent');
+      results.push(name);
+    } catch (e) { failures.push({ name, error: String(e?.message ?? e).slice(0, 500) }); }
+  }
 } finally { fs.rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 
 console.log(JSON.stringify({ passed: failures.length === 0, checks: results.length, failures }, null, 2));

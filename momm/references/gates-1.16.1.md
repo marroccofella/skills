@@ -39,10 +39,14 @@ which drills are owed: Node 18 and Node 24 lifecycle drills remain required on W
 Linux by charter B, and the primary label does not waive the Node 18 obligation. Node 20 is an offline CI target only, with no lifecycle
 obligation.
 
-The workflow requests these cells; a configuration entry is not a pass. The results above are:
+The offline CI table at the top of this section is read from these runs; a configuration entry is not
+a pass. Since 24 September the workflow has fifteen jobs: fourteen matrix cells (Windows adds pinned
+24.15.0 and 24.19.0) and the site-and-ledger job. Only the fifteen-job rows back the 24.19.0 cell.
 
 | Candidate | Workflow run | Result |
 | --- | --- | --- |
+| `2fe1e473cb9e1763d53d06e3d02fce5a823357c2` | [36077301341](https://github.com/marroccofella/skills/actions/runs/36077301341) | 15 of 15 jobs passed |
+| `7a970f79dd3bcca1e155d8e89058832c5b63625e` | [36061569636](https://github.com/marroccofella/skills/actions/runs/36061569636) | 15 of 15 jobs passed |
 | `eea8189dc793f5fb1624374d9b46828b31f8a5a7` | [35735446353](https://github.com/marroccofella/skills/actions/runs/35735446353) | 13 of 13 jobs passed |
 | `a5a37b5c8b935ca0740aa94e79ada6ee1bc1f616` | [35664942450](https://github.com/marroccofella/skills/actions/runs/35664942450) | 13 of 13 jobs passed |
 | `be12bc569ab6ceacc41f6ce544fddf3673818c0d` | 35650200906 | **failed on all 13 jobs**; superseded, do not test |

@@ -103,7 +103,7 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
       assert.doesNotMatch(r.stderr, /stays 0/, `${label}: no line may claim exit 0 when the exit is 1`);
       assert.match(r.stderr, /not the result of this command/, `${label}: the inventory is not presented as the outcome`);
       assert.match(JSON.parse(r.stdout).exit_reason, /would be refused/, `${label}: machine readers get the reason too`);
-      assert.ok(fs.lstatSync(path.join(home, '.agents', 'skills', 'momm')).isSymbolicLink() || process.platform === 'win32', `${label}: the existing link is untouched`);
+      assert.ok(fs.lstatSync(path.join(home, '.agents', 'skills', 'momm')).isSymbolicLink(), `${label}: the existing link is untouched`); // a Windows junction reports as a link too
     }
     // Delta review of b0a2dfe (antigravity and grok, independently): an unknown target was reported as
     // "a requested link would be refused" with advice to delete an existing entry that did not exist.

@@ -135,6 +135,11 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   with `pathEntryOutside` / `executableOutside` and scrub the child PATH on every platform, as it
   already does on Windows. Expect users whose CLI is installed only inside the project they review
   to be told it is not installed; say so in that release's notes.
+- **Preview film captions (before accepting `overview-1.16.0`).** The sidecar `captions.vtt` split
+  "1.16", "git.exe" and the site address at their dots (range review rev_20260925004814_1ed9f58c2c3a);
+  it is fixed and guarded in `momm-site-videos.test.mjs`, but the same captions are burned into
+  `walkthrough.mp4`, which must be re-rendered by the owner's media pipeline before the film is
+  accepted. The film is already held for the human listening verdict.
 - **Preflight version checks time out during every review.** Found 25 September 2026: in each recent
   report every route's in-review preflight reads `version_status: "timeout"` (so `ready: false`,
   `auth: unknown`) although the same routes then review normally, and a standalone `--preflight`

@@ -640,7 +640,8 @@ export function pendingUpdateNotice(rows, { scripts = HERE, autoEnabled = false 
   if (commands.length) lines.push(`  Install now: ${commands.join("; ")}`);
   lines.push(autoEnabled
     ? "  Automatic installs are on; they run after the next review finishes."
-    : `  Or install automatically from now on: node ${q(path.join(scripts, "update-clock.mjs"))} enable  (off until you turn it on)`);
+    : `  Or install automatically from now on: node ${q(path.join(scripts, "update-clock.mjs"))} enable  (off until you turn it on)\n`
+      + `  enable also applies signed MOMM updates and model updates; to keep it to reviewer CLIs, first run node ${q(path.join(scripts, "update-clock.mjs"))} set skill false and node ${q(path.join(scripts, "update-clock.mjs"))} set models false`);
   lines.push(`  Or open the Setup Center for guidance: node ${q(path.join(scripts, "setup-ui.mjs"))}`);
   if ((rows || []).some((r) => r && r.name === "cli:antigravity" && r.update_available == null)) lines.push("  antigravity cannot be checked automatically: run agy update to check it.");
   return lines.join("\n") + "\n";

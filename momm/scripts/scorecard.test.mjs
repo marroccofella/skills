@@ -155,6 +155,34 @@ try {
         assert.equal(fs.readFileSync(target, 'utf8'), 'keep me\n', 'the file behind the link is untouched');
       }
     });
+    // Range review rev_20260925004814_1ed9f58c2c3a (html-overwrites-without-consent): --html replaced an
+    // existing file without --force, unlike --export-training.
+    test('command line: --html never overwrites an existing file without --force', () => {
+      const out = path.join(root, 'out', 'card.html');
+      assert.equal(cli(['--html', out]).status, 0, 'first write');
+      fs.writeFileSync(out, 'keep me\n', { mode: 0o600 });
+      const again = cli(['--html', out]);
+      assert.notEqual(again.status, 0, 'an existing file is never overwritten silently');
+      assert.match(again.stderr, /exists/i);
+      assert.equal(fs.readFileSync(out, 'utf8'), 'keep me\n');
+      assert.equal(cli(['--html', out, '--force']).status, 0, '--force consents to replacement');
+      assert.match(fs.readFileSync(out, 'utf8'), /<table/);
+    });
+    // Range review rev_20260925004814_1ed9f58c2c3a (suggestion-reviewer-case-sensitivity): the suggestion key
+    // kept the reviewer's case, so 'Codex' and 'codex' rulings on one item were both counted.
+    test('a suggestion ruled twice under differently cased reviewer names counts once, the latest ruling', () => {
+      const dir = fs.mkdtempSync(path.join(root, 'case-')), e = path.join(dir, '.ensemble_reviews');
+      fs.mkdirSync(path.join(e, 'reports'), { recursive: true });
+      const report = { run_id: 'rev_case', dispatcher_version: '1.16.1', governor: 'claude', input_sha256: 'b'.repeat(64), input_bytes: 10, quorum: { required: 1, met: true }, reviewers: [reviewer('codex', 'success', { suggested_improvements: ['one idea'] })], findings: [] };
+      fs.writeFileSync(path.join(e, 'reports', 'rev_case.json'), JSON.stringify(report));
+      fs.writeFileSync(path.join(e, 'review-log.jsonl'), JSON.stringify({ timestamp: '2026-09-20T10:00:00.000Z', run_id: 'rev_case', governor: 'claude', reviewer_status: { codex: 'success' }, report_path: '.ensemble_reviews/reports/rev_case.json' }) + '\n');
+      fs.writeFileSync(path.join(e, 'dispositions.jsonl'), [
+        { timestamp: '2026-09-20T11:00:00.000Z', run_id: 'rev_case', governor: 'claude', reviewer: 'Codex', finding_id: null, item_id: 'item-1', suggestion: 'one idea', disposition: 'rejected', reason: 'first' },
+        { timestamp: '2026-09-20T12:00:00.000Z', run_id: 'rev_case', governor: 'claude', reviewer: 'codex', finding_id: null, item_id: 'item-1', suggestion: 'one idea', disposition: 'applied', reason: 'second' },
+      ].map(r => JSON.stringify(r)).join('\n') + '\n');
+      const row = mod.buildScorecard(dir).reviewers.find(r => r.reviewer === 'codex');
+      assert.equal(row.suggestions_accepted, 1); assert.equal(row.suggestions_rejected, 0);
+    });
     test('command line: no evidence folder is a clear message, not a crash', () => {
       const empty = fs.mkdtempSync(path.join(root, 'empty-'));
       const p = spawnSync(process.execPath, [modulePath, '--dir', empty, '--json'], { encoding: 'utf8', windowsHide: true });

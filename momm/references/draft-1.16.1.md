@@ -9,7 +9,8 @@ is the only writer. Account logins remain required. Automatic updates remain off
 
 Media identification checks bounded container structure, not decoded perceptual correctness,
 malware safety or every possible encoding. Unsupported/unbounded containers fail closed.
-Expired probes require a deliberate re-probe; success on one modality does not prove another.
+Successful probes expire after seven days; an expired cell stays blocked until a deliberate
+re-probe. Success on one modality does not prove another.
 Unknown usage/cost is not zero. Matching evidence hashes do not prove the adequacy of a test.
 
 The existing installation inventory, dirty-clone guidance, effectiveness scorecard and optional
@@ -27,11 +28,13 @@ Reviewer routes: MOMM now tells you when a reviewer CLI is behind its latest rel
 and at the end of a review, with its update command, an off-by-default automatic option and the Setup
 Center for guidance. Grok runs isolated from your Claude Code and Cursor setup (no imported
 instructions, skills, MCP servers or memory; every tool denied) and uses its faster serving when your
-account has it, so reviews finish instead of timing out. A Codex "model is not supported" failure now
+account has it: 194 to 308 s in three measured runs, inside its 360 s budget. A Codex "model is not supported" failure now
 says to update the Codex CLI rather than change the model it shares with the Codex desktop app, and
 Codex no longer reads the reviewed project's `AGENTS.md` or runs your hooks, plugins, apps or
 multi-agent tools during a review; its model, effort and MCP servers stay as you set them. A failed
-route never stores what MOMM sent it.
+route never stores what MOMM sent it. A reviewer's quotation of the reviewed text now counts when it
+differs only by typographic look-alikes (curly or straight quotes, dash variants, non-breaking
+spaces) or whitespace, which models often retype; any other changed character is still refused.
 
 A reviewed project can no longer choose the executable MOMM runs on Windows, or the Git that
 verifies a committed range on any platform. **Known limitation:** on macOS and Linux, reviewer CLIs

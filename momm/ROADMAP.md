@@ -1,6 +1,6 @@
 # MOMM Roadmap — alignment record
 
-**Current release:** `versions.json` (`momm`) and the newest `references/release-*.md` are the
+**Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
 only sources. Today they say **1.16.0**, signed tag `momm-1.16.0`, 19 September 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
@@ -46,7 +46,7 @@ exports create a private destination or refuse an existing non-private one,
 including Windows DACL and forced companion-file checks. No existing permissions
 are repaired. A dedicated current acceptance guide replaces historical test plans
 for this candidate, with invalid-output retry and explicit ledger-ticket tests.
-Native synthetic regressions are in `momm/scripts/scope-closure.test.mjs` (repository root). These fixes
+Native synthetic regressions are in [scripts/scope-closure.test.mjs](scripts/scope-closure.test.mjs). These fixes
 do not close the separate signed lifecycle, whole-source or live-image gates.
 
 21 September implementation checkpoint (not a release): the 1.16.1 candidate adds byte-based
@@ -69,7 +69,8 @@ The next full-draft review completed with quorum on seven of nine pieces, not a
 passing release gate. Reproduction tests exposed an inconsistent split-quorum
 summary, unbounded waiting on an idle input pipe, a 200-vs-2000-file check limit,
 and scorecard/export edge cases. The follow-up keeps all quorum summaries tied
-to the actual gate, bounds stdin, aligns range-check limits, exports only the
+to the actual gate, bounds stdin, aligns range-check limits (committed-range checks accept up to
+2,000 source files, `MAX_RANGE_SOURCE_FILES`; working-tree snapshots keep 200), exports only the
 latest identifiable ruling, withholds scores when severity calibration is unknown,
 and refuses existing companion files or broad POSIX outputs before writing.
 Unreadable tracked source now fails the hygiene check. These are candidate fixes;
@@ -291,7 +292,7 @@ dispositions belong beside the review log the dispatcher wrote.
 3. Every reviewer-facing prompt change ships with a negative control run
    (trivially-correct input must still yield zero findings).
 4. Update this file in the same commit as the feature it describes.
-5. "Current" is decided by `versions.json` and the newest `release-*.md`. A sentence written
+5. "Current" is decided by `versions.json` and its `release-<version>.md`. A sentence written
    before a signed tag goes under HISTORICAL when the tag exists; it is never left live.
 
 ## HISTORICAL: written before the signed tags (pre-1.16.0 and pre-1.15.1)
