@@ -292,7 +292,8 @@ export function readOverlay(home = os.homedir(), { installedVersions, loginIdent
     if (!Number.isFinite(recordedMs)) { invalidated.push({ entry, reason: 'invalid_timestamp' }); continue; }
     const expiry = entry.expires_at ?? (!entry.blocker ? new Date(recordedMs + SUCCESS_EXPIRY_MS).toISOString() : null);
     if (expiry && (!Number.isFinite(Date.parse(expiry)) || Date.parse(expiry) <= nowMs)) { stale.push({ entry: { ...entry, expires_at: expiry }, reason: "expired" }); continue; }
-    entries.push(entry);
+    // A 1.16.0 success has no stored expiry; show the one computed above rather than none.
+    entries.push(expiry && entry.expires_at == null ? { ...entry, expires_at: expiry } : entry);
   }
   return { path: file, machine_id: machine, entries, invalidated, stale };
 }

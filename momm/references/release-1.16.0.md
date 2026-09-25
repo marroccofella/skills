@@ -1,7 +1,8 @@
 # MOMM 1.16.0 — measurement, ratings, guidance, throughput, upkeep
 
 Status: **released 19 September 2026** as the signed tag `momm-1.16.0` (commit `cbd5570`, release
-workflow run 35462410210: signature, Rekor entry and certificate claims validated; genuine signed
+workflow run 35462410210, CI matrix run 35462025593 on that commit: signature, Rekor entry and
+certificate claims validated; genuine signed
 preview and apply passed). Built from 1.15.1 starting 2026-09-13. The consolidated
 candidate and its gate record are on [PR #7](https://github.com/marroccofella/skills/pull/7);
 the independent-audit conversation is on [PR #4](https://github.com/marroccofella/skills/pull/4)

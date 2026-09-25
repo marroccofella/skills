@@ -253,7 +253,8 @@ Each is a fix to something 1.16.x already claimed, not a new surface:
 - **Quotation rule (owner decision, 25 September 2026).** In the 1.16.1 range review most failed
   pieces were answers refused because a model retyped a curly quote, a dash or a non-breaking space
   when quoting documentation. Typographic look-alikes and runs of whitespace now compare equal; every
-  other character, including diff markers, must still match. This reverses the 1.15 rule that a
+  other character must still match; a `+` marker is kept, while a context line's leading space counts
+  as whitespace and a dash look-alike as `-`. This reverses the 1.15 rule that a
   reindented quote is refused.
 - **Failure details keep nothing MOMM sent**, in any echo form, including the two short-line prefix
   cases deferred from the delta review of 7a970f7.

@@ -25,7 +25,7 @@ Do not mistake GitHub's bad_cert/Unverified badge for a gitsign verification res
 If gitsign is missing, no signature check ran. That is normal on a first install:
 explain in one or two plain sentences what gitsign is and that it is a one-time step,
 ask once, then install it exactly as the guide's "Getting the verifier" section says for
-my system (Windows included), from the official sigstore/gitsign release only. If a real signature, identity, transparency or
+my system (Windows included), from the official sigstore/gitsign project only, by the route the bootstrap guide lists for my system. If a real signature, identity, transparency or
 hash check fails, stop. A verified commit badge does not replace these checks.
 Older releases lack bootstrap.mjs: obtain and independently inspect/trust the
 small standalone helper before executing it, or use an organization-reviewed

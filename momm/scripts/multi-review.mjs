@@ -1701,7 +1701,7 @@ async function invokeReviewer(agent, artifact, options) {
     // was asked with, so calls sharing them wait for one listing instead of racing past it to the plain
     // model (delta review rev_20260924234524_89d8189794c3); each piece's own options copy asks once.
     options.grokModelProbe ??= (options.runProcess ?? runProcess)(command, ["models"], { input: "", timeoutMs: 20_000, env: { ...cleanOauthEnv(), GROK_DISABLE_AUTOUPDATER: "1" }, cwd: temporaryDirectory })
-      .then((listed) => (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast\b/m.test(String(listed.stdout ?? "")) ? "grok-4.7-build-fast" : null), () => null);
+      .then((listed) => (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast(?=\s|$)/m.test(String(listed.stdout ?? "")) ? "grok-4.7-build-fast" : null), () => null);
     const grokModel = await options.grokModelProbe;
     args = [
       "--prompt-file", promptPath,

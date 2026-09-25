@@ -44,3 +44,12 @@ for (const folder of fs.readdirSync(path.join(root, 'docs/momm/films'), { withFi
     assert(!(/\S\.$/.test(a) && /^[0-9a-z]/.test(b)), `${folder.name}/captions.vtt splits a word or number between cues: "${a.slice(-30)}" | "${b.slice(0, 30)}"`);
   }
 }
+// Range review rev_20260925131115_6ed35d0bdf89 (grok suggestions 11, 69, 62; antigravity 36): runtimes said
+// "0 minutes 51 seconds", and the skip link landed before the breadcrumb instead of on the video.
+{
+  const { runtimeLabel } = await import('./momm-site-videos.mjs');
+  assert.equal(runtimeLabel(51), '51 seconds');
+  assert.equal(runtimeLabel(61), '1 minute 1 second');
+  assert.equal(runtimeLabel(212.4), '3 minutes 32 seconds');
+  for (const page of ['overview', 'setup', 'trailer']) assert(fs.readFileSync(path.join(root, 'docs/momm/watch', page + '.html'), 'utf8').includes('<a class="skip" href="#watch-video">Skip to video</a>'), page + ': skip link lands on the video');
+}

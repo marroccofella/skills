@@ -29,8 +29,8 @@ Read these files **at the pinned commit**, not from main:
 - Full automated checks, matrix and inline fixtures:
   `.github/workflows/self-test.yml`
 - Protocol: `momm/SKILL.md`, `momm/references/governor-completion.md`.
-- Safety for lifecycle work: `momm/references/bootstrap.md`, `updating.md`,
-  `harness-compatibility.md`. Inspect test code before executing it.
+- Safety for lifecycle work: `momm/references/bootstrap.md`, `momm/references/updating.md`,
+  `momm/references/harness-compatibility.md`. Inspect test code before executing it.
 - `CONTRIBUTING.md`, `momm/ROADMAP.md`, `momm/references/ideas-register.md`.
 
 Use a new disposable directory. If the name below exists, use another new name;
@@ -88,6 +88,8 @@ class passes whether or not it is fixed. That is how it went unseen on the maint
 
 ```text
 Remove-Item Env:NoDefaultCurrentDirectoryInExePath -ErrorAction SilentlyContinue   # PowerShell
+set NoDefaultCurrentDirectoryInExePath=                                           # cmd.exe
+unset NoDefaultCurrentDirectoryInExePath                                           # Git Bash
 ```
 
 Then confirm the named security regression actually exercised the hazard: on Windows,
@@ -389,7 +391,7 @@ Nothing in this assignment authorizes a merge, release or installed-skill update
 
 ## 8. Scope-audit closure checks
 
-Run `node momm/scripts/scope-closure.test.mjs`. It tests success then failure then
+Run `node <pinned-clone>/momm/scripts/scope-closure.test.mjs`. It tests success then failure then
 recovery in the update clock; existing broad export refusal; a private new output;
 explicit overwrite; and a broadly accessible companion-file refusal. All data is
 synthetic and native permission modifications are confined to disposable fixtures.

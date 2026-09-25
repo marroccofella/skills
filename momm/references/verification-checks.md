@@ -36,7 +36,7 @@ verification binds the actual current files rather than a historical blob.
 An inherited stdin pipe must close within 30 seconds and input is bounded to 8 MB;
 otherwise the dispatcher refuses instead of ignoring possibly different input. With `--range`,
 a pipe that sends nothing at all by then is treated as no input (MOMM reviews the range's own
-diff and says so); any bytes it does send must still be the identical diff.
+diff and says so); any non-blank input it sends must still be the identical diff.
 
 For an explicit cumulative coverage audit, run
 `node <candidate>/momm/scripts/attempt-audit.mjs <run_id> <other_run_id>`.

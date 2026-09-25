@@ -122,6 +122,10 @@ try {
     test('home folders are not exported', () => {
       const homey = mod.scrub(`see ${os.homedir()}${path.sep}secret${path.sep}file.txt for details`);
       assert(!homey.includes(os.homedir())); assert(homey.includes('~'));
+      // Range review rev_20260925131115_6ed35d0bdf89 (home-scrub-substring): Windows paths are case-insensitive,
+      // so a lower-cased home path must be scrubbed too; and a longer sibling name is not the home folder.
+      if (process.platform === 'win32') assert(!mod.scrub(`see ${os.homedir().toLowerCase()}\\x`).toLowerCase().includes(path.basename(os.homedir()).toLowerCase()), 'a lower-cased home path keeps no user name');
+      assert.equal(mod.scrub(`${os.homedir()}ow${path.sep}x`), `${os.homedir()}ow${path.sep}x`, 'a sibling folder that only starts with the home path is left alone');
     });
     const cli = (args) => spawnSync(process.execPath, [modulePath, '--dir', root, ...args], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
     test('command line: --json, --markdown, and an export that is written only where told, owner-only', () => {

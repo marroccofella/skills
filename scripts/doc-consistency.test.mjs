@@ -125,4 +125,10 @@ assert(read('momm/references/updating.md').includes('independent setting, also o
 // Range review rev_20260925004814_1ed9f58c2c3a (grok suggestion 52): ROADMAP rule 5 says versions.json decides
 // "current"; its opening line must say the same version.
 assert(read('momm/ROADMAP.md').includes('Today they say **' + JSON.parse(read('versions.json')).momm + '**'), 'ROADMAP must state the versions.json version');
+// Range review rev_20260925131115_6ed35d0bdf89 (grok suggestion 44): every consent step of the install prompt stays
+// in the source and in both rendered pages, not only the standing-instructions one.
+for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/references/upgrade-prompt.md')], ['docs/momm/install.html', read('docs/momm/install.html')], ['docs/momm/releases/upgrade.html', read('docs/momm/releases/upgrade.html')]]) {
+  const flat = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  for (const phrase of ['Stop if verification is unavailable', 'ask before installing a missing verifier', 'Ask me before applying']) assert(flat.includes(phrase), file + ' must keep: ' + phrase);
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

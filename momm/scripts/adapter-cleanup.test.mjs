@@ -220,6 +220,10 @@ try{
       ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n  - grok-4.6\n', 'grok-4.7-build-fast'],
       ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.6\n', null],
       ['', null],
+      // Range review rev_20260925131115_6ed35d0bdf89 (codex suggestion 9): a longer name that merely starts
+      // with the fast model's name is a different model and must not be selected.
+      ['Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast-preview\n', null],
+      ['Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast (faster serving)\n', 'grok-4.7-build-fast'],
     ]) {
       const c = context();
       let review = null;

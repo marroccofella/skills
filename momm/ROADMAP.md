@@ -97,7 +97,7 @@ receive media is a 1.17 design review, not a patch.
   install, upgrade and rollback were proven by the release workflow's isolated drill, not on real
   machines; a first install stops to ask for the `gitsign` verifier.
 - **1.15.1** and **1.15.0**, 13 September 2026: explicit signed updates, receipts, the version
-  archive. Records: `references/release-1.15.1.md`, `references/release-1.15.0.md`.
+  archive. Records: [references/release-1.15.1.md](references/release-1.15.1.md), [references/release-1.15.0.md](references/release-1.15.0.md).
 - Earlier versions: "Shipped" below and the [version history](https://marroccofella.github.io/skills/momm/releases/).
 
 ## Planned — later work

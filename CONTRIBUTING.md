@@ -6,7 +6,7 @@ Skills in this collection follow a shared architecture. PRs are welcome if they 
 2. **OAuth-only, fail-closed.** No API-key adapters, fallbacks, or "just for convenience" key paths. Subprocesses run with key-scrubbed environments; unauthenticated backends return a structured status, never a workaround.
 3. **The driving agent is the sole writer.** Subordinate model calls are read-only diagnostic tools whose output is untrusted data. No skill may instruct a harness to execute reviewer-authored actions unexamined.
 4. **Deterministic core scripts, no npm dependencies.** Node 18+ standard library only. Git is required for repository workflows; explicit signed updates additionally need gitsign. Reviewer subprocesses must preserve timeout + process-tree-kill + hard-deadline containment (see `momm/scripts/multi-review.mjs` `runProcess`). Do not silently install prerequisites.
-5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI requests Linux/macOS/Windows × Node 18/20/22/24 plus Windows 24.15.0. Node 22/24 are primary targets; 18/20 are legacy compatibility checks. Configured jobs are not lifecycle proof.
+5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI requests Linux/macOS/Windows × Node 18/20/22/24 plus Windows 24.15.0 and 24.19.0. Node 22/24 are primary targets; 18/20 are legacy compatibility checks. Configured jobs are not lifecycle proof.
 
 Run the checks locally before opening a PR:
 

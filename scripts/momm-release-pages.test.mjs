@@ -18,6 +18,7 @@ assert(inline('[older](release-1.10.1.md)').includes('href="1.10.1.html"'));
 assert.equal(inline('[x](#getting-the-verifier)'),'<a href="#getting-the-verifier">x</a>');
 assert.equal(inline('**a `b`**'),'<strong>a <code>b</code></strong>');
 assert(!fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'..','docs','momm','releases','bootstrap.html'),'utf8').includes('references/#'),'bootstrap.html links its own sections in-page');
+assert(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'..','docs','momm','releases','bootstrap.html'),'utf8').includes('href="#getting-the-verifier-gitsign-once"'),'the verifier link is present and in-page');
 assert(pages['docs/momm/releases/upgrade.html'].includes('data-copy="upgrade-prompt"'));
 const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'momm-release-catalogue-'));
 try{fs.mkdirSync(path.join(fixture,'momm/references'),{recursive:true});const file=path.join(fixture,'momm/references/release-history.json');

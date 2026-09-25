@@ -28,7 +28,13 @@ const CAVEAT = "Labels are this project's governor decisions, not ground truth. 
 const CONTROL = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(8) + String.fromCharCode(11) + String.fromCharCode(12) + String.fromCharCode(14) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "-" + String.fromCharCode(159) + "]", "g");
 const clean = (value, max = 4000) => String(value ?? "").replace(CONTROL, " ").slice(0, max);
 const HOME_VARIANTS = () => { const h = os.homedir(); if (!h || path.parse(h).root === h || /^[A-Za-z]:[\\/]*$/.test(h) || /^[\\/]+$/.test(h)) return []; return [...new Set([h, h.split(path.sep).join("/"), h.split(path.sep).join("\\\\")])].filter(Boolean); };
-export function scrub(value, max = 4000) { let s = clean(value, max * 2); for (const h of HOME_VARIANTS()) s = s.split(h).join("~"); return s.slice(0, max); }
+// Windows paths are case-insensitive, and a sibling such as <home>ow is not the home folder
+// (range review rev_20260925131115_6ed35d0bdf89, home-scrub-substring).
+export function scrub(value, max = 4000) {
+  let s = clean(value, max * 2);
+  for (const h of HOME_VARIANTS()) s = s.replace(new RegExp(h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_.-])", process.platform === "win32" ? "gi" : "g"), "~");
+  return s.slice(0, max);
+}
 const lower = (s) => String(s ?? "").toLowerCase();
 const ACCEPTED = new Set(["applied", "applied-with-modification"]);
 const group = (d) => (ACCEPTED.has(d) ? "accepted" : d === "rejected" ? "rejected" : d === "deferred" ? "deferred" : "other");

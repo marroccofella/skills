@@ -152,6 +152,23 @@ await test("overlay entry is written privately and atomically, bound to machine,
   assert.equal(upgrade.expires_at, new Date(now.getTime() + cap.SUCCESS_EXPIRY_MS).toISOString());
 });
 
+// Range review rev_20260925131115_6ed35d0bdf89 (antigravity suggestion 79, grok suggestion 111): 1.16.0 wrote
+// successes with expires_at null. Their seven-day expiry was computed but not shown, so the stamp and the
+// Setup Center displayed no expiry for a success that would in fact expire.
+await test("a legacy success written without an expiry is shown with its computed seven-day expiry", () => {
+  const home = fs.mkdtempSync(path.join(tmp, "home-"));
+  const now = new Date("2026-09-13T12:00:00.000Z");
+  const { path: file } = cap.writeOverlayEntry(home, { route: "codex", direction: "input", modality: "image", level: "verified", cli_version: "0.156.1" }, { now, machine: "m1" });
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  const list = Array.isArray(doc) ? doc : doc.entries;
+  assert.ok(Array.isArray(list) && list.length === 1, "overlay file holds one entry");
+  list[0].expires_at = null; // the 1.16.0 shape
+  fs.writeFileSync(file, JSON.stringify(doc));
+  const read = cap.readOverlay(home, { installedVersions: { codex: "0.156.1" }, machine: "m1", now });
+  assert.equal(read.entries.length, 1);
+  assert.equal(read.entries[0].expires_at, new Date(now.getTime() + cap.SUCCESS_EXPIRY_MS).toISOString());
+});
+
 await test("overlay entries are invalidated by CLI upgrade, unknown version, login change or another machine", () => {
   const home = fs.mkdtempSync(path.join(tmp, "home-"));
   const now = new Date("2026-09-13T12:00:00.000Z");

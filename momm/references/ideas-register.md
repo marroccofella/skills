@@ -140,11 +140,20 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   it is fixed and guarded in `momm-site-videos.test.mjs`, but the same captions are burned into
   `walkthrough.mp4`, which must be re-rendered by the owner's media pipeline before the film is
   accepted. The film is already held for the human listening verdict.
+- **Make the full-range review able to finish (1.17).** Two 1.16.1 range reviews could not reach
+  quorum on every piece: Codex quotations still failed the quotation rule after look-alikes were
+  allowed (19 times; failed answers are not stored, so a deliberate diagnostic run is needed to see
+  what it quotes), Grok ran past 360 s on dense 24 KB pieces (17 times), and dividing a long
+  one-line hunk at line boundaries showed reviewers only its removal half, so they reported pages as
+  deleted. Owner waiver for 1.16.1 in the gate record.
+- **Film poster wording (media pipeline).** `docs/momm/momm-poster.jpg`, already public, shows the
+  phonetic spelling "mom skill" and a "local preview" label from the film. Re-render it with the
+  film.
 - **Preflight version checks time out during every review.** Found 25 September 2026: in each recent
   report every route's in-review preflight reads `version_status: "timeout"` (so `ready: false`,
   `auth: unknown`) although the same routes then review normally, and a standalone `--preflight`
   answers for all of them in about a second. The results arrived 35 s after dispatch and route
-  launches were seconds apart, so something blocks the event loop while reviewers launch; each
+  launches were seconds apart, which suggests something blocks the event loop while reviewers launch; each
   `--version` spawn alone takes 10 to 18 ms. Next step: profile one ordinary review with
   `node --cpu-prof` (no extra provider calls) and move the blocking work off the loop, or run
   preflight before dispatch. The report's preflight rows are informational and gate nothing.
