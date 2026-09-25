@@ -241,6 +241,11 @@ Each is a fix to something 1.16.x already claimed, not a new surface:
   budget of about 270 s, so every MOMM Grok review timed out. MOMM uses `grok-4.7-build-fast` (the same
   model on faster serving) when the account lists it, at medium effort, with 2x headroom (360 s);
   the measurements are in the gate record.
+- **Codex instructions and features.** Codex's private directory sits inside the reviewed project, and
+  Codex reads `AGENTS.md` from the git root down, so the project's own instructions reached the reviewer,
+  with the user's hooks, plugins, apps and multi-agent tools on. MOMM's Codex runs now load no project
+  instructions (`-c project_doc_max_bytes=0`) and switch those features off. The owner chose to keep the
+  shared model, effort and MCP servers until 1.17 rather than ignore the user's config entirely.
 - **Codex advice.** "Model is not supported when using Codex with a ChatGPT account" was the Codex CLI
   being older than the model the Codex desktop app had selected in their shared config. The failure
   now says to update the CLI, and not to change the shared model or switch to an API key.

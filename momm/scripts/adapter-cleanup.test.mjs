@@ -275,6 +275,28 @@ try{
       assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'medium');
     }
   });
+  // Codex's private directory sits in the reviewed project's .ensemble_reviews, and Codex reads AGENTS.md
+  // from the git root down, so the project's own instructions reached the reviewer; the user's hooks,
+  // plugins, apps and multi-agent tools were on too (25 September 2026). Owner decision: no project
+  // instructions and those features off; the model, effort and MCP servers shared with the Codex
+  // desktop app stay as the user set them until 1.17.
+  await test('codex reads no project AGENTS.md and runs with hooks, plugins, apps, multi-agent and image generation off', async () => {
+    const c = context();
+    let seen = null;
+    await c.ctx.invoke('codex', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+      runProcess: async (_command, args, options) => { seen = { args, cwd: options.cwd, existed: fs.existsSync(options.cwd ?? '') }; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+    const disabled = seen.args.flatMap((a, k, all) => (all[k - 1] === '--disable' ? [a] : []));
+    for (const feature of ['hooks', 'plugins', 'apps', 'multi_agent', 'image_generation'])
+      assert.ok(disabled.includes(feature), `codex must run with --disable ${feature}`);
+    assert.ok(seen.cwd && path.resolve(seen.cwd) !== path.resolve(process.cwd()), 'codex must not run in the reviewed project');
+    assert.ok(path.resolve(seen.cwd).startsWith(path.resolve(c.temporary) + path.sep), 'codex runs in a private temporary directory');
+    assert.ok(seen.existed, 'the directory exists while codex runs');
+    assert.ok(!fs.existsSync(seen.cwd), 'and is removed afterwards');
+    const overrides = seen.args.flatMap((a, k, all) => (all[k - 1] === '-c' ? [a] : []));
+    assert.ok(overrides.includes('project_doc_max_bytes=0'), "the reviewed project's AGENTS.md is not loaded as instructions");
+    assert.equal(seen.args.at(-1), '-', 'the prompt still arrives on stdin');
+    assert.ok(!seen.args.includes('--ignore-user-config'), 'the shared model and effort stay as the user set them');
+  });
 }finally{
   const resolved=path.resolve(root),temporary=path.resolve(os.tmpdir());
   assert(resolved.startsWith(temporary+path.sep)&&path.basename(resolved).startsWith('momm-adapter-cleanup-test-'));

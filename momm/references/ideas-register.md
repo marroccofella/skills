@@ -143,9 +143,9 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   `--version` spawn alone takes 10 to 18 ms. Next step: profile one ordinary review with
   `node --cpu-prof` (no extra provider calls) and move the blocking work off the loop, or run
   preflight before dispatch. The report's preflight rows are informational and gate nothing.
-- **Isolate the Codex route.** Codex runs in the reviewed project's directory with the user's whole
-  `~/.codex` setup: six MCP servers, hooks, plugins, apps, global instructions and skills, and the
-  project's own `AGENTS.md` as instructions. `-c mcp_servers={}` merges rather than clears; `codex exec
-  --ignore-user-config --ignore-rules` in a temporary directory is the documented route, but it also
-  drops the model and effort shared with the Codex desktop app. Owner decision pending (25 September
-  2026); needs one synthetic probe to confirm login and valid output without the user config.
+- **Finish isolating the Codex route (1.17).** 1.16.1 stops project `AGENTS.md` and switches off hooks,
+  plugins, apps, multi-agent and image generation for MOMM's Codex runs (owner decision, 25 September
+  2026). Still inherited: the user's MCP servers (six on the owner's machine), global instructions and
+  skills, and the model and effort shared with the Codex desktop app. `-c mcp_servers={}` merges rather
+  than clears; `codex exec --ignore-user-config --ignore-rules` is the documented route, but MOMM must
+  then name the model and effort itself, and a synthetic probe must confirm login and valid output.

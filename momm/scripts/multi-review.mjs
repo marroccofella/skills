@@ -1576,7 +1576,14 @@ async function invokeReviewer(agent, artifact, options) {
     // codex exec has a native image flag; each staged image is attached
     // individually (verified: -i, --image <FILE>... on codex exec --help).
     const imageArgs = attachments.filter((a) => a.modality === "image").flatMap((a) => ["-i", a.staged_path]);
-    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...imageArgs, "-"];
+    // Codex reads AGENTS.md from the git root down to its working directory, and its private directory
+    // sits in the reviewed project's .ensemble_reviews, so the project's own instructions reached the
+    // reviewer; the user's hooks, plugins, apps and multi-agent tools were on as well (25 September
+    // 2026). project_doc_max_bytes=0 loads no project instructions, and each feature is switched off
+    // for this run only (verified with codex features list on CLI 0.156.1). The model, effort and MCP
+    // servers shared with the Codex desktop app are left as the user set them (owner decision; 1.17).
+    const codexIsolation = ["-c", "project_doc_max_bytes=0", ...["hooks", "plugins", "apps", "multi_agent", "image_generation"].flatMap((feature) => ["--disable", feature])];
+    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...codexIsolation, ...imageArgs, "-"];
     input = assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact);
   } else if (agent === "claude") {
     // Verified against Claude Code CLI 2.1.233: -p reads stdin, --output-format

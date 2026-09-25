@@ -28,7 +28,9 @@ and at the end of a review, with its update command, an off-by-default automatic
 Center for guidance. Grok runs isolated from your Claude Code and Cursor setup (no imported
 instructions, skills, MCP servers or memory; every tool denied) and uses its faster serving when your
 account has it, so reviews finish instead of timing out. A Codex "model is not supported" failure now
-says to update the Codex CLI rather than change the model it shares with the Codex desktop app. A failed
+says to update the Codex CLI rather than change the model it shares with the Codex desktop app, and
+Codex no longer reads the reviewed project's `AGENTS.md` or runs your hooks, plugins, apps or
+multi-agent tools during a review; its model, effort and MCP servers stay as you set them. A failed
 route never stores what MOMM sent it.
 
 A reviewed project can no longer choose the executable MOMM runs on Windows, or the Git that

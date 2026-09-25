@@ -111,6 +111,18 @@ report's `requested_effort` records what the user asked for; with the fast model
 the effective Grok effort is medium. Timings vary between runs by about 1.6x; the budget has 52 s
 over the slowest run in the shipped setup.
 
+## Codex route isolation (25 September 2026)
+
+MOMM's Codex runs pass `-c project_doc_max_bytes=0` and `--disable` for hooks, plugins, apps,
+multi_agent and image_generation (all five read false in `codex features list` with those switches,
+CLI 0.156.1). One synthetic probe, approved by the owner: a throwaway repository whose `AGENTS.md`
+required every review summary to start with a canary token, and a three-line diff that turned an
+addition into a subtraction. Codex reviewed it in 14.6 s on the first attempt, returned a valid
+REJECT naming the reversed operator, and the canary appeared nowhere in its output. The canary's
+absence is consistent with the fix but does not prove Codex would have obeyed it before; the argument
+is asserted in `adapter-cleanup.test.mjs`. Still inherited until 1.17: MCP servers, global
+instructions and skills, and the model and effort shared with the Codex desktop app.
+
 ## Accepted risk (owner decision, 24 September 2026)
 
 On macOS and Linux, MOMM starts reviewer CLIs (`codex`, `claude`, `grok` and the others) by name,
