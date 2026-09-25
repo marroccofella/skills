@@ -18,11 +18,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x, 22.x]
-        # Reproduce the independently reported Windows fetch/forced-exit runtime.
+        # 22/24 are primary; 18/20 are retained compatibility checks, not lifecycle proof.
+        node-version: [18.x, 20.x, 22.x, 24.x]
+        # Pinned patch releases, because 24.x resolves to whatever the runner has that day.
+        # 24.15.0: the independently reported Windows fetch/forced-exit runtime.
+        # 24.19.0: a reviewer reported an attachment-cleanup timeout there, and the matrix had
+        # gone straight from 24.x = 24.20.0 past it, so nothing had ever run 24.19.
         include:
           - os: windows-latest
             node-version: '24.15.0'
+          - os: windows-latest
+            node-version: '24.19.0'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -33,6 +39,45 @@ jobs:
       - name: Safety self-test
         timeout-minutes: 2
         run: node momm/scripts/multi-review.mjs --self-test --pretty
+      - name: Media byte validation
+        timeout-minutes: 2
+        run: node momm/scripts/media-bytes.test.mjs
+      - name: Scope audit closure and native export permissions
+        timeout-minutes: 3
+        run: node momm/scripts/scope-closure.test.mjs
+      - name: Installation completion boundary
+        timeout-minutes: 2
+        run: node momm/scripts/install-completion.test.mjs
+      - name: Capability expiry refusal
+        timeout-minutes: 2
+        run: node momm/scripts/expiry-regression.test.mjs
+      - name: Attempt accounting and tool-produced checks
+        timeout-minutes: 2
+        run: node momm/scripts/attempts.test.mjs
+      - name: Fail-closed Windows PATH identity
+        timeout-minutes: 2
+        run: node momm/scripts/path-resolution.test.mjs
+      - name: Review-claim evidence regressions
+        timeout-minutes: 2
+        run: node momm/scripts/review-claims.test.mjs
+      - name: CI deadlines and test catalog
+        timeout-minutes: 2
+        run: node momm/scripts/review-workflow.test.mjs
+      - name: Final review regression controls
+        timeout-minutes: 2
+        run: node momm/scripts/review-final-regressions.test.mjs
+      - name: Triage regressions from review rev_20260922162715
+        timeout-minutes: 2
+        run: node momm/scripts/review-triage-1161.test.mjs
+      - name: Named security regression - executable resolution
+        timeout-minutes: 2
+        run: node momm/scripts/executable-resolution.test.mjs
+      - name: Disputed review boundary controls
+        timeout-minutes: 2
+        run: node momm/scripts/review-refutations.test.mjs
+      - name: Final candidate review follow-up regressions
+        timeout-minutes: 2
+        run: node momm/scripts/review-followup.test.mjs
       - name: Reviewer transport and hostile-output regression
         timeout-minutes: 2
         run: node momm/scripts/transport.test.mjs
@@ -54,6 +99,18 @@ jobs:
       - name: Legacy discovery migration and rollback (synthetic installs only)
         timeout-minutes: 4
         run: node momm/scripts/migrate-legacy.test.mjs
+      - name: A committed-range review is bound to that range (real temporary repository, zero provider calls)
+        timeout-minutes: 4
+        run: node momm/scripts/governor-range.test.mjs
+      - name: Every tracked source is reviewable text (no raw control bytes, nothing Git calls binary)
+        timeout-minutes: 2
+        run: node scripts/source-hygiene.test.mjs
+      - name: Effectiveness scorecard and training export (read-only, synthetic evidence)
+        timeout-minutes: 2
+        run: node momm/scripts/scorecard.test.mjs
+      - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
+        timeout-minutes: 2
+        run: node momm/scripts/installations.test.mjs
       - name: Governor review-to-decision lifecycle (offline)
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs
@@ -314,3 +371,37 @@ jobs:
           } finally {
             for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
           }
+
+  # Owner decision, 24 September 2026. These thirteen suites passed locally but no workflow ran them,
+  # so a green run implied coverage it did not have (independent review of 5f91a36). They are
+  # platform-independent, make no network calls and take about four seconds together, so one Linux
+  # job carries them. bash stops at the first failure; PowerShell would report only the last one.
+  site-and-ledger:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      NO_UPDATE_CHECK: '1'
+      MOMM_NO_UPDATE_CHECK: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.x
+      - name: Site, ledger, preview, release-observer and improvement suites
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          node scripts/ledger-ui.test.mjs
+          node scripts/momm-improvement-regressions.test.mjs
+          node scripts/momm-release-observer.test.mjs
+          node scripts/momm-site-community.test.mjs
+          node scripts/momm-site-discovery.test.mjs
+          node scripts/momm-site-flow.test.mjs
+          node scripts/momm-site-home.test.mjs
+          node scripts/momm-site-regression.test.mjs
+          node scripts/momm-site-search.test.mjs
+          node scripts/momm-site-technical.test.mjs
+          node scripts/momm-site-videos.test.mjs
+          node scripts/momm-site-visuals.test.mjs
+          node scripts/preview-module.test.mjs

@@ -191,6 +191,132 @@ try{
     assert.equal(fs.readFileSync(original,'utf8'),'SYNTHETIC_MEDIA_BYTES');
     assert.equal(fs.readFileSync(path.join(sibling,'keep'),'utf8'),'keep');
   });
+  // Grok imports the user's Claude Code and Cursor setup by default: global instructions, skills, MCP
+  // servers (the GitHub one starts with the user's credentials), hooks, plus cross-session memory.
+  // Found on 25 September 2026 with `grok inspect`: the reviewer MOMM hired was told how to run MOMM.
+  // MOMM turns every import off for its own Grok runs only, through Grok's documented per-process
+  // switches, and denies every tool class. No other route receives these variables.
+  await test('grok runs isolated: no imported Claude or Cursor setup, no memory, no tool class allowed', async () => {
+    const seen = {};
+    for (const route of ['grok', 'codex', 'antigravity']) {
+      const c = context();
+      await c.ctx.invoke(route, 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+        runProcess: async (_command, args, options) => { seen[route] = { args, env: options.env || {} }; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+    }
+    const env = seen.grok.env;
+    for (const vendor of ['CLAUDE', 'CURSOR']) for (const kind of ['SKILLS', 'RULES', 'AGENTS', 'MCPS', 'HOOKS'])
+      assert.equal(env[`GROK_${vendor}_${kind}_ENABLED`], 'false', `GROK_${vendor}_${kind}_ENABLED must be false for a MOMM review`);
+    assert.equal(env.GROK_MEMORY, 'false', 'cross-session memory is off');
+    assert.equal(env.GROK_DISABLE_AUTOUPDATER, '1', 'a review never updates the CLI');
+    const denied = seen.grok.args.flatMap((a, k, all) => (all[k - 1] === '--deny' ? [a] : []));
+    assert.ok(denied.includes('*'), 'every tool class is denied, including ones added in future');
+    for (const route of ['codex', 'antigravity']) assert.ok(!Object.keys(seen[route].env).some((k) => k.startsWith('GROK_')), `${route} receives no Grok switches`);
+  });
+  // Grok's default model thinks at high effort and took 736 s on a 5 KB review, against a budget of about
+  // 276 s, so every Grok review timed out. grok-4.7-build-fast is the same model on faster serving
+  // (xAI: about twice as fast). It is used only when this account lists it; otherwise the default stays.
+  await test('grok uses the fast model when the account lists it, and the default model when it does not', async () => {
+    for (const [listing, expected] of [
+      ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n  - grok-4.6\n', 'grok-4.7-build-fast'],
+      ['Default model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n  - grok-4.6\n', null],
+      ['', null],
+      // Range review rev_20260925131115_6ed35d0bdf89 (codex suggestion 9): a longer name that merely starts
+      // with the fast model's name is a different model and must not be selected.
+      ['Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast-preview\n', null],
+      ['Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast (faster serving)\n', 'grok-4.7-build-fast'],
+    ]) {
+      const c = context();
+      let review = null;
+      await c.ctx.invoke('grok', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+        runProcess: async (_command, args) => { if (args[0] === 'models') return { code: listing ? 0 : 1, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+      const k = review.indexOf('--model');
+      assert.equal(k === -1 ? null : review[k + 1], expected, `listing ${JSON.stringify(listing.slice(0, 40))} -> ${expected}`);
+    }
+  });
+  // Measured 25 September 2026 on the same 5 KB review, isolated: grok-4.7-build-fast at medium effort was
+  // valid in every run (3 of 3 shipped setup, 194 to 308 s). Medium is therefore the default only with the fast model; an
+  // explicit --effort default still keeps the provider's own setting, and the plain model is left alone.
+  await test('grok defaults to medium effort with the fast model, and --effort default keeps the provider setting', async () => {
+    const fast = 'Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n';
+    const plain = 'Available models:\n  * grok-4.7 (default)\n';
+    for (const [listing, effort, expected] of [
+      [fast, undefined, 'medium'],
+      [fast, 'default', null],
+      [fast, 'medium', 'medium'],
+      [plain, undefined, null],
+      [plain, 'medium', 'medium'],
+    ]) {
+      const c = context();
+      let review = null;
+      await c.ctx.invoke('grok', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000, ...(effort ? { effort } : {}),
+        runProcess: async (_command, args) => { if (args[0] === 'models') return { code: 0, stdout: listing, stderr: '' }; review = args; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+      const k = review.indexOf('--reasoning-effort');
+      assert.equal(k === -1 ? null : review[k + 1], expected, `${listing === fast ? 'fast' : 'plain'} model, effort ${effort} -> ${expected}`);
+    }
+  });
+  // Delta review rev_20260924234524_89d8189794c3 (antigravity suggestion 1): split pieces run in parallel
+  // and share one options object. A second Grok piece that started while the first was still asking
+  // `grok models` saw the placeholder null and ran the plain model at high effort, the 736 s case.
+  await test('parallel grok pieces all wait for the one model probe and all use the fast model', async () => {
+    const c = context();
+    const shared = { governor: 'other', timeoutMs: 1000 };
+    let probes = 0, release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const reviews = [];
+    shared.runProcess = async (_command, args) => {
+      if (args[0] === 'models') { probes += 1; await gate; return { code: 0, stdout: 'Available models:\n  * grok-4.7 (default)\n  - grok-4.7-build-fast\n', stderr: '' }; }
+      reviews.push(args); return { code: 1, stdout: '', stderr: 'authentication required' };
+    };
+    const first = c.ctx.invoke('grok', 'export const one = 1;', shared);
+    const second = c.ctx.invoke('grok', 'export const two = 2;', shared);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    release();
+    await Promise.all([first, second]);
+    assert.equal(probes, 1, 'one probe per run');
+    assert.equal(reviews.length, 2);
+    for (const args of reviews) {
+      assert.equal(args[args.indexOf('--model') + 1], 'grok-4.7-build-fast', 'every piece uses the fast model');
+      assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'medium');
+    }
+  });
+  // Codex's private directory sits in the reviewed project's .ensemble_reviews, and Codex reads AGENTS.md
+  // from the git root down, so the project's own instructions reached the reviewer; the user's hooks,
+  // plugins, apps and multi-agent tools were on too (25 September 2026). Owner decision: no project
+  // instructions and those features off; the model, effort and MCP servers shared with the Codex
+  // desktop app stay as the user set them until 1.17.
+  await test('codex reads no project AGENTS.md and runs with hooks, plugins, apps, multi-agent and image generation off', async () => {
+    const c = context();
+    let seen = null;
+    await c.ctx.invoke('codex', 'export const synthetic = 1;', { governor: 'other', timeoutMs: 1000,
+      runProcess: async (_command, args, options) => { seen = { args, cwd: options.cwd, existed: fs.existsSync(options.cwd ?? '') }; return { code: 1, stdout: '', stderr: 'authentication required' }; } });
+    const disabled = seen.args.flatMap((a, k, all) => (all[k - 1] === '--disable' ? [a] : []));
+    for (const feature of ['hooks', 'plugins', 'apps', 'multi_agent', 'image_generation'])
+      assert.ok(disabled.includes(feature), `codex must run with --disable ${feature}`);
+    assert.ok(seen.cwd && path.resolve(seen.cwd) !== path.resolve(process.cwd()), 'codex must not run in the reviewed project');
+    assert.ok(path.resolve(seen.cwd).startsWith(path.resolve(c.temporary) + path.sep), 'codex runs in a private temporary directory');
+    assert.ok(seen.existed, 'the directory exists while codex runs');
+    assert.ok(!fs.existsSync(seen.cwd), 'and is removed afterwards');
+    const overrides = seen.args.flatMap((a, k, all) => (all[k - 1] === '-c' ? [a] : []));
+    assert.ok(overrides.includes('project_doc_max_bytes=0'), "the reviewed project's AGENTS.md is not loaded as instructions");
+    assert.equal(seen.args.at(-1), '-', 'the prompt still arrives on stdin');
+    assert.ok(!seen.args.includes('--ignore-user-config'), 'the shared model and effort stay as the user set them');
+  });
+  // Owner decision, 25 September 2026, from range review rev_20260925004814_1ed9f58c2c3a: most failed pieces
+  // were answers rejected because a model retyped a curly quote, a dash or a non-breaking space in its
+  // quotation of documentation. Typographic look-alikes and whitespace runs now compare equal; every
+  // other character still has to match.
+  await test('quoted scope tolerates typographic look-alikes and whitespace, nothing else', async () => {
+    const artifact = 'Intro line.\nHe said \u201chi\u201d \u2014 and left.\u00a0It\u2019s done.\n  indented   code(x);\n';
+    const review = (quote) => ({ review_status: 'complete', verdict: 'ACCEPT', confidence: 0.9, summary: 'Synthetic.',
+      reviewed_scope: [{ quote, assessment: 'Checked.' }], suggested_improvements: [], findings: [] });
+    assert.equal(reviewProblem(review('He said \u201chi\u201d \u2014 and left.'), artifact), null, 'an exact quote passes');
+    assert.equal(reviewProblem(review('He said "hi" - and left. It\'s done.'), artifact), null, 'straight quotes, a hyphen and a plain space match their look-alikes');
+    assert.equal(reviewProblem(review('He said \u201chi\u201d \u2013 and left.'), artifact), null, 'an en dash matches an em dash');
+    assert.equal(reviewProblem(review('indented code(x);'), artifact), null, 'a whitespace run matches a single space');
+    assert.match(reviewProblem(review('He said "bye" - and left.'), artifact) ?? '', /quote the supplied artifact/, 'a different word is still refused');
+    assert.match(reviewProblem(review('He said hi and left.'), artifact) ?? '', /quote the supplied artifact/, 'dropped punctuation is still refused');
+    assert.match(reviewProblem(review('indented code(y);'), artifact) ?? '', /quote the supplied artifact/, 'code still matches literally');
+  });
 }finally{
   const resolved=path.resolve(root),temporary=path.resolve(os.tmpdir());
   assert(resolved.startsWith(temporary+path.sep)&&path.basename(resolved).startsWith('momm-adapter-cleanup-test-'));

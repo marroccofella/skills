@@ -41,7 +41,7 @@ export function bindWorkflow(root,env=globalThis){
   if(reduced?.matches){stop();index=index===(scenario.value==='shortage'?5:8)?0:index+1;render();return;}
   if(playing){stop();return;}
   if(index===(scenario.value==='shortage'?5:8))index=0;
-  playing=true;root.classList.add('wf-playing');play.textContent='Ⅱ Pause';play.setAttribute('aria-pressed','true');render();schedule();
+  playing=true;root.classList.add('wf-playing');play.textContent='Pause';play.setAttribute('aria-pressed','true');render();schedule();
  });
  function go(value){stop();index=Math.min(value,scenario.value==='shortage'?5:8);render();}
  back.addEventListener('click',()=>go(Math.max(0,index-1)));next.addEventListener('click',()=>go(index+1));get('[data-wf-reset]').addEventListener('click',()=>go(0));

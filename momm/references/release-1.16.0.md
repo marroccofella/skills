@@ -1,7 +1,8 @@
 # MOMM 1.16.0 — measurement, ratings, guidance, throughput, upkeep
 
 Status: **released 19 September 2026** as the signed tag `momm-1.16.0` (commit `cbd5570`, release
-workflow run 35462410210: signature, Rekor entry and certificate claims validated; genuine signed
+workflow run 35462410210, CI matrix run 35462025593 on that commit: signature, Rekor entry and
+certificate claims validated; genuine signed
 preview and apply passed). Built from 1.15.1 starting 2026-09-13. The consolidated
 candidate and its gate record are on [PR #7](https://github.com/marroccofella/skills/pull/7);
 the independent-audit conversation is on [PR #4](https://github.com/marroccofella/skills/pull/4)
@@ -509,7 +510,10 @@ Added to the candidate on 2026-09-13 evening at the owner's direction: MOMM must
   the dated entries above: privacy and history scans, independent confirmations, the signed tag and
   the live pages were completed before or at release on 19 September; `momm-check/1` completion
   receipts for gate runs on committed ranges were not produced and are a stated limit, carried to
-  1.16.1. The original line: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
+  1.16.1. [Added 25 September 2026: the E7 modality work shipped in 1.16.0 (section above); the
+  public evidence page was not refreshed and remains the dated 4 September snapshot; the Grok
+  exact-quote rejection rate was carried to 1.16.1, which accepts typographic look-alikes in
+  quotations (owner decision, 25 September 2026).] The original line: `momm-check/1` completion evidence for the gate runs (verification manifests and before/after checks per decision, so `governor.mjs --run` reports complete), privacy scan on the final head, signed tag via the release workflow (`momm-release.mjs --prepare` seals the manifest entry; it is unsealed on the branch, so the updater refuses 1.16.0 by design until then), public evidence refresh, the E7 modality work below, and the 1.15-era holds that remain open (Grok exact-quote rejection rate; evidence-cap streaming is in 1.15.1).
 
 ## Suggestions carried forward
 

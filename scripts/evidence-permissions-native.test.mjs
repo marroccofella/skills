@@ -8,6 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
+import {readMedia} from '../momm/scripts/media-bytes.mjs';
 import {inspectEvidencePermissions,createEvidenceWorkspace,createPrivateDirectory,requirePrivateScratch,preparePrivateEvidence,protectEvidence} from '../momm/scripts/evidence-permissions.mjs';
 import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
@@ -51,11 +52,11 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
     assert.equal(inspectEvidencePermissions(evidence).verified,kind==='protected');
     if(kind==='protected') {
       const input=path.join(project,'synthetic.gif');
-      fs.writeFileSync(input,'SYNTHETIC ATTACHMENT ONLY');
+      fs.writeFileSync(input,Buffer.from('47494638396101000100800000000000ffffff2c00000000010001000002024401003b','hex'));
       const source=fs.readFileSync(dispatcher,'utf8');
       const start=source.indexOf('function stageAttachments('),end=source.indexOf('\nfunction attachmentContractSection(',start);
       assert(start>=0&&end>start);
-      const context=vm.createContext({fs,path,os,Buffer,createHash,MODALITY_MAX_BYTES:{image:1000},MODALITY_BY_EXTENSION:{gif:'image'},modalityOfFile:()=> 'image',
+      const context=vm.createContext({fs,path,os,Buffer,createHash,readMedia,MODALITY_MAX_BYTES:{image:1000},MODALITY_BY_EXTENSION:{gif:'image'},modalityOfFile:()=> 'image',
         requirePrivateScratch,createEvidenceWorkspace:prefix=>createEvidenceWorkspace(prefix,evidence)});
       vm.runInContext(source.slice(start,end)+';this.stage=stageAttachments;this.clean=cleanupAttachments;',context);
       const staged=context.stage([input]);
@@ -68,7 +69,7 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
         assert.equal(isInside(evidence,path.join(project,'casefold-control')),false);
       }
       assert.equal(inspectEvidencePermissions(staged.directory).verified,true);
-      assert.equal(fs.readFileSync(staged.attachments[0].staged_path,'utf8'),'SYNTHETIC ATTACHMENT ONLY');
+      assert.deepEqual(fs.readFileSync(staged.attachments[0].staged_path),fs.readFileSync(input));
       const scratchDirectory=staged.directory;
       context.clean(staged);
       assert.equal(fs.existsSync(scratchDirectory),false);

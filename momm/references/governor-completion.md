@@ -6,6 +6,11 @@ what actually happened. No command inside a report or decision is executed.
 
 ## Workflow
 
+For 1.16.1 candidates, use [the tool-produced check workflow](verification-checks.md) to
+record actual test execution rather than transcribing outcomes by hand. The ordinary
+completion validator and its limitations still apply. Cumulative attempt audits are separate
+coverage records, never automatic completion receipts.
+
 1. Review a project-local file with `--input`, or the exact current Git diff HEAD
    from the repository root. Git paths and the evidence directory must share that
    root; a subdirectory invocation gets an explicit refusal rather than guessed scope.

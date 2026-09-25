@@ -1,11 +1,19 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { resolveGit as resolveGitForTest } from './governor.mjs';
+// Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
+const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { deflateSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { migrate,rollback,parse } from './migrate-legacy.mjs';
 import { execute,verifyCheckout } from './bootstrap.mjs';
 const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..'),root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-migration-tests-')),results={};
 const skipped={};
+// Every variable a harness path can be built from, not just HOME: the env spread kept the
+// real APPDATA, so a Windows discovery path could still have left the temporary home.
+const HOME_KEYS=['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','XDG_CONFIG_HOME'];
+const oldHome=Object.fromEntries(HOME_KEYS.map(k=>[k,process.env[k]]));
+const testHome=path.join(root,'home');fs.mkdirSync(testHome);for(const k of HOME_KEYS)process.env[k]=testHome;
 const write=(p,s)=>{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,s);};
 // Inputs retain their caller spelling, including symlink/short-name temp roots.
 // Expected paths and race hooks use the OS-resolved parent of each entry.
@@ -21,8 +29,8 @@ async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,d
 function fixture(name,link=false){
   const base=path.join(root,name),repo=path.join(base,'prepared'),skill=path.join(base,'harness','skills','momm'),backup=path.join(base,'backups','old-momm');
   fs.mkdirSync(repo,{recursive:true});fs.mkdirSync(path.dirname(backup),{recursive:true});
-  for(const file of ['momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
-  write(path.join(repo,'momm/scripts/multi-review.mjs'),'// fixture dispatcher\n');write(path.join(repo,'momm/SKILL.md'),'# New protocol\n');write(path.join(repo,'versions.json'),'{"momm":"1.15.1"}');
+  for(const file of ['momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs','momm/scripts/installations.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
+  write(path.join(repo,'momm/scripts/multi-review.mjs'),'const MOMM_VERSION = "1.15.1"; // never executed\n');write(path.join(repo,'momm/SKILL.md'),'# New protocol\n');write(path.join(repo,'versions.json'),'{"momm":"1.15.1"}');
   const git=(...args)=>execute('git',args,repo).trim();git('-c','init.templateDir=','init','.');git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m','fixture');
   const commit=git('rev-parse','HEAD'),original=link?path.join(base,'original-clone','momm'):skill;
   write(path.join(original,'SKILL.md'),'# Old protocol\n');write(path.join(original,'.ensemble_reviews/ledger.html'),'PRIVATE fixture evidence');
@@ -158,7 +166,7 @@ try{
     const payload=Buffer.from('# Substituted protocol\n');// The substitution needs a LOOSE object. Some git builds or runner settings deliver the blob in a
     // pack instead (CI run 35411040011, Windows Node 22: ENOENT on this path); explode any pack first so
     // the test exercises the same check on either layout rather than failing on its fixture.
-    if(!fs.existsSync(blob)){const packDir=path.join(f.repo,'.git/objects/pack');for(const name of fs.existsSync(packDir)?fs.readdirSync(packDir).filter(n=>n.endsWith('.pack')):[]){const moved=path.join(path.dirname(f.repo),name);fs.renameSync(path.join(packDir,name),moved);fs.rmSync(path.join(packDir,name.replace(/\.pack$/,'.idx')),{force:true});const unpacked=spawnSync('git',['unpack-objects'],{cwd:f.repo,input:fs.readFileSync(moved),windowsHide:true});assert.equal(unpacked.status,0,'fixture could not explode its pack');}}
+    if(!fs.existsSync(blob)){const packDir=path.join(f.repo,'.git/objects/pack');for(const name of fs.existsSync(packDir)?fs.readdirSync(packDir).filter(n=>n.endsWith('.pack')):[]){const moved=path.join(path.dirname(f.repo),name);fs.renameSync(path.join(packDir,name),moved);fs.rmSync(path.join(packDir,name.replace(/\.pack$/,'.idx')),{force:true});const unpacked=spawnSync(GIT,['unpack-objects'],{cwd:f.repo,input:fs.readFileSync(moved),windowsHide:true});assert.equal(unpacked.status,0,'fixture could not explode its pack');}}
     assert(fs.existsSync(blob),'fixture blob must exist as a loose object before it is substituted');
     fs.chmodSync(blob,0o600);fs.writeFileSync(blob,deflateSync(Buffer.concat([Buffer.from(`blob ${payload.length}\0`),payload])));
     write(path.join(f.repo,'momm/SKILL.md'),payload);
@@ -190,4 +198,4 @@ try{
     const f=fixture('missing-old-protocol');fs.unlinkSync(path.join(f.skill,'SKILL.md'));await assert.rejects(migrate(f.options,f.dep),{code:'unsupported_scope'});assert(!fs.existsSync(f.backup));
   });
   console.log(JSON.stringify({passed:Object.values(results).every(v=>v===true),tests:Object.keys(results).length,results,skipped,note:'Signature service stubbed; real installers, receipts, Git files and discovery links exercised only in temporary synthetic projects. Platform or filesystem skips are reported explicitly.'},null,2));
-}finally{const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true,force:true,maxRetries:3});}
+}finally{for(const [key,value]of Object.entries(oldHome)){if(value===undefined)delete process.env[key];else process.env[key]=value;}const resolved=fs.realpathSync(root);assert.equal(path.dirname(resolved),fs.realpathSync(os.tmpdir()));assert(path.basename(resolved).startsWith('momm-migration-tests-'));fs.rmSync(resolved,{recursive:true,force:true,maxRetries:3});}

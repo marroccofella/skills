@@ -31,3 +31,25 @@ for(const f of companions){
 }
 assert.throws(()=>watchOutputs(tour,version,root,'../secret'),/Unknown/);
 assert.equal((fs.readFileSync(path.join(root,'docs/video-sitemap.xml'),'utf8').match(/<video:video>/g)||[]).length,3);
+// Range review rev_20260925004814_1ed9f58c2c3a (caption-splits-on-periods): the preview film's captions split
+// "1.16", "git.exe" and the site address at their dots, so a cue read "Version 1." and the next "16 adds".
+// No caption file may end a cue on a dot that the next cue continues with a digit or a lower-case letter.
+for (const folder of fs.readdirSync(path.join(root, 'docs/momm/films'), { withFileTypes: true }).filter(d => d.isDirectory())) {
+  const file = path.join(root, 'docs/momm/films', folder.name, 'captions.vtt');
+  if (!fs.existsSync(file)) continue;
+  const cues = fs.readFileSync(file, 'utf8').replace(/\r/g, '').split(/\n\n+/).map(b => b.split('\n')).filter(l => l.some(x => x.includes('-->')));
+  const text = c => c.slice(c.findIndex(x => x.includes('-->')) + 1).join(' ').trim();
+  for (let i = 0; i < cues.length - 1; i++) {
+    const a = text(cues[i]), b = text(cues[i + 1]);
+    assert(!(/\S\.$/.test(a) && /^[0-9a-z]/.test(b)), `${folder.name}/captions.vtt splits a word or number between cues: "${a.slice(-30)}" | "${b.slice(0, 30)}"`);
+  }
+}
+// Range review rev_20260925131115_6ed35d0bdf89 (grok suggestions 11, 69, 62; antigravity 36): runtimes said
+// "0 minutes 51 seconds", and the skip link landed before the breadcrumb instead of on the video.
+{
+  const { runtimeLabel } = await import('./momm-site-videos.mjs');
+  assert.equal(runtimeLabel(51), '51 seconds');
+  assert.equal(runtimeLabel(61), '1 minute 1 second');
+  assert.equal(runtimeLabel(212.4), '3 minutes 32 seconds');
+  for (const page of ['overview', 'setup', 'trailer']) assert(fs.readFileSync(path.join(root, 'docs/momm/watch', page + '.html'), 'utf8').includes('<a class="skip" href="#watch-video">Skip to video</a>'), page + ': skip link lands on the video');
+}

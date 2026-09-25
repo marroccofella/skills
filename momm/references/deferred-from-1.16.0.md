@@ -10,6 +10,10 @@ unless someone makes the case for one. Generated from the gate ledger on 20 Sept
 - Closed since: **2**
 - Parked: **27** (one needs an owner decision)
 
+Later change (24 September 2026): the owner deferred `posix-relative-path-command-shadowing` to 1.17 as a
+documented accepted risk, so 12 of the 13 promoted findings remain in 1.16.1. The row below says so;
+the counts above are the 20 September snapshot.
+
 | Finding | Severity | Gate run | Becomes | Why it was deferred |
 | --- | --- | --- | --- | --- |
 | `extension-only-media-validation` | WARNING | `2l49` | **1.16.1 A1**: media type from bytes | Known limitation accepted by the owner and disclosed verbatim in review-brief-1.16.0.md:37, release-1.16.0.md and the E7 plan: 'MOMM checks initial media types by filena… |
@@ -24,7 +28,7 @@ unless someone makes the case for one. Generated from the gate ledger on 20 Sept
 | `test-plan-omits-retry-invalid` | WARNING | `4dn1` | **1.16.1 D**: test plan names the flag | An omission, not a wrong statement. The flag's contract is exercised with zero network by the dispatcher self-test retry_invalid_is_opt_in_once_and_disclosed (multi-revi… |
 | `childenv-realpath-fail-open` | WARNING | `97n4` | **1.16.1 E**: PATH entry that cannot be resolved | Same class as finding 0: it needs a user PATH entry that aliases into the project AND cannot be resolved (broken junction, EACCES). Dropping unresolvable PATH entries in… |
 | `path-alias-bypasses-project-filter` | WARNING | `97n4` | **1.16.1 E**: PATH entry reaching the project through a junction, symlink or 8.3 name | Real but outside the threat this release closes. It needs an entry on the USER'S OWN PATH that reaches into the project through a junction, symlink or 8.3 alias; content… |
-| `posix-relative-path-command-shadowing` | WARNING | `2l49` | **1.16.1 E**: '.' or an empty PATH entry | Needs '.' or an empty entry in the user's own PATH, which a reviewed project cannot set and which exposes every command that user runs. Windows differs because the OS ad… |
+| `posix-relative-path-command-shadowing` | WARNING | `2l49` | **1.16.1 E**, then deferred to 1.17 (owner decision, 24 September 2026; accepted risk in the gate record): '.' or an empty PATH entry | Needs '.' or an empty entry in the user's own PATH, which a reviewed project cannot set and which exposes every command that user runs. Windows differs because the OS ad… |
 | `split-ignores-max-bytes` | WARNING | `4dn1` | **parked, owner decision**: whether an explicit --max-bytes bounds a split run | True as described and deliberate so far: under --split a diff is limited by the 2 MB split hard cap, not --max-bytes (comment above inputLimitFor, the '(split hard cap)'… |
 | `audio-prompt-tone-echo` | WARNING | `4dn1` | **parked** | Partly right. A reply that repeats a prompt sentence is refused before any pattern (confirmContent calls classifyReply 'echo' first), and the quoted 'Please note I canno… |
 | `darwin-case-sensitive-glob` | WARNING | `h6hn` | **parked** | Cannot be reproduced on this Windows host. The registry globs use the casing the provider CLIs themselves write, so no miss is known; a per-volume case probe belongs to… |

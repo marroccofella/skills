@@ -1,6 +1,6 @@
 # MOMM Roadmap — alignment record
 
-**Current release:** `versions.json` (`momm`) and the newest `references/release-*.md` are the
+**Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
 only sources. Today they say **1.16.0**, signed tag `momm-1.16.0`, 19 September 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
@@ -26,15 +26,56 @@ or an independent benchmark; publication state belongs in the site changelog.
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
 - Must ship or 1.16.1 does not tag: media type from bytes; capability expiry visible and manual;
   completion receipts for committed-range reviews; a per-piece attempt ledger with a closed set of
-  outcomes; named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
+  outcomes; "installed somewhere" separated from "the version this harness loads"
+  (`--doctor --versions` and conflict refusal; broader selection interfaces stay in 1.17); named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
   drills on real machines with a published OS by Node table.
 - Not in 1.16.1: new reviewer families, automatic updates by default, a dashboard redesign, new
   generation modalities, `--early-exit`, `--split auto`, ledger-learned caps, adaptive timeouts,
   any change to the containment model (so Grok media stays `missing_flag`).
 - **Next: 1.17, roadmap only.** Do not start before the signed `momm-1.16.1` tag exists.
 - **Later:** the proposals under "Planned" below, each still opt-in and fail-closed.
+- Ideas that are not in the release being built, with origin, reason and "worth doing when",
+  including what was refused and why: [references/ideas-register.md](references/ideas-register.md).
 - Deferred 1.16.0 findings are listed by name, with what became of each:
   [references/deferred-from-1.16.0.md](references/deferred-from-1.16.0.md).
+
+## 1.16.1 implementation checkpoint
+
+Scope-audit closure: update-clock failures clear the previous result; scorecard
+exports create a private destination or refuse an existing non-private one,
+including Windows DACL and forced companion-file checks. No existing permissions
+are repaired. A dedicated current acceptance guide replaces historical test plans
+for this candidate, with invalid-output retry and explicit ledger-ticket tests.
+Native synthetic regressions are in [scripts/scope-closure.test.mjs](scripts/scope-closure.test.mjs). These fixes
+do not close the separate signed lifecycle, whole-source or live-image gates.
+
+21 September implementation checkpoint (not a release): the 1.16.1 candidate adds byte-based
+media checks, seven-day successful-probe expiry, immutable attempt files, cumulative coverage
+audits, a governor-selected test runner producing verification records, failed-attempt accounting,
+installation completion checks and fail-closed PATH resolution. These changes require final
+regression and peer review. Native lifecycle, signed-artifact and live-image gates remain open:
+[gate record](references/gates-1.16.1.md), [draft notes](references/draft-1.16.1.md).
+
+The follow-up review reproduced quota false positives from echoed source and duplicate raw
+diagnostics in retry history. The candidate now classifies quota from explicit provider
+diagnostics and keeps accounting-only attempt summaries. Evidence validation refuses missing
+attempt identifiers and malformed strict policies. Governor-authored installation regressions
+also exposed missing SKILL.md and unreadable discovery paths being mistaken for a completed
+upgrade; both now prevent completion. Failing-before/passing-after observations are retained
+privately. These repairs still require completed review dispositions and a final source-bound
+gate; they are not a release or an update to the owner's installed skill.
+
+The next full-draft review completed with quorum on seven of nine pieces, not a
+passing release gate. Reproduction tests exposed an inconsistent split-quorum
+summary, unbounded waiting on an idle input pipe, a 200-vs-2000-file check limit,
+and scorecard/export edge cases. The follow-up keeps all quorum summaries tied
+to the actual gate, bounds stdin, aligns range-check limits (committed-range checks accept up to
+2,000 source files, `MAX_RANGE_SOURCE_FILES`; working-tree snapshots keep 200), exports only the
+latest identifiable ruling, withholds scores when severity calibration is unknown,
+and refuses existing companion files or broad POSIX outputs before writing.
+Unreadable tracked source now fails the hygiene check. These are candidate fixes;
+their new tests, final-source peer coverage and native lifecycle gates still have
+to pass. No tag, installed-skill update or public release follows from local tests.
 
 ## 1.17 (roadmap only, do not start)
 
@@ -56,7 +97,7 @@ receive media is a 1.17 design review, not a patch.
   install, upgrade and rollback were proven by the release workflow's isolated drill, not on real
   machines; a first install stops to ask for the `gitsign` verifier.
 - **1.15.1** and **1.15.0**, 13 September 2026: explicit signed updates, receipts, the version
-  archive. Records: `references/release-1.15.1.md`, `references/release-1.15.0.md`.
+  archive. Records: [references/release-1.15.1.md](references/release-1.15.1.md), [references/release-1.15.0.md](references/release-1.15.0.md).
 - Earlier versions: "Shipped" below and the [version history](https://marroccofella.github.io/skills/momm/releases/).
 
 ## Planned — later work
@@ -251,7 +292,7 @@ dispositions belong beside the review log the dispatcher wrote.
 3. Every reviewer-facing prompt change ships with a negative control run
    (trivially-correct input must still yield zero findings).
 4. Update this file in the same commit as the feature it describes.
-5. "Current" is decided by `versions.json` and the newest `release-*.md`. A sentence written
+5. "Current" is decided by `versions.json` and its `release-<version>.md`. A sentence written
    before a signed tag goes under HISTORICAL when the tag exists; it is never left live.
 
 ## HISTORICAL: written before the signed tags (pre-1.16.0 and pre-1.15.1)

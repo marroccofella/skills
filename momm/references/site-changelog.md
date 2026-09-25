@@ -4,7 +4,7 @@ Notes about the public website: films, posters, diagrams, search and the tour. T
 from `momm/ROADMAP.md` on 20 September 2026 so the product roadmap holds product decisions only.
 These are dated records, kept as written. Where one says "candidate" it describes the state on its
 own date: 1.15.0 and 1.15.1 were released on 13 September 2026 and 1.16.0 on 19 September 2026.
-The current release is whatever `versions.json` and the newest `release-*.md` say, not this file.
+The current release is whatever `versions.json` says, with its `release-<version>.md`, not this file.
 
 ## Discovery documentation — September 20, prepared for publication
 
@@ -109,6 +109,4 @@ scope-preserving rollback, explicit downgrade selection, compatible public CSV
 columns, overlapping-source decision deduplication and ledger navigation regressions.
 These are verified local repairs; publication still requires the release gates below.
 
-Purpose: keep parallel sessions and future releases pointed the same way.
-Before proposing or building a MOMM feature, read this file; after shipping or
-rejecting one, update it. Shipped items stay listed so nobody re-proposes them.
+Product decisions live in [ROADMAP.md](../ROADMAP.md); later ideas in [ideas-register.md](ideas-register.md).

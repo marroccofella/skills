@@ -8,13 +8,16 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { update, dailyCheck, updateCheckDisabled, provenance, parse as parseUpdateOptions } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
-import { captureSourceSnapshot } from "./governor.mjs";
+import { captureSourceSnapshot, RANGE_DIFF_FLAGS } from "./governor.mjs";
+import { inventory as installationsInventory } from "./installations.mjs";
 import { createProcessScope } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
+import { readMedia } from "./media-bytes.mjs";
+import { attemptRecord, startAttempt, persistAttempt, attemptTotals } from "./attempts.mjs";
 import { resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
-import { createUpdateClock } from "./update-clock.mjs";
+import { createUpdateClock, maybeUpdateNotice } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
 
 // Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
@@ -467,9 +470,10 @@ function stageAttachments(files) {
   const attachments = files.map((file, index) => {
     const resolved = path.resolve(file);
     if (!fs.existsSync(resolved)) throw new Error(`--attach file not found: ${file}`);
-    const modality = modalityOfFile(resolved);
-    if (!modality) throw new Error(`--attach ${path.basename(file)}: unrecognized media type (${Object.keys(MODALITY_BY_EXTENSION).join(", ")})`);
-    let buffer = fs.readFileSync(resolved);
+    let media;
+    try { media = readMedia(resolved); } catch (error) { throw new Error(`--attach ${path.basename(file)}: ${error.message}`); }
+    const { modality } = media;
+    let buffer = media.buffer;
     if (buffer.length > MODALITY_MAX_BYTES[modality]) {
       throw new Error(`--attach ${path.basename(file)}: ${buffer.length} bytes exceeds the ${modality} cap of ${MODALITY_MAX_BYTES[modality]} (rejected, not truncated)`);
     }
@@ -692,11 +696,13 @@ function effectiveTimeoutMs(byteLength, requestedMs, explicit) {
 
 // Some routes read dense code slower than others — measured, not assumed:
 // grok exceeded every 120s window it was given while peers finished in
-// 30-100s. Its cap gets 1.5x headroom, bounded at 6 minutes for AUTO-scaled
+// 30-100s. Its cap gets 2x headroom, bounded at 6 minutes for AUTO-scaled
 // budgets only. An explicit --timeout is the user's judgment call and is
 // honored above the cap (observed 2026-08-23: the clamp silently defeated
 // --timeout 420 on a dense 63KB patch, so codex could never finish).
-const AGENT_TIMEOUT_MULTIPLIER = { grok: 1.5 };
+// Grok on grok-4.7-build-fast at medium effort took 194 to 311 s on a 5 KB review (five isolated runs,
+// 25 September 2026); 1.5x of the 180 s base (270 s) cut the slower runs off, 2x reaches the 360 s cap.
+const AGENT_TIMEOUT_MULTIPLIER = { grok: 2 };
 function agentTimeoutMs(agent, baseMs, explicit = false) {
   const scaled = Math.round(baseMs * (AGENT_TIMEOUT_MULTIPLIER[agent] ?? 1));
   return explicit ? scaled : Math.min(360_000, scaled);
@@ -816,19 +822,24 @@ function usage() {
   return `Usage:
   node scripts/multi-review.mjs --governor <codex|gemini|claude|antigravity|copilot|other> [options]
   node scripts/multi-review.mjs --doctor
+  node scripts/multi-review.mjs --doctor --versions [--expect <version>]   Every MOMM copy a harness can find, its version, and whether they agree (read-only; exit 1 on a conflict)
   node scripts/multi-review.mjs evidence [--status | --protect]   Inspect, or on your explicit command restrict, this project's private evidence folder
   node scripts/multi-review.mjs --self-test
 
 Options:
   --input, --patch <file>    Review a file instead of git diff HEAD/stdin
+  --range <base>..<head>     Review a COMMITTED range. MOMM takes the diff itself and binds the report (and any
+                             completion receipt) to both full commit ids. A diff on stdin must be identical.
+                             A two-tip diff (git diff base head), not merge-base: pick a base head descends from.
+  --range-path <path>        Limit --range to a path (repeatable); part of the recorded identity
   --reviewers <csv|auto>    Requested peers (default: codex,claude,antigravity,copilot,grok). auto (1.16 E7):
                             with --attach, the intersection of routes whose effective capability cells take
                             every attached modality; refuses with per-modality options when it is empty
   --capabilities [--json]   Print this machine's effective capability matrix (baseline plus valid overlay):
                             per route and modality the level, blocker, invocation and evidence, then the
                             pipelines derived from it. --json for agents. Zero model calls (1.16 E7)
-  --timeout <seconds>       Base timeout (default: 180; deep: 240; Grok gets 1.5x)
-  --effort <default|medium> Explicit Claude/Grok effort; default keeps provider settings
+  --timeout <seconds>       Base timeout (default: 180; deep: 240; Grok gets 2x)
+  --effort <default|medium> Claude/Grok effort; default keeps provider settings (Grok on its fast model uses medium unless --effort default)
   --max-bytes <bytes>       Reject larger input (default: 120000)
   --strict                  Exit 2 unless every requested non-governor peer succeeds
   --min-success <n>         Exit 3 unless at least n external reviews succeeded (quorum
@@ -901,6 +912,12 @@ function parseArgs(argv) {
 
     if (arg === "--governor") options.governor = normalizeAgentName(next());
     else if (arg === "--input" || arg === "--patch") options.input = next();
+    else if (arg === "--range") {
+      const match = /^([^.\s][^\s]*?)\.\.([^.\s][^\s]*)$/.exec(next());
+      if (!match || match[1].startsWith("-") || match[2].startsWith("-") || match[1].endsWith(".")) throw new Error("--range needs <base>..<head> (two dots), for example main..HEAD");
+      options.range = { base: match[1], head: match[2], paths: options.range?.paths ?? [] };
+    }
+    else if (arg === "--range-path") { options.rangePaths = [...(options.rangePaths ?? []), next()]; }
     else if (arg === "--reviewers") {
       const requested = next().split(",").map(normalizeAgentName).filter(Boolean);
       // `auto` = the intersection of routes whose effective registry cells take
@@ -921,6 +938,8 @@ function parseArgs(argv) {
     else if (arg === "--stream") options.stream = true;
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--doctor") options.doctor = true;
+    else if (arg === "--versions") options.versions = true;
+    else if (arg === "--expect") { options.expectVersion = next(); if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(options.expectVersion)) throw new Error("--expect needs a version such as 1.16.1"); }
     else if (arg === "--preflight") options.preflight = true;
     else if (arg === "--stats") options.stats = true;
     else if (arg === "--tier") {
@@ -1292,6 +1311,14 @@ function antigravityStreamPayload(stdout, stream = true) {
 function clipped(value, length) {
   return typeof value === "string" ? value.trim().slice(0, length) : "";
 }
+// Keeps the END of the text and marks the cut. A CLI that echoes its banner and the prompt before
+// failing puts the real error last; clipping from the start stored the prompt and lost the error,
+// which is why every codex failure on 23 and 24 September 2026 was undiagnosable.
+function clippedTail(value, length) {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return text.length > length ? `…${text.slice(-(length - 1))}` : text;
+}
 
 function normalizeReview(agent, payload) {
   const verdict = String(payload.verdict || "MODIFY").toUpperCase();
@@ -1349,7 +1376,7 @@ function copilotStreamFailure(stdout, code) {
   const kind = `${typeof error?.errorType === "string" ? error.errorType : ""} ${typeof error?.errorCode === "string" ? error.errorCode : ""}`.toLowerCase();
   const http = Number.isInteger(error?.statusCode) ? error.statusCode : null;
   if (/quota|rate.?limit/.test(kind) || http === 402 || http === 429) {
-    return { status: "error", detail: `Copilot reported that this account's request quota or rate limit is exhausted${http ? ` (HTTP ${http})` : ""}. This is an account limit, not an authentication problem and not a MOMM fault: do not re-login; wait for the limit to reset or leave the route out with --reviewers. No review was accepted.` };
+    return { status: "quota", detail: `Copilot reported that this account's request quota or rate limit is exhausted${http ? ` (HTTP ${http})` : ""}. This is an account limit, not an authentication problem and not a MOMM fault: do not re-login; wait for the limit to reset or leave the route out with --reviewers. No review was accepted.` };
   }
   // An outage is classified before authentication, as in classifyFailure: a 5xx
   // from an auth service is still "wait", never "log in again".
@@ -1394,17 +1421,18 @@ function scratchAccessRoutes(results) {
   return [...new Set((results ?? []).filter((result) => result?.scratch_access?.tolerated?.length).map((result) => result.agent))];
 }
 
-function classifyFailure(result, agent = null) {
+function classifyFailure(result, agent = null, sent = "") {
   if (result.error?.code === "MOMM_UNSUPPORTED_LAUNCHER") return { status: "unsupported", detail: result.error.message };
   if (result.error?.code === "ENOENT") return { status: "missing", detail: "command not found" };
   if (result.timedOut) return { status: "timeout", detail: "no completed review within the allotted time; inspect process_progress for the route's actual budget and received bytes, narrow the review or explicitly raise --timeout. A timeout alone is not an authentication diagnosis" };
+  if (result.cancelled || result.error?.name === "AbortError") return { status: "cancelled", detail: "review cancelled; no completed review accepted" };
   if (agent === "copilot") {
     const streamFailure = copilotStreamFailure(result.stdout, result.code);
     if (streamFailure && !streamFailure.unexplained) return streamFailure;
     // Copilot's stdout never takes part in pattern matching and is never echoed, whether or
     // not it parsed as an event stream (it can hold the artifact either way); stderr alone
     // may still say signed-out or outage.
-    const fromStderr = classifyFailure({ ...result, stdout: "" }, null);
+    const fromStderr = classifyFailure({ ...result, stdout: "" }, null, sent);
     if (fromStderr.status !== "error" || String(result.stderr ?? "").trim() || result.error) return fromStderr;
     return { status: "error", detail: streamFailure?.detail ?? `Copilot ended with exit ${result.code} and said nothing on stderr; its stdout is not echoed. Run the same copilot command by hand to read the provider's message. No review was accepted.` };
   }
@@ -1412,13 +1440,51 @@ function classifyFailure(result, agent = null) {
   // back through stdout before surrendering to the bare exit code.
   const dropWarnings = (text) => stripAnsi(text)
     .split(/\r?\n/).filter((line) => line.trim() && !/^(?:Warning:|(?:\d{4}-\d\d-\d\dT\S+\s+)?WARN\b)/i.test(line.trim())).join("\n");
-  const cleanErr = dropWarnings(result.stderr), cleanOut = dropWarnings(result.stdout);
+  // Never keep, or classify on, a line MOMM itself sent. A CLI that echoes the prompt before failing
+  // would otherwise put the reviewed artifact into the stored report, which keeps the artifact only
+  // with --store-input (a live probe of 13315f2 showed it). Inline rather than a helper: several
+  // suites evaluate this function on its own.
+  const sentLines = new Set(String(sent ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const unsent = (text) => sentLines.size ? text.split("\n").filter((line) => !sentLines.has(line.trim())).join("\n") : text;
+  const cleanErr = unsent(dropWarnings(result.stderr)), cleanOut = unsent(dropWarnings(result.stdout));
+  // Exact-line removal misses an echo that is prefixed, timestamped, JSON-escaped or wrapped, and
+  // each of those kept reviewed code in the stored detail (independent review of 7212f33). Anything
+  // QUOTED therefore drops a line that contains a sent line of eight or more characters (raw or
+  // JSON-unescaped) or that is itself a twelve-plus-character piece of what was sent. Quotes are taken
+  // from the end, walking back at most 500 lines, so the check stays bounded on a large output.
+  const sentText = String(sent ?? ""), sentLong = [...sentLines].filter((line) => line.length >= 8);
+  const unescapeJson = (text) => text.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\r/g, "").replace(/\\(["\\/])/g, "$1");
+  const carriesSent = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed || !sentText) return false;
+    if (sentLines.has(trimmed) || (trimmed.length >= 12 && sentText.includes(trimmed))) return true;
+    // Short sent lines echoed behind a prefix (">", "|", "#", "*", or an ISO timestamp and a log level).
+    const unprefixed = trimmed.replace(/^(?:\d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:?\d\d)?\s+(?:\[?[A-Za-z]+\]?:?\s+)?|\[[A-Za-z]+\]:?\s+|(?:[>|#*]\s?)+)/, "").trim();
+    if (unprefixed !== trimmed && sentLines.has(unprefixed)) return true;
+    const unescaped = unescapeJson(trimmed);
+    return sentLong.some((part) => trimmed.includes(part) || unescaped.includes(part));
+  };
+  const quote = (text, limit) => {
+    const kept = [], lines = String(text ?? "").split("\n");
+    let size = 0;
+    for (let i = lines.length - 1, seen = 0; i >= 0 && size < limit && seen < 500; i--, seen++) {
+      if (carriesSent(lines[i])) continue;
+      kept.push(lines[i]);
+      size += lines[i].length + 1;
+    }
+    return clippedTail(kept.reverse().join("\n"), limit);
+  };
   const meaningful = cleanErr || cleanOut || result.error?.message;
   const combined = `${cleanOut}\n${cleanErr}`.toLowerCase();
   // Local model/cache compatibility failures can include OAuth diagnostics or
   // echoed source. They are not evidence that the account needs a new login.
-  if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported/.test(combined)) {
-    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${clipped(meaningful, 700)}` };
+  if (/failed to load models cache|missing field [`'"]?supports_parallel_tool_calls|(?:configured|selected) model .*not supported|model is not supported when using/.test(combined)) {
+    const codexModelGap = agent === "codex" && /model is not supported when using codex with a chatgpt account/.test(combined);
+    // Seen live on 23 and 24 September 2026: the Codex CLI was older than the model the Codex desktop
+    // app had selected in the config file the two share. Updating the CLI fixed it; changing the model
+    // would have changed the desktop app too.
+    if (codexModelGap) return { status: "error", detail: `CLI/model compatibility error: the Codex CLI does not support the model it is configured to use. A newer model usually needs a newer CLI: update it with npm install -g @openai/codex@latest (with the user's approval) and retry. ~/.codex/config.toml is shared with the Codex desktop app, so do not change the model there to work around this, and never switch to an API key. Provider said: ${quote(meaningful, 700) || "(nothing left to quote once what MOMM sent was removed)"}` };
+    return { status: "error", detail: `CLI/model compatibility error: check the installed CLI version and its configured model; use the provider's official update instructions with the user's approval. Do not clear credentials or re-login on this evidence alone. Provider said: ${quote(meaningful, 700) || "(nothing left to quote once what MOMM sent was removed)"}` };
   }
   // A retired account tier is a permanent condition, not an auth problem —
   // classify it first (its message contains "authenticating") so the user is
@@ -1426,15 +1492,23 @@ function classifyFailure(result, agent = null) {
   // Deliberately narrow: bare "unsupported_client" is a generic OAuth error
   // code any provider can emit and must not trigger tier-specific advice.
   if (/ineligibletiererror|no longer supported for .* for individuals/.test(combined)) {
-    return { status: "ineligible_tier", detail: "provider retired individual/Pro/Ultra access for this CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor" };
+    // Route-specific: the Gemini retirement and its antigravity successor are facts about Gemini, and
+    // saying them for another route sends the user to fix the wrong thing (seen live on codex).
+    return { status: "ineligible_tier", detail: agent === "gemini"
+      ? "provider retired individual/Pro/Ultra access for the gemini CLI; Standard or Enterprise Gemini Code Assist organization licenses remain supported — for consumer accounts the antigravity route (agy) is the successor"
+      : `the ${agent ?? "provider"} account tier no longer covers this CLI; check that account's plan with the provider. This is an account state, not a MOMM failure, and no other route is affected` };
   }
+  // stdout can echo the reviewed artifact. Only explicit diagnostic lines on
+  // stderr establish this failure class; a bare code literal 429 is not proof.
+  const quotaDiagnostic = /^(?:error:\s*)?(?:(?:http\s+)?429\s+too many requests|rate[ -]limit(?:ed| exceeded| reached)|quota (?:exceeded|exhausted)|usage limit (?:reached|exceeded)|allowance (?:exhausted|exceeded))(?:[.!:]|\s*$)/i;
+  if (cleanErr.split(/\r?\n/).some(line => quotaDiagnostic.test(line.trim()))) return { status: "quota", detail: "provider quota or rate limit reached; do not re-login or bypass the allowance" };
   // Server-side outages often mention authentication ("token could not be
   // validated ... 503") — classify them before the auth regex so a user is
   // never told to re-login when the provider is simply down. Patterns stay
   // phrase-qualified ("returned: no server", not bare "no server") so local
   // configuration errors never masquerade as outages.
   if (/\(50[0-4]\)|\b50[0-4] (?:service|error|response)|service unavailable|temporarily unavailable|returned: no server|bad gateway|internal server error/.test(combined)) {
-    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${clipped(meaningful, 400) || "(no output)"}` };
+    return { status: "provider_unavailable", detail: `provider service error (retry later) — provider said: ${quote(meaningful, 400) || "(no output)"}` };
   }
   // Copilot's signed-out response uses this exact line rather than "login
   // required". Match a whole diagnostic line, not quoted source or a generic
@@ -1445,7 +1519,7 @@ function classifyFailure(result, agent = null) {
     // contain device codes, URLs, account identifiers and session metadata.
     return { status: "authentication_required", detail: "the account session is missing, expired or rejected; complete the provider's official browser login, then retry" };
   }
-  return { status: "error", detail: clipped(meaningful || `exit ${result.code}`, 1200) };
+  return { status: "error", detail: quote(meaningful, 1200) || `exit ${result.code}` };
 }
 
 async function invokeReviewer(agent, artifact, options) {
@@ -1464,6 +1538,7 @@ async function invokeReviewer(agent, artifact, options) {
   let command;
   let args;
   let input;
+  let routeEnv = null;
   let cwd = process.cwd();
   let temporaryDirectory = null;
   // Repository rules (.reviewrules) and any assigned persona ride along with
@@ -1502,7 +1577,14 @@ async function invokeReviewer(agent, artifact, options) {
     // codex exec has a native image flag; each staged image is attached
     // individually (verified: -i, --image <FILE>... on codex exec --help).
     const imageArgs = attachments.filter((a) => a.modality === "image").flatMap((a) => ["-i", a.staged_path]);
-    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...imageArgs, "-"];
+    // Codex reads AGENTS.md from the git root down to its working directory, and its private directory
+    // sits in the reviewed project's .ensemble_reviews, so the project's own instructions reached the
+    // reviewer; the user's hooks, plugins, apps and multi-agent tools were on as well (25 September
+    // 2026). project_doc_max_bytes=0 loads no project instructions, and each feature is switched off
+    // for this run only (verified with codex features list on CLI 0.156.1). The model, effort and MCP
+    // servers shared with the Codex desktop app are left as the user set them (owner decision; 1.17).
+    const codexIsolation = ["-c", "project_doc_max_bytes=0", ...["hooks", "plugins", "apps", "multi_agent", "image_generation"].flatMap((feature) => ["--disable", feature])];
+    args = ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...codexIsolation, ...imageArgs, "-"];
     input = assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact);
   } else if (agent === "claude") {
     // Verified against Claude Code CLI 2.1.233: -p reads stdin, --output-format
@@ -1612,8 +1694,18 @@ async function invokeReviewer(agent, artifact, options) {
     const promptPath = path.join(temporaryDirectory, "prompt.txt");
     fs.writeFileSync(promptPath, assemblePrompt(contract, options.guidanceRoutes?.[agent] ?? "", artifact), { encoding: "utf8", mode: 0o600 });
     command = grokCommand();
+    // grok-4.7-build-fast is the same model on faster serving (xAI: about twice as fast). At its default
+    // high effort grok-4.7 took 736 s on a 5 KB review against a budget of about 276 s, so every Grok
+    // review timed out (25 September 2026). It is used only when this account lists it, because it is
+    // not in every plan. `grok models` makes no model call. The pending answer is kept on the options it
+    // was asked with, so calls sharing them wait for one listing instead of racing past it to the plain
+    // model (delta review rev_20260924234524_89d8189794c3); each piece's own options copy asks once.
+    options.grokModelProbe ??= (options.runProcess ?? runProcess)(command, ["models"], { input: "", timeoutMs: 20_000, env: { ...cleanOauthEnv(), GROK_DISABLE_AUTOUPDATER: "1" }, cwd: temporaryDirectory })
+      .then((listed) => (listed?.code === 0 && /^\s*[-*]\s+grok-4\.7-build-fast(?=\s|$)/m.test(String(listed.stdout ?? "")) ? "grok-4.7-build-fast" : null), () => null);
+    const grokModel = await options.grokModelProbe;
     args = [
       "--prompt-file", promptPath,
+      ...(grokModel ? ["--model", grokModel] : []),
       // Preserve the full supplied prompt instead of an offloaded summary;
       // retain plan-mode containment and disallow delegated subagents.
       "--verbatim", "--no-subagents",
@@ -1621,21 +1713,32 @@ async function invokeReviewer(agent, artifact, options) {
       // Deny named tool classes explicitly; allow enough turns to return a
       // final answer after a denied attempt. This is CLI policy, not an OS sandbox.
       ...["Read", "Grep", "Bash", "Edit", "MCPTool", "WebFetch", "WebSearch"].flatMap(tool => ["--deny", tool]),
+      // A bare "*" matches every tool class (grok-build permissions reference), so a class added in a
+      // later Grok release is denied too. The named rules above stay for older CLIs.
+      "--deny", "*",
       "--max-turns", "4",
       "--output-format", "json",
       "--permission-mode", "plan",
       "--disable-web-search",
-      ...(options.effort === "medium" ? ["--reasoning-effort", "medium"] : []),
+      // Medium with the fast model was valid in every measured run (gate record); Grok's own default is
+      // high, which took 736 s on the plain model. An explicit --effort default keeps the provider setting.
+      ...(options.effort === "medium" || (!options.effort && grokModel) ? ["--reasoning-effort", "medium"] : []),
     ];
     input = "";
     cwd = temporaryDirectory;
+    // Grok imports the user's Claude Code and Cursor setup by default (global instructions, skills, MCP
+    // servers started with the user's credentials, hooks) and cross-session memory, so the reviewer
+    // inherited the whole harness (grok inspect, 25 September 2026). These documented per-process
+    // switches turn that off for MOMM's runs only; the user's own Grok setup is unchanged.
+    routeEnv = { GROK_MEMORY: "false", GROK_DISABLE_AUTOUPDATER: "1" };
+    for (const vendor of ["CLAUDE", "CURSOR"]) for (const kind of ["SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"]) routeEnv[`GROK_${vendor}_${kind}_ENABLED`] = "false";
   } else {
     return { agent, status: "unsupported", detail: "no reviewed adapter exists" };
   }
 
     setupComplete = true;
     // options.runProcess is a test seam only (argv binding is proven with a fake).
-    result = await (options.runProcess ?? runProcess)(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: cleanOauthEnv(), cwd,
+    result = await (options.runProcess ?? runProcess)(command, args, { input, timeoutMs: agentTimeoutMs(agent, options.timeoutMs, options.timeoutExplicit === true), env: routeEnv ? { ...cleanOauthEnv(), ...routeEnv } : cleanOauthEnv(), cwd,
       onProgress: options.onProgress ? progress => options.onProgress(agent, progress) : null });
   } catch {
     // Unexpected filesystem/launcher exceptions are terminal route failures.
@@ -1671,15 +1774,16 @@ async function invokeReviewer(agent, artifact, options) {
       : "reviewer setup failed before dispatch; no provider call was made" };
   }
   if (result.code !== 0 || result.error || result.timedOut) {
-    const failure = classifyFailure(result, agent);
-    return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress };
+    // Everything this route was sent: the full prompt when it went by stdin, and always the artifact.
+    const failure = classifyFailure(result, agent, [input, artifact].filter((text) => typeof text === "string").join("\n"));
+    return { agent, ...failure, ...(failure.status === "authentication_required" ? { login_hint: LOGIN_HINTS[agent] ?? null } : {}), progress: result.progress, usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`) };
   }
   if (agent === "antigravity" && /^\[agy\] print timeout after [^\r\n]+; returning partial output\s*$/m.test(String(result.stderr ?? ""))) {
-    return { agent, status: "timeout", detail: "Antigravity reached its native print deadline and returned partial output; no review was accepted.", progress: result.progress };
+    return { agent, status: "timeout", detail: "Antigravity reached its native print deadline and returned partial output; no review was accepted.", progress: result.progress, usage: parseUsage(agent, result.stdout) };
   }
   const transportOutput = agent === "copilot" ? copilotReviewPayload(result.stdout)
     : agent === "antigravity" ? antigravityStreamPayload(result.stdout, !attachments.length) : null;
-  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress };
+  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout) };
   const payload = transportOutput ? transportOutput.payload : unwrapReviewPayload(result.stdout);
   if (!payload) {
     const failedEnvelope = extractJsonObjects(stripAnsi(result.stdout)).some(envelope =>
@@ -1688,7 +1792,7 @@ async function invokeReviewer(agent, artifact, options) {
       // A CLI may exit zero yet explicitly mark its envelope failed. Never
       // accept the nested review or misdescribe this as a missing JSON schema.
       // Do not echo the envelope: it can contain private provider diagnostics.
-      return { agent, status: "error", progress: result.progress,
+      return { agent, status: "error", progress: result.progress, usage: parseUsage(agent, result.stdout),
         detail: "reviewer CLI returned a terminal error envelope; any nested review was rejected. A new completed dispatch is required." };
     }
     // Say WHAT came back, not just that it was wrong: the failure class
@@ -1702,6 +1806,7 @@ async function invokeReviewer(agent, artifact, options) {
       agent,
       status: "invalid_output",
       progress: result.progress,
+      usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`),
       detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
     };
   }
@@ -1928,7 +2033,7 @@ const SEVERITY_RANK = { CRITICAL: 3, WARNING: 2, NITPICK: 1 };
 // governor could finish a run believing it was done while every suggestion sat
 // untriaged and dispositions.jsonl stayed empty. This block makes the
 // outstanding work explicit, counted, and impossible to miss.
-function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, completionScript = null) {
+function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, completionScript = null, quorum = null) {
   const byReviewer = {};
   let total = 0;
   for (const result of results) {
@@ -1950,12 +2055,14 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, complet
   const actions = [];
   const completed = results.filter(result => result.status === "success").length;
   const required = Math.max(1, minSuccess || 1);
+  // Merged route success means at least one piece, not every piece.
+  const quorumMet = quorum === null ? completed >= required : quorum.met === true;
   // This is a display command, never executed from reviewer data. Production
   // supplies the actual installed path; single-quote for the documented shell.
   const completionCheck = completionScript
     ? `node '${completionScript.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}' --run ${runId}`
     : `node <installed-momm>/scripts/governor.mjs --run ${runId}`;
-  if (completed < required) actions.push(`Review quorum not met: ${completed}/${required} completed external reviews. Do not declare the review finished; resolve route failures or obtain the required completed reviews.`);
+  if (!quorumMet) actions.push(`Review quorum not met for the full reviewed scope (minimum ${required} per piece). Do not declare the review finished; inspect the quorum block and resolve the missing coverage.`);
   if (material) actions.push(`Reproduce each of the ${material} CRITICAL/WARNING finding(s) with a failing test before authoring any fix.`);
   if (total) actions.push(`Triage all ${total} suggested_improvements — apply-and-verify or reject with a reason. None may be silently dropped.`);
   if (total || material) actions.push(`Append one JSONL line per ruling to .ensemble_reviews/dispositions.jsonl with run_id ${runId}, then present the disposition table.`);
@@ -1965,9 +2072,9 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, complet
     suggestions_by_reviewer: byReviewer,
     material_findings_awaiting_reproduction: material,
     dispositions_logged_for_this_run: logged,
-    review_quorum_met: completed >= required,
+    review_quorum_met: quorumMet,
     complete: false,
-    review_phase_complete: completed >= required,
+    review_phase_complete: quorumMet,
     completion_check: completionCheck,
     required_next_actions: actions,
   };
@@ -2012,13 +2119,50 @@ function buildInsights(findings, results) {
   };
 }
 
-async function readAllStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf8");
+async function readAllStdin(timeoutMs = 30_000, { silentIsEmpty = false } = {}) {
+  // Non-TTY can be an idle inherited pipe. Never ignore potentially mismatched
+  // input, but refuse on a fixed deadline rather than wait indefinitely. A caller
+  // that has its own authoritative input (--range) may treat a pipe that sent
+  // nothing at all by the deadline as no stdin; any byte keeps the strict rule.
+  const deadline = /^\d{3,5}$/.test(process.env.MOMM_STDIN_DEADLINE_MS ?? "") ? Math.min(30_000, Number(process.env.MOMM_STDIN_DEADLINE_MS)) : timeoutMs;
+  const input = process.stdin;
+  if (input.readableEnded) return "";
+  return new Promise((resolve, reject) => {
+    const chunks = []; let bytes = 0;
+    const cleanup = () => { clearTimeout(timer); input.off('data', data); input.off('end', end); input.off('error', error); input.pause(); };
+    const error = e => { cleanup(); reject(e); };
+    const end = () => { cleanup(); resolve(Buffer.concat(chunks).toString('utf8')); };
+    const data = chunk => {
+      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += value.length;
+      if (bytes > 8_000_000) return error(new Error('stdin exceeds the 8 MB input limit'));
+      chunks.push(value);
+    };
+    const timer = setTimeout(() => (silentIsEmpty && bytes === 0 ? (cleanup(), resolve(null)) : error(new Error('stdin deadline exceeded; close the input pipe or use a completed input file'))), deadline);
+    input.on('data', data); input.once('end', end); input.once('error', error);
+  });
 }
 
 async function collectArtifact(options) {
+  if (options.range) {
+    // A committed range (1.16.1 A3). MOMM takes the diff itself with the flags the snapshot verifies
+    // against, so the reviewed bytes and the recorded identity cannot drift apart. A diff on stdin is
+    // accepted only when it is that same diff, which is how release gates have been fed.
+    if (options.input) throw new Error("--range cannot be combined with --input: choose the committed range or the file");
+    options.range.paths = options.rangePaths ?? [];
+    const limit = options.range.paths.length ? ["--", ...options.range.paths] : ["--"];
+    const result = await runProcess("git", ["diff", ...RANGE_DIFF_FLAGS, "--end-of-options", options.range.base, options.range.head, ...limit], { timeoutMs: 60_000 });
+    if (result.code !== 0 || result.error) throw new Error(`--range: git could not produce the diff for ${options.range.base}..${options.range.head}`);
+    if (!result.stdout.trim()) throw new Error("--range: that range has no changes in the named paths");
+    if (!process.stdin.isTTY) {
+      // Range review rev_20260925004814_1ed9f58c2c3a: an open, silent pipe is not a diff.
+      const supplied = await readAllStdin(30_000, { silentIsEmpty: true });
+      if (supplied === null) process.stderr.write("momm: stdin stayed open and silent; reviewing the range's own diff\n");
+      if (supplied?.trim() && supplied !== result.stdout) throw new Error("The diff on stdin is not the diff of the declared --range (same flags and path limits). Refusing: the report would name one tree and review another.");
+    }
+    return result.stdout;
+  }
+  if (options.rangePaths?.length) throw new Error("--range-path needs --range <base>..<head>");
   if (options.input) {
     const resolved = path.resolve(options.input);
     // Stale-input detection: a gate once ran against an outdated file and
@@ -2093,7 +2237,13 @@ async function preflightCheck(reviewers, governor) {
     const ready = auth === "ok" || auth === "present";
     const entry = { agent, installed: true, version: version.version, ready, auth, modalities: ["text", ...(ADAPTER_MEDIA[agent] ?? [])].filter((m) => m in (MODALITY_SUPPORT[agent] ?? { text: true })) };
     if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
-    if (agent === "gemini") entry.note = "fails closed on individual accounts (enterprise Code Assist only)";
+    // Deprecation notice, not a removal (owner decision, 1.16.1). The route still works on an
+    // enterprise Code Assist licence and is not being withdrawn; individual tiers were retired by
+    // the provider on 2026-06-18, and Gemini models under an account login belong on antigravity.
+    if (agent === "gemini") {
+      entry.deprecated = true;
+      entry.note = "deprecated route: individual Code Assist tiers were retired 2026-06-18, so this fails closed on individual accounts (enterprise Code Assist only). For Gemini models under an account login, route through antigravity. The route is not being removed.";
+    }
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
     return entry;
   }));
@@ -2122,18 +2272,32 @@ function shouldRetryStatus(status, options = {}) {
 // and result replacement with a stubbed invoker and a no-op sleep.
 async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
   let attempts = 1;
-  let result = await invoker(agent, artifact, options);
+  const history = [];
+  const invoke = async () => {
+    const started = Date.now();
+    const start = options.onAttemptStart?.({agent,ordinal:attempts,started_at:new Date(started).toISOString()});
+    const result = await invoker(agent, artifact, options);
+    const row = { ...result, duration_ms: Date.now() - started, ordinal: attempts, started_at: new Date(started).toISOString(), ...(start?{attempt_start:start}:{}) };
+    // Accounting needs identities and measurements, not a second unredacted
+    // copy of diagnostics, raw provider output or complete reviewer content.
+    history.push({ agent, status: result.status, ...(result.usage ? {usage: result.usage} : {}),
+      duration_ms: row.duration_ms, ordinal: row.ordinal, started_at: row.started_at,
+      ...(start ? {attempt_start: start} : {}) });
+    options.onAttempt?.(row);
+    return result;
+  };
+  let result = await invoke();
   let first = null;
   if (shouldRetryStatus(result.status, options)) {
     first = result;
     onRetry?.(result.status);
     await sleep(PROVIDER_RETRY_DELAY_MS);
     attempts = 2;
-    result = await invoker(agent, artifact, options);
+    result = await invoke();
   }
   // An invalid-output retry is disclosed on the result: what was rejected first, and why.
   const disclosed = first?.status === "invalid_output" ? { retried_after: first.status, first_attempt_detail: first.detail ?? null } : {};
-  return { ...result, attempts, ...disclosed };
+  return { ...result, attempts, attempt_history: history, ...disclosed };
 }
 
 // Live progress display on stderr for humans. Mutually exclusive with
@@ -2255,6 +2419,18 @@ function createUi(enabled, outStream = process.stderr) {
     },
   };
   return api;
+}
+
+// "Installed somewhere" is not "the version this harness loads": list every copy a harness can find,
+// which version each declares, and whether the active discovery paths agree. Read-only; other copies
+// are read, never executed. Exit 1 on a conflict, duplicate copies, or an unmet --expect.
+function doctorVersions(options) {
+  const report = installationsInventory({ runningSkillRoot: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..") });
+  const expectation = options.expectVersion ? report.upgrade_complete_for(options.expectVersion) : null;
+  process.stdout.write(`${JSON.stringify({ dispatcher_version: MOMM_VERSION, model_calls_made: false, ...report, ...(expectation ? { expected: options.expectVersion, upgrade: expectation } : {}) }, null, options.pretty ? 2 : 0)}\n`);
+  if (!report.verdict.consistent) process.stderr.write(`MOMM installations (${report.verdict.status}): ${report.verdict.detail}\n`);
+  if (expectation && !expectation.complete) process.stderr.write(`Upgrade to ${options.expectVersion} is not complete: ${expectation.reason}\n`);
+  if (!report.verdict.consistent || (expectation && !expectation.complete)) process.exitCode = 1;
 }
 
 async function doctor(pretty) {
@@ -2545,7 +2721,7 @@ async function selfTest(pretty) {
         && buffer.includes(Buffer.from("IDAT", "latin1")) && buffer.includes(Buffer.from("IEND", "latin1"));
     })(),
     explicit_timeout_honored_above_cap: agentTimeoutMs("codex", 480_000, true) === 480_000
-      && agentTimeoutMs("grok", 480_000, true) === 720_000
+      && agentTimeoutMs("grok", 480_000, true) === 960_000
       && agentTimeoutMs("grok", 480_000, false) === 360_000
       && agentTimeoutMs("codex", 120_000, false) === 120_000,
     every_default_reviewer_has_tuned_persona: ["codex", "claude", "gemini", "antigravity", "copilot", "grok"]
@@ -2815,7 +2991,7 @@ async function selfTest(pretty) {
       const stream = [{ type: "session.skills_loaded", data: { skills: [{ name: "PRIVATE-SKILL-NAME", description: "please log in" }] } }, { type: "user.message", data: { content: "x" } },
         { type: "session.error", data: { errorType: "quota", message: "You have exceeded your monthly quota (Request ID: AAAA:BBBB)", statusCode: 402, errorCode: "quota_exceeded" } }, { type: "result", exitCode: 1 }].map((e) => JSON.stringify(e)).join("\n");
       const f = classifyFailure({ code: 1, stdout: stream, stderr: "" }, "copilot");
-      return f.status === "error" && /quota/i.test(f.detail) && /not an authentication/i.test(f.detail) && !/PRIVATE-SKILL-NAME|AAAA:BBBB|session\.|\{/.test(f.detail);
+      return f.status === "quota" && /quota/i.test(f.detail) && /not an authentication/i.test(f.detail) && !/PRIVATE-SKILL-NAME|AAAA:BBBB|session\.|\{/.test(f.detail);
     })(),
     copilot_stream_text_never_drives_classification: (() => {
       const mk = (error) => [{ type: "tool.execution_complete", data: { result: "service unavailable (503); please log in; PRIVATE-ARTIFACT-LINE" } }, ...(error ? [{ type: "session.error", data: error }] : []), { type: "result", exitCode: 1 }].map((e) => JSON.stringify(e)).join("\n");
@@ -2867,13 +3043,22 @@ async function selfTest(pretty) {
       return failure.status === "authentication_required" && failure.login_hint === LOGIN_HINTS.codex && !failure.detail.includes("synthetic-private-marker");
     })(),
     classifies_retired_tier_before_auth: classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals." }).status === "ineligible_tier",
+    // A retired tier is a per-route fact. The advice must name the route that failed and must not
+    // tell a Codex user that Gemini Code Assist retired (seen live: rev_20260922100526, codex).
+    retired_tier_advice_is_route_specific: (() => {
+      const tier = (agent) => classifyFailure({ code: 1, stdout: "", stderr: "Error authenticating: IneligibleTierError: This client is no longer supported for individuals." }, agent);
+      const gemini = tier("gemini"), codex = tier("codex");
+      return gemini.status === "ineligible_tier" && codex.status === "ineligible_tier"
+        && /gemini/i.test(gemini.detail) && !/gemini/i.test(codex.detail) && /codex/i.test(codex.detail)
+        && !/antigravity route/i.test(codex.detail);
+    })(),
     generic_unsupported_client_not_tier: classifyFailure({ code: 1, stdout: "", stderr: "OAuth error: unsupported_client — please sign in again" }).status !== "ineligible_tier",
     timeout_scales_with_input: effectiveTimeoutMs(76, 120_000, false) === 120_000
       && effectiveTimeoutMs(14_000, 120_000, false) > 140_000
       && effectiveTimeoutMs(36_227, 120_000, false) > 220_000
       && effectiveTimeoutMs(10_000_000, 120_000, false) === 300_000
       && effectiveTimeoutMs(10_000_000, 60_000, true) === 60_000,
-    slow_routes_get_headroom: agentTimeoutMs("grok", 200_000) === 300_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
+    slow_routes_get_headroom: agentTimeoutMs("grok", 150_000) === 300_000 && agentTimeoutMs("grok", 180_000) === 360_000 && agentTimeoutMs("codex", 200_000) === 200_000 && agentTimeoutMs("grok", 300_000) === 360_000,
     every_adapter_can_govern: ["codex", "gemini", "claude", "antigravity", "copilot", "grok"].every((agent) => VALID_GOVERNORS.has(agent)),
     private_evidence_modes_configured: PRIVATE_DIR_MODE === 0o700 && PRIVATE_FILE_MODE === 0o600,
     // A unanimous coalition must SCORE as unanimous: four reviewers describing
@@ -3080,6 +3265,8 @@ async function main() {
     return;
   }
   if (options.stats) { process.stdout.write(renderStats(loadTrackRecord())); return; }
+  if (options.doctor && options.versions) { doctorVersions(options); return; }
+  if (options.versions || options.expectVersion) throw new Error("--versions and --expect belong to --doctor: use --doctor --versions [--expect <version>]");
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
     const entries = await preflightCheck(options.reviewers, options.governor);
@@ -3095,6 +3282,7 @@ async function main() {
         }
       }
     }
+    { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
     return;
   }
 
@@ -3105,7 +3293,8 @@ async function main() {
 
   const evidenceProtection = preparePrivateEvidence(path.resolve('.ensemble_reviews'));
   const rawArtifact = await collectArtifact(options);
-  const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input);
+  const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input, options.range ?? null);
+  if (options.range && !sourceSnapshot.complete) throw new Error(`--range could not be bound to the repository: ${sourceSnapshot.reason}`);
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.
@@ -3197,6 +3386,8 @@ async function main() {
     }
   }
   const scheduler = createScheduler({ jobs: options.jobs ?? Math.min(6, uniqueReviewers.length * (split ? 2 : 1)) });
+  const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 12)}`;
+  const attemptEvidence = [];
   const reviewOne = async (agent, artifactText, pieceId, piece = null) => {
     const tag = pieceId ? { piece: pieceId } : {};
     emitEvent(options.stream, { event: "reviewer.started", reviewer: agent, ...tag });
@@ -3205,6 +3396,12 @@ async function main() {
     // Provider 5xx flaps (observed live with Copilot) usually clear within
     // seconds — absorb exactly one, and only for outages, never for auth.
     const result = await invokeWithRetry(invokeReviewer, agent, artifactText, { ...pieceOptions,
+      onAttemptStart: row => startAttempt(process.cwd(), {run_id:runId,route:agent,piece:pieceId??'whole',input_sha256:createHash('sha256').update(sanitized.value).digest('hex'),piece_sha256:createHash('sha256').update(artifactText).digest('hex'),ordinal:row.ordinal,started_at:row.started_at}),
+      onAttempt: row => {
+        const record = {...attemptRecord(row, { runId, piece: pieceId ?? "whole", inputHash: createHash("sha256").update(sanitized.value).digest("hex"), pieceHash: createHash("sha256").update(artifactText).digest("hex"), ordinal: row.ordinal, durationMs: row.duration_ms, startedAt: row.started_at, attemptId:row.attempt_start?.attempt_id }),start:row.attempt_start};
+        const reference = persistAttempt(process.cwd(), record);
+        attemptEvidence.push({ ...record, evidence: reference });
+      },
       onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...tag, ...progress }) },
       (reason) => emitEvent(options.stream, { event: "reviewer.retry", reviewer: agent, reason, ...tag }));
     const info = {
@@ -3260,7 +3457,6 @@ async function main() {
   const findings = rationalize(pieceResults ? pieceResults.flatMap((piece) => piece.results.map((r) => ({ ...r, piece: piece.id }))) : results, { prose, artifact: sanitized.value })
     .map((f) => ({ ...f, sources: [...new Set(f.sources)], ...(f.quote && headerOnlyQuote(f.quote) ? { header_only_quote: true } : {}) }));
   // Join key linking this report, the run log, and governor dispositions.
-  const runId = `rev_${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${Math.random().toString(36).slice(2, 6)}`;
   const guidanceSidecar = { written: false, path: null, error: null };
   if (resolvedGuidance.governor?.text || Object.values(resolvedGuidance.routes).some((entry) => entry.text)) {
     try {
@@ -3281,6 +3477,8 @@ async function main() {
     gate_policy: { strict: options.strict, quorum_required: options.minSuccess ?? 1, requested_routes: options.reviewers, retry_invalid: options.retryInvalid === true },
     policy: "oauth-only",
     run_id: runId,
+    attempt_evidence: attemptEvidence,
+    attempt_accounting: attemptTotals(attemptEvidence),
     ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
     input_bytes: byteLength,
@@ -3346,7 +3544,7 @@ async function main() {
     // 1.16: what the CLIs reported (per route, never summed across routes whose
     // counts mean different things) plus the dispatcher's labelled estimate.
     input_estimate: inputEstimate(sanitized.value),
-    usage_totals: rollupUsage(results.filter((r) => r.status === "success").map((r) => ({ agent: r.agent, status: r.status, reported: r.usage?.reported ?? null, coverage: r.usage?.coverage ?? { tokens: false, cost: false }, accepted_findings: 0 }))),
+    usage_totals: rollupUsage(attemptEvidence.filter(r => r.outcome !== "not_dispatched").map(r => ({ agent: r.route, status: r.status, reported: r.usage?.reported ?? null, coverage: r.usage?.coverage ?? { tokens: false, cost: false }, field_map: r.usage?.field_map, accepted_findings: 0 }))),
     findings,
     // Corroboration is a prioritization signal for the governor, never an
     // authority: unanimous findings still go through the reproduction gate.
@@ -3358,7 +3556,7 @@ async function main() {
     // What the GOVERNOR still owes: reproduction of material findings and an
     // explicit ruling on every suggestion. This immutable initial report is
     // never completion evidence; governor.mjs revalidates current evidence.
-    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess, fileURLToPath(new URL("./governor.mjs", import.meta.url))),
+    outstanding: buildOutstanding(findings, results, runId, process.cwd(), options.minSuccess, fileURLToPath(new URL("./governor.mjs", import.meta.url)), { met: pieceQuorum ? pieceQuorum.met : externalSuccesses >= (options.minSuccess ?? 1) }),
     decision_rule: "Consensus prioritizes investigation; the governor must reproduce and verify before editing.",
   };
   // Durable evidence, persisted BEFORE the stdout report so the emitted
@@ -3491,6 +3689,8 @@ async function main() {
   // update notice if a newer release is published.
   const newer = await checkForUpdate(MOMM_VERSION, { stream: options.stream });
   clockTrigger("review.finish", options.stream);
+  // Reviewer CLIs that are behind, from what the clock last recorded (a file read, no network).
+  { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
   if (!options.stream) {
     process.stderr.write(`  momm ${MOMM_VERSION}${newer ? `  ↑ update available: ${newer} — run node momm/scripts/multi-review.mjs update in the skills clone; nothing installs automatically` : ""}\n`);
   }

@@ -14,6 +14,7 @@ function test(name, fn) { try { fn(); passed.push(name); } catch (e) { failed.pu
 function between(source, first, last) { const a = source.indexOf(first), b = source.indexOf(last, a); assert(a >= 0 && b > a, "fixture source boundaries moved"); return source.slice(a, b); }
 const classify = vm.runInNewContext(between(read("momm/scripts/multi-review.mjs"), "function classifyFailure(", "async function invokeReviewer(") + ";classifyFailure", {
   stripAnsi: s => String(s ?? ""), clipped: (s, n) => String(s ?? "").slice(0, n),
+  clippedTail: (s, n) => { const t = String(s ?? "").trim(); return t.length > n ? `…${t.slice(-(n - 1))}` : t; },
 });
 test("CLI/model incompatibility is not a login failure even when diagnostics mention OAuth", () => {
   const result = classify({ code: 1, stdout: "", stderr: "failed to load models cache: missing field supports_parallel_tool_calls\nOAuth session present; browser login available" });
@@ -21,6 +22,29 @@ test("CLI/model incompatibility is not a login failure even when diagnostics men
 });
 test("incidental browser terminology does not trigger login advice", () => assert.equal(classify({ code: 1, stdout: "", stderr: "invalid configuration: browser handler is unavailable" }).status, "error"));
 test("genuine sign-in request still carries authentication status", () => assert.equal(classify({ code: 1, stdout: "", stderr: "Please sign in to continue" }).status, "authentication_required"));
+test("quota classification needs a provider diagnostic, not echoed artifact words", () => {
+  for (const stdout of ['if (status === 429) retry();', '// rate limit exceeded', 'quota exhausted']) {
+    assert.equal(classify({code:1,stdout,stderr:'unexpected local failure'}).status, 'error');
+  }
+  for (const stderr of ['HTTP 429 Too Many Requests', 'Error: quota exhausted', 'Rate limit exceeded']) {
+    assert.equal(classify({code:1,stdout:'',stderr}).status, 'quota');
+  }
+  assert.equal(classify({code:1,stdout:'',stderr:'',cancelled:true}).status, 'cancelled');
+});
+const retry = vm.runInNewContext(between(read('momm/scripts/multi-review.mjs'), 'const PROVIDER_RETRY_DELAY_MS', 'function createUi(') + ';invokeWithRetry', {setTimeout});
+let retryCalls=0, callbackRows=[];
+const retryResult = await retry(async()=> ++retryCalls === 1
+  ? {agent:'claude',status:'invalid_output',detail:'synthetic-private-diagnostic',raw:'synthetic-private-output'}
+  : {agent:'claude',status:'success',review:{verdict:'ACCEPT',findings:[],private_canary:'synthetic-private-output'}},
+  'claude','synthetic artifact',{retryInvalid:true,onAttempt:row=>callbackRows.push(row)},null,async()=>{});
+test('attempt history retains accounting without duplicating raw diagnostics or reviewer content', () => {
+  assert.equal(retryCalls,2); assert.equal(callbackRows.length,2);
+  assert.equal(callbackRows[0].detail,'synthetic-private-diagnostic','evidence callback still sees outcome context');
+  assert.equal(retryResult.attempt_history.length,2);
+  assert.doesNotMatch(JSON.stringify(retryResult.attempt_history),/synthetic-private/);
+  assert.equal(retryResult.attempt_history[0].status,'invalid_output');
+  assert.equal(retryResult.attempt_history[1].ordinal,2);
+});
 for(const installer of ['install.mjs','momm/scripts/install.mjs']) test(`${installer} recognizes a short-name alias without overwriting other links`,()=>{
   const code=between(read(installer),'function sameTarget(','\n}')+'\n}';
   const realpathSync=p=>path.win32.normalize(p);realpathSync.native=p=>realpathSync(p).replace('Q:\\SHORT~1','Q:\\long-installation');
@@ -61,6 +85,7 @@ for (const installer of ["install.mjs", "momm/scripts/install.mjs"]) test(`${ins
   vm.runInNewContext(code, { process: proc, path, os, repoRoot: root, skillRoot: path.join(root, "momm"), parseArgs: () => options,
     discoverSkills: () => ["momm"], commandExists: () => false, linkAll: () => [linked()], linkSkill: linked,
     readiness: () => { readinessChecks++; return updateReadiness; },
+    installationCompletion: () => ({upgrade:{complete:true}}),
     recordInstall: () => { throw Object.assign(new Error("receipt blocked"), { code: "EACCES" }); } });
   assert.equal(links, 1); assert.equal(proc.exitCode, 1);
   assert.equal(readinessChecks, 1); assert(stdout.trim(), `installer returned no structured report: ${stderr}`);

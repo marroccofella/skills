@@ -10,6 +10,7 @@ invented receipt, an unsigned tag, or a force flag.
 | Observation | Meaning | Next step |
 | --- | --- | --- |
 | `gitsign_missing` | No signature check ran. Expected on a first install: most machines do not have the verifier yet | Ask once, in plain words, then install it as described under [Getting the verifier](#getting-the-verifier-gitsign-once) |
+| `local_changes` | The installed clone has edited or untracked files, so nothing was updated. The updater correctly refused to touch them; this says nothing about whether the edits are trusted | Do not stash, reset or overwrite. Tell the person which files, then let THEM choose: keep the changes on a branch, copy them out, or prepare the new release in a separate verified folder. If they did not make the edits, find out who did first |
 | `gitsign_unusable` | Installed verifier cannot perform the required check | Inspect its version/help and official installation instructions; do not bypass |
 | GitHub `bad_cert` / Unverified | GitHub's badge is not a Sigstore verification result | Use gitsign with the expected release-workflow identity, issuer and transparency checks |
 | `signature_unverified` | Required verification did not succeed | Stop; inspect network, trust-service and identity diagnostics. Do not assume tampering or assume safety |
@@ -33,25 +34,28 @@ unverified code. It is a one-time step; upgrades reuse it.
 
 **What the agent should say, in words like these, and then wait for a yes:** "MOMM checks that a
 release is genuine before installing it. That needs a small verifier called gitsign, from the
-Sigstore project, which this machine does not have yet. It is a one-time install for your user
-account only. May I install it? I will show you what I run."
+Sigstore project, which this machine does not have yet. It is a one-time install (for your user
+account only, except the Debian/Fedora packages, which need administrator rights). May I install
+it? I will show you what I run."
 
-Install the version MOMM's own release workflow uses, **0.17.1**, from the official project only
-(`github.com/sigstore/gitsign`). Never from a mirror, a package of unknown origin or a search result.
+Install the version MOMM's own release workflow uses, **0.17.1** (Homebrew installs its current
+formula instead; `gitsign --version` should then report 0.17.1 or later), from the official project only
+(`github.com/sigstore/gitsign`). Never from an unofficial host, a package of unknown origin or a search result.
 
 | System | How |
 | --- | --- |
 | macOS, or Linux with Homebrew | `brew install gitsign` |
-| Debian or Ubuntu | Download `gitsign_0.17.1_linux_amd64.deb` (or `arm64`) from the official release page, check it as below, then `sudo dpkg -i` it |
-| Fedora, RHEL | The matching `.rpm` from the same page, checked the same way |
-| Any system with Go 1.22 or later | `go install github.com/sigstore/gitsign@v0.17.1` |
-| **Windows** | There is no installer or winget package. Download `gitsign_0.17.1_windows_amd64.exe` (or `arm64`) and `checksums.txt` from `https://github.com/sigstore/gitsign/releases/tag/v0.17.1`. Compare `Get-FileHash <file> -Algorithm SHA256` with that file's line in `checksums.txt`; stop if they differ. Save it as `gitsign.exe` in a folder for the user only, for example `%LOCALAPPDATA%\Programs\gitsign`, and add that folder to the **user** PATH. No administrator rights are needed. |
+| Debian or Ubuntu | Download `gitsign_0.17.1_linux_amd64.deb` (or `arm64`) from the official release page, download `checksums.txt` beside it, run `sha256sum --ignore-missing -c checksums.txt` and stop unless it prints the package's own name followed by `OK` and exits 0, then `sudo dpkg -i` it (administrator rights) |
+| Fedora, RHEL | The matching `.rpm` from the same page, checked with `sha256sum` the same way, then `sudo rpm -i` it (administrator rights) |
+| Any system with Go 1.22 or later | `go install github.com/sigstore/gitsign@v0.17.1` (it lands in `$(go env GOPATH)/bin`, which must be on PATH) |
+| **Windows** | There is no installer or winget package. Download `gitsign_0.17.1_windows_amd64.exe` (or `arm64`) and `checksums.txt` from `https://github.com/sigstore/gitsign/releases/tag/v0.17.1`. Compare `Get-FileHash <file> -Algorithm SHA256` with the hash at the start of that file's line in `checksums.txt`, ignoring letter case (PowerShell prints upper-case); stop if they differ. Save it as `gitsign.exe` in a folder for the user only, for example `%LOCALAPPDATA%\Programs\gitsign`, and add that folder to the **user** PATH. No administrator rights are needed. |
 
 Then confirm with `gitsign --version` in a new terminal, and continue with the verified install.
 
 What the checksum does and does not prove: it shows the download is the file the Sigstore project
-published, intact. The trust still rests on the official `sigstore/gitsign` repository over HTTPS,
-as it does for the Homebrew and Go routes. If a download, a checksum or `gitsign --version` fails,
+published, intact. The trust still rests on the official `sigstore/gitsign` repository over HTTPS;
+the Homebrew route also trusts homebrew-core's formula and bottles, and the Go route the Go module
+proxy, checked against the Go checksum database. If a download, a checksum or `gitsign --version` fails,
 stop and report it; do not look for another source and do not continue without the verifier.
 
 ## First establish trust in the bootstrap tool

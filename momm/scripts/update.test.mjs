@@ -10,9 +10,17 @@ import { spawnSync } from "node:child_process";
 import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// The synthetic home is installed BEFORE the imported suites run. Neither of them reads HOME today,
+// so nothing was written to the real profile, but that was a property of those suites rather than
+// anything enforced here; an added home-reading assertion would have inherited the real profile.
+const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
+const HOME_KEYS = ["HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"];
+const originalHome = Object.fromEntries(HOME_KEYS.map(k => [k, process.env[k]]));
+const syntheticHome = path.join(fixture, 'synthetic-home');
+for (const key of HOME_KEYS) process.env[key] = syntheticHome;
+fs.mkdirSync(syntheticHome);
 await import('./update-safety.test.mjs');
 await import('./update-receipt.test.mjs');
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-tests-"));
 const remote = path.join(fixture, "remote"), installed = path.join(fixture, "installed");
 const results = {};
 let failures = 0;
@@ -34,10 +42,10 @@ try {
     } finally { fs.unlinkSync(alias); }
   });
   git(remote, "init");
-  for (const file of ["momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
+  for (const file of ["momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
   write(remote, "momm/SKILL.md", "Original protocol\n");
   write(remote, "sibling/SKILL.md", "A separately installed sibling\n");
-  write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher one');\n");
+  write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.0.0'; console.log('fixture dispatcher one');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.0.0" }));
   write(remote, ".gitignore", "user-cache/\n");
   const first = commit(remote, "fixture one");
@@ -54,7 +62,7 @@ try {
   write(remote, 'intermediate.txt', 'first intervening change\n'); commit(remote, 'intermediate one');
   write(remote, 'intermediate.txt', 'second intervening change\n'); commit(remote, 'intermediate two');
   write(remote, "momm/SKILL.md", "Explicit new protocol\n");
-  write(remote, "momm/scripts/multi-review.mjs", "console.log('fixture dispatcher two');\n");
+  write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.1.0'; console.log('fixture dispatcher two');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.1.0" }));
   write(remote, ".gitignore", "# New release has different ignore rules\n");
   const second = commit(remote, "fixture two");
@@ -102,6 +110,40 @@ try {
     write(installed, "keep.txt", "user-owned");
     await assert.rejects(command(["--apply", "--yes", "--accept-protocol"]), /local changes/);
     assert.equal(fs.readFileSync(path.join(installed, "keep.txt"), "utf8"), "user-owned"); fs.unlinkSync(path.join(installed, "keep.txt"));
+  });
+  // Reported from the field on 20 September 2026: the verified updater stopped on local changes, which is
+  // right, and left the person with nothing to do next, which is not. The refusal must name the files,
+  // say whether MOMM's own signed files were edited, and give safe choices. It still changes nothing.
+  await test("local_changes_refusal_names_the_files_and_offers_safe_ways_forward", async () => {
+    write(installed, "momm/scripts/local-note.test.mjs", "// mine\n");
+    const tracked = path.join(installed, "momm/SKILL.md"), before = fs.readFileSync(tracked);
+    fs.appendFileSync(tracked, "\nmy local edit\n");
+    const head = git(installed, "rev-parse", "HEAD"), branches = git(installed, "branch", "--list");
+    let error; try { await command(["--apply", "--yes", "--accept-protocol"]); } catch (e) { error = e; }
+    try {
+      assert(error, "the update must be refused"); assert.equal(error.code, "local_changes");
+      assert.match(error.message, /local changes/);
+      assert.match(error.message, /momm\/SKILL\.md/); assert.match(error.message, /momm\/scripts\/local-note\.test\.mjs/);
+      assert.match(error.message, /untracked/); assert.match(error.message, /modified/);
+      assert.match(error.message, /not the signed release/i, "an edited MOMM file means what runs today is not the verified release");
+      assert.match(error.message, /switch -c/, "keeping the changes on a branch is offered, as commands the OWNER runs");
+      assert.match(error.message, /never stash, overwrite, reset or discard/i);
+      assert.deepEqual(error.changes.map(c => c.path).sort(), ["momm/SKILL.md", "momm/scripts/local-note.test.mjs"]);
+      // Nothing was touched: same commit, same branches, both local changes still there.
+      assert.equal(git(installed, "rev-parse", "HEAD"), head); assert.equal(git(installed, "branch", "--list"), branches);
+      assert.equal(fs.readFileSync(path.join(installed, "momm/scripts/local-note.test.mjs"), "utf8"), "// mine\n");
+      assert(fs.readFileSync(tracked, "utf8").endsWith("my local edit\n"));
+    } finally { fs.writeFileSync(tracked, before); fs.unlinkSync(path.join(installed, "momm/scripts/local-note.test.mjs")); }
+  });
+  await test("local_changes_refusal_is_bounded_and_inert_for_hostile_file_names", async () => {
+    for (let i = 0; i < 40; i++) write(installed, `junk/file-${i}.txt`, "x");
+    write(installed, "junk/$(touch PWNED) `x` & echo.txt", "x");
+    let error; try { await command(["--apply", "--yes", "--accept-protocol"]); } catch (e) { error = e; }
+    try {
+      assert.equal(error?.code, "local_changes"); assert(error.message.length < 6000, "bounded message");
+      assert.match(error.message, /and \d+ more/); assert.equal(fs.existsSync(path.join(installed, "PWNED")), false);
+      assert(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(error.message));
+    } finally { fs.rmSync(path.join(installed, "junk"), { recursive: true, force: true }); }
   });
   await test("pinned_channel_requires_explicit_version", async () => {
     await command(["--channel", "pinned"]);
@@ -218,7 +260,7 @@ try {
   });
   await test("archive_install_links_but_reports_updater_unavailable", () => {
     const archive = path.join(fixture, "archive"), destination = path.join(fixture, "archive-harness");
-    for (const file of ["momm/SKILL.md", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
+    for (const file of ["momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/scripts/installations.mjs", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
     const output = JSON.parse(run(process.execPath, ["momm/scripts/install.mjs", "--custom-dir", destination], archive));
     assert.equal(output.installation.updater_available, false);
     assert(['ready_to_verify', 'prerequisites_missing'].includes(output.update_readiness.status));
@@ -455,5 +497,6 @@ try {
   if (failures) process.exitCode = 1;
   process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {
+  for (const [key, value] of Object.entries(originalHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true });
 }

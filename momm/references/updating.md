@@ -122,6 +122,19 @@ Stable updates refuse an implicit downgrade; selecting an older signed version
 requires an explicit `--version`. Release hashing currently bounds each blob to
 32 MiB and fails closed for larger files; it is not a large-media archive installer.
 
+**Reviewer CLI updates.** After preflight and at the end of a review, MOMM prints one short block
+when a reviewer CLI is behind its latest release, for example
+`momm: reviewer updates available: codex 0.154.0 -> 0.156.1`, followed by three choices: the
+official update command for each CLI, `update-clock.mjs enable` to install automatically from then
+on (off until you turn it on), or the Setup Center for guidance. `enable` also applies signed MOMM
+updates and model updates; the notice gives `set skill false` and `set models false` to keep it to
+reviewer CLIs. It appears at most once a day, and
+at once when a newer release appears; never in `--stream` mode or under the opt-out variables below.
+The installed version comes from each CLI's own `--version`, read at most once a day or when a new
+release is seen. antigravity has no check-only command, so it is reported as unknown with the advice
+to run `agy update`. Checks happen when a review runs; to check every six hours even when you are
+not reviewing, install the timer from the Setup Center or with `update-clock.mjs timer install --confirm`.
+
 `NO_UPDATE_CHECK=1`, `MOMM_NO_UPDATE_CHECK=1` and `DO_NOT_TRACK=1` suppress the daily
 manifest request. Streamed reviews do not wait for it. Notices are cached per
 installation and do not download code. An explicit `update` command is still an

@@ -28,3 +28,17 @@ assert(read('install.html').includes('One prompt, several explicit choices'));
 assert(!read('reference.html').includes('updates are never automatic'));
 assert(improvementBody().includes('No model calls'),'privacy boundary');
 console.log('Community pages: catalogue, duplicates, escaping, static nested navigation, truthful install/update copy and approval boundary pass.');
+// Range review rev_20260925004814_1ed9f58c2c3a (watch-navigation-loses-watch-link and duplicates): watch pages
+// lost their current-section marker when the navigation was unified; Media is their section.
+{
+  const out = { 'docs/momm/watch/setup.html': '<nav aria-label="Main navigation"></nav>', 'docs/momm/media.html': '<nav aria-label="Main navigation"></nav>' };
+  normalizeNavigation(out);
+  assert(out['docs/momm/watch/setup.html'].includes('href="../media.html" aria-current="true"'), 'a watch page marks Media as its section');
+  assert(out['docs/momm/media.html'].includes('href="media.html" aria-current="page"'), 'the Media page itself stays the current page');
+}
+// Range review rev_20260925131115_6ed35d0bdf89 (grok suggestion 6): the data catalogue belongs to Evidence.
+{
+  const out = { 'docs/momm/data/index.html': '<nav aria-label="Main navigation"></nav>' };
+  normalizeNavigation(out);
+  assert(out['docs/momm/data/index.html'].includes('href="../evidence.html" aria-current="true"'), 'the data catalogue marks Evidence as its section');
+}

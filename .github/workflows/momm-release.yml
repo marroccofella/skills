@@ -23,7 +23,12 @@ jobs:
   release:
     if: github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # The safety workflow spreads these suites over fifteen parallel jobs (a fourteen-cell matrix and one
+    # Linux job); this job runs all of them
+    # in sequence. Measured end to end at 527s on the maintainer machine (61 suites, 23 September
+    # 2026), so 45 minutes leaves room for a runner several times slower. The point is that a
+    # signed release must never be killed AFTER the suites passed.
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: read
@@ -65,6 +70,10 @@ jobs:
           node momm/scripts/setup-ui.mjs --self-test
           node momm/scripts/setup-maintenance.test.mjs
           node momm/scripts/governor.test.mjs
+          node momm/scripts/installations.test.mjs
+          node momm/scripts/scorecard.test.mjs
+          node momm/scripts/governor-range.test.mjs
+          node scripts/source-hygiene.test.mjs
           node momm/scripts/usage.test.mjs
           node momm/scripts/guidance.test.mjs
           node momm/scripts/split.test.mjs
@@ -98,6 +107,32 @@ jobs:
           node scripts/momm-release-regressions.test.mjs
           node scripts/momm-auth-recovery.test.mjs
           node scripts/momm-independent-review.test.mjs
+          node momm/scripts/media-bytes.test.mjs
+          node momm/scripts/scope-closure.test.mjs
+          node momm/scripts/install-completion.test.mjs
+          node momm/scripts/expiry-regression.test.mjs
+          node momm/scripts/attempts.test.mjs
+          node momm/scripts/path-resolution.test.mjs
+          node momm/scripts/review-claims.test.mjs
+          node momm/scripts/review-workflow.test.mjs
+          node momm/scripts/review-final-regressions.test.mjs
+          node momm/scripts/review-triage-1161.test.mjs
+          node momm/scripts/executable-resolution.test.mjs
+          node scripts/ledger-ui.test.mjs
+          node scripts/momm-improvement-regressions.test.mjs
+          node scripts/momm-release-observer.test.mjs
+          node scripts/momm-site-community.test.mjs
+          node scripts/momm-site-discovery.test.mjs
+          node scripts/momm-site-flow.test.mjs
+          node scripts/momm-site-home.test.mjs
+          node scripts/momm-site-regression.test.mjs
+          node scripts/momm-site-search.test.mjs
+          node scripts/momm-site-technical.test.mjs
+          node scripts/momm-site-videos.test.mjs
+          node scripts/momm-site-visuals.test.mjs
+          node scripts/preview-module.test.mjs
+          node momm/scripts/review-refutations.test.mjs
+          node momm/scripts/review-followup.test.mjs
           node momm/scripts/copilot-transport.test.mjs
           node momm/scripts/antigravity-transport.test.mjs
           node momm/scripts/shutdown.test.mjs
