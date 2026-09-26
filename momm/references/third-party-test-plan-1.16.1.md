@@ -103,7 +103,8 @@ Windows the same condition can be produced by pointing `TEMP` and `TMP` at a dir
 before running a suite; the maintainer used this to reproduce the four macOS failures on
 `b0a2dfe` and to sweep the steps those jobs skipped.
 
-Expected, not defects, until the owner seals the release: the dispatcher declares `1.16.0`, and
+On the sealed candidate the dispatcher declares `1.16.1` and `scripts/momm-release.mjs --check` passes.
+On an earlier, unsealed candidate: the dispatcher declared `1.16.0`, and
 `scripts/momm-release.mjs --check` fails on the package hash. A dry-run install that meets an
 existing MOMM link exits 1 and now says why on stderr.
 

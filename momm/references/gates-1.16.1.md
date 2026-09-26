@@ -177,17 +177,37 @@ committed range is resolved that way on every platform. Deferred to 1.17; tracke
 [ideas register](ideas-register.md). Until then, review untrusted projects from a shell whose
 PATH contains no folder inside them.
 
+## Final candidate gates (26 September 2026)
+
+Candidate `34020ab6c50b40ed5db4feb3dc34a54499d2f2b6`; CI run 36199521352, 15 of 15 jobs passed.
+
+- **Independent review:** a separate session reviewed the candidate with the reviewer pack (90 listed
+  commands plus one workflow suite; executable resolution 27 of 27 with none skipped; a live synthetic
+  review in a disposable project, where Claude and Antigravity both caught the planted defect and both
+  passed the control) and found no candidate defect. Its private-evidence validator stopped at
+  `inspection_unavailable` (`read_acl`, `EPERM` in that sandbox), so it claimed no receipt; it did not
+  run `evidence --protect`. Its verdict is posted verbatim on Discussion #22.
+- **Live image gate:** three attempts on the final trees with the same synthetic charts and brief.
+  Antigravity caught the planted error every time and no route ever flagged the correct image. Codex
+  caught it on `2fe1e47`, missed it once on `34020ab` (it stated 40 + 25 = 75) and was refused twice by
+  the quotation rule on the last run, most likely because it quoted text visible in the image, which is
+  not in the text brief (quorum 1 of 2 on that defective run). Runs `rev_20260925003453_50213bbfd765`,
+  `rev_20260925003612_24d34a8e928e`, `rev_20260926144134_e3018fb5f045`,
+  `rev_20260926144315_e7ef612577f6`, `rev_20260926213431_90376ced9169`,
+  `rev_20260926213553_9a6b6d8b0956`. **Owner decision (26 September 2026): passed, with this caveat
+  recorded;** image quotation belongs to 1.17.
+- **Accepted risk reaffirmed (owner, 26 September 2026):** on macOS and Linux reviewer CLIs are still
+  found through PATH; stated in the release notes; fix due in 1.17.
+
 ## Still required before tag
 
 - Full candidate suites and exact OS/Node CI outputs.
 - Committed-range self-review and dispositions: done (two runs, every item ruled); the per-piece
   quorum and tool-produced receipt are waived by the owner (see "Self-review gate" above).
 - Privacy and history scan of the proposed publication.
-- Final-tree live image gate ([checklist](image-review-checklist.md)).
+- Final-tree live image gate: passed on the owner's decision (see above).
 - Signed lifecycle receipts and release authorization.
-- In the sealing commit, re-pin the bootstrap links in `bootstrap.md`, `upgrade-prompt.md` and the
-  install page from `momm-1.16.0` to `momm-1.16.1` (the 1.16.0 tag has no "Getting the verifier"
-  section), as the 1.16.0 sealing commit did.
+- Bootstrap links re-pinned from `momm-1.16.0` to `momm-1.16.1` in the sealing commit.
 
 ## Website deployment boundary
 

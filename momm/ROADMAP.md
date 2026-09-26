@@ -1,7 +1,8 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.16.0**, signed tag `momm-1.16.0`, 19 September 2026. Nothing else
+only sources. Today they say **1.16.1**, sealed on 26 September 2026; its signed tag `momm-1.16.1` is
+created by the release workflow. The previous signed release is `momm-1.16.0`, 19 September 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -54,7 +55,7 @@ media checks, seven-day successful-probe expiry, immutable attempt files, cumula
 audits, a governor-selected test runner producing verification records, failed-attempt accounting,
 installation completion checks and fail-closed PATH resolution. These changes require final
 regression and peer review. Native lifecycle, signed-artifact and live-image gates remain open:
-[gate record](references/gates-1.16.1.md), [draft notes](references/draft-1.16.1.md).
+[gate record](references/gates-1.16.1.md), [release notes](references/release-1.16.1.md).
 
 The follow-up review reproduced quota false positives from echoed source and duplicate raw
 diagnostics in retry history. The candidate now classifies quota from explicit provider

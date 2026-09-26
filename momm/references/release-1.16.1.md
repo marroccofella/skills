@@ -1,6 +1,7 @@
-# MOMM 1.16.1 — draft notes, not released
+# MOMM 1.16.1 — release notes
 
-**Current signed release remains 1.16.0.** This draft is not an upgrade instruction or release seal.
+**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.16.1` is
+published, the current signed release remains 1.16.0. Do not install an unsigned branch as a signed release.
 
 The patch strengthens existing review and update behavior: content-based media checks, explicit
 capability expiry, separate retry evidence, failed-work accounting, tool-produced verification
@@ -41,8 +42,12 @@ verifies a committed range on any platform. **Known limitation:** on macOS and L
 are still found through PATH, so a PATH folder inside the reviewed project could supply one.
 Review untrusted projects from a shell whose PATH contains no folder inside them; the fix is due in 1.17.
 
-Final native lifecycle, live image, candidate CI, peer dispositions and publication gates remain
-open. See [the gate record](gates-1.16.1.md). Do not install an unsigned branch as a signed release.
+Verified before sealing (details in [the gate record](gates-1.16.1.md)): every offline CI job on the
+candidate; an independent bounded review with no candidate defect found; two full-range self-reviews
+with every finding ruled (the completion receipt was waived by the owner); and the live image review,
+where the review team caught the planted error and passed the correct image, though not every route
+caught it every time. Signed install, upgrade and rollback drills on Windows, macOS and Linux run
+against the signed checkpoint before publication.
 
 Broader workflow checkpoints, managed paid reviewers, new installation-management interfaces,
 website films and new modalities are not quietly included in this reliability patch.

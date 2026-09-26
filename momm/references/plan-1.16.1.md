@@ -40,7 +40,7 @@ the "done when" for each.
 | 9 | One live image review on the final tree, with the checklist in `references/` | A4, gates | checklist written; live final-tree gate pending |
 | 10 | ROADMAP tells the truth | D | **done** |
 | 11 | Node 18 to 24 compatibility table of what was actually run; no "supported" for a blank cell | B | explicit untested cells in gates-1.16.1.md; CI now requests 14 cells |
-| 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | draft-1.16.1.md and gates-1.16.1.md; no version bump or release claim |
+| 12 | User-facing 1.16.1 notes stay one page; gate record separate | D | release-1.16.1.md and gates-1.16.1.md; no version bump or release claim |
 
 **Constraints that are required non-additions:** the governor remains the only writer; account
 logins only, no API-key routes; automatic updates stay off and an agent never enables them;

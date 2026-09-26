@@ -19,4 +19,5 @@ This is a release check, not a claim of completed live coverage.
    adjudicate findings; bind the final source to a tool-produced verification receipt.
 7. Put only redacted, concise results on the 1.16.1 PR. Keep raw input, reports and ledger private.
 
-Status: **not run on this candidate**. No earlier-tree live result substitutes for this gate.
+Status for 1.16.1: run on the final candidate `34020ab` and recorded in the [gate record](gates-1.16.1.md#final-candidate-gates-26-september-2026);
+passed on the owner's decision with a caveat. A later tree needs its own run.

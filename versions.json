@@ -1,8 +1,23 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.16.0",
+  "momm": "1.16.1",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.16.1",
+      "tag": "momm-1.16.1",
+      "changes": [
+        "A reviewed project can no longer choose the executable MOMM runs on Windows, or the Git that verifies a committed range on any platform; on macOS and Linux reviewer CLIs are still found through PATH (accepted risk, fix due in 1.17).",
+        "Committed-range reviews (--range) bind the report to both commits; capability expiry, retry evidence, failed-work accounting and tool-produced verification records.",
+        "Route failures quote the provider's own reason and never keep what MOMM sent, in any echo form.",
+        "A notice when a reviewer CLI is behind its latest release, with its update command, the off-by-default automatic option and the Setup Center.",
+        "Grok runs isolated from your Claude Code and Cursor setup and uses its faster serving when your account has it; Codex no longer reads the reviewed project's AGENTS.md or runs hooks, plugins, apps or multi-agent tools.",
+        "A reviewer's quotation counts when it differs only by typographic look-alikes or whitespace; every other character must still match.",
+        "The install prompt shows the standing-instructions section and waits for your yes before writing it."
+      ],
+      "sha256": "2e19b3ae527f4a32da81a4d8467c024073f7b785fdf6de29d851de8611aad617",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
+    },
     {
       "version": "1.16.0",
       "tag": "momm-1.16.0",

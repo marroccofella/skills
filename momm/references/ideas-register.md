@@ -149,6 +149,10 @@ recorded here so the reason is a decision rather than an omission. Each one is i
 - **Film poster wording (media pipeline).** `docs/momm/momm-poster.jpg`, already public, shows the
   phonetic spelling "mom skill" and a "local preview" label from the film. Re-render it with the
   film.
+- **Image quotation (1.17).** In an image review the only text MOMM sends is the brief, so a reviewer that
+  quotes text it sees in the image (for example "Total orders: 75") fails the quotation rule. Codex did
+  this on the final 1.16.1 image gate. Accept quotations from the image, or ask for scope as a
+  description when the artifact is media.
 - **Preflight version checks time out during every review.** Found 25 September 2026: in each recent
   report every route's in-review preflight reads `version_status: "timeout"` (so `ready: false`,
   `auth: unknown`) although the same routes then review normally, and a standalone `--preflight`
