@@ -1,6 +1,6 @@
 {
-  "_comment": "Proof target (published releases) until the signed 1.16.1 main-checkpoint exists; then checkpoint, expect 1.16.1, from momm-1.16.0 and momm-1.15.1.",
-  "target": "momm-1.16.0",
-  "expect": "1.16.0",
-  "from": ["momm-1.15.1"]
+  "_comment": "Signed 1.16.1 main-checkpoint; exercise upgrades from both published 1.16.0 and 1.15.1.",
+  "checkpoint": "momm-main-a031b45977336501c23947b6f6906b24c4382b3c",
+  "expect": "1.16.1",
+  "from": ["momm-1.16.0", "momm-1.15.1"]
 }
