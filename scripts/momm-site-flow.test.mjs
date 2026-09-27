@@ -53,4 +53,12 @@ assert.equal(controller.getState().index,0);assert(!elements.get('[data-wf-peers
 media.matches=true;media.change();elements.get('[data-wf-play]').click();assert.equal(controller.getState().index,1);assert.equal(timer,null);assert(!controller.getState().playing);
 media.matches=false;media.change();elements.get('[data-wf-play]').click();doc.hidden=true;doc.listeners.visibilitychange();assert.equal(timer,null);assert(!controller.getState().playing);
 assert.equal(bindWorkflow(null),null);
-console.log('Workflow: real synthetic outputs; 162 route/scenario/step states; finite playback; fail-closed path; reduced motion; visibility pause; accessible static fallback pass.');
+console.log('Workflow: real synthetic outputs; 189 route/scenario/step states; finite playback; fail-closed path; reduced motion; visibility pause; accessible static fallback pass.');
+// Range review rev_20260925004814_1ed9f58c2c3a (codex suggestion 1, grok suggestion 20; governor-error-mislabeled):
+// Grok can govern, so the teaching selector offers it, and a wrong governor is named as such.
+{
+  const data = await import('../docs/momm/workflow-data.mjs');
+  assert(data.governors.includes('Grok'), 'Grok is offered as a governor');
+  assert.throws(() => data.stateAt(0, 'fix', 'Nobody'), /governor/i);
+  assert.throws(() => data.stateAt(0, 'nothing', 'Codex'), /scenario/i);
+}

@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { pathEntryOutside, executableOutside } from "./process-scope.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -33,9 +34,18 @@ function scanFile(file, visit = () => {}) {
   } finally { fs.closeSync(fd); }
 }
 
-export function captureSourceSnapshot(root, artifact, inputPath) {
+// The exact Git invocation a committed range is identified by. The dispatcher uses the same flags when
+// it takes the diff itself, so "the diff MOMM reviewed" and "the diff Git gives for that range" are
+// comparable byte for byte. --no-renames: a rename is a delete plus an add, never a guessed pairing.
+export const RANGE_DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--binary"];
+export const MAX_RANGE_SOURCE_FILES = 2000;
+const REVISION = /^[A-Za-z0-9][A-Za-z0-9._\/~^@{}-]{0,199}$/;          // never starts with "-": it cannot be read as an option
+const RANGE_PATH = /^[A-Za-z0-9._][A-Za-z0-9._\/ -]{0,399}$/;          // plain relative paths only; no pathspec magic, no options
+
+export function captureSourceSnapshot(root, artifact, inputPath, range = null) {
   const files = [];
   let verifyDiff = null;
+  if (range) return captureRangeSnapshot(root, artifact, range);
   // Explicit file input takes precedence over sample diff text inside source.
   const isDiff = !inputPath && /^diff --git /m.test(artifact);
   let names = inputPath ? [path.relative(root, path.resolve(root, inputPath)).replaceAll("\\", "/")] : [];
@@ -88,6 +98,73 @@ export function captureSourceSnapshot(root, artifact, inputPath) {
     verifyDiff?.();
     return { complete: true, files };
   } catch (error) { return { complete: false, files: [], reason: error.message }; }
+}
+
+// A review of a COMMITTED RANGE (1.16.1 A3). Identity is the two full commit ids plus any path
+// limits; file hashes are taken from the blobs AT the head commit, so the receipt describes the tree
+// that was reviewed even if the working tree has moved on since.
+function captureRangeSnapshot(root, artifact, range) {
+  try {
+    demand(range && typeof range === "object", "range needs a base and a head");
+    const paths = range.paths ?? [];
+    demand(Array.isArray(paths) && paths.length <= 200 && paths.every(p => typeof p === "string" && RANGE_PATH.test(p) && !p.split("/").includes("..")), "range paths must be plain relative paths");
+    for (const name of [range.base, range.head]) demand(typeof name === "string" && REVISION.test(name), "range needs plain revision names (a commit id, a branch or a tag)");
+    const gitExecutable = resolveGit(root);
+    demand(gitExecutable, "cannot verify the range: git was not found on an absolute PATH entry outside the project");
+    const run = (args, encoding = "utf8") => { const r = spawnSync(gitExecutable, args, { cwd: root, encoding, timeout: 30000, windowsHide: true, maxBuffer: 64_000_000 }); demand(r.status === 0, "cannot verify the declared Git range"); return r.stdout; };
+    const canonical = process.platform === "win32" ? fs.realpathSync.native : fs.realpathSync;
+    demand(path.relative(canonical(run(["rev-parse", "--show-toplevel"]).trim()), canonical(root)) === "",
+      "Run the review from the repository root; Git source paths and the private evidence directory must share that root");
+    const full = name => { const id = run(["rev-parse", "--verify", "--end-of-options", `${name}^{commit}`]).trim(); demand(/^[0-9a-f]{40,64}$/.test(id), "range revision did not resolve to a commit"); return id; };
+    const base = full(range.base), head = full(range.head);
+    demand(base !== head, "the range is empty: base and head are the same commit");
+    const limit = paths.length ? ["--", ...paths] : ["--"];
+    const expected = run(["diff", ...RANGE_DIFF_FLAGS, base, head, ...limit]);
+    demand(expected === artifact, "supplied diff differs from git diff for the declared range (same flags, same path limits)");
+    demand(artifact.trim().length > 0, "the range has no changes in the named paths");
+    demand(!/^GIT binary patch|^Binary files /m.test(artifact), "binary diff needs separate verified source scope");
+    const fields = run(["diff", "--no-renames", "--name-status", "-z", base, head, ...limit]).split("\0"); fields.pop();
+    const files = [], deleted = [];
+    for (let i = 0; i < fields.length; i += 2) {
+      const status = fields[i], name = fields[i + 1];
+      demand(name && !path.isAbsolute(name) && !name.includes(":") && !name.split("/").includes(".."), "source scope escapes project");
+      if (status === "D") { deleted.push(name); continue; }
+      demand(["A", "M"].includes(status), "type-change scope needs explicit verification; not silently omitted");
+      const bytes = run(["cat-file", "blob", `${head}:${name}`], "buffer");
+      demand(bytes.length <= 8_000_000, "source scope is not a bounded file");
+      files.push({ path: name, sha256: digest(bytes) });
+    }
+    demand(files.length + deleted.length > 0 && files.length <= MAX_RANGE_SOURCE_FILES, `source scope needs at least one file and at most ${MAX_RANGE_SOURCE_FILES}`);
+    demand(files.length > 0, "the range only deletes files; nothing remains at the head commit to bind");
+    return { complete: true, kind: "git_range", base, head, paths, flags: RANGE_DIFF_FLAGS, files, deleted };
+  } catch (error) { return { complete: false, kind: "git_range", files: [], reason: error.message }; }
+}
+
+// Node 18 and 20 on Windows look for a bare name in the child's working directory first (the project
+// under review) and ignore the guard variable, so Git is named by an absolute PATH entry outside the
+// project, or not at all. Inline because this file is also run as a single copied file.
+// The repository under review must never supply the Git that verifies it. On Windows the implicit
+// working-directory search makes that reachable; on POSIX a PATH carrying "." or a project-relative
+// entry does the same, and returning the bare name "git" left that decision to PATH. Both platforms
+// now get the same scan: absolute PATH entries only, and never an executable inside the project.
+export function resolveGit(root, { platform = process.platform, env = process.env, fs: files = fs, path: paths = path } = {}) {
+  // The directory must be outside the project as well as the executable. Checking only where the
+  // executable resolved to let a `git` link in a project directory on PATH pick ANY executable
+  // outside the project and run it with Git's arguments; an interpreter such as node or python then
+  // loads `rev-parse` or `ls-files` from the checkout as a script (independent review of 3d7a8be).
+  const win = platform === "win32", where = { platform, fs: files };
+  const real = p => { try { return String(win ? files.realpathSync.native(p) : files.realpathSync(p)); } catch { return null; } };
+  const pathValue = Object.entries(env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
+  const name = win ? "git.exe" : "git";
+  for (const dir of pathValue.split(win ? ";" : ":").map(d => d.replace(/^"|"$/g, "")).filter(d => pathEntryOutside(d, root, where))) {
+    const candidate = paths.join(dir, name);
+    try {
+      if (!files.statSync(candidate).isFile()) continue;
+      const resolved = real(candidate);
+      if (resolved && executableOutside(resolved, root, where)) return resolved;
+    } catch { /* not here */ }
+  }
+  return null;
 }
 
 export function normalizeTarget(value, files, root) {
@@ -171,7 +248,30 @@ export function inspectCompletion(root, runId) {
     demand(entries[0].report_sha256 === reportSha && entries[0].input_sha256 === report.input_sha256
       && entries[0].report_path === `.ensemble_reviews/reports/${runId}.json`, "original report/log seal mismatch");
     demand(report.governor && Array.isArray(report.reviewers) && Array.isArray(report.findings), "malformed report");
-    demand(report.source_snapshot?.complete && report.source_snapshot.files.length > 0, "dispatch-time source snapshot missing; use local --input or supported Git diff for a fresh review");
+    demand(report.source_snapshot?.complete && report.source_snapshot.files.length > 0, "dispatch-time source snapshot missing; use local --input, a working-tree Git diff, or --range <base>..<head> for a committed range");
+    // Source identity travels into the receipt: over WHICH tree, and for a split run WHICH pieces.
+    const snapshot = report.source_snapshot;
+    state.source = snapshot.kind === "git_range"
+      ? { kind: "git_range", base: snapshot.base, head: snapshot.head, paths: snapshot.paths ?? [], files: snapshot.files.length, deleted: snapshot.deleted ?? [] }
+      : { kind: snapshot.kind ?? "files_at_dispatch", files: snapshot.files.length };
+    if (snapshot.kind === "git_range") demand(/^[0-9a-f]{40,64}$/.test(snapshot.base) && /^[0-9a-f]{40,64}$/.test(snapshot.head), "range snapshot lacks full commit ids");
+    if (report.split?.pieces) state.pieces = report.split.pieces.map(p => ({ id: p.id, reviewers: p.reviewers ?? {} }));
+    if (report.attempt_evidence) {
+      demand(Array.isArray(report.attempt_evidence), 'malformed attempt evidence');
+      const ids = new Set();
+      state.attempts = report.attempt_evidence.map(a => {
+        demand(a?.evidence && typeof a.attempt_id === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(a.attempt_id) && !ids.has(a.attempt_id), 'missing or duplicate attempt identity'); ids.add(a.attempt_id);
+        const stored = JSON.parse(ref(a.evidence));
+        if (a.start) {
+          const begun = JSON.parse(ref(a.start));
+          demand(begun.event === 'started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>begun[k]===a[k]), 'attempt start binding mismatch');
+        }
+        const { evidence, ...expected } = a;
+        demand(JSON.stringify(stored) === JSON.stringify(expected) && stored.run_id === runId && stored.input_sha256 === report.input_sha256, 'attempt source or report binding mismatch');
+        demand(stored.piece === 'whole' ? !report.split : report.split?.pieces.some(p => p.id === stored.piece), 'attempt belongs to unknown piece');
+        return evidence;
+      });
+    }
     const routes = new Set();
     for (const r of report.reviewers) { demand(!routes.has(r.agent), "duplicate reviewer route"); routes.add(r.agent); }
     const successful = report.reviewers.filter(r => r.agent !== report.governor && r.status === "success");

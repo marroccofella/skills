@@ -1,5 +1,11 @@
 # MOMM 1.16.0 candidate — independent release acceptance tests
 
+**Historical 1.16.0 plan.** Test 1.16.1 with
+[the current acceptance guide](third-party-test-plan-1.16.1.md). It specifies
+`--retry-invalid`, the authenticated `/api/ledger-ticket` request and separate
+unused-ticket expiry versus replay checks. Historical extension-only media
+wording and platform counts below do not describe 1.16.1.
+
 Updated 19 September 2026 (release gate `rev_20260919044643_2l49`: CI jobs are read from the workflow, the ledger ticket's two properties are tested separately and the `--governor other` observation says what it proves; required negative controls restored 18 September after release gate `rev_20260918172020_ehti`; first revised 16 September) following the [independent review on PR #4](https://github.com/marroccofella/skills/pull/4#issuecomment-5696156369).
 This is a test plan, not certification. Core MOMM only: MOMM World and the separate legal-commercial profile are excluded.
 

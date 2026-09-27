@@ -8,7 +8,8 @@ export function inline(text) {
   for(const m of text.matchAll(/\[([^\]\n]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g)){
     output+=escape(text.slice(at,m.index));
     if(m[3])output+='<code>'+escape(m[3])+'</code>';
-    else if(m[4])output+='<strong>'+escape(m[4])+'</strong>';
+    else if(m[4])output+='<strong>'+inline(m[4])+'</strong>';
+    else if(/^#[A-Za-z0-9_-]+$/.test(m[2]))output+=`<a href="${escape(m[2])}">${escape(m[1])}</a>`;
     else {let href;const sibling=m[2].match(/^release-(\d+\.\d+\.\d+)\.md(#[A-Za-z0-9_-]+)?$/);try{const url=new URL(m[2],base);if(url.protocol==='https:')href=sibling?sibling[1]+'.html'+(sibling[2]||''):url.href;}catch{}
       output+=href?`<a href="${escape(href)}">${escape(m[1])}</a>`:escape(m[0]);}
     at=m.index+m[0].length;

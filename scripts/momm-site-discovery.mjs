@@ -56,7 +56,7 @@ Preflight makes zero model calls: it checks installation and account evidence, n
 - [Improvement process](https://marroccofella.github.io/skills/momm/improvement.html): bounded observations, human decisions and release authority.
 - [Repository](https://github.com/marroccofella/skills): source, issues and contributions.
 - [Project sitemap](https://marroccofella.github.io/skills/sitemap.xml): published page catalogue.
-- [Host crawler policy](https://marroccofella.github.io/robots.txt): robots.txt applies at the host root, not within /skills/.
+- [Host crawler policy](https://marroccofella.github.io/robots.txt): robots.txt is served only from the host root; its rules still cover /skills/.
 - [Discovery verification checklist](https://marroccofella.github.io/skills/momm/discovery-status.md): distinguish accessibility, indexing, search appearances and citations.
 `;
 }

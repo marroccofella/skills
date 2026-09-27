@@ -38,7 +38,8 @@ account sessions. Redaction is not a confidentiality guarantee. One ready
 external reviewer is enough to start; quotas and account restrictions still apply.
 
 For release reviews, use `--tier deep` and an explicit success quorum. The default
-base allowance is 180 seconds (deep: 240; Grok: 1.5x); `--timeout` overrides it.
+base allowance is 180 seconds (deep: 240; Grok: 2x, capped at 360 unless `--timeout` is given); `--timeout` sets the base, and Grok
+still gets 2x of it, uncapped.
 `--stream` emits elapsed-time and byte-count updates without exposing reasoning.
 A running process is not a completed review. `--effort medium` explicitly selects
 the verified Claude/Grok effort setting; omission preserves provider defaults.

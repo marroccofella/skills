@@ -32,7 +32,7 @@ const fixture=async(method,url,data)=>{
   calls.push({method,url,data});
   if(url.endsWith('releases?per_page=100'))return [{tag_name:tag,assets:[{name:'secret-looking text never rendered'}]}];
   if(url.includes('/commits/'))return {sha:commit};
-  if(url.includes('/contents/'))return {encoding:'base64',size:20,content:Buffer.from('{"momm":"1.16.0"}').toString('base64')};
+  if(url.includes('/contents/')){const manifest=Buffer.from('{"momm":"1.16.0"}');return {encoding:'base64',size:manifest.length,content:manifest.toString('base64')};}
   if(method==='GET')return [];return {};
 };
 assert.equal(await observe(fixture,{checker}),'created');
@@ -54,7 +54,7 @@ assert(seeded.includes("'nav-shape':()=>{"));
 seeded=seeded.replace("'nav-shape':()=>{","'nav-shape':()=>{ throw Error('SEEDED_CASE_FAILURE');").replaceAll('import.meta.url',JSON.stringify(suite.href));
 seeded=seeded.replace(/from '(\.\/[^']+)'/g,(_m,p)=>`from ${JSON.stringify(new URL(p,suite).href)}`);
 const failCheck=spawnSync(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify('data:text/javascript;base64,'+Buffer.from(seeded).toString('base64'))});process.exitCode=0;console.log('FAILURE_WAS_MASKED');`],{encoding:'utf8',windowsHide:true});
-assert.notEqual(failCheck.status,0);assert(!failCheck.stdout.includes('FAILURE_WAS_MASKED'));
+assert.notEqual(failCheck.status,0);assert(!failCheck.stdout.includes('FAILURE_WAS_MASKED'));assert.equal(failCheck.error,undefined);assert.match(failCheck.stderr+failCheck.stdout,/SEEDED_CASE_FAILURE/,'only the seeded failure satisfies this check');
 const cwdCheck=spawnSync(process.execPath,[fileURLToPath(suite),'missing-token'],{cwd:new URL('../docs/',import.meta.url),encoding:'utf8',windowsHide:true});
 assert.equal(cwdCheck.status,0,cwdCheck.stdout+cwdCheck.stderr);
 console.log('Observer tests: identities, privacy, idempotency, closed issues, human edits, bounded scans, failure handling pass.');

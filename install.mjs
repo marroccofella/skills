@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./momm/scripts/update.mjs";
 import { readiness } from "./momm/scripts/bootstrap.mjs";
+import { installationCompletion } from "./momm/scripts/installations.mjs";
 // Windows launch guard (see momm/scripts/launch-guard.mjs): a bare command launched without a shell is
 // looked up in THIS process's current directory before PATH unless this process carries the variable.
 if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
@@ -175,8 +176,37 @@ function main() {
     process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
     process.exitCode = 1;
   }
+  if (skills.includes('momm')) {
+    try {
+      output.inventory = installationCompletion({ runningSkillRoot: path.join(repoRoot, 'momm'), customDirs: options.customDirs });
+      if (typeof output.inventory?.upgrade?.complete !== 'boolean') throw new Error('invalid inventory shape');
+    } catch {
+      output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
+    }
+    if (!output.inventory.upgrade.complete) {
+      process.stderr.write(`Installation is not complete across active harnesses: ${output.inventory.upgrade.reason ?? "the inventory gave no reason"}. Requested link and receipt results are retained below; conflicting copies were left untouched.${options.dryRun ? " This is a dry run: nothing was changed, and an incomplete inventory alone does not fail it." : ""}\n`);
+      if (!options.dryRun) process.exitCode = 1;
+    }
+  }
+  // Say why the exit code is non-zero. A refused link used to exit 1 in silence, while the only prose
+  // in the output was the inventory's "every active path loads <version>", which reads as success
+  // (independent review of 3d7a8be). The inventory describes copies that are ALREADY installed; this
+  // line describes what this command did or, in a dry run, would do.
+  const flatLinks = results.flatMap((r) => (r.links || []).map((l) => ({ target: r.target, ...l })));
+  const refused = [...flatLinks.filter((l) => l.status === "error" || l.status === "conflict"), ...results.filter((r) => r.status === "unsupported")];
+  if (refused.length) {
+    const dry = options.dryRun, n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+    const name = (r) => `${r.skill ? `${r.skill} for ` : ""}${r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""}`;
+    const conflicts = refused.filter((r) => r.status === "conflict"), errors = refused.filter((r) => r.status === "error"), unsupported = refused.filter((r) => r.status === "unsupported");
+    const parts = [], summaries = [];
+    if (conflicts.length) { const head = `${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists`; summaries.push(head); parts.push(`${head} (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`); }
+    if (errors.length) { const head = `${n(errors.length, "link", "links")} failed`; summaries.push(head); parts.push(`${head} (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`); }
+    if (unsupported.length) { const head = `${n(unsupported.length, "target is", "targets are")} not supported`; summaries.push(head); parts.push(`${head} (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`); }
+    output.exit_reason = summaries.join("; ");
+    process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
-  const flat = results.flatMap((r) => r.links || []);
+  const flat = flatLinks;
   // Non-zero exit on any failure OR an unsupported target, so a typo'd
   // --target does not look like success to automation.
   if (flat.some((l) => l.status === "error" || l.status === "conflict") || results.some((r) => r.status === "unsupported")) process.exitCode = 1;

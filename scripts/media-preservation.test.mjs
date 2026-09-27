@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
+import {fixturePng,JPEG} from '../momm/scripts/media-fixtures.mjs';
 const {privateTestFixture}=await import('./private-test-fixture.mjs');
 process.umask(0o077);
 const root=privateTestFixture('momm-media-preservation-');
@@ -19,7 +20,7 @@ try {
   const p=plan(m,{input:['text'],output:['image']},{prompt:'Synthetic preservation control. No provider call.'});
   p.steps[0].chosen=route;
   const source=path.join(cwd,route==='grok'?'.grok/sessions/fixture/images/output.jpg':'.codex/generated_images/fixture/output.png');
-  const bytes=Buffer.from('SYNTHETIC ARTEFACT INVENTORY FIXTURE '+outcome);
+  const bytes=route==='grok'?JPEG:fixturePng(outcome);
   const hash=createHash('sha256').update(bytes).digest('hex');
   const value=await run(p,{consent:true,cwd,home:cwd,effective:m,exec:async()=>{
    fs.mkdirSync(path.dirname(source),{recursive:true});fs.writeFileSync(source,bytes);

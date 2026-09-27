@@ -44,12 +44,12 @@ let ledgerWatcher = null; // idem
 let setupPointer = null;  // .ensemble_reviews/setup-center.json while the server runs
 
 // Connectivity checks must outlive the slowest legitimate route: the
-// dispatcher grants grok 1.5x of the 120s base (180s), its kill path allows a
+// dispatcher grants grok 2x of the 120s base (240s), its kill path allows a
 // 5s hard-deadline settle, and the ledger rebuild takes up to 15s before the
-// report is written to stdout. 240s covers 180+5+15 with margin; a shorter
+// report is written to stdout. 300s covers 240+5+15 with margin; a shorter
 // wrapper SIGKILLs a *successful* check before its report flushes and
 // misreports it as failed.
-const CONNECTIVITY_TIMEOUT_MS = 240_000;
+const CONNECTIVITY_TIMEOUT_MS = 300_000;
 
 // `modalities` mirrors what the dispatcher's adapters bind for --attach
 // (multi-review.mjs MODALITY_SUPPORT ∩ ADAPTER_MEDIA) — the self-test keeps the
@@ -847,7 +847,7 @@ function runClockActivity(event, work) {
   clockActivity.last_started_at = new Date().toISOString();
   clockInflight = Promise.resolve().then(work)
     .then((result) => { clockActivity.last_result = result; clockActivity.last_error = null; return result; })
-    .catch((error) => { clockActivity.last_error = safeDetail(error.message); throw error; })
+    .catch((error) => { clockActivity.last_result = null; clockActivity.last_error = safeDetail(error.message); throw error; })
     .finally(() => { clockInflight = null; clockActivity.running = false; clockActivity.last_finished_at = new Date().toISOString(); });
   return clockInflight;
 }
@@ -910,7 +910,7 @@ function createServerClock() {
 // piped because the codex and grok vectors feed the prompt that way.
 function probeExec(command, args = [], { input = "", timeout = 120_000, cwd = process.cwd(), env: sourceEnv = process.env } = {}) {
   const env = childEnvironment(sourceEnv);
-  const launch = windowsLauncher(command, args, env);
+  const launch = windowsLauncher(command, args, env, process.platform, cwd);
   if (launch.error) return Promise.resolve({ code: -1, stdout: "", stderr: launch.error.message, error: launch.error, timedOut: false });
   return new Promise((resolve) => {
     let child;
@@ -2218,7 +2218,8 @@ async function dashboardRegression() {
         const png = /This is a capability probe/.test(blob) ? blob.match(/(\S*probe\.png)\b/)?.[1]?.replace(/^@/, "") : null;
         if (png) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: colourOf(png) }) : colourOf(png), stderr: "" };
         if (/capability probe/.test(blob)) return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "The page says something." }) : "The page says something.", stderr: "" };
-        fs.mkdirSync(path.dirname(generatedAt[route]), { recursive: true }); fs.writeFileSync(generatedAt[route], "bytes");
+        const {JPEG,fixturePng} = await import('./media-fixtures.mjs');
+        fs.mkdirSync(path.dirname(generatedAt[route]), { recursive: true }); fs.writeFileSync(generatedAt[route], generatedAt[route].endsWith('.jpg') ? JPEG : fixturePng());
         return { code: 0, stdout: route === "grok" ? JSON.stringify({ text: "written" }) : "written", stderr: "" };
       };
       const settle = async (job) => { for (let i = 0; i < 500 && job.status === "running"; i += 1) await new Promise((resolve) => setTimeout(resolve, 10)); return job; };
@@ -2303,7 +2304,8 @@ async function selfTest() {
         return [...governors].filter((name) => name !== "other").every((name) => html.includes(`value="${name}"`));
       } catch { return false; }
     })(),
-    connectivity_budget_covers_slowest_route: CONNECTIVITY_TIMEOUT_MS >= 200_000,
+    // Grok: 2x the 120 s base, a 5 s settle and a 15 s ledger rebuild.
+    connectivity_budget_covers_slowest_route: CONNECTIVITY_TIMEOUT_MS >= 240_000 + 5_000 + 15_000,
     every_provider_declares_modalities: Object.values(providers).every((p) => Array.isArray(p.modalities) && p.modalities.includes("text")),
     modalities_match_dispatcher: dispatcherModalities !== null && Object.keys(providers).every((agent) => JSON.stringify([...providers[agent].modalities].sort()) === JSON.stringify([...(dispatcherModalities[agent] ?? [])].sort())),
     // 1.16 E7: the Modalities panel markup, its script and styles are present.

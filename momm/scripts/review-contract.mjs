@@ -4,6 +4,16 @@
 // The dispatcher stamps PEER_CONTRACT after validation; it is not peer negotiation.
 export const PEER_CONTRACT = "momm-peer-review/2";
 const text = (s, max) => typeof s === "string" && s.trim().length > 0 && s.length <= max;
+// Owner decision, 25 September 2026 (range review rev_20260925004814_1ed9f58c2c3a): models retype
+// typographic characters when they quote documentation, and those answers were refused. Only these
+// look-alikes and runs of whitespace compare equal; every other character still matches literally.
+const lookAlike = (value) => value
+  .replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'")
+  .replace(/[\u201c\u201d\u201e\u201f\u2033]/g, '"')
+  .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+  .replace(/\u2026/g, "...")
+  .replace(/\s+/g, " ")
+  .trim();
 /** Returns null when structurally valid, otherwise an actionable problem string. */
 export function reviewProblem(p, artifact) {
   if (typeof artifact !== "string" || !artifact.trim()) return "invalid artifact: exact non-empty source text required";
@@ -13,13 +23,15 @@ export function reviewProblem(p, artifact) {
   if (!text(p.summary, 1000)) return "missing or oversized summary";
   if (!Array.isArray(p.reviewed_scope) || !p.reviewed_scope.length) return "completed review needs reviewed_scope";
   if (p.reviewed_scope.length > 12) return "over-limit reviewed_scope; request a concise complete review, never truncate it";
-  // CLIs may carry Windows text using LF. Only CRLF/LF equivalence is allowed;
-  // spaces, code, and every other character still match literally. Input hashes
+  // CLIs may carry Windows text using LF, and models retype typographic look-alikes
+  // (see lookAlike); every other character still matches literally. Input hashes
   // remain over the original sanitized bytes and are never recomputed here.
   const quotedArtifact = artifact.replaceAll('\r\n', '\n');
+  let comparableArtifact = null;
   for (const s of p.reviewed_scope) {
     if (!text(s?.quote, 500) || !text(s?.assessment, 1000)
-      || !(artifact.includes(s.quote) || quotedArtifact.includes(s.quote.replaceAll('\r\n', '\n')))) return "reviewed_scope must quote the supplied artifact exactly (CRLF/LF equivalent) and assess it";
+      || !(artifact.includes(s.quote) || quotedArtifact.includes(s.quote.replaceAll('\r\n', '\n'))
+        || (lookAlike(s.quote) && (comparableArtifact ??= lookAlike(artifact)).includes(lookAlike(s.quote))))) return "reviewed_scope must quote the supplied artifact exactly (typographic look-alikes and whitespace runs aside) and assess it";
   }
   if (!Array.isArray(p.suggested_improvements) || p.suggested_improvements.length > 20 || !p.suggested_improvements.every(s => text(s, 500))) return "invalid or over-limit suggestions; nothing may be silently dropped";
   if (!Array.isArray(p.findings) || p.findings.length > 50) return "invalid or over-limit findings";

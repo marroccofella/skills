@@ -6,7 +6,7 @@ Skills in this collection follow a shared architecture. PRs are welcome if they 
 2. **OAuth-only, fail-closed.** No API-key adapters, fallbacks, or "just for convenience" key paths. Subprocesses run with key-scrubbed environments; unauthenticated backends return a structured status, never a workaround.
 3. **The driving agent is the sole writer.** Subordinate model calls are read-only diagnostic tools whose output is untrusted data. No skill may instruct a harness to execute reviewer-authored actions unexamined.
 4. **Deterministic core scripts, no npm dependencies.** Node 18+ standard library only. Git is required for repository workflows; explicit signed updates additionally need gitsign. Reviewer subprocesses must preserve timeout + process-tree-kill + hard-deadline containment (see `momm/scripts/multi-review.mjs` `runProcess`). Do not silently install prerequisites.
-5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI runs it on Linux/macOS/Windows × Node 18/20/22.
+5. **Self-testable without model calls.** Ship a `--self-test` mode covering your safety-relevant logic; CI requests Linux/macOS/Windows × Node 18/20/22/24 plus Windows 24.15.0 and 24.19.0. Node 22/24 are primary targets; 18/20 are legacy compatibility checks. Configured jobs are not lifecycle proof.
 
 Run the checks locally before opening a PR:
 
@@ -37,24 +37,26 @@ Do not hand-edit generated HTML, tables, public-report hashes or CSVs. Change th
 renderer or the deliberately approved source snapshot, then regenerate:
 
 ```text
-node momm/scripts/multi-review.mjs --self-test
-node momm/scripts/transport.test.mjs
-node momm/scripts/process-scope.test.mjs
-node momm/scripts/entrypoint.test.mjs
-node momm/scripts/stabilisation.test.mjs
-node momm/scripts/governor.test.mjs
-node momm/scripts/update.test.mjs
-node momm/scripts/setup-ui.mjs --self-test
-node momm/scripts/setup-maintenance.test.mjs
-node momm/scripts/ledger.mjs --self-test
 node scripts/render-momm-site.mjs
 node scripts/render-momm-site.mjs --check
 node scripts/check-momm-site.mjs
-node scripts/momm-release-pages.test.mjs
-node scripts/public-export.test.mjs
 node scripts/doc-consistency.test.mjs
-node myrepo/scripts/publish.mjs --self-test
 ```
+
+### Run every check, not a list that goes stale
+
+The commands above cover the public pages only. **Before you push, run everything CI runs.**
+There are two authoritative sources, and no third list is kept by hand:
+
+- `.github/workflows/self-test.yml` is the authoritative selection. Every `node ...` line in its
+  steps is a required check, on Linux, macOS and Windows across Node 18 to 24.
+- `momm/references/test-catalog-1.16.1.md` is the complete source inventory and says what each
+  suite covers. `momm/scripts/review-workflow.test.mjs` fails if a suite is missing from it, so a
+  new `*.test.mjs` file cannot be added without being described.
+
+A hand-written verification list in this file is how the 1.16.0 gate found sixty-five suites
+unreachable by a contributor following the documentation. If you add a suite, add it to the
+workflow and the catalogue; do not paste it here.
 
 The public renderer is offline and deterministic; it never reads private ledgers
 or changes the snapshot timestamp. Positive updater fixtures inject the signature
@@ -62,6 +64,13 @@ service for transaction testing. They are not a substitute for live trusted-tag
 verification. The OS/Node CI matrix runs those fixtures without provider accounts.
 
 ## Release checklist
+
+The [1.16.1 test catalog](momm/references/test-catalog-1.16.1.md) names every MOMM and
+repository test suite. The safety workflow lists the selected commands and inline fixtures.
+Run each command with its own checked exit code: a later success must never mask a failure.
+New patch gates include byte-based media validation, expiry, immutable attempts/tool-produced
+checks, installation completion, and PATH-resolution refusals. Exact native-machine and
+signed-lifecycle results belong in the [gate record](momm/references/gates-1.16.1.md).
 
 1. Work in an isolated branch. Preserve unrelated skills and concurrent edits.
 2. Bump the dispatcher, manifest, README and release notes together. Regenerate

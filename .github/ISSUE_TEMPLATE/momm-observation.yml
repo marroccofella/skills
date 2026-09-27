@@ -1,5 +1,5 @@
 name: MOMM observation or suggestion
-description: Reproducible public evidence and a proposed improvement, not private review logs.
+description: Reproducible public evidence, and optionally a proposed improvement; not private review logs.
 title: "MOMM observation: "
 body:
   - type: markdown

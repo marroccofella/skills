@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {privateTestFixture} from './private-test-fixture.mjs';
+import {readMedia} from './media-bytes.mjs';
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');
@@ -18,7 +19,7 @@ assert(stageStart>0&&stageEnd>stageStart&&mainEnd>mainStart);
 const root=privateTestFixture('momm-attachment-cleanup-test-');
 const checks=[];
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-const input=Buffer.from('SYNTHETIC_MEDIA_BYTES_NO_PERSONAL_DATA');
+const input=Buffer.from('47494638396101000100800000000000ffffff2c00000000010001000002024401003b','hex');
 let sequence=0;
 function fixture(){
   const cwd=path.join(root,String(++sequence)),temporary=path.join(cwd,'tmp');
@@ -56,7 +57,7 @@ function actual(f,extra,{expectedStatus=1,expectedError=null,json=false}={}){
   return {...safeResult,stdout,stderr,diagnostic,report};
 }
 function stageContext(f,overrides={}){
-  const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,
+  const context=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>f.temporary},path,Buffer,createHash,readMedia:overrides.readMedia??readMedia,
     createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(f.temporary,prefix)),
     requirePrivateScratch:()=>{},
     MODALITY_BY_EXTENSION:{gif:'image'},MODALITY_MAX_BYTES:{image:8000000},modalityOfFile:()=> 'image'});
@@ -127,12 +128,12 @@ try{
     assert.deepEqual(leftovers(f.temporary),[]);
   });
   await test('staging read failure removes the newly allocated empty directory',()=>{
-    const f=fixture();const context=stageContext(f,{readFileSync:()=>{throw Error('synthetic read failure');}});
+    const f=fixture();const context=stageContext(f,{readMedia:()=>{throw Error('synthetic read failure');}});
     assert.throws(()=>context.stage([path.join(f.cwd,'synthetic.gif')]),/synthetic read failure/);
     assert.deepEqual(leftovers(f.temporary),[]);
   });
   await test('cleanup refusal is explicit, not silent privacy success',()=>{
-    const f=fixture();const context=stageContext(f,{readFileSync:()=>{throw Error('synthetic read failure');},rmSync:()=>{throw Error('synthetic cleanup refusal');}});
+    const f=fixture();const context=stageContext(f,{readMedia:()=>{throw Error('synthetic read failure');},rmSync:()=>{throw Error('synthetic cleanup refusal');}});
     assert.throws(()=>context.stage([path.join(f.cwd,'synthetic.gif')]),/cleanup failed.*temporary.*remain/i);
   });
   // Exercise actual main's ownership boundary with controlled dependencies.

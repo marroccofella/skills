@@ -9,6 +9,9 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
+import { resolveGit as resolveGitForTest } from './governor.mjs';
+// Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
+const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
@@ -31,19 +34,24 @@ const buggy = good.replace("/ a.length", "/ (a.length + 1)");
 const peer = (changes = {}) => ({ review_status: "complete", reviewed_scope: [{ quote: "a.length", assessment: "The denominator determines the arithmetic mean." }], verdict: "ACCEPT", confidence: 0, summary: "The arithmetic mean calculation is assessed below.", findings: [], suggested_improvements: [], ...changes });
 try {
   test("completed clean review and zero confidence remain valid", () => assert.equal(reviewProblem(peer(), good), null));
-  test('quotation matching tolerates only platform line endings', () => {
+  // Owner decision, 25 September 2026: line endings, typographic look-alikes and runs of whitespace
+  // compare equal (review-contract.mjs lookAlike); any other changed character is still refused.
+  test('quotation matching tolerates line endings and whitespace runs, never a changed character', () => {
     const sample='const x = 1;\nconst y = 2;';
     const p=peer({reviewed_scope:[{quote:sample,assessment:'Two constant declarations.'}]});
     assert.equal(reviewProblem(p,sample.replaceAll('\n','\r\n')),null);
     assert.equal(reviewProblem({...p,reviewed_scope:[{quote:sample.replaceAll('\n','\r\n'),assessment:'Two declarations.'}]},sample),null);
     assert(reviewProblem(p,sample.replace('x = 1','x = 9')));
-    assert(reviewProblem(p,sample.replace('x = 1','x  = 1')));
+    assert.equal(reviewProblem(p,sample.replace('x = 1','x  = 1')),null);
+    assert(reviewProblem(p,sample.replace('x = 1','x = 1;')));
   });
   test('a literal excerpt ending between CR and LF still matches', () => {
     const quote='const x = 1;\r';
     const p=peer({reviewed_scope:[{quote,assessment:'Literal source excerpt ending at CR.'}]});
     assert.equal(reviewProblem(p,'const x = 1;\r\nconst y = 2;'),null);
-    assert(reviewProblem(p,'const x = 1;\nconst y = 2;'),'lone CR must not become an invented LF');
+    // Whitespace-only differences compare equal since the owner decision of 25 September 2026.
+    assert.equal(reviewProblem(p,'const x = 1;\nconst y = 2;'),null,'a trailing CR is whitespace');
+    assert(reviewProblem(p,'const x = 2;\nconst y = 2;'),'a changed character is still refused');
   });
   test('diff scope preserves prefixes instead of reconstructing source', () => {
     const artifact = '+  const value = read();\n+  return value;\n';
@@ -51,7 +59,10 @@ try {
     assert.equal(check('+  const value = read();\n+  return value;'), null);
     assert.equal(check('const value = read();'), null, 'a literal single-line substring is valid');
     assert(check('  const value = read();\n  return value;'), 'stripping diff prefixes must remain invalid');
-    assert(check('+ const value = read();\n+ return value;'), 'reindentation must remain invalid');
+    // Owner decision, 25 September 2026: runs of whitespace compare equal, so a reindented quote is
+    // accepted as evidence of scope; the diff markers are characters and must still be kept.
+    assert.equal(check('+ const value = read();\n+ return value;'), null, 'reindentation is a whitespace-run difference');
+    assert(check('+ const value = read();\n  return value;'), 'a dropped diff marker is still refused');
     assert.match(source, /short single-line excerpts/);
     assert.match(source, /do not remove diff markers, reindent, or reformat/);
   });
@@ -91,7 +102,7 @@ try {
     { agent: "grok", status: "success", review: core.normalizeReview("grok", peer({ verdict: "MODIFY", suggested_improvements: ["Keep fractional precision", "Change the public API"] })) },
   ];
   const findings = core.rationalize(responses, { artifact: buggy, prose: false });
-  const report = { ...base, test_fixture: "controlled reviewer transport; not real provider approval", run_id: "rev_fixture_lifecycle", source_snapshot: captureSourceSnapshot(fixture, buggy, "mean.cjs"),
+  const report = { ...base, attempt_evidence: undefined, attempt_accounting: undefined, test_fixture: "controlled reviewer transport; not real provider approval", run_id: "rev_fixture_lifecycle", source_snapshot: captureSourceSnapshot(fixture, buggy, "mean.cjs"),
     quorum: { required: 2, achieved: 2, met: true }, gate_policy: { strict: false, quorum_required: 2, requested_routes: ["claude", "grok"] },
     reviewers: responses.map(r => ({ agent: r.agent, status: r.status, verdict: r.review.verdict, confidence: r.review.confidence, summary: r.review.summary, review_contract: PEER_CONTRACT, reviewed_scope: r.review.reviewed_scope, suggested_improvements: r.review.improvements })),
     findings, outstanding: core.buildOutstanding(findings, responses, "rev_fixture_lifecycle", fixture, 2) };
@@ -100,7 +111,7 @@ try {
   const sealed = ref(reportPath);
   write(".ensemble_reviews/review-log.jsonl", JSON.stringify({ run_id: report.run_id, governor: "codex", report_path: reportPath, report_sha256: sealed.sha256, input_sha256: report.input_sha256, reviewer_status: { claude: "success", grok: "success" } }) + "\n");
   const pending = inspectCompletion(fixture, report.run_id);
-  test("quorum alone cannot complete governor work", () => { assert.equal(report.outstanding.complete, false); assert.equal(pending.complete, false); assert.equal(pending.items.length, 5); });
+  test("quorum alone cannot complete governor work", () => { assert.equal(report.outstanding.complete, false); assert.equal(pending.complete, false); assert.equal(pending.items.length, 5, JSON.stringify(pending.errors)); });
   test("duplicate text across reviewers has distinct obligations", () => assert.equal(new Set(pending.items.map(i => i.item_id)).size, 5));
   const defect = pending.items.find(i => i.kind === "finding");
   write("evidence/original.cjs", buggy);
@@ -251,14 +262,14 @@ try {
     const legacy=p=>path.win32.normalize(p);legacy.native=p=>legacy(p).replace('Q:\\RUNNER~1','Q:\\runner.long');
     const artifact='diff --git a/x.txt b/x.txt\n';
     const fakeFs={realpathSync:legacy,statSync:()=>({isFile:()=>true,size:8}),readFileSync:()=>Buffer.from('fixture\n')};
-    const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replace('export function','function')+';captureSourceSnapshot',
+    const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replaceAll('export function','function')+';captureSourceSnapshot',
       {fs:fakeFs,path:path.win32,process:{platform:'win32',env:{Path:'Q:\\git\\cmd'}},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>(assert.equal(_cmd,'Q:\\git\\cmd\\git.exe','Git is launched by its absolute PATH location, never by bare name'),{status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
     const result=capture('Q:\\RUNNER~1\\repo',artifact);assert.equal(result.complete,true,result.reason);
     assert.match(capture('Q:\\RUNNER~1\\repo\\child',artifact).reason,/repository root/);
   });
   test("fresh Git scope accepted; stale, deleted and binary scope refused", () => {
     const cwd = path.join(fixture, "scope"); fs.mkdirSync(cwd);
-    const git = args => { const r = spawnSync("git", ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
+    const git = args => { const r = spawnSync(GIT, ["-c", "core.autocrlf=false", "-c", "core.hooksPath=.git/no-hooks", ...args], { cwd, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
     git(["init", "-q"]); fs.writeFileSync(path.join(cwd, "x.txt"), "before\n"); fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0,1,2]));
     git(["add", "."]); git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture baseline"]);
     fs.writeFileSync(path.join(cwd, "x.txt"), "after\n"); const diff = git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--binary", "HEAD"]);
@@ -277,7 +288,7 @@ try {
       return (file, ...args) => { if (!changed && fs.realpathSync(file) === raceTarget) { changed = true; fs.writeFileSync(file, "concurrent\n"); } return fs.readFileSync(file, ...args); };
     } });
     const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
-    const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function normalizeTarget")).replace("export function", "function") + ";captureSourceSnapshot", {
+    const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function normalizeTarget")).replaceAll("export function", "function") + ";captureSourceSnapshot", {
       fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); },
     });
     const raced=capture(raceCwd,diff);
@@ -297,6 +308,7 @@ try {
   test('receipt success cannot hide dashboard rebuild failure',()=>{
     const copy=write('isolated/governor.mjs',fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8'));
     write('isolated/evidence-permissions.mjs',fs.readFileSync(path.join(scripts,'evidence-permissions.mjs'),'utf8'));
+    write('isolated/process-scope.mjs',fs.readFileSync(path.join(scripts,'process-scope.mjs'),'utf8'));
     const result=run([copy,'--run',report.run_id,'--record']),body=JSON.parse(result.stdout);
     assert.equal(result.status,5,result.stdout+result.stderr);assert.equal(body.complete,true);assert.equal(body.ledger_rebuilt,false);assert.equal(body.ledger_url,null);assert(body.ledger_error);
   });

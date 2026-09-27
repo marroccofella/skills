@@ -5,7 +5,7 @@ function seek(seconds){if(video&&Number.isFinite(video.duration))video.currentTi
 video?.addEventListener('loadedmetadata',()=>seek(timeFromUrl()));
 if(video?.readyState>=1)seek(timeFromUrl());
 window.addEventListener('popstate',()=>seek(timeFromUrl()));
-document.querySelectorAll('[data-seek]').forEach(a=>a.addEventListener('click',event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();history.pushState(null,'',a.getAttribute('href'));seek(Number(a.dataset.seek));video?.scrollIntoView({behavior:'instant',block:'center'});video?.play().catch(()=>{status.textContent='Press Play to begin this chapter.';});}));
+document.querySelectorAll('[data-seek]').forEach(a=>a.addEventListener('click',event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();history.pushState(null,'',a.getAttribute('href'));seek(Number(a.dataset.seek));video?.scrollIntoView({behavior:'instant',block:'center'});video?.play().catch(()=>{if(status)status.textContent='Press Play to begin this chapter.';});}));
 function shareUrl(){const url=new URL(document.querySelector('link[rel="canonical"]').href);if(video?.currentTime>0)url.searchParams.set('t',Number(video.currentTime.toFixed(3)));return url.href;}
 async function copy(url){try{await navigator.clipboard.writeText(url);status.textContent='Link copied. Share it with someone who uses an AI agent.';}catch{const field=document.getElementById('share-link');field.parentElement.hidden=false;field.value=url;field.focus();field.select();status.textContent='Select and copy the link below.';}}
 document.getElementById('copy-video')?.addEventListener('click',()=>copy(shareUrl()));

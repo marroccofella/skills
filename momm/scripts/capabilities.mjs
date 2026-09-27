@@ -18,7 +18,7 @@
 // standing and blocks routing. An entry whose binding no longer holds (CLI upgraded, login
 // changed, other machine), whose binding could not be checked (no installed-version map), or
 // whose expiry has passed never silently unblocks: a blocker it carried becomes the derived
-// blocker `reprobe` ("probe before routing"); a `verified` upgrade it carried is not applied.
+// blocker `reprobe` ("probe before routing"); an expired successful probe also blocks routing.
 // Zero dependencies. Nothing here runs a CLI except the module CLI's version detection.
 import fs from "node:fs";
 import os from "node:os";
@@ -43,6 +43,7 @@ export const MACHINE_BLOCKERS = Object.freeze(["auth_tier", "zdr", "missing_flag
 // Overlay expiry by blocker class; null = until the next probe replaces the entry.
 const HOUR = 3_600_000, DAY = 24 * HOUR;
 export const OVERLAY_EXPIRY_MS = Object.freeze({ quota: DAY, zdr: 7 * DAY, allowlist: 7 * DAY, auth_tier: 7 * DAY, missing_flag: 7 * DAY, probe_failed: null });
+export const SUCCESS_EXPIRY_MS = 7 * DAY;
 export const DIRECTIONS = Object.freeze(["input", "output"]);
 export const INPUT_MODALITIES = Object.freeze(["text", "image", "pdf", "audio", "video", "speech"]);
 export const OUTPUT_MODALITIES = Object.freeze(["text", "image_gen", "video_gen", "speech", "code_exec", "web"]);
@@ -226,7 +227,8 @@ function withOverlayLock(file, timeoutMs, fn) {
 // Records one probe result. `level` (an upgrade) and/or `blocker` (null clears a baseline
 // blocker on this machine); `reason` is free text shown beside the blocker. The entry is
 // bound to this machine, the CLI version probed and the (hashed) login identity, and
-// carries an `expires_at` by blocker class (OVERLAY_EXPIRY_MS; null = until the next probe).
+// carries an `expires_at` by blocker class; successes expire after seven days.
+// Some persistent refusal classes remain until an explicit new probe.
 // The read-modify-write runs under the overlay lock so concurrent probes never drop each other.
 export function writeOverlayEntry(home, entry, { now = new Date(), machine = machineId(), baseline = null, lockTimeoutMs = OVERLAY_LOCK_TIMEOUT_MS } = {}) {
   const { route, direction, modality, level, blocker, reason, cli_version, login_identity_sha256 } = entry ?? {};
@@ -245,7 +247,7 @@ export function writeOverlayEntry(home, entry, { now = new Date(), machine = mac
     if (cell.level === "no") throw new Error(`${route}.${direction}.${modality} is a no cell in the baseline: it carries no invocation, harvest or mime, so a probe can neither promote nor block it`);
   }
   const nowMs = toMs(now);
-  const ttl = blocker ? OVERLAY_EXPIRY_MS[blocker] ?? null : null;
+  const ttl = blocker ? OVERLAY_EXPIRY_MS[blocker] ?? null : SUCCESS_EXPIRY_MS;
   const written = {
     route, direction, modality,
     ...(level !== undefined ? { level } : {}),
@@ -286,8 +288,12 @@ export function readOverlay(home = os.homedir(), { installedVersions, loginIdent
       else if (identityHash(loginIdentity[entry.route]) !== (entry.login_identity_sha256 ?? null)) reason = "login_changed";
     }
     if (reason) { invalidated.push({ entry, reason }); continue; }
-    if (entry.expires_at && Date.parse(entry.expires_at) <= nowMs) { stale.push({ entry, reason: "expired" }); continue; }
-    entries.push(entry);
+    const recordedMs = Date.parse(entry.at);
+    if (!Number.isFinite(recordedMs)) { invalidated.push({ entry, reason: 'invalid_timestamp' }); continue; }
+    const expiry = entry.expires_at ?? (!entry.blocker ? new Date(recordedMs + SUCCESS_EXPIRY_MS).toISOString() : null);
+    if (expiry && (!Number.isFinite(Date.parse(expiry)) || Date.parse(expiry) <= nowMs)) { stale.push({ entry: { ...entry, expires_at: expiry }, reason: "expired" }); continue; }
+    // A 1.16.0 success has no stored expiry; show the one computed above rather than none.
+    entries.push(expiry && entry.expires_at == null ? { ...entry, expires_at: expiry } : entry);
   }
   return { path: file, machine_id: machine, entries, invalidated, stale };
 }
@@ -324,12 +330,15 @@ export function effective({ home = os.homedir(), installedVersions, loginIdentit
     if (applied) { stamp(cell, entry); cell.reason = entry.reason ?? null; result.overlay.applied++; }
   }
   // Never silently unblock: a blocker whose entry expired, lost its binding or could not be checked
-  // becomes `reprobe`. A `verified` upgrade in the same position is simply not applied.
+  // becomes `reprobe`. A successful probe in the same position also requires a new probe.
   for (const { entry, reason } of [...(read.invalidated ?? []), ...(read.stale ?? [])]) {
     const cell = result.routes[entry.route]?.[entry.direction]?.[entry.modality];
-    if (!cell || !entry.blocker || cell.level === "no") continue;
+    if (!cell || cell.level === "no") continue;
+    // `reprobe` is what makes the probe path offer this cell again, so it stays the blocker. The
+    // blocker it displaces is the more specific statement and is kept in the reason rather than lost.
+    const displaced = cell.blocker ?? null;
     cell.blocker = "reprobe";
-    cell.reason = `${entry.blocker} recorded ${entry.at} is ${reason}; probe before routing${entry.reason ? ` (${entry.reason})` : ""}`;
+    cell.reason = `${entry.blocker ?? "successful probe"} recorded ${entry.at} is ${reason}; expires ${entry.expires_at ?? "on binding change"}; probe before routing${entry.reason ? ` (${entry.reason})` : ""}${displaced && displaced !== "reprobe" ? `; the ${displaced} blocker already recorded against this cell still stands until a probe says otherwise` : ""}`;
     stamp(cell, entry);
     result.overlay.reprobe++;
   }

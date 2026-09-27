@@ -1,5 +1,5 @@
 // Public, deterministic teaching fixture. No model, account, storage or network access.
-export const governors = ['Codex', 'Claude Code', 'Antigravity', 'GitHub Copilot', 'Gemini CLI', 'Other harness'];
+export const governors = ['Codex', 'Claude Code', 'Antigravity', 'GitHub Copilot', 'Gemini CLI', 'Grok', 'Other harness'];
 export const routes = [
   {name:'Codex', angle:'Surgeon', description:'Trace a precise claim to the changed code.'},
   {name:'Claude Code', angle:'Architect', description:'Look for broken assumptions and missing tests.'},
@@ -25,7 +25,8 @@ export function fixedTotal(prices){let total=0;for(let i=0;i<prices.length;i++)t
 export function fixture(){const values=[12,8,5],before=[...values];const draft=draftTotal(values);return {input:before,expected:25,draft:String(draft),fixed:fixedTotal(values),unchanged:JSON.stringify(values)===JSON.stringify(before),empty:fixedTotal([])};}
 export function stateAt(index=0,scenario='fix',governor='Codex'){
   if(!Number.isInteger(index)||index<0||index>=steps.length)throw new Error('Unknown workflow step');
-  if(!Object.hasOwn(scenarios,scenario)||!governors.includes(governor))throw new Error('Unknown teaching scenario');
+  if(!Object.hasOwn(scenarios,scenario))throw new Error('Unknown teaching scenario');
+  if(!governors.includes(governor))throw new Error('Unknown teaching governor');
   const peers=routes.filter(route=>route.name!==governor).slice(0,3);
   const blocked=scenario==='shortage';
   const replies=peers.map((route,i)=>({...route,status:index<4?'waiting':index===4?'reviewing':blocked&&i>0?(i===1?'unavailable':'invalid output'):'success',claim:index<5?'No accepted response yet.':blocked&&i>0?'No valid review; no finding is inferred from this status.':i===0?'Boundary claim: the loop reads past the last price.':i===1&&scenario==='disagreement'?'Claim: the function mutates its input.':i===1?'No additional material defect in this example.':'Suggestion: also test an empty list.'}));

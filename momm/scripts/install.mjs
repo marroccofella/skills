@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { recordInstall } from "./update.mjs";
 import { readiness } from "./bootstrap.mjs";
+import { installationCompletion } from "./installations.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -156,6 +157,37 @@ function main() {
       reason: "Link results below remain valid, but the installation receipt/recovery setup did not finish. Resolve the reported filesystem error and rerun this same explicit install; do not assume updates or rollback are ready." };
     process.stderr.write("Installation receipt failed; inspect stdout for links already created. Nothing was rolled back.\n");
     process.exitCode = 1;
+  }
+  try {
+    output.inventory = installationCompletion({ runningSkillRoot: skillRoot, customDirs: options.customDirs });
+    if (typeof output.inventory?.upgrade?.complete !== 'boolean') throw new Error('invalid inventory shape');
+  } catch {
+    output.inventory = {upgrade:{complete:false,reason:'Installation inventory could not be verified; inspect the discovery paths before claiming completion.'},error:'inventory_unavailable'};
+  }
+  if (!output.inventory.upgrade.complete) {
+    // A dry run changes nothing, so it keeps exit 0 and callers that preview an install are not
+    // broken by a predicted state. The message says so, rather than leaving the text and the exit
+    // code contradicting each other. An inventory module that omits its reason is named as such.
+    const reason = output.inventory.upgrade.reason ?? 'the inventory gave no reason';
+    const preview = options.dryRun ? ' This is a dry run: nothing was changed, and an incomplete inventory alone does not fail it.' : '';
+    process.stderr.write(`Installation is not complete across active harnesses: ${reason}. Requested link and receipt results are retained below; conflicting copies were left untouched.${preview}\n`);
+    if (!options.dryRun) process.exitCode = 1;
+  }
+  // Say why the exit code is non-zero. A refused link used to exit 1 in silence, while the only prose
+  // in the output was the inventory's "every active path loads <version>", which reads as success
+  // (independent review of 3d7a8be). The inventory describes copies that are ALREADY installed; this
+  // line describes what this command did or, in a dry run, would do.
+  const refused = results.filter((r) => ["error", "conflict", "unsupported"].includes(r.status));
+  if (refused.length) {
+    const dry = options.dryRun, n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+    const name = (r) => `${r.skill ? `${r.skill} for ` : ""}${r.target ?? "link"}${r.destination ? ` at ${r.destination}` : ""}`;
+    const conflicts = refused.filter((r) => r.status === "conflict"), errors = refused.filter((r) => r.status === "error"), unsupported = refused.filter((r) => r.status === "unsupported");
+    const parts = [], summaries = [];
+    if (conflicts.length) { const head = `${n(conflicts.length, "link", "links")} ${dry ? "would be" : conflicts.length === 1 ? "was" : "were"} refused because the path already exists`; summaries.push(head); parts.push(`${head} (${conflicts.map(name).join("; ")}); existing paths are never overwritten, so move or remove that entry yourself, then rerun`); }
+    if (errors.length) { const head = `${n(errors.length, "link", "links")} failed`; summaries.push(head); parts.push(`${head} (${errors.map((r) => `${name(r)}: ${r.detail ?? "error"}`).join("; ")})`); }
+    if (unsupported.length) { const head = `${n(unsupported.length, "target is", "targets are")} not supported`; summaries.push(head); parts.push(`${head} (${unsupported.map((r) => r.target).join(", ")}); choose codex, claude, gemini or antigravity, or pass --custom-dir with the harness's skill folder`); }
+    output.exit_reason = summaries.join("; ");
+    process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;

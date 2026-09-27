@@ -10,9 +10,11 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FIXTURE_VERSION = '1.16.0';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-independent-regression-'));
 const results = [];
-const env = { ...process.env, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1', DO_NOT_TRACK: '1' };
+const testHome=path.join(temp,'home');fs.mkdirSync(testHome);
+const env = { ...process.env, HOME:testHome, USERPROFILE:testHome, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1', DO_NOT_TRACK: '1' };
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const extract = (source, start, end) => {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
@@ -35,10 +37,10 @@ function write(repo, name, data) {
 }
 function fixture(name) {
   const repo = path.join(temp, name); fs.mkdirSync(repo);
-  for (const file of ['install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs', 'momm/scripts/bootstrap.mjs']) write(repo, file, read(file));
-  write(repo, 'versions.json', JSON.stringify({ momm: '1.16.0' }));
+  for (const file of ['install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs', 'momm/scripts/bootstrap.mjs', 'momm/scripts/installations.mjs']) write(repo, file, read(file));
+  write(repo, 'versions.json', JSON.stringify({ momm: FIXTURE_VERSION }));
   write(repo, 'momm/SKILL.md', 'Synthetic protocol fixture.');
-  write(repo, 'momm/scripts/multi-review.mjs', '// Hash-only fixture; never executed.');
+  write(repo, 'momm/scripts/multi-review.mjs', `const MOMM_VERSION = ${JSON.stringify(FIXTURE_VERSION)}; // Parsed as version evidence; no provider calls.`);
   write(repo, 'unrelated/SKILL.md', 'Unrelated skill sentinel.');
   git(repo, 'init'); git(repo, 'add', '.'); git(repo, 'commit', '-m', 'Synthetic baseline');
   return repo;

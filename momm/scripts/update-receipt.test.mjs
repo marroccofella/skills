@@ -33,7 +33,7 @@ try {
   });
   await test('rollback retains explicitly added harness scopes',async()=>{
     let replay;
-    await update(['--repo',temp,'--rollback','--yes'],{log(){},reinstall(root,receipt){replay=receipt;}});
+    await update(['--repo',temp,'--rollback','--yes'],{log(){},inventory(){},reinstall(root,receipt){replay=receipt;}});
     assert.equal(git(temp,'rev-parse','HEAD'),old);
     assert(readLock(temp).custom_dirs.includes(laterDir),'later harness missing from recovered receipt');
     assert(replay.installations.some(s=>s.custom_dir===laterDir),'later harness not replayed');

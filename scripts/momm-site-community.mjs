@@ -27,6 +27,6 @@ export function normalizeNavigation(output) {
     const relative=file.slice('docs/momm/'.length), prefix='../'.repeat(relative.split('/').length-1);
     const pattern=/<nav aria-label="(?:Main|Release) navigation">[\s\S]*?<\/nav>/g;
     if([...output[file].matchAll(pattern)].length!==1)throw Error('Expected exactly one primary navigation: '+file);
-    output[file]=output[file].replace(pattern, '<nav aria-label="Main navigation">'+navigationLinks.map(([href,label])=>`<a href="${prefix}${href}"${href===relative?' aria-current="page"':''}>${label}</a>`).join('')+'</nav>');
+    output[file]=output[file].replace(pattern, '<nav aria-label="Main navigation">'+navigationLinks.map(([href,label])=>`<a href="${prefix}${href}"${href===relative?' aria-current="page"':href==='media.html'&&relative.startsWith('watch/')?' aria-current="true"':href==='evidence.html'&&relative.startsWith('data/')?' aria-current="true"':''}>${label}</a>`).join('')+'</nav>');
   }
 }
