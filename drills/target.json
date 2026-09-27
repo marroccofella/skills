@@ -1,0 +1,6 @@
+{
+  "_comment": "Proof target (published releases) until the signed 1.16.1 main-checkpoint exists; then checkpoint, expect 1.16.1, from momm-1.16.0 and momm-1.15.1.",
+  "target": "momm-1.16.0",
+  "expect": "1.16.0",
+  "from": ["momm-1.15.1"]
+}
