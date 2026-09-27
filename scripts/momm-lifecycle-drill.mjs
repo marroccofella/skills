@@ -85,7 +85,10 @@ const signedInstall = async (home, tag) => {
   const { treeHash } = await import(pathToFileURL(path.join(drillRoot, 'momm/scripts/update.mjs')).href);
   if (!release?.sha256 || treeHash(repo, commit) !== release.sha256) throw new Error(`sealed package hash does not match ${tag}`);
   git(repo, 'checkout', '--quiet', '--detach', tag);
-  run(process.execPath, ['install.mjs', '--target', 'claude'], { cwd: repo, env: homeEnv(home) });
+  // The codex target links into ~/.agents/skills without needing a harness command installed (the claude
+  // target is skipped when the claude command is absent, as on a bare CI runner). Same in 1.15.1 to 1.16.1.
+  const inst = run(process.execPath, ['install.mjs', '--target', 'codex'], { cwd: repo, env: homeEnv(home) });
+  if (!fs.existsSync(lockPath(repo))) throw new Error(`install wrote no receipt: ${(inst.out + inst.err).slice(-800)}`);
   return { repo, version, commit };
 };
 const applyArgs = opt.checkpoint ? ['--channel', 'main'] : ['--version', opt.expect];
