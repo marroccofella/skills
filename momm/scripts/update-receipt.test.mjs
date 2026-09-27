@@ -22,6 +22,15 @@ try {
   const lockPath=path.join(stateDir(temp),'momm.lock');
   const current=readLock(temp);current.previous=before;fs.writeFileSync(lockPath,JSON.stringify(current));
   recordInstall(temp,'momm/scripts/install.mjs',rows(laterDir));
+  // 1.16.1 lifecycle gate (run 36354776934): rollback to 1.16.0 or 1.15.1 restored the checkout, then failed
+  // with "Installation inventory unavailable", because the inventory helper exists only from 1.16.1 and was
+  // never retained beside the recovery copy of the updater. The receipt must retain it.
+  await test('the install receipt retains the inventory helper beside the recovery updater', () => {
+    const retained = path.join(stateDir(temp), 'installations.mjs');
+    assert(fs.existsSync(retained), 'installations.mjs is retained in the state folder');
+    assert.deepEqual(fs.readFileSync(retained), fs.readFileSync(new URL('./installations.mjs', import.meta.url)), 'byte-identical to the installed helper');
+    assert(fs.existsSync(path.join(stateDir(temp), 'update.mjs')), 'the recovery updater is still retained');
+  });
   await test('receipt writer cannot bypass an active update claim',()=>{
     const bytes=fs.readFileSync(lockPath),claim=path.join(stateDir(temp),'update.active');fs.writeFileSync(claim,'fixture-owned claim');
     try { assert.throws(()=>recordInstall(temp,'momm/scripts/install.mjs',rows(path.join(temp,'racing-harness'))),/update.*active|update.*claim|Another update/i);assert.deepEqual(fs.readFileSync(lockPath),bytes); }
