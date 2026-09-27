@@ -199,6 +199,30 @@ Candidate `34020ab6c50b40ed5db4feb3dc34a54499d2f2b6`; CI run 36199521352, 15 of 
 - **Accepted risk reaffirmed (owner, 26 September 2026):** on macOS and Linux reviewer CLIs are still
   found through PATH; stated in the release notes; fix due in 1.17.
 
+## Lifecycle drills (27 September 2026)
+
+**Owner decision:** the six cells (Windows, macOS, Linux × Node 18 and 24) run on GitHub-hosted runners
+(`windows-latest`, `macos-latest`, `ubuntu-latest`), real installations of each operating system,
+because the owner has only a Windows machine. Results are labelled as hosted-runner results, never as the
+owner's machines; hosted images are clean and short-lived, so they cannot show behaviour on a long-used
+personal machine. Recorded publicly before any receipt was counted (Discussion #22). The drill tool,
+`scripts/momm-lifecycle-drill.mjs` on the never-merged `drills/` branches, works in disposable user
+profiles against real signed tags verified with gitsign 0.17.1: fresh signed install with the sealed hash
+checked, signed installs of 1.16.0 and 1.15.1, upgrade, rollback, re-upgrade, and refusal of a tampered
+unsigned payload with the installation left unchanged.
+
+- Rehearsal against the published 1.15.1 → 1.16.0 releases (machinery only, not the gate): run
+  36351087269, six of six cells, seven of seven steps each.
+- First gate run against the signed checkpoint `momm-main-a031b45…` (run 36354776934): every signed
+  install, upgrade, re-upgrade and tamper refusal passed on all six cells, but **rollback from 1.16.1 to
+  1.16.0 or 1.15.1 exited 1** on all six: the checkout was restored, then the completion inventory reported
+  "Installation inventory unavailable", because its helper (`installations.mjs`, new in 1.16.1) was never
+  retained beside the recovery copy of the updater. Fixed test-first: the install receipt now retains the
+  helper (`update-receipt.test.mjs`). 1.16.1 was re-sealed and the six cells are run again on the new
+  checkpoint.
+- The same fix commit makes `update.test.mjs` retry its temporary-folder removal, after a Windows Node 18
+  job on `main` (run 36353411742) failed only in that cleanup, every assertion having passed.
+
 ## Still required before tag
 
 - Full candidate suites and exact OS/Node CI outputs.

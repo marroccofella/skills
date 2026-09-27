@@ -498,5 +498,7 @@ try {
   process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {
   for (const [key, value] of Object.entries(originalHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-  if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true });
+  // Windows can briefly hold a just-used child directory (CI run 36353411742, Node 18: ENOTEMPTY after every
+  // assertion had passed); retry the removal instead of failing a passed suite on its own cleanup.
+  if (path.dirname(fixture) === os.tmpdir() && path.basename(fixture).startsWith("momm-update-tests-")) fs.rmSync(fixture, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

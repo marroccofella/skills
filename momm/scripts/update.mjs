@@ -187,6 +187,10 @@ export function recordInstall(root, installer, results, { dryRun = false, skills
     current: { ...(retainVerified ? previous.current : {}), ...observed }, installed_at: new Date().toISOString() };
   writeJSON(path.join(dir, "momm.lock"), lock);
   atomic(path.join(dir, "update.mjs"), fs.readFileSync(ENTRY));
+  // Retain the (builtins-only) inventory helper too: a rollback to a release older than the helper restores
+  // a checkout without it, and the completion inventory then reads this copy (1.16.1 lifecycle gate).
+  const helper = path.join(path.dirname(ENTRY), "installations.mjs");
+  if (fs.existsSync(helper)) atomic(path.join(dir, "installations.mjs"), fs.readFileSync(helper));
   return { lock: path.join(dir, "momm.lock"), recovery: path.join(dir, "update.mjs"), targets: lock.targets };
   } finally {
     fs.closeSync(fd);

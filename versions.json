@@ -15,7 +15,7 @@
         "A reviewer's quotation counts when it differs only by typographic look-alikes or whitespace; every other character must still match.",
         "The install prompt shows the standing-instructions section and waits for your yes before writing it."
       ],
-      "sha256": "2e19b3ae527f4a32da81a4d8467c024073f7b785fdf6de29d851de8611aad617",
+      "sha256": "b0a89c29af2f9d10a3bef9f4853493b0a620e0ecdb3dd39643f8d9ca10650b5f",
       "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {

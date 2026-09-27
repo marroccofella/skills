@@ -16,7 +16,8 @@ Unknown usage/cost is not zero. Matching evidence hashes do not prove the adequa
 
 The existing installation inventory, dirty-clone guidance, effectiveness scorecard and optional
 training export are retained. Scorecards reflect governor rulings, not objective model quality.
-Private evidence and project content are not published automatically.
+Private evidence and project content are not published automatically. Rolling back from 1.16.1 to an
+earlier release completes its installation check (the inventory helper is kept with the recovery copy).
 
 The scope-audit follow-up clears stale update success after a failure and verifies
 training-export destinations with the native privacy checker, on Windows as well
