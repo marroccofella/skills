@@ -226,6 +226,18 @@ unsigned payload with the installation left unchanged.
   rollback now secures the helper beside the recovery updater before that checkout; the new test reproduces
   the drill's exact message with the real inventory lookup, not an injected one. Re-sealed; the six cells run
   a third time.
+- **Third gate run, checkpoint `momm-main-c381c95…` (run 36361600254): passed.** All six cells, eleven of
+  eleven steps each: fresh signed install of 1.16.1 at `c381c95`; signed installs of 1.16.0 and 1.15.1;
+  upgrade, rollback to each, re-upgrade; tampered payload refused with the installation unchanged. Receipts
+  and their SHA-256 are the run's artifacts. (GitHub-hosted runners: macOS arm64, Linux x64, Windows x64;
+  Node 18.20.8 and 24.20/24.21.)
+
+## Published (28 September 2026)
+
+The stable release workflow (run 36362233567) signed and published `momm-1.16.1` on `c381c95`, the
+checkpointed sealed commit (seal `f9f38796cb95785e604e873c077e95aefde24ae782a5f24b6d55cb4929bbe734`). Verified
+from a fresh clone: gitsign reports a good signature from the release workflow on `main`, with the Git
+signature, Rekor entry and certificate claims validated, and `momm-release.mjs --check` passes at the tag.
 - The same fix commit makes `update.test.mjs` retry its temporary-folder removal, after a Windows Node 18
   job on `main` (run 36353411742) failed only in that cleanup, every assertion having passed.
 
