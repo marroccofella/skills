@@ -130,6 +130,10 @@ recorded here so the reason is a decision rather than an omission. Each one is i
 
 ## Planned for 1.17
 
+- **Drill interrupted-install recovery.** The 1.16.1 lifecycle drill covered signed install, upgrade,
+  rollback, re-upgrade and tamper refusal, but not recovery from an update interrupted mid-transaction
+  (not waived; see the 1.16.1 gate record). Add a step that stops an apply after `prepared` and recovers
+  with the retained updater, on every drill cell.
 - **Resolve reviewer launches on macOS and Linux.** Accepted as a documented risk for 1.16.1 (owner
   decision, 24 September 2026; see the gate record). `processScope.spawn` should resolve a bare name
   with `pathEntryOutside` / `executableOutside` and scrub the child PATH on every platform, as it

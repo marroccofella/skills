@@ -54,6 +54,8 @@ try {
   await test('rollback to a release without the inventory helper still finds it', async () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-helper-'));
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-home-'));
+    // The harness folder holds a link into the repo; it is removed with the others (review rev_20260928015057_fbe9e5568938).
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-harness-'));
     const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
     try {
       const put = (file, value) => { const p = path.join(repo, file); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, value); };
@@ -64,7 +66,6 @@ try {
       put('momm/scripts/multi-review.mjs', 'const MOMM_VERSION = "1.0.0";\n');
       const older = save('older release without the helper');
       // A real harness link to the clone, as an install makes, so the inventory reads what it actually loads.
-      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-harness-'));
       fs.symlinkSync(path.join(repo, 'momm'), path.join(target, 'momm'), process.platform === 'win32' ? 'junction' : 'dir');
       const scope = [{ target: 'custom', status: 'linked', destination: path.join(target, 'momm') }];
       recordInstall(repo, 'momm/scripts/install.mjs', scope);
@@ -82,10 +83,41 @@ try {
       try { await update(['--repo', repo, '--rollback', '--yes'], { log() {}, reinstall() {} }); } catch (e) { refused = e.message; }
       assert.equal(git(repo, 'rev-parse', 'HEAD'), older, 'the checkout is rolled back');
       assert.equal(refused, null, 'the rollback, including its completion inventory, must succeed: ' + refused);
-      assert(fs.existsSync(path.join(stateDir(repo), 'installations.mjs')), 'the helper was secured beside the recovery updater');
+      assert.deepEqual(fs.readFileSync(path.join(stateDir(repo), 'installations.mjs')), fs.readFileSync(new URL('./installations.mjs', import.meta.url)), 'the secured helper is the released one, byte for byte');
     } finally {
       for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-      fs.rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      for (const dir of [target, repo, home]) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  });
+  // Review rev_20260928015057_fbe9e5568938 (rollback-overwrites-retained-helper) said an edited working-tree
+  // helper would replace the retained one. It cannot: rollback refuses local changes before securing the helper.
+  await test('rollback with an edited helper is refused and keeps the retained helper', async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-dirty-'));
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-dirty-harness-'));
+    try {
+      const put = (file, value) => { const p = path.join(repo, file); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, value); };
+      const save = (message) => { git(repo, 'add', '.'); git(repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
+      git(repo, 'init');
+      put('versions.json', JSON.stringify({ momm: '1.0.0' }));
+      for (const f of ['momm/SKILL.md', 'momm/scripts/update.mjs', 'momm/scripts/multi-review.mjs']) put(f, 'fixture only\n');
+      const older = save('older release');
+      fs.symlinkSync(path.join(repo, 'momm'), path.join(target, 'momm'), process.platform === 'win32' ? 'junction' : 'dir');
+      const scope = [{ target: 'custom', status: 'linked', destination: path.join(target, 'momm') }];
+      recordInstall(repo, 'momm/scripts/install.mjs', scope);
+      const previous = readLock(repo); previous.current.tree_sha256 = treeHash(repo, older);
+      put('versions.json', JSON.stringify({ momm: '1.1.0' }));
+      put('momm/scripts/installations.mjs', 'export const released = true;\n');
+      const newer = save('newer release with the helper');
+      recordInstall(repo, 'momm/scripts/install.mjs', scope);
+      const retained = path.join(stateDir(repo), 'installations.mjs'), known = Buffer.from('export const retained = true;\n');
+      fs.writeFileSync(retained, known);
+      const lockFile = path.join(stateDir(repo), 'momm.lock'), now = readLock(repo); now.previous = previous; fs.writeFileSync(lockFile, JSON.stringify(now));
+      put('momm/scripts/installations.mjs', 'export const edited = true;\n');
+      await assert.rejects(update(['--repo', repo, '--rollback', '--yes'], { log() {}, reinstall() {}, inventory() {} }), e => e.code === 'local_changes');
+      assert.equal(git(repo, 'rev-parse', 'HEAD'), newer, 'nothing was rolled back');
+      assert.deepEqual(fs.readFileSync(retained), known, 'the retained helper is unchanged');
+    } finally {
+      for (const dir of [target, repo]) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   });
   console.log(JSON.stringify({passed:results.every(r=>r.passed),receipt_regressions:results},null,2));
