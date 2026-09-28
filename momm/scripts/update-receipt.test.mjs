@@ -47,6 +47,47 @@ try {
     assert(readLock(temp).custom_dirs.includes(laterDir),'later harness missing from recovered receipt');
     assert(replay.installations.some(s=>s.custom_dir===laterDir),'later harness not replayed');
   });
+  // 1.16.1 lifecycle gate, second run (36358518929): retaining the helper at install time was not enough. The
+  // upgrade from 1.16.0 or 1.15.1 is written by the OLD updater (no helper retained), and the rollback's
+  // checkout of the old commit deletes the helper from the working tree before the completion inventory.
+  // The rollback must secure the helper first. Real inventory lookup here: no injected inventory.
+  await test('rollback to a release without the inventory helper still finds it', async () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-helper-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-home-'));
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    try {
+      const put = (file, value) => { const p = path.join(repo, file); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, value); };
+      const save = (message) => { git(repo, 'add', '.'); git(repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', message); return git(repo, 'rev-parse', 'HEAD'); };
+      git(repo, 'init');
+      put('versions.json', JSON.stringify({ momm: '1.0.0' }));
+      for (const f of ['momm/SKILL.md', 'momm/scripts/update.mjs']) put(f, 'fixture only\n');
+      put('momm/scripts/multi-review.mjs', 'const MOMM_VERSION = "1.0.0";\n');
+      const older = save('older release without the helper');
+      // A real harness link to the clone, as an install makes, so the inventory reads what it actually loads.
+      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-receipt-rollback-harness-'));
+      fs.symlinkSync(path.join(repo, 'momm'), path.join(target, 'momm'), process.platform === 'win32' ? 'junction' : 'dir');
+      const scope = [{ target: 'custom', status: 'linked', destination: path.join(target, 'momm') }];
+      recordInstall(repo, 'momm/scripts/install.mjs', scope);
+      const previous = readLock(repo); previous.current.tree_sha256 = treeHash(repo, older);
+      put('versions.json', JSON.stringify({ momm: '1.1.0' }));
+      put('momm/scripts/multi-review.mjs', 'const MOMM_VERSION = "1.1.0";\n');
+      put('momm/scripts/installations.mjs', fs.readFileSync(new URL('./installations.mjs', import.meta.url)));
+      save('newer release with the helper');
+      recordInstall(repo, 'momm/scripts/install.mjs', scope);
+      // A receipt written by an older updater: nothing retained beside it.
+      fs.rmSync(path.join(stateDir(repo), 'installations.mjs'), { force: true });
+      const lockFile = path.join(stateDir(repo), 'momm.lock'), now = readLock(repo); now.previous = previous; fs.writeFileSync(lockFile, JSON.stringify(now));
+      process.env.HOME = home; process.env.USERPROFILE = home;
+      let refused = null;
+      try { await update(['--repo', repo, '--rollback', '--yes'], { log() {}, reinstall() {} }); } catch (e) { refused = e.message; }
+      assert.equal(git(repo, 'rev-parse', 'HEAD'), older, 'the checkout is rolled back');
+      assert.equal(refused, null, 'the rollback, including its completion inventory, must succeed: ' + refused);
+      assert(fs.existsSync(path.join(stateDir(repo), 'installations.mjs')), 'the helper was secured beside the recovery updater');
+    } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      fs.rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  });
   console.log(JSON.stringify({passed:results.every(r=>r.passed),receipt_regressions:results},null,2));
   assert(results.every(r=>r.passed),'receipt regression failed');
 } finally {

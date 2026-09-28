@@ -218,8 +218,14 @@ unsigned payload with the installation left unchanged.
   1.16.0 or 1.15.1 exited 1** on all six: the checkout was restored, then the completion inventory reported
   "Installation inventory unavailable", because its helper (`installations.mjs`, new in 1.16.1) was never
   retained beside the recovery copy of the updater. Fixed test-first: the install receipt now retains the
-  helper (`update-receipt.test.mjs`). 1.16.1 was re-sealed and the six cells are run again on the new
-  checkpoint.
+  helper (`update-receipt.test.mjs`). 1.16.1 was re-sealed and the six cells were run again.
+- Second gate run, checkpoint `momm-main-432a3b2…` (run 36358518929): the same rollback failure on all six
+  cells. The first fix only covered receipts written by the 1.16.1 installer, but the upgrade under test is
+  written by the OLD updater (no helper retained), and the rollback's own checkout of the older commit
+  deletes the helper from the working tree before the completion inventory runs. Fixed test-first: the
+  rollback now secures the helper beside the recovery updater before that checkout; the new test reproduces
+  the drill's exact message with the real inventory lookup, not an injected one. Re-sealed; the six cells run
+  a third time.
 - The same fix commit makes `update.test.mjs` retry its temporary-folder removal, after a Windows Node 18
   job on `main` (run 36353411742) failed only in that cleanup, every assertion having passed.
 

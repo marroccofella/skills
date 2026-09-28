@@ -628,6 +628,10 @@ export async function update(argv, dependencies = {}) {
     log(`Offline rollback to ${previous.current.version}, commit ${previous.current.commit}; original harnesses: ${previous.targets.join(", ") || "custom"}. No release download.`);
     await consent(o, "Restore this installation?");
     if (!journal) writeJSON(journalFile, { schema: "momm-transaction/1", before: previous, from: lock.current, stage: "rollback" });
+    // Secure the inventory helper before the checkout below removes it: an older release has none, and a
+    // receipt written by an older updater retained none (1.16.1 lifecycle gate, runs 36354776934, 36358518929).
+    const liveHelper = path.join(root, "momm", "scripts", "installations.mjs");
+    if (fs.existsSync(liveHelper)) atomic(path.join(dir, "installations.mjs"), fs.readFileSync(liveHelper));
     checkout(root, previous.current.commit);
     installer(root, previous);
     assertInstalled(root, previous.current);
