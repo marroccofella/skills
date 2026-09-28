@@ -1,0 +1,9 @@
+{
+  "_comment": "The 1.16.1 lifecycle gate, third run: the signed main-checkpoint of merged main c381c95 (PR #25, rollback secures the helper before checkout), on GitHub-hosted runners by owner decision (Discussion #22).",
+  "checkpoint": "c381c95f55f1e2fb826db8c1dea215011830f7d5",
+  "expect": "1.16.1",
+  "from": [
+    "momm-1.16.0",
+    "momm-1.15.1"
+  ]
+}
