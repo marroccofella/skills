@@ -1,6 +1,8 @@
-# 1.16.1 gate record — not released
+# 1.16.1 gate record — released 28 September 2026
 
-This record separates implementation from release evidence. The published release stays 1.16.0.
+This record separates implementation from release evidence. 1.16.1 was published on 28 September 2026 as
+the signed tag `momm-1.16.1` on `c381c95`; see "Published" below. The sections that follow were written
+while it was a candidate and are kept as its history.
 
 ## Compatibility and lifecycle
 
@@ -26,12 +28,14 @@ completed lifecycle drill are different claims, so they have separate tables.
 
 | OS | Node 18 (owed) | Node 20 (not owed) | Node 22 (not owed) | Node 24 (owed) |
 | --- | --- | --- | --- | --- |
-| Windows | untested | untested | untested | untested |
-| macOS | untested | untested | untested | untested |
-| Linux | untested | untested | untested | untested |
+| Windows | passed (hosted, run 36361600254) | not run | not run | passed (hosted, run 36361600254) |
+| macOS | passed (hosted, run 36361600254) | not run | not run | passed (hosted, run 36361600254) |
+| Linux | passed (hosted, run 36361600254) | not run | not run | passed (hosted, run 36361600254) |
 
-Every cell is untested: no signed install, upgrade, rollback or re-upgrade has been run on any
-native machine. Nothing below changes that until a cell is filled with a receipt.
+The six owed cells passed on GitHub-hosted runners (owner decision; see "Lifecycle drills" below), eleven
+of eleven steps each, against the signed checkpoint of the released commit. Receipts are the run's
+artifacts. Hosted runners are clean, short-lived machines, not the owner's. Interrupted-install recovery
+was not part of the drill.
 
 **Node versions, said once.** Node 22 and Node 24 are the primary targets; Node 18 and Node 20 are
 past end of life and are kept as compatibility targets. "Primary" describes support priority, not
@@ -46,6 +50,7 @@ a pass. Since 24 September the workflow has fifteen jobs: fourteen matrix cells 
 
 | Candidate | Workflow run | Result |
 | --- | --- | --- |
+| `c381c95f55f1e2fb826db8c1dea215011830f7d5` (released, on `main`) | [36360716500](https://github.com/marroccofella/skills/actions/runs/36360716500) | 15 of 15 jobs passed |
 | `2fe1e473cb9e1763d53d06e3d02fce5a823357c2` | [36077301341](https://github.com/marroccofella/skills/actions/runs/36077301341) | 15 of 15 jobs passed |
 | `7a970f79dd3bcca1e155d8e89058832c5b63625e` | [36061569636](https://github.com/marroccofella/skills/actions/runs/36061569636) | 15 of 15 jobs passed |
 | `eea8189dc793f5fb1624374d9b46828b31f8a5a7` | [35735446353](https://github.com/marroccofella/skills/actions/runs/35735446353) | 13 of 13 jobs passed |
@@ -80,8 +85,9 @@ upgrade from 1.15.1 and 1.16.0, rollback, re-upgrade, damaged/unsigned refusal a
 recovery. End with `--doctor --versions --expect <candidate-version>`. Never replace the owner's
 working skill, enable automatic updates or run `evidence --protect` as an agent.
 
-Real signed 1.16.1 lifecycle drills are **blocked pending a reviewed signed candidate artifact
-and authorized native-machine runs**. Synthetic transaction tests are not substitutes.
+That was the plan. What ran is recorded under "Lifecycle drills" below: the six owed cells on hosted
+runners, each step followed by `--doctor --versions --expect`; interrupted-install recovery was not
+drilled. Synthetic transaction tests were not counted as substitutes.
 
 ## Grok route measurements (25 September 2026)
 
@@ -226,6 +232,8 @@ unsigned payload with the installation left unchanged.
   rollback now secures the helper beside the recovery updater before that checkout; the new test reproduces
   the drill's exact message with the real inventory lookup, not an injected one. Re-sealed; the six cells run
   a third time.
+- The same fix commit makes `update.test.mjs` retry its temporary-folder removal, after a Windows Node 18
+  job on `main` (run 36353411742) failed only in that cleanup, every assertion having passed.
 - **Third gate run, checkpoint `momm-main-c381c95…` (run 36361600254): passed.** All six cells, eleven of
   eleven steps each: fresh signed install of 1.16.1 at `c381c95`; signed installs of 1.16.0 and 1.15.1;
   upgrade, rollback to each, re-upgrade; tampered payload refused with the installation unchanged. Receipts
@@ -238,17 +246,16 @@ The stable release workflow (run 36362233567) signed and published `momm-1.16.1`
 checkpointed sealed commit (seal `f9f38796cb95785e604e873c077e95aefde24ae782a5f24b6d55cb4929bbe734`). Verified
 from a fresh clone: gitsign reports a good signature from the release workflow on `main`, with the Git
 signature, Rekor entry and certificate claims validated, and `momm-release.mjs --check` passes at the tag.
-- The same fix commit makes `update.test.mjs` retry its temporary-folder removal, after a Windows Node 18
-  job on `main` (run 36353411742) failed only in that cleanup, every assertion having passed.
 
-## Still required before tag
+## Release requirements (all met before the tag)
 
-- Full candidate suites and exact OS/Node CI outputs.
+- Full candidate suites and exact OS/Node CI outputs: CI run 36360716500 on `c381c95`, 15 of 15 jobs.
 - Committed-range self-review and dispositions: done (two runs, every item ruled); the per-piece
   quorum and tool-produced receipt are waived by the owner (see "Self-review gate" above).
-- Privacy and history scan of the proposed publication.
+- Privacy and history scan of the proposed publication: passed (exit 0) before every push.
 - Final-tree live image gate: passed on the owner's decision (see above).
-- Signed lifecycle receipts and release authorization.
+- Signed lifecycle receipts and release authorization: gate run 36361600254; the owner authorised the
+  release sequence.
 - Bootstrap links re-pinned from `momm-1.16.0` to `momm-1.16.1` in the sealing commit.
 
 ## Website deployment boundary
