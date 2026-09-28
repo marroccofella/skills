@@ -1,7 +1,7 @@
 # MOMM 1.16.1 — release notes
 
-**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.16.1` is
-published, the current signed release remains 1.16.0. Do not install an unsigned branch as a signed release.
+**Released 28 September 2026** as the signed tag `momm-1.16.1` (commit `c381c95`, release workflow run
+36362233567: signature, Rekor entry and certificate claims validated; CI matrix run 36360716500).
 
 The patch strengthens existing review and update behavior: content-based media checks, explicit
 capability expiry, separate retry evidence, failed-work accounting, tool-produced verification
