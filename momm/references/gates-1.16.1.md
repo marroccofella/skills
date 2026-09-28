@@ -247,7 +247,7 @@ checkpointed sealed commit (seal `f9f38796cb95785e604e873c077e95aefde24ae782a5f2
 from a fresh clone: gitsign reports a good signature from the release workflow on `main`, with the Git
 signature, Rekor entry and certificate claims validated, and `momm-release.mjs --check` passes at the tag.
 
-## Release requirements (all met before the tag)
+## Release requirements (status at the tag)
 
 - Full candidate suites and exact OS/Node CI outputs: CI run 36360716500 on `c381c95`, 15 of 15 jobs.
 - Committed-range self-review and dispositions: done (two runs, every item ruled); the per-piece
@@ -257,6 +257,8 @@ signature, Rekor entry and certificate claims validated, and `momm-release.mjs -
 - Signed lifecycle receipts and release authorization: gate run 36361600254; the owner authorised the
   release sequence.
 - Bootstrap links re-pinned from `momm-1.16.0` to `momm-1.16.1` in the sealing commit.
+- Not met, and not waived: interrupted-install recovery was planned for the lifecycle drill but not drilled.
+  No owner waiver was recorded for it; it is carried to the 1.17 drills.
 
 ## Website deployment boundary
 
