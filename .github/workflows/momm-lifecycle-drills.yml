@@ -1,0 +1,52 @@
+name: MOMM lifecycle drills (1.16.1)
+
+# Signed lifecycle drills on GitHub-hosted runners (owner decision, 27 September 2026). This workflow
+# lives only on the drills/momm-1.16.1 branch, so main and the sealed release tree are never changed.
+# It runs when that branch is pushed; the target is read from drills/target.json on the same branch.
+on:
+  push:
+    branches: [drills/momm-1.16.1-gate3]
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node: ['18', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install the verifier (the version the release workflow uses)
+        shell: bash
+        run: |
+          go install github.com/sigstore/gitsign@v0.17.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Run the drill
+        shell: bash
+        run: |
+          node --version
+          gitsign --version
+          target=$(node -e "const t=require('./drills/target.json');process.stdout.write(t.checkpoint?'--checkpoint '+t.checkpoint:'--target '+t.target)")
+          expect=$(node -e "process.stdout.write(require('./drills/target.json').expect)")
+          from=$(node -e "process.stdout.write(require('./drills/target.json').from.join(','))")
+          node scripts/momm-lifecycle-drill.mjs $target --expect "$expect" --from "$from" --out drill-receipts
+      - name: Keep the receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle-${{ matrix.os }}-node${{ matrix.node }}
+          path: drill-receipts/
+          if-no-files-found: error
