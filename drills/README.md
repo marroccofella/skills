@@ -32,6 +32,6 @@ kept as a workflow artifact.
 
 ## 1.17
 
-Branch  carries the drill with the interrupted-upgrade step (plan item A6). Its first run
+Branch `drills/momm-1.17` carries the drill with the interrupted-upgrade step (plan item A6). Its first run
 is a rehearsal against the published signed releases (1.16.1 from 1.16.0 and 1.15.1); the 1.17 gate
-re-targets  at the signed main-checkpoint of the 1.17 candidate.
+re-targets `drills/target.json` at the signed main-checkpoint of the 1.17 candidate.
