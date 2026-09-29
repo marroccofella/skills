@@ -143,13 +143,26 @@ try {
       if (!fs.existsSync(journal)) throw new Error('the journal vanished although the process was killed mid-transaction');
       const retained = path.join(stateDir, 'update.mjs');
       if (!fs.existsSync(retained)) throw new Error('no retained updater in the state directory');
+      // Rehearsal run 36635871345 (29 September 2026): after a crash the claim file stays and recovery refuses
+      // until a person confirms no updater is running and removes only that claim (MOMM's own instruction).
+      // The drill killed this exact process, so it can confirm that: it checks the claim names the killed PID,
+      // removes only the claim, and records that recovery needed this manual step.
+      const claimFile = path.join(stateDir, 'update.active');
+      let manualClaimRelease = false;
+      if (fs.existsSync(claimFile)) {
+        const claim = JSON.parse(fs.readFileSync(claimFile, 'utf8'));
+        if (claim.pid !== child.pid) throw new Error(`the claim names PID ${claim.pid}, not the killed updater ${child.pid}; not removing it`);
+        let alive = true; try { process.kill(claim.pid, 0); } catch { alive = false; }
+        if (alive) throw new Error(`PID ${claim.pid} is still running; not removing its claim`);
+        fs.unlinkSync(claimFile); manualClaimRelease = true;
+      }
       const rec = run(process.execPath, [retained, '--repo', repo, '--rollback', '--yes'], { cwd: repo, env: homeEnv(home), allowFail: true });
       if (rec.code !== 0) throw new Error(`recovery exited ${rec.code}: ${(rec.out + rec.err).slice(-800)}`);
       const l = lockSummary(repo);
       if (l.version !== fromVersion) throw new Error(`receipt after recovery: ${JSON.stringify(l)}`);
       if (git(repo, 'rev-parse', 'HEAD') !== headBefore) throw new Error('checkout after recovery is not the original commit');
       if (fs.existsSync(journal)) throw new Error('the transaction journal remains after recovery');
-      return { interrupted_at_stage: stage, killed_by: end.signal ?? `exit ${end.code}`, lock: l, ...doctor(home, fromVersion) };
+      return { interrupted_at_stage: stage, killed_by: end.signal ?? `exit ${end.code}`, manual_claim_release: manualClaimRelease, lock: l, ...doctor(home, fromVersion) };
     });
   }
   await step('damaged payload is refused and nothing changes', async () => {
