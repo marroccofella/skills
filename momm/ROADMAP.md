@@ -1,8 +1,8 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.16.1**, sealed on 26 September 2026; its signed tag `momm-1.16.1` is
-created by the release workflow. The previous signed release is `momm-1.16.0`, 19 September 2026. Nothing else
+only sources. Today they say **1.16.1**, released 28 September 2026 as the signed tag `momm-1.16.1`.
+The previous signed release is `momm-1.16.0`, 19 September 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -22,10 +22,12 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.16.1, in progress.** Close the holes 1.16.0 documented, prove the lifecycle 1.16.0
-  claimed, make reruns auditable. Charter, scope, non-goals and gates:
+- **Now: 1.17 design.** 1.16.1 is released. A 1.17 plan is being written and reviewed on a branch; it is
+  not published here yet, and no 1.17 code is merged.
+- **1.16.1 (released).** Closed the holes 1.16.0 documented, proved the lifecycle 1.16.0 claimed and
+  made reruns auditable. Charter, scope, non-goals and gates:
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
-- Must ship or 1.16.1 does not tag: media type from bytes; capability expiry visible and manual;
+- What 1.16.1 had to ship before it could tag: media type from bytes; capability expiry visible and manual;
   completion receipts for committed-range reviews; a per-piece attempt ledger with a closed set of
   outcomes; "installed somewhere" separated from "the version this harness loads"
   (`--doctor --versions` and conflict refusal; broader selection interfaces stay in 1.17); named executable-shadowing regressions; install, upgrade, rollback and re-upgrade
@@ -33,7 +35,6 @@ or an independent benchmark; publication state belongs in the site changelog.
 - Not in 1.16.1: new reviewer families, automatic updates by default, a dashboard redesign, new
   generation modalities, `--early-exit`, `--split auto`, ledger-learned caps, adaptive timeouts,
   any change to the containment model (so Grok media stays `missing_flag`).
-- **Next: 1.17, roadmap only.** Do not start before the signed `momm-1.16.1` tag exists.
 - **Later:** the proposals under "Planned" below, each still opt-in and fail-closed.
 - Ideas that are not in the release being built, with origin, reason and "worth doing when",
   including what was refused and why: [references/ideas-register.md](references/ideas-register.md).
@@ -78,7 +79,7 @@ Unreadable tracked source now fails the hygiene check. These are candidate fixes
 their new tests, final-source peer coverage and native lifecycle gates still have
 to pass. No tag, installed-skill update or public release follows from local tests.
 
-## 1.17 (roadmap only, do not start)
+## 1.17 (design; no code before its plan is reviewed)
 
 Possible themes, each opt-in and fail-closed: `--early-exit` after quorum (needs in-flight
 cancellation in `runProcess`); `--split auto` only after five live runs above 100 KB with at most
@@ -89,6 +90,11 @@ receive media is a 1.17 design review, not a patch.
 
 ## Released
 
+- **1.16.1**, 28 September 2026, tag `momm-1.16.1`: media type from bytes, visible capability expiry,
+  completion receipts for committed-range reviews, a per-piece attempt ledger, installation
+  inventory, fail-closed executable resolution on Windows, Grok isolation and partial Codex
+  isolation; install, upgrade and rollback proven by signed drills on hosted Windows, macOS and Linux
+  runners. Record: [references/release-1.16.1.md](references/release-1.16.1.md).
 - **1.16.0**, 19 September 2026, tag `momm-1.16.0`: cost accounting, reviewer ratings, trusted
   guidance, `--split` with per-piece quorum, an update clock that stays off unless the owner turns
   it on, a modality registry with capability-aware routing, Windows hardening, opt-in

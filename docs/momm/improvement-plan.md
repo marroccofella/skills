@@ -2,6 +2,11 @@
 
 Audit date: 20 September 2026. This is a work record, not a release approval.
 
+**Status, 29 September 2026.** 1.16.1 was released on 28 September as the signed tag `momm-1.16.1`
+(PR #18 merged). Draft PR #19 was closed. The release-observations workflow is on the default branch
+and has run (for example Actions run 36362393798). The rest of this record is kept as written on
+20 September.
+
 ## Source identities and collaboration boundary
 
 - Website baseline: `a8f7be8d123748388099a3c7503a0edc44648e9a` on main.
