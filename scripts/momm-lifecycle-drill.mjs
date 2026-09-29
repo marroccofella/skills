@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// MOMM signed lifecycle drill: fresh signed install, upgrades from older signed releases, rollback,
+// MOMM signed lifecycle drill: fresh signed install, upgrades from older signed releases, rollback, an
+// upgrade interrupted mid-transaction and recovered with the retained updater (1.17 A6),
 // re-upgrade and refusal of a damaged payload, each in a disposable user profile, against REAL signed
 // tags verified with gitsign. No mocked verifier, no self-signing, no bypass. It never touches the
 // real home folder, a real harness, or any repository other than the disposable clones it makes.
@@ -13,7 +14,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -118,7 +119,38 @@ try {
       if (l.version !== fromVersion) throw new Error(`receipt after rollback: ${JSON.stringify(l)}`);
       return { lock: l, ...doctor(home, fromVersion) };
     });
-    await upgrade('re-upgrade');
+    if (!await upgrade('re-upgrade')) continue;
+    // 1.17 A6: recovery from an update interrupted mid-transaction (not drilled in 1.16.1, not waived).
+    // Roll back to the older release, start an upgrade, kill it as soon as its transaction journal exists,
+    // then recover with the updater retained in the state directory and verify the original install.
+    await step(`interrupted upgrade ${from} -> ${targetTag} recovers with the retained updater`, async () => {
+      run(process.execPath, [updater(), '--repo', repo, '--rollback', '--yes'], { cwd: repo, env: homeEnv(home) });
+      if (lockSummary(repo).version !== fromVersion) throw new Error('could not return to the older release before the interruption');
+      const stateDir = path.resolve(repo, git(repo, 'rev-parse', '--git-path', 'momm'));
+      const journal = path.join(stateDir, 'transaction.json');
+      const headBefore = git(repo, 'rev-parse', 'HEAD');
+      const child = spawn(process.execPath, [updater(), '--repo', repo, ...applyArgs, '--apply', '--yes', '--accept-protocol'], { cwd: repo, env: homeEnv(home), stdio: 'ignore', windowsHide: true });
+      const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })));
+      let stage = null;
+      const deadline = Date.now() + 600_000;
+      while (Date.now() < deadline) {
+        if (fs.existsSync(journal)) { try { stage = JSON.parse(fs.readFileSync(journal, 'utf8')).stage ?? 'unknown'; } catch { stage = 'partial'; } child.kill('SIGKILL'); break; }
+        if (child.exitCode !== null) break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      const end = await exited;
+      if (!stage) throw new Error(`the upgrade finished (exit ${end.code}) before a transaction journal appeared; nothing was interrupted`);
+      if (!fs.existsSync(journal)) throw new Error('the journal vanished although the process was killed mid-transaction');
+      const retained = path.join(stateDir, 'update.mjs');
+      if (!fs.existsSync(retained)) throw new Error('no retained updater in the state directory');
+      const rec = run(process.execPath, [retained, '--repo', repo, '--rollback', '--yes'], { cwd: repo, env: homeEnv(home), allowFail: true });
+      if (rec.code !== 0) throw new Error(`recovery exited ${rec.code}: ${(rec.out + rec.err).slice(-800)}`);
+      const l = lockSummary(repo);
+      if (l.version !== fromVersion) throw new Error(`receipt after recovery: ${JSON.stringify(l)}`);
+      if (git(repo, 'rev-parse', 'HEAD') !== headBefore) throw new Error('checkout after recovery is not the original commit');
+      if (fs.existsSync(journal)) throw new Error('the transaction journal remains after recovery');
+      return { interrupted_at_stage: stage, killed_by: end.signal ?? `exit ${end.code}`, lock: l, ...doctor(home, fromVersion) };
+    });
   }
   await step('damaged payload is refused and nothing changes', async () => {
     // A mirror whose release ref points at an unsigned commit that alters the package. The updater must

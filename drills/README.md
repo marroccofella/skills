@@ -1,4 +1,4 @@
-# MOMM 1.16.1 lifecycle drills
+# MOMM lifecycle drills (1.16.1, extended for 1.17)
 
 This branch exists only to run the signed lifecycle drills. It is never merged into `main` or the
 sealed release branch, so the 1.16.1 seal (`3002fd7`, `2e19b3ae…aad617`) is untouched.
@@ -17,7 +17,9 @@ into the gate record in the commit after publication, because the sealed tree ca
 `scripts/momm-lifecycle-drill.mjs`, in disposable user profiles and against real signed tags verified
 with gitsign 0.17.1 (no mocks, no self-signing, no bypass): fresh signed install with the sealed package
 hash checked; signed installs of older releases; upgrade, rollback and re-upgrade; refusal of a tampered
-unsigned payload with the installation left unchanged. Each run writes a JSON receipt and its SHA-256,
+unsigned payload with the installation left unchanged; and, from 1.17 (A6), an upgrade killed as soon as its
+transaction journal exists, then recovered with the updater retained in the state directory, with the
+original receipt, commit and harness verified. Each run writes a JSON receipt and its SHA-256,
 kept as a workflow artifact.
 
 ## Runs
@@ -27,3 +29,9 @@ kept as a workflow artifact.
 2. **The gate** (after the owner merges PR #18 and runs the signed `main-checkpoint`): `target.json`
    names the checkpoint commit, `expect` 1.16.1, from `momm-1.16.0` and `momm-1.15.1`. All six cells must
    pass before the stable release.
+
+## 1.17
+
+Branch  carries the drill with the interrupted-upgrade step (plan item A6). Its first run
+is a rehearsal against the published signed releases (1.16.1 from 1.16.0 and 1.15.1); the 1.17 gate
+re-targets  at the signed main-checkpoint of the 1.17 candidate.

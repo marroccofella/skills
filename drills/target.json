@@ -1,6 +1,6 @@
 {
-  "_comment": "The 1.16.1 lifecycle gate, third run: the signed main-checkpoint of merged main c381c95 (PR #25, rollback secures the helper before checkout), on GitHub-hosted runners by owner decision (Discussion #22).",
-  "checkpoint": "c381c95f55f1e2fb826db8c1dea215011830f7d5",
+  "_comment": "1.17 A6 rehearsal (not the 1.17 gate): the published signed momm-1.16.1, from momm-1.16.0 and momm-1.15.1, exercising the new interrupted-upgrade recovery step on GitHub-hosted runners. The 1.17 gate re-targets this file at the signed main-checkpoint of the 1.17 candidate.",
+  "target": "momm-1.16.1",
   "expect": "1.16.1",
   "from": [
     "momm-1.16.0",

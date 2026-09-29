@@ -2,10 +2,10 @@ name: MOMM lifecycle drills (1.16.1)
 
 # Signed lifecycle drills on GitHub-hosted runners (owner decision, 27 September 2026). This workflow
 # lives only on the drills/momm-1.16.1 branch, so main and the sealed release tree are never changed.
-# It runs when that branch is pushed; the target is read from drills/target.json on the same branch.
+# (1.17: branch drills/momm-1.17.) It runs when that branch is pushed; the target is read from drills/target.json on the same branch.
 on:
   push:
-    branches: [drills/momm-1.16.1-gate3]
+    branches: [drills/momm-1.17]
 
 permissions:
   contents: read
