@@ -35,6 +35,8 @@ for (const command of selected) {
   if (code !== 0) failed++;
   process.stdout.write(`${code === 0 ? 'PASS' : 'FAIL'} ${String(code).padStart(3)} ${Math.round((Date.now() - t0) / 1000)}s ${command}\n`);
   const tail = (text, label) => { const lines = String(text ?? '').trimEnd().split('\n').filter((l) => l.trim()).slice(-8); if (lines.length) process.stdout.write(`      ${label}:\n` + lines.map((l) => '      ' + l).join('\n') + '\n'); };
+  // A suite the runner itself stopped (its timer, the output buffer, a failed spawn) says which.
+  if (code !== 0 && r.error) process.stdout.write(`      spawn error: ${r.error.code ?? 'unknown'} (${String(r.error.message).split('\n')[0]})\n`);
   if (code !== 0) { tail(r.stdout, 'stdout (last lines)'); tail(r.stderr, 'stderr (last lines)'); }
 }
 process.stdout.write(`${selected.length - failed} of ${selected.length} suites passed on ${process.platform} ${process.arch}, Node ${process.version}\n`);

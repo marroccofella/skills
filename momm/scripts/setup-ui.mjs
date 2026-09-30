@@ -1491,7 +1491,16 @@ function ledgerHeaders(html) {
     "Content-Security-Policy": `default-src 'none'; img-src data:; style-src ${styles.join(" ") || "'none'"}; script-src ${scripts.join(" ") || "'none'"}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   };
 }
-const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>${process.env.MOMM_EVIDENCE_HOME ? " (nor a usable folder for it under <code>MOMM_EVIDENCE_HOME</code>)" : ""}. Run a momm review from that directory first; the ledger is built from its telemetry.</p><p><a href="/">Back to the Setup Center</a></p>`;
+// `dir` is the resolved evidence folder, or null when it cannot be resolved. A valid MOMM_EVIDENCE_HOME whose
+// project folder does not exist before the first review is not an unusable setting (final review of 1.17.0).
+const ledgerMissingPage = (cwd, dir) => {
+  const where = !dir && process.env.MOMM_EVIDENCE_HOME
+    ? `<code>MOMM_EVIDENCE_HOME</code> cannot be used for <code>${escapeHtml(cwd)}</code>: it must be an absolute folder outside the project. No evidence is shown, and the folder inside the project is not used instead.`
+    : dir && process.env.MOMM_EVIDENCE_HOME
+      ? `There is no evidence folder for <code>${escapeHtml(cwd)}</code> under <code>MOMM_EVIDENCE_HOME</code> yet (<code>${escapeHtml(dir)}</code>). Run a momm review from that directory first; the ledger is built from its telemetry.`
+      : `There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>. Run a momm review from that directory first; the ledger is built from its telemetry.`;
+  return `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>${where}</p><p><a href="/">Back to the Setup Center</a></p>`;
+};
 
 // GET /ledger — the private ledger on this origin, so the dashboard's pill needs
 // no file:// hop. Revalidate on every request: source bytes can change without
@@ -1501,7 +1510,7 @@ const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>
 async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (ledgerWatcher ? ledgerWatcher.rebuild() : runNode(ledgerScript, [], { timeoutMs: 60_000 })), fsx = fs } = {}) {
   const dir = evidenceFolder(cwd), file = dir ? path.join(dir, "ledger.html") : null;
   const send = (status, headers, body) => { response.writeHead(status, headers); response.end(body); };
-  if (!dir || !fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd)); return { status: 404, rebuilt: false }; }
+  if (!dir || !fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd, dir)); return { status: 404, rebuilt: false }; }
   const stale = true;
   let rebuildError = null;
   try {
@@ -2217,6 +2226,14 @@ async function dashboardRegression() {
         const decoy = path.join(eh.cwd, ".ensemble_reviews"); fs.mkdirSync(decoy, { recursive: true }); fs.writeFileSync(path.join(decoy, "ledger.html"), "<p>in-project decoy</p>");
         const folder = typeof evidenceFolder === "function" ? evidenceFolder(eh.cwd) : null;
         const noLinkYet = ledgerFileUrl(eh.cwd) === null;
+        // First run with a valid home: its project folder does not exist yet. The page says so without
+        // calling the setting unusable, and the watcher is given that folder and waits for it.
+        const firstRun = fakeResponse(); const firstRunResult = await serveLedger(firstRun, { cwd: eh.cwd, rebuild: async () => { throw new Error("must not rebuild a missing folder"); } });
+        const firstRunPage = firstRunResult.status === 404 && firstRun.body.includes(escapeHtml(expected)) && !/cannot be used|usable/.test(firstRun.body);
+        let watchedDir = null;
+        const watcherBound = ledgerWatcherFor(eh.cwd, ({ dir }) => { watchedDir = dir; return { dir }; }) !== null && watchedDir === expected;
+        const absentWatcher = createLedgerWatcher({ dir: expected, run: async () => ({ code: 0 }) });
+        absentWatcher.start(); const waitsForFolder = absentWatcher.status().watching === false; absentWatcher.stop();
         writeJson(path.join(expected, "reports", "rev_7_h.json"), { run_id: "rev_7_h", reviewers: [{ agent: "codex", status: "success", usage: { reported: { total_tokens: 7 }, coverage: { tokens: true, cost: false } } }] });
         fs.writeFileSync(path.join(expected, "ledger.html"), "<!doctype html><p>home ledger</p>");
         const statusLink = ledgerFileUrl(eh.cwd);
@@ -2225,12 +2242,14 @@ async function dashboardRegression() {
         const pointerWritten = homePointer.write("http://127.0.0.1:4322/") === true && homePointer.file === path.join(expected, "setup-center.json") && fs.existsSync(homePointer.file) && !fs.existsSync(path.join(decoy, "setup-center.json"));
         const usageRows = usageReport({ cwd: eh.cwd });
         const followed = folder === expected && noLinkYet && statusLink !== null && fileURLToPath(statusLink) === path.join(expected, "ledger.html")
-          && servedResult.status === 200 && served.body.includes("home ledger") && pointerWritten && usageRows.coverage.reports_available === 1;
+          && servedResult.status === 200 && served.body.includes("home ledger") && pointerWritten && usageRows.coverage.reports_available === 1
+          && firstRunPage && watcherBound && waitsForFolder;
         process.env.MOMM_EVIDENCE_HOME = path.join(eh.cwd, "inside");
         const refusedServe = fakeResponse(); const refusedResult = await serveLedger(refusedServe, { cwd: eh.cwd, rebuild: async () => { throw new Error("must not rebuild a refused location"); } });
         const refused = evidenceFolder(eh.cwd) === null && ledgerFileUrl(eh.cwd) === null && refusedResult.status === 404 && !refusedServe.body.includes("decoy")
           && createSetupCenterPointer({ cwd: eh.cwd, pid: 4344, proc: { once() {} } }).write("http://127.0.0.1:1/") === false && usageReport({ cwd: eh.cwd }).coverage.reports_available === 0
-          && !fs.existsSync(path.join(eh.cwd, "inside"));
+          && !fs.existsSync(path.join(eh.cwd, "inside")) && /cannot be used/.test(refusedServe.body)
+          && ledgerWatcherFor(eh.cwd, () => { throw new Error("must not watch a refused location"); }) === null;
         checks.evidence_home_followed_by_ledger_view_status_pointer_usage_and_watcher = followed && refused;
       } catch { checks.evidence_home_followed_by_ledger_view_status_pointer_usage_and_watcher = false; }
       finally { if (previous === undefined) delete process.env.MOMM_EVIDENCE_HOME; else process.env.MOMM_EVIDENCE_HOME = previous; }
@@ -2445,6 +2464,14 @@ async function selfTest() {
   process.exitCode = passed ? 0 : 1;
 }
 
+// The ledger watcher follows the resolved evidence folder (1.17 A7); a setting that cannot be honoured watches
+// nothing (the ledger route then reports no ledger) rather than the in-project folder. `make` is the
+// self-test's seam, so the check binds the same folder the server watches (final review of 1.17.0).
+function ledgerWatcherFor(cwd = process.cwd(), make = createLedgerWatcher) {
+  const dir = evidenceFolder(cwd);
+  return dir ? make({ dir, run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) }) : null;
+}
+
 // Bind before anything with side effects: the ledger watcher starts only once
 // the socket is listening, and a failed bind stops it again so no watcher
 // outlives a server that never came up.
@@ -2483,7 +2510,7 @@ else {
   // watches nothing (the ledger route then reports no ledger) rather than the in-project folder.
   const watchedEvidence = evidenceFolder();
   if (!watchedEvidence && process.env.MOMM_EVIDENCE_HOME) process.stderr.write("momm setup: MOMM_EVIDENCE_HOME cannot be used for this project (it must be an absolute folder outside the project); no evidence is shown.\n");
-  ledgerWatcher = watchedEvidence ? createLedgerWatcher({ dir: watchedEvidence, run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) }) : null;
+  ledgerWatcher = ledgerWatcherFor();
   setupPointer = createSetupCenterPointer();
   startSetupCenter({ server: activeServer, watcher: ledgerWatcher, clock: updateClock, port: options.port, browser: options.browser, pointer: setupPointer });
 }

@@ -95,6 +95,16 @@ const skip = (name, why) => skipped.push({ name, why });
     assert.equal(posixTool('git', { cwd: proot, env: { PATH: `/opt/noexec:${ptrusted}` }, fs: pfiles }), P.join(ptrusted, 'git'));
     assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: '/opt/noexec' }, fs: pfiles, path: P }), null);
   });
+  // Final review of 1.17.0: on a case-insensitive volume (macOS by default) /PROJ is the project. Case is folded
+  // in every POSIX outside-the-project check, as update.mjs does, so a spelling differing only in case is inside.
+  check('attack E: a PATH entry or path that differs from the project only in case is refused (POSIX, every process-scope resolver)', () => {
+    const cfiles = { ...pfiles, statSync: (p) => { if (!['/PROJ/bin/git', '/usr/bin/git'].includes(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return { isFile: () => true, mode: 0o100755 }; } };
+    assert.equal(posixTool('git', { cwd: proot, env: { PATH: `/PROJ/bin:${ptrusted}` }, fs: cfiles }), P.join(ptrusted, 'git'));
+    assert.throws(() => posixTool('git', { cwd: proot, env: { PATH: '/PROJ/bin' }, fs: cfiles }), (e) => e.code === 'ENOENT');
+    assert.throws(() => posixTool('/PROJ/bin/git', { cwd: proot, env: {}, fs: cfiles }), (e) => e.code === 'ENOENT');
+    assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: '/PROJ/bin' }, fs: cfiles, path: P }), null);
+    assert.equal(posixChildEnv({ PATH: `/PROJ/bin:${ptrusted}` }, { cwd: proot, fs: cfiles }).PATH, ptrusted);
+  });
   // Gate-3 review of 1.17.0: an absolute command went to spawn unchecked. It is now launched only by its
   // real path, outside the project; attack D (an outside path whose real file is inside) is refused.
   check('an absolute command is taken by its real path outside the project, and refused when it really lies inside (every resolver)', () => {
@@ -113,6 +123,27 @@ const skip = (name, why) => skipped.push({ name, why });
     assert.equal(resolveTool('C:\\trusted\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), 'C:\\trusted\\git.exe');
     assert.throws(() => resolveTool('C:\\outside\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), (e) => e.code === 'ENOENT');
     assert.throws(() => resolveTool('C:\\project\\bin\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), (e) => e.code === 'ENOENT');
+  });
+  // Final review of 1.17.0 (posix-outside-case): on a case-insensitive volume (macOS by default) a PATH entry
+  // spelt with another case than the working directory or the clone is the same folder. The updater copy
+  // folds case, so such an entry counts as inside; on a case-sensitive volume that only refuses more.
+  // (process-scope.mjs posixTool is held to the same matrix above; its case rule belongs to that file.)
+  check('resolveTool (the updater copy, POSIX) treats a spelling that differs only in case as inside', () => {
+    const known = { '/work': 'dir', '/work/proj': 'dir', '/work/proj/bin': 'dir', '/work/proj/bin/git': 0o100755, '/usr/bin': 'dir', '/usr/bin/git': 0o100755, '/clone': 'dir', '/clone/bin': 'dir', '/clone/bin/git': 0o100755 };
+    const find = (p) => known[Object.keys(known).find((k) => k.toLowerCase() === String(p).toLowerCase())];
+    const same = (p) => { if (find(p) === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return String(p); };
+    const ci = { statSync: (p) => { const m = find(p); if (m === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return { isFile: () => m !== 'dir', mode: m === 'dir' ? 0o40755 : m }; }, realpathSync: Object.assign(same, { native: same }) };
+    const opts = (PATH, project = '/clone') => ({ platform: 'linux', env: { PATH }, fs: ci, project });
+    assert.equal(resolveTool('git', '/Work/Proj', opts('/work/proj/bin:/usr/bin')), '/usr/bin/git');
+    assert.equal(resolveTool('git', '/work', opts('/clone/bin:/usr/bin', '/Clone')), '/usr/bin/git');
+    assert.throws(() => resolveTool('/work/proj/bin/git', '/Work/Proj', opts('')), (e) => e.code === 'ENOENT');
+    assert.throws(() => resolveTool('git', '/Work/Proj', opts('/work/proj/bin')), /not found on an absolute PATH entry outside/);
+  });
+  // Final review of 1.17.0: a relative Windows path with a separator came back unchanged, to be looked up
+  // from the working directory; POSIX already refused it.
+  check('resolveTool (the updater copy, Windows) refuses a relative path containing a separator', () => {
+    for (const command of ['.\\tool.exe', 'bin\\tool.exe', 'bin/tool.exe', '..\\tool.exe'])
+      assert.throws(() => resolveTool(command, root, { platform: 'win32', env: {}, fs: files, project: root }), (e) => e.code === 'ENOENT' && /relative path containing a separator/.test(e.message), command);
   });
 }
 

@@ -119,7 +119,9 @@ function scan(lang, text) {
       continue;
     }
     if (lineState.t === "rbblock") {
-      if (line.startsWith("=end")) stack.pop();
+      // Ruby ends an embedded document only at "=end" followed by whitespace or the end of the line
+      // ("=endx" does not); closing early would read the rest of the document as code (final review).
+      if (/^=end(?:[\s\0\x04\x1a]|$)/.test(line)) stack.pop();
       lines.push({ raw, kind: "code", norm: raw, content: true });
       continue;
     }
@@ -156,6 +158,10 @@ function scan(lang, text) {
             else j++;
           }
           if (depth === 0) { emitComment(line.slice(i, j)); i = j; continue; }
+          // Left open: the line is code, and the comment's opening text is part of its key, raw like the
+          // lines that continue it, so a rewording or a directive there is never an unchanged line (final review).
+          if (pending && norm) norm += " ";
+          pending = false; norm += line.slice(i, j); comments.push(line.slice(i, j));
           stack.push({ t: "block", close, depth, nest: NESTED_BLOCKS.has(lang), open: blockOpen }); openedBlock = true; i = j; continue;
         }
         // Strings and other literals.
@@ -312,7 +318,10 @@ function openLiteral(lang, line, i, ctx) {
           // (a char literal holding one backslash, or one quote) no longer swallows the closing quote and
           // the code after it (gate-3 review of 1.17.0).
           if (line[i + 1] === "\\") { const end = scanClosed(i + 1, "'"); return end >= 0 ? { end } : null; }
-          if (line[i + 2] === "'") return { end: i + 3 };
+          // One Unicode scalar value: two UTF-16 units when it lies outside the BMP (U+1F980), so a closing
+          // quote at i + 2 alone took such a literal for a lifetime (final review).
+          const width = (line.codePointAt(i + 1) ?? 0) > 0xffff ? 2 : 1;
+          if (line[i + 1 + width] === "'") return { end: i + 2 + width };
           return null; // a lifetime
         }
         const end = scanClosed(i + 1, "'");
@@ -415,7 +424,11 @@ function diff(a, b) {
   return ops;
 }
 
-const directiveIn = (lang, comments) => comments.some(text => STYLE_DIRECTIVES.some(d => (!d.languages || d.languages.includes(lang)) && d.pattern.test(text.trim())));
+// Each comment is tested as written and with its whitespace runs collapsed, the form its line key
+// compares: tools read directives through spacing ("//  +build" is a build constraint), and a
+// whitespace-only edit must never make a directive pass unseen (final review).
+const directiveIn = (lang, comments = []) => comments.some(text => [text.trim(), text.replace(/\s+/g, " ").trim()]
+  .some(form => STYLE_DIRECTIVES.some(d => (!d.languages || d.languages.includes(lang)) && d.pattern.test(form))));
 
 /**
  * Decide whether changing `file` from `before` to `after` is mechanical style.
@@ -447,6 +460,10 @@ export function classifyStyleChange(file, before, after) {
     if (op === "=") {
       const was = a.lines[i], is = b.lines[j];
       if (wsSignificant && is.kind === "code" && was.raw !== is.raw) return refuse(j + 1, "changes whitespace in a whitespace-significant file");
+      // Same key, different bytes: only whitespace changed, which can still make or unmake a directive
+      // ("//export<TAB>Foo" is a plain comment to Go, "//export Foo" is not), so a directive on either side
+      // is behavior (final review).
+      if (was.raw !== is.raw && (directiveIn(lang, was.comments) || directiveIn(lang, is.comments))) return refuse(j + 1, "carries a directive");
       continue;
     }
     const entry = op === "-" ? a.lines[i] : b.lines[j], at = op === "-" ? i + 1 : j + 1;

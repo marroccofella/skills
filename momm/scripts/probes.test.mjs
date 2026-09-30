@@ -488,7 +488,7 @@ try {
     // An absolute path outside the project is launched, by the real path that was checked (the same file
     // through an aliased temp folder); since gate-3 of 1.17.0 one that lies inside the project is refused.
     const absolute = path.join(bin, "grok.exe");
-    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: fs.realpathSync(absolute), args: ["x"] });
+    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: process.platform === "win32" ? fs.realpathSync.native(absolute) : fs.realpathSync(absolute), args: ["x"] });
     const project = path.join(fixture, "launcher-project"); fs.mkdirSync(path.join(project, "bin"), { recursive: true });
     const planted = path.join(project, "bin", "grok.exe"); fs.writeFileSync(planted, "MZ");
     for (const [label, cwd, opts] of [["the probe's working directory", project, {}], ["MOMM's own directory", bin, { project }]]) {

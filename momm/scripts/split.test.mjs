@@ -704,5 +704,23 @@ test("C2: 200 seeded random diffs - reassembly is exact and no piece holds a rem
   assert.ok(Date.now() - started < 5000, `bounded: ${Date.now() - started} ms`);
 });
 
+// ---- final review rev_20260930032341_021063ca1c1f: reproduced before each fix ----------
+test("final [line-split-limit-raised]: lineSplitHunk refuses a part limit below the ceiling, as splitDiff does", () => {
+  const f = "diff --git a/x b/x\n", h = { header: "@@ -1,40 +1,40 @@\n", body: " a\n-b\n+c\n" + " d\n".repeat(37) };
+  // It used to raise the limit to the ceiling silently and return 97- and 99-byte parts against a limit of 60.
+  for (const maxPartBytes of [60, 1, 0, -5, NaN, Infinity]) assert.throws(() => lineSplitHunk(f, h, 100, { maxPartBytes }), TypeError, String(maxPartBytes));
+  const parts = lineSplitHunk(f, h, 100, { maxPartBytes: 100 });
+  assert.ok(parts && parts.length === 2 && parts.every((p) => bytes(f) + p.bytes <= 100), JSON.stringify(parts?.map((p) => p.bytes)));
+  assert.deepEqual(lineSplitHunk(f, h, 100), parts, "the default limit is the ceiling");
+});
+test("final [s:ec077b4b]: a long run of additions is parsed into units in linear time", () => {
+  // Each pure addition rescanned every '+' line after it: 60 000 added lines took seconds.
+  const n = 60000, started = Date.now();
+  const parts = lineSplitHunk("diff --git a/x b/x\n", { header: `@@ -0,0 +1,${n} @@\n`, body: "+x\n".repeat(n) }, 4096);
+  assert.ok(parts && parts.length > 1);
+  assert.equal(parts.map((p) => p.body).join(""), "+x\n".repeat(n));
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
+});
+
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length) process.exitCode = 1;

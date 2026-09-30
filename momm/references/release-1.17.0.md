@@ -58,8 +58,8 @@ governor is the only writer; account logins only; automatic updates stay off.
 **Known limits.** Blind picture copies keep any provider metadata inside the image file. Model identity
 and attachment bytes are reported as unknown in the stale check. Grok video generation is refused while
 your Grok account has zero data retention on. Codex picture generation keeps its 1.16.1 command
-(`--sandbox workspace-write`, without the review's isolation), so it still loads your Codex configuration;
-the new isolation covers Codex reviews and the probes that certify them.
+(`--sandbox workspace-write`, without the review's `--ignore-user-config --ignore-rules`), so it still loads
+your Codex configuration; the new isolation covers Codex reviews and the probes that certify them.
 
 Details: [plan](plan-1.17.md) · [gate record](gates-1.17.md) · [reviewer pack](third-party-test-plan-1.17.md) ·
 [long-form notes](release-1.17-draft-notes.md)

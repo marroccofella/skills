@@ -148,10 +148,13 @@ export function evidenceRemediation(directory, platform = process.platform, env 
   const chosen = env?.[EVIDENCE_HOME_ENV];
   const home = typeof chosen === 'string' && path.isAbsolute(chosen) ? path.resolve(chosen) : null;
   const inHome = home !== null && /^[0-9a-f]{32}$/.test(path.relative(home, target).split(path.sep)[0]);
-  const action = `node "<installed-momm>/scripts/multi-review.mjs" evidence${inHome ? ` --evidence-home "${home}"` : ''} --protect`;
+  // Each path is one literal argument: single-quoted as multi-review.mjs quotes its completion check, so a quote,
+  // a dollar sign or an apostrophe in the path cannot break the printed command or expand (final review of 1.17.0).
+  const quoted = (value) => `'${value.replaceAll("'", platform === 'win32' ? "''" : "'\\''")}'`;
+  const action = `node "<installed-momm>/scripts/multi-review.mjs" evidence${inHome ? ` --evidence-home ${quoted(home)}` : ''} --protect`;
   return platform === 'win32'
     ? `Run ${action} from the project (it restricts ${target} to your account and makes everything inside inherit that), or move the project's evidence to a location only you can access.`
-    : `Run ${action} from the project (equivalent to: chmod -R go-rwx "${target}"), or move the project's evidence to a location only you can access.`;
+    : `Run ${action} from the project (equivalent to: chmod -R go-rwx ${quoted(target)}), or move the project's evidence to a location only you can access.`;
 }
 export function requirePrivateEvidence(directory, options) {
   const result = inspectEvidencePermissions(directory, options);

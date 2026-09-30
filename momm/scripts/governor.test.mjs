@@ -265,6 +265,50 @@ try {
     assert.equal(S('src/x.rs', String.raw`let q = ['\'', '"']; let s = "a  b";` + '\n', String.raw`let q = ['\'', '"']; let s = "a b";` + '\n').style, false);
     assert.equal(S('src/x.rs', String.raw`let c = '\\';` + '\n', String.raw`let c = '\\';` + '\n// why\n').style, true, 'a comment beside it is still style');
   });
+  test('mechanical style: the opening line of a multi-line block comment is part of the comparison (final review)', () => {
+    // Its text was never recorded, so a directive there (or any rewording) left the line key unchanged.
+    for (const [file, before, after] of [
+      ['a.js', '/* hello\n * world\n */\nfoo();\n', '/* eslint-disable\n * world\n */\nfoo();\n'],
+      ['a.js', 'const x = 1; /* note\n */\n', 'const x = 1; /* @ts-ignore\n */\n'],
+      ['a.c', 'int x; /* a\n */\n', 'int x; /* NOLINTBEGIN\n */\n'],
+      ['a.js', '/* old\n */\nx();\n', '/* new\n */\nx();\n'],
+      ['a.rs', '/* a /* b */\n */\nx();\n', '/* a /* c */\n */\nx();\n'],
+      ['a.ps1', '<# old\n#>\nx\n', '<# new\n#>\nx\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file} ${JSON.stringify(after)}: ${JSON.stringify(r)}`); assert.match(r.reason, /:1 (?:changes code|carries a directive)$/, r.reason); }
+    assert.equal(S('a.js', 'x(); /* a\n */\n', 'x();  /* a\n */\n').style, true, 'whitespace between code and the comment is still style');
+  });
+  test('mechanical style: a directive is seen through whitespace, and on a line whose key is unchanged (final review)', () => {
+    // Go honours '//export Foo' and '//line f:1' but not their tab forms, and '//  +build' (any spacing).
+    for (const [file, before, after] of [
+      ['a.go', 'package p\n//export\tFoo\nfunc Foo() {}\n', 'package p\n//export Foo\nfunc Foo() {}\n'],
+      ['a.go', 'package p\n//line\tx.go:10\nvar a = 1\n', 'package p\n//line x.go:10\nvar a = 1\n'],
+      ['a.go', 'package p\n', '//  +build ignore\n\npackage p\n'],
+      ['a.go', 'package p\n', '//\t+build ignore\n\npackage p\n'],
+      ['a.js', 'x(); // eslint-disable-line\n', 'x();  // eslint-disable-line\n'],
+      ['a.js', '// eslint-disable-next-line  no-console\nx();\n', '// eslint-disable-next-line no-console\nx();\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file} ${JSON.stringify(after)}`); assert.match(r.reason, /carries a directive$/, r.reason); }
+    assert.equal(S('a.go', 'package p\n// plain  words\n', 'package p\n// plain words\n').style, true, 'a whitespace change in a plain comment is still style');
+    assert.equal(S('a.js', '// eslint-disable-next-line\nx();\n', '// eslint-disable-next-line\nx();\n// why\n').style, true, 'an untouched directive beside a new comment is still style');
+  });
+  test('mechanical style: a non-BMP Rust char literal is a literal, never a lifetime (final review)', () => {
+    // '🦀' was taken for a lifetime; its closing quote then swallowed the next char literal '"', whose
+    // quote opened a phantom string, so a line inside a real string read as a comment.
+    const rs = x => `let v = ('\u{1F980}','"');\nlet s = "\n// ${x}\n";\nlet w = ('\u{1F980}','"');\n`;
+    const r = S('src/x.rs', rs('a'), rs('b'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'src/x.rs:3 changes code');
+    const arr = x => `const V: [char; 2] = ['\u{10348}','"'];\nconst S: &str = "\n// ${x}\n";\n`;
+    assert.equal(S('src/x.rs', arr('one'), arr('two')).reason, 'src/x.rs:3 changes code');
+    assert.equal(S('src/x.rs', "let c = '\u{1F980}';\n// a\n", "let c = '\u{1F980}';\n// b\n").style, true, 'a comment after it is still a comment');
+    assert.equal(S('src/x.rs', "fn f<'a>(x: &'a str) {}\n// a\n", "fn f<'a>(x: &'a str) {}\n// b\n").style, true, 'lifetimes are unchanged');
+  });
+  test("mechanical style: a Ruby embedded document ends only at '=end' and whitespace or the line end (final review)", () => {
+    // '=endx' does not end it in Ruby; closing there desynchronised the scan and string content read as comments.
+    const rb = (end, x) => `=begin\n${end}\n"\n=end\ns = "\n# ${x}\n"\nt = 1 # "\n`;
+    const r = S('a.rb', rb('=endx', 'a'), rb('=endx', 'b'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'a.rb:6 changes code');
+    assert.equal(S('a.rb', rb('=end x', 'a'), rb('=end x', 'b')).style, true, "'=end x' does end it, so line 6 is a real comment");
+    assert.equal(S('a.rb', '=begin\nold\n=end\n1\n', '=begin\nold\n=end\n1\n# c\n').style, true);
+  });
 
   write("mean.cjs", buggy);
   write("mean.test.cjs", 'const assert = require("node:assert/strict"); const mean = require("./mean.cjs"); assert.equal(mean([2,4]),3); assert.equal(mean([1,2]),1.5); console.log("mean checks passed");\n');

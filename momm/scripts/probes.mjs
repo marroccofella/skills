@@ -245,7 +245,8 @@ export function windowsLauncher(command, args, env, platform = process.platform,
   // without checking them) is launched only by its real path, outside the probe's working directory
   // and MOMM's own, as processScope does (gate-3 review of 1.17.0).
   if (path.isAbsolute(command)) {
-    let resolved = null; try { resolved = fs.realpathSync(command); } catch { /* missing or unresolvable: refused */ }
+    // The canonical spelling (8.3 short names expanded on Windows), the one the roots are compared in.
+    let resolved = null; try { resolved = process.platform === "win32" ? fs.realpathSync.native(command) : fs.realpathSync(command); } catch { /* missing or unresolvable: refused */ }
     if (resolved && [cwd, project].every(root => [resolved, path.resolve(command)].every(q => executableOutside(q, root, { platform: process.platform })))) return { command: resolved, args };
     return { error: Object.assign(new Error(`spawn ${command} ENOENT: not found, or its real path lies inside the reviewed project`), { code: "ENOENT" }) };
   }

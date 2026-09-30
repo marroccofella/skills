@@ -162,7 +162,9 @@ function padId(prefix, index, total) {
 // around a change) rides with that over-ceiling part. A unit beyond
 // `maxPartBytes` makes the WHOLE hunk fall back to `oversize` (rule 2). The
 // default `maxPartBytes` is the ceiling: no part is ever over the ceiling
-// unless the caller names a larger limit.
+// unless the caller names a larger limit. A limit below the ceiling cannot be
+// met and is refused with a TypeError, as splitDiff refuses it; it is never
+// raised to the ceiling in silence.
 // Parts are review excerpts, never patches to apply on their own: a part may
 // hold only context lines (a long unchanged stretch inside a large hunk), which
 // is what lossless coverage requires and what a reviewer needs for the context.
@@ -209,6 +211,8 @@ function planParts(units, budget) {
   return parts;
 }
 export function lineSplitHunk(fileHeader, hunk, ceiling, { maxPartBytes = ceiling } = {}) {
+  if (!Number.isFinite(maxPartBytes) || maxPartBytes <= 0) throw new TypeError("lineSplitHunk: maxPartBytes must be a positive number");
+  if (maxPartBytes < ceiling) throw new TypeError(`lineSplitHunk: maxPartBytes (${maxPartBytes}) is below the ceiling (${ceiling}); a part limit that small cannot be met`);
   const headerText = stripEol(hunk.header);
   const m = HUNK_HEADER.exec(headerText);
   if (!m) return null;
@@ -236,8 +240,10 @@ export function lineSplitHunk(fileHeader, hunk, ceiling, { maxPartBytes = ceilin
   for (let i = 0; i < groups.length;) {
     let j = i;
     while (j < groups.length && groups[j].kind === "-") j += 1;
+    // Additions join a unit only after removals; scanning them otherwise made a
+    // long run of additions quadratic (each one rescanned the rest of the run).
     let k = j;
-    while (k < groups.length && groups[k].kind === "+") k += 1;
+    if (j > i) while (k < groups.length && groups[k].kind === "+") k += 1;
     if (j > i && k > j) { units.push({ groups: groups.slice(i, k) }); i = k; }
     else if (j > i) { for (let x = i; x < j; x += 1) units.push({ groups: [groups[x]] }); i = j; }
     else { units.push({ groups: [groups[i]] }); i += 1; }

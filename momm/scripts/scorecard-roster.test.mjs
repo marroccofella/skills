@@ -180,6 +180,26 @@ try {
     } finally { if (saved === undefined) delete process.env.MOMM_EVIDENCE_HOME; else process.env.MOMM_EVIDENCE_HOME = saved; }
     assert.deepEqual([seat?.applied_findings, seat?.reproduced_claims, seat?.critical_ruled, seat?.critical_false], [1, 1, 1, 1]);
   });
+  // Final review of 1.17.0 (roster-empty-says-no-reviews, median-undefined-renders-word and the partial-roster
+  // suggestion): a card from before the roster, or a partial roster, rendered "No reviews recorded yet."
+  // under reviews that were listed above it, "undefined s" for a missing median, or threw.
+  test('an empty, partial or legacy roster renders its own empty message and never "undefined"', () => {
+    const region = (html) => html.slice(html.indexOf('aria-label="Route and role roster"'));
+    const legacy = { ...card }; delete legacy.roster;
+    for (const shape of [legacy, { ...card, roster: { label: 'x' } }, { ...card, roster: { rows: [] } }]) {
+      const html = mod.renderHtml(shape, '');
+      assert(html.includes('<th scope="row">codex</th>'), 'the reviewer table lists reviews');
+      assert(!region(html).includes('No reviews recorded yet'), 'the roster must not say no reviews were recorded');
+      assert(region(html).includes('No routes or roles recorded yet.'));
+      assert.match(mod.renderMarkdown(shape), /## Route and role roster/);
+    }
+    assert(mod.renderHtml({ ...card, roster: { rows: [] } }, '').includes(mod.ROSTER_LABEL.slice(0, 40)), 'a roster without a label gets the standard one');
+    const bare = { ...row('codex', 'surgeon') }; delete bare.median_review_seconds;
+    const shown = { ...card, roster: { ...card.roster, rows: [bare] } };
+    assert(!region(mod.renderHtml(shown, '')).includes('undefined'));
+    assert(region(mod.renderHtml(shown, '')).includes('<td class="muted">no data</td>'));
+    assert(!mod.renderMarkdown(shown).includes('undefined s'));
+  });
 } finally { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 
 console.log(JSON.stringify({ passed: failures.length === 0, checks: results.length, failures }, null, 2));

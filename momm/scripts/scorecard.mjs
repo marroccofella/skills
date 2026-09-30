@@ -251,9 +251,10 @@ const fraction = (a, b, rate) => (b > 0 ? `${a}/${b} (${pct(rate)})` : "no data"
 const ROSTER_COLUMNS = [
   ["Route", (r) => r.route], ["Role", (r) => r.role ?? "none recorded"], ["Valid reviews", (r) => fraction(r.reviews_valid, r.reviews_asked, r.valid_review_rate)],
   ["Reproduced claims", (r) => fraction(r.reproduced_claims, r.applied_findings, r.reproduced_claim_rate)], ["False CRITICAL", (r) => fraction(r.critical_false, r.critical_ruled, r.false_critical_rate)],
-  ["Median time", (r) => (r.median_review_seconds === null ? "no data" : r.median_review_seconds + " s")], ["Cover success", (r) => fraction(r.covers_succeeded, r.covers_attempted, r.cover_success_rate)],
+  ["Median time", (r) => (r.median_review_seconds == null ? "no data" : r.median_review_seconds + " s")], ["Cover success", (r) => fraction(r.covers_succeeded, r.covers_attempted, r.cover_success_rate)],
 ];
-const rosterOf = (card) => card.roster ?? { label: ROSTER_LABEL, rows: [] };
+// A card from before the roster, or a partial one, renders an empty roster rather than throwing.
+const rosterOf = (card) => ({ label: card.roster?.label ?? ROSTER_LABEL, rows: Array.isArray(card.roster?.rows) ? card.roster.rows : [] });
 export function renderMarkdown(card) {
   const cell = (s) => clean(s, 200).split("|").join("/");
   const head = "| " + COLUMNS.map((c) => c[0]).join(" | ") + " |", rule = "|" + COLUMNS.map(() => " --- ").join("|") + "|";
@@ -276,7 +277,7 @@ h2{font-size:1.15rem;margin:28px 0 4px}.bar{display:block;height:4px;margin-top:
 <div class="cards"><div class="card"><b>${esc(card.ensemble.runs)}</b><span>review runs, quorum met on ${esc(pct(card.ensemble.quorum_rate))}</span></div><div class="card"><b>${esc(card.ensemble.accepted_findings)}</b><span>findings accepted of ${esc(card.ensemble.ruled)} ruled (${esc(pct(card.ensemble.acceptance_rate))})</span></div><div class="card"><b>${esc(pct(card.ensemble.unique_catch_share))}</b><span>of accepted findings came from exactly one reviewer</span></div><div class="card"><b>${esc(pct(card.ensemble.corroborated_acceptance_rate))}</b><span>of corroborated findings accepted, against ${esc(pct(card.ensemble.single_source_acceptance_rate))} single-source</span></div></div>
 <div class="wrap" tabindex="0" role="region" aria-label="Reviewer scorecard"><table><thead><tr>${COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rows || '<tr><td colspan="12" class="muted">No reviews recorded yet.</td></tr>'}</tbody></table></div>
 <h2>Route and role roster</h2><p class="lead">${esc(roster.label)}</p>
-<div class="wrap" tabindex="0" role="region" aria-label="Route and role roster"><table><thead><tr>${ROSTER_COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rosterRows || '<tr><td colspan="7" class="muted">No reviews recorded yet.</td></tr>'}</tbody></table></div>
+<div class="wrap" tabindex="0" role="region" aria-label="Route and role roster"><table><thead><tr>${ROSTER_COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rosterRows || '<tr><td colspan="7" class="muted">No routes or roles recorded yet.</td></tr>'}</tbody></table></div>
 <ul>${ensembleLines(card.ensemble).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
 <blockquote>${esc(card.caveat)} Score: 40% acceptance, 25% reliability, 20% unique catches, 15% severity calibration.</blockquote></main></body></html>\n`;
 }

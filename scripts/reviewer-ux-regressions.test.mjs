@@ -70,5 +70,20 @@ await test('run-ci-suites: an empty or unmatched --grep is an error, and a failu
   const ok=ci('--grep','synthetic-ok');assert.equal(ok.status,0);assert.match(ok.stdout,/1 of 1 suites passed/);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+// Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): a suite the runner itself stopped (its timer, the output
+// buffer, a failed spawn) read only "signal SIGTERM"; the spawn error now says which. The copy's timer is shortened.
+await test('run-ci-suites: a suite stopped by the runner shows the spawn error',async()=>{
+ const {spawnSync}=await import('node:child_process');const os=await import('node:os');const path=await import('node:path');
+ const source=fs.readFileSync(new URL('./run-ci-suites.mjs',import.meta.url),'utf8');
+ assert(source.includes('timeout: 15 * 60_000'),'the suite timer this test shortens');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-ci-suites-'));
+ try{
+  const put=(rel,text)=>{fs.mkdirSync(path.dirname(path.join(root,rel)),{recursive:true});fs.writeFileSync(path.join(root,rel),text);};
+  put('scripts/run-ci-suites.mjs',source.replace('timeout: 15 * 60_000','timeout: 1500'));
+  put('.github/workflows/self-test.yml','jobs:\n  t:\n    steps:\n      - run: node scripts/synthetic-slow.mjs\n');put('scripts/synthetic-slow.mjs','setTimeout(() => {}, 20000);\n');
+  const slow=spawnSync(process.execPath,[path.join(root,'scripts/run-ci-suites.mjs')],{cwd:root,encoding:'utf8',timeout:30000,windowsHide:true});
+  assert.equal(slow.status,1);assert.match(slow.stdout,/FAIL/);assert.match(slow.stdout,/spawn error: ETIMEDOUT/);assert.match(slow.stdout,/0 of 1 suites passed/);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
 console.log(JSON.stringify({checks,browser_verified:false},null,2));
 process.exitCode=checks.every(c=>c.passed)?0:1;

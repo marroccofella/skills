@@ -69,7 +69,10 @@ const CLONE_ROOT = path.resolve(path.dirname(ENTRY), "../..");
 function updaterAbsolute(command, cwd, { platform = process.platform, files = fs, project = CLONE_ROOT } = {}) {
   const win = platform === "win32", P = win ? path.win32 : path.posix;
   const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
-  const key = q => (win ? q.toLowerCase() : q);
+  // Case is folded on every platform (final review of 1.17.0): on a case-insensitive volume (Windows, and
+  // macOS by default) a path that differs only in case is the same folder, so it counts as inside. On a
+  // case-sensitive volume folding can only refuse more, never launch more.
+  const key = q => q.toLowerCase();
   const within = (base, q) => { const rel = P.relative(key(base), key(q)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + P.sep) && !P.isAbsolute(rel)); };
   const resolved = P.isAbsolute(String(command)) ? real(String(command)) : null;
   if (!resolved) return null;
@@ -92,7 +95,8 @@ function updaterPosixTool(command, cwd, { env, files, project }) {
   const real = q => { try { return String(files.realpathSync(q)); } catch { return null; } };
   const roots = [...new Set([P.resolve(String(cwd || process.cwd())), project].filter(Boolean).map(String))].map(r => [r, real(r)]);
   if (roots.some(([, r]) => !r)) throw Object.assign(new Error(`cannot resolve the working directory or the skills clone, so ${name} cannot be checked against them`), { code: "ENOENT" });
-  const within = (base, q) => { const rel = P.relative(base, q); return rel === "" || (rel !== ".." && !rel.startsWith("../") && !P.isAbsolute(rel)); };
+  // Case folded as in updaterAbsolute: a spelling that differs only in case counts as inside (fail closed).
+  const within = (base, q) => { const rel = P.relative(base.toLowerCase(), q.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith("../") && !P.isAbsolute(rel)); };
   const outside = q => roots.every(([literal, resolved]) => !within(literal, q) && !within(resolved, q));
   for (const entry of String(env?.PATH ?? "").split(":")) {
     const dir = real(entry);
@@ -110,7 +114,8 @@ function updaterPosixTool(command, cwd, { env, files, project }) {
 export function resolveTool(command, cwd, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT } = {}) {
   if (platform !== "win32") return updaterPosixTool(command, cwd, { env, files, project });
   if (/[\\/]/.test(command)) {
-    if (!path.win32.isAbsolute(command)) return command;
+    // A relative path with a separator is looked up from the working directory: refused, as on POSIX.
+    if (!path.win32.isAbsolute(command)) throw Object.assign(new Error(`${command}: refused: a relative path containing a separator would be looked up from the working directory`), { code: "ENOENT" });
     const resolved = updaterAbsolute(command, cwd, { platform, files, project });
     if (resolved) return resolved;
     throw Object.assign(new Error(`${command}: refused: not found, or its real path lies inside the working directory or the skills clone`), { code: "ENOENT" });
@@ -672,7 +677,7 @@ export function checkAllTable(report) {
 export function releaseClaim(dir, token, { kill = (pid, signal) => process.kill(pid, signal) } = {}) {
   const file = path.join(dir, "update.active");
   if (!regular(file, true)) throw new Error(`No update claim exists at ${file}; nothing was changed.`);
-  const bytes = fs.readFileSync(file);
+  const inspected = fs.lstatSync(file), bytes = fs.readFileSync(file);
   const unconfirmed = reason => new Error(`Update claim ${file} cannot be confirmed: ${reason}. It was kept and nothing was changed; inspect it yourself.`);
   let claim = null;
   try { claim = JSON.parse(bytes.toString("utf8")); } catch { /* reported below */ }
@@ -683,8 +688,22 @@ export function releaseClaim(dir, token, { kill = (pid, signal) => process.kill(
   try { kill(claim.pid, 0); } catch (error) { code = error?.code ?? null; running = code !== "ESRCH"; }
   if (running) throw new Error(`Process ${claim.pid} named by update claim ${file} is still running${code ? ` or cannot be checked (${code})` : ""}; nothing was changed. Let it finish, or confirm and stop it yourself, then retry.`);
   // The claim must be exactly the one inspected: never remove a claim that was replaced meanwhile.
-  if (!regular(file, true) || !fs.readFileSync(file).equals(bytes)) throw new Error(`Update claim ${file} changed while it was inspected; nothing was removed.`);
-  fs.unlinkSync(file);
+  const changed = () => new Error(`Update claim ${file} changed while it was inspected; nothing was removed.`);
+  if (!regular(file, true) || !fs.readFileSync(file).equals(bytes)) throw changed();
+  // Unlinking by path after that comparison left a gap in which a replacement claim could be removed (final
+  // review of 1.17.0). The claim is first moved to a private name in one atomic step, and only what was
+  // moved is examined: the inspected file (same inode, same bytes) is removed; anything else is put back,
+  // and link() never overwrites a claim that was made in the meantime.
+  const moved = `${file}.${randomUUID()}.release`;
+  fs.renameSync(file, moved);
+  let same = false;
+  try { const now = fs.lstatSync(moved); same = now.isFile() && !now.isSymbolicLink() && now.ino === inspected.ino && fs.readFileSync(moved).equals(bytes); } catch { same = false; }
+  if (!same) {
+    try { fs.linkSync(moved, file); } catch { throw new Error(`Update claim ${file} changed while it was released and another claim now stands there; the file that was moved aside is kept at ${moved}. Nothing else was changed; inspect both.`); }
+    fs.unlinkSync(moved);
+    throw changed();
+  }
+  fs.unlinkSync(moved);
   return { file, pid: claim.pid, token: claim.token, started: String(claim.started ?? "unknown").slice(0, 64) };
 }
 async function consent(o, message) {
@@ -706,10 +725,9 @@ function exclusive(dir, action) {
     let token = null, pending = true;
     try { const held = readJSON(file); if (typeof held?.token === "string" && /^[A-Za-z0-9-]{8,128}$/.test(held.token)) token = held.token; } catch { /* torn or unreadable claim */ }
     try { pending = regular(path.join(dir, "transaction.json"), true); } catch { /* unsafe journal: still recovery */ }
-    const retained = path.join(dir, "update.mjs");
-    const retry = pending ? `Then retry recovery: node "${retained}" --rollback --yes` : "Then repeat the command that was refused.";
+    const retry = pending ? `Then retry recovery: ${recoveryCommand(dir)}` : "Then repeat the command that was refused.";
     throw new Error(`Existing update claim: ${file}. Preserved even if its PID appears dead. Independently confirm no updater is running, then ` + (token
-      ? `release only this claim (refused while its recorded PID is running; transaction.json and momm.lock are not touched):\nnode "${retained}" --release-claim ${token}\n${retry}`
+      ? `release only this claim (refused while its recorded PID is running; transaction.json and momm.lock are not touched):\nnode "${recoveryUpdater(dir)}" --release-claim ${token}\n${retry}`
       : `remove only this unreadable claim yourself; preserve transaction.json and momm.lock. ${retry}`));
   }
   try { fd = fs.openSync(file, "wx", 0o600); } catch { throw new Error(`Another update may be active. Inspect ${file}; do not remove it while its process is running.`); }
@@ -722,6 +740,16 @@ function exclusive(dir, action) {
     catch (error) { process.stderr.write(`MOMM update claim cleanup needs inspection: ${safeText(error.message)}\n`); }
   });
 }
+// The updater a printed command names (final review of 1.17.0): the copy retained in the state folder, which
+// recordInstall and every update keep there, outside the checkout, as recovery needs; or, when none was
+// retained (an install interrupted before it copied one), this updater, so a command never names a missing
+// file. One helper for the refusal and the release, so the two sentences cannot drift.
+function recoveryUpdater(dir) {
+  const retained = path.join(dir, "update.mjs");
+  try { if (regular(retained, true)) return retained; } catch { /* unsafe: name this updater instead */ }
+  return ENTRY;
+}
+const recoveryCommand = dir => `node "${recoveryUpdater(dir)}" --rollback --yes`;
 export async function update(argv, dependencies = {}) {
   const o = parse(argv), log = dependencies.log || (s => process.stdout.write(`${safeText(s)}\n`));
   if (o.help) { log("MOMM update: [--dry-run | --apply | --rollback] [--version x.y.z] [--channel stable|pinned|main] [--accept-protocol] [--yes]\n             --check-all [--json]   Report skill version, every reviewer CLI's installed/latest version, install scopes and last successful review per route (read-only; contacts the release manifest and npm registry).\n             --release-claim <token>   Remove one stale update.active claim whose recorded PID is not running (exact token required; nothing else changes).\nDefault: manifest + changelog only. No automatic updates. Recovery: node <git-dir>/momm/update.mjs --rollback --yes"); return; }
@@ -731,9 +759,11 @@ export async function update(argv, dependencies = {}) {
   if (o.release_claim !== undefined) {
     // Needs no valid receipt: a crash may have left the installation half-way.
     const released = releaseClaim(dir, o.release_claim, dependencies);
-    const pending = regular(path.join(dir, "transaction.json"), true);
+    // The claim is already gone: an unsafe journal must not hide that, and still means recovery (as in exclusive()).
+    let pending = true;
+    try { pending = regular(path.join(dir, "transaction.json"), true); } catch { /* unsafe journal: still recovery */ }
     log(`Released update claim ${released.file} (pid ${released.pid}, token ${released.token}, started ${released.started}); that process is not running. transaction.json and momm.lock were not changed.\n`
-      + (pending ? `An interrupted update needs recovery: node "${path.join(dir, "update.mjs")}" --rollback --yes` : "No interrupted transaction is recorded; repeat the command that was refused."));
+      + (pending ? `An interrupted update needs recovery: ${recoveryCommand(dir)}` : "No interrupted transaction is recorded; repeat the command that was refused."));
     return released;
   }
   const lock = readLock(root);

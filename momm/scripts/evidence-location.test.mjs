@@ -286,7 +286,10 @@ try {
   await check('default evidence --status still reports <cwd>/.ensemble_reviews', () => {
     const status = node([path.join(scripts, 'multi-review.mjs'), 'evidence', '--status'], project);
     const body = JSON.parse(status.stdout);
-    assert.equal(body.evidence, path.join(project, '.ensemble_reviews'));
+    // The child reports its own working directory, which the OS gives in its physical spelling (macOS:
+    // /private/var for the /var temp folder, CI run 36667179658); compare the folder, not one spelling of it.
+    assert.equal(path.basename(body.evidence), '.ensemble_reviews');
+    assert.equal(real(path.dirname(body.evidence)), real(project));
     assert.equal(body.exists, false);
     assert.equal(Object.hasOwn(body, 'evidence_home'), false, 'default output is unchanged');
   });

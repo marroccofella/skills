@@ -456,14 +456,17 @@ try {
   // absolute command was started as given. Both now take only a real path outside the working directory
   // (a reviewed project, for --check-all) and the clone.
   await test("cli_binary_and_capture_exec_take_an_absolute_path_only_outside_the_project", () => {
-    const base = fs.realpathSync(fs.mkdtempSync(path.join(checkFixture, "abs-"))), project = path.join(base, "project"), store = path.join(base, "store");
+    // The canonical spelling: on hosted Windows runners the temp folder is an 8.3 short path (CI run 36667179658),
+    // which fs.realpathSync keeps and the native call, like cliBinary, expands.
+    const canonical = (p) => (process.platform === "win32" ? fs.realpathSync.native(p) : fs.realpathSync(p));
+    const base = canonical(fs.mkdtempSync(path.join(checkFixture, "abs-"))), project = path.join(base, "project"), store = path.join(base, "store");
     const exe = process.platform === "win32" ? "grok.exe" : "grok";
     fs.mkdirSync(path.join(project, "bin"), { recursive: true }); fs.mkdirSync(store);
     fs.copyFileSync(process.execPath, path.join(project, "bin", exe)); fs.copyFileSync(process.execPath, path.join(store, exe));
     for (const f of [path.join(project, "bin", exe), path.join(store, exe)]) fs.chmodSync(f, 0o755);
     const home = (name, target) => { const h = path.join(base, name); fs.mkdirSync(path.join(h, ".grok"), { recursive: true }); fs.symlinkSync(target, path.join(h, ".grok", "bin"), "junction"); return h; };
     const outsideHome = home("home-out", store), linkedHome = home("home-in", path.join(project, "bin"));
-    assert.equal(cliBinary("grok", { home: outsideHome, cwd: project }), fs.realpathSync(path.join(store, exe)), "the checked real path, not the link");
+    assert.equal(cliBinary("grok", { home: outsideHome, cwd: project }), canonical(path.join(store, exe)), "the checked real path, not the link");
     assert.equal(cliBinary("grok", { home: linkedHome, cwd: project }), "grok", "a link into the project falls back to the resolver");
     assert.equal(cliBinary("grok", { home: outsideHome, cwd: base, project: store }), "grok", "the clone counts as well as the working directory");
     const inside = captureExec(path.join(project, "bin", exe), ["--version"], { cwd: project });

@@ -92,9 +92,12 @@ Optional `role` (1.17): copy the role that reviewer held from the report, `revie
 `reviewers[].persona` for a report sealed before roles were recorded. The validator refuses a
 `role` that is empty or is not a role the report gives the row's `reviewer` for that item: its
 `reviewers[]` value for its own suggestions; for a cover's suggestion, the role that cover performed
-(the covered role, see Role cover below); for a finding, either of those. When a row has no `role`,
-the scorecard takes the reviewer's `reviewers[].role`, else `reviewers[].persona`,
-else, for a route that only covered, its one covered role. It feeds only the scorecard's
+(the covered role, see Role cover below); for a finding, either of those. Only a finding's `role`
+reaches the scorecard: when a finding's row has no `role`, the scorecard takes the reviewer's
+`reviewers[].role`, else `reviewers[].persona`,
+else, for a route that only covered, its one covered role (none when it covered more than one).
+A suggestion's `role` is checked but counted in no roster column, so a cover's suggestion without
+one is never credited to the route's native role. The role feeds only the scorecard's
 per-route, per-role roster (valid reviews, reproduced claims, false `CRITICAL`, median time, cover
 success), which is this project's governor decisions, not a benchmark; nothing routes on it.
 
@@ -185,7 +188,10 @@ report's `model_families`) is known and new to that piece. A cover claiming a vo
 cover's suggestions are items like any reviewer's (`reviewer` is the cover route; the `index` is
 `cover:<row>:<n>`), and its findings are already merged into `findings` under that route's name.
 An optional decision `role` (B6) on a cover's suggestion must be the cover's role (the role it covered);
-on a finding it may be the route's own role or a role that route covered successfully.
+on a finding it may be the route's own role or a role that route covered successfully. For example, when
+`grok` holds `innovator` natively and its cover of `codex` performed `surgeon`, a row on the suggestion
+`cover:0:0` may carry `"role": "surgeon"` and is refused with `"role": "innovator"`; a row on a finding
+`grok` raised may carry either.
 
 An observation file has this shape (record actual outputs, not these placeholders):
 

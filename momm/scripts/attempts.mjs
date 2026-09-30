@@ -38,7 +38,7 @@ function quotationFields(rows) {
     sha256: typeof row?.sha256 === 'string' && HEX64.test(row.sha256) ? row.sha256 : null,
     length: Number.isInteger(row?.length) ? row.length : null,
     prefix: typeof row?.prefix === 'string' ? [...row.prefix].slice(0, 80).join('') : null,
-    steps_tried: Array.isArray(row?.steps_tried) ? row.steps_tried.filter(step => ['exact', 'line_endings', 'look_alikes_and_whitespace'].includes(step)) : [],
+    steps_tried: Array.isArray(row?.steps_tried) ? row.steps_tried.filter(step => ['exact', 'line_endings', 'look_alikes_and_whitespace', 'diff_one_side'].includes(step)) : [],
   }));
   return { quotation_diagnostics: clean };
 }

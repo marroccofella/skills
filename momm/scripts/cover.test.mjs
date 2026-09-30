@@ -299,6 +299,18 @@ try {
     assert.match(doc, /\n\n### Mechanical `style` \(1\.17\)/);
   });
 
+  // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the scorecard's role fallback applies to findings only
+  // (a suggestion's role feeds no roster column), and the Role cover section carries one worked example.
+  await test("governor-completion.md says the role fallback is for findings and gives a cover-role example", () => {
+    const doc = fs.readFileSync(path.join(scripts, "..", "references", "governor-completion.md"), "utf8").replace(/\r\n/g, "\n");
+    const para = (doc.split("\n\n").find((p) => p.startsWith("Optional `role` (1.17)")) ?? "").replace(/\s+/g, " ");
+    assert.match(para, /Only a finding's `role` reaches the scorecard/);
+    assert.match(para, /its one covered role \(none when it covered more than one\)/);
+    assert.match(para, /a cover's suggestion without one is never credited to the route's native role/);
+    const section = doc.slice(doc.indexOf("### Role cover (1.17, `--cover`)"), doc.indexOf("An observation file has this shape")).replace(/\s+/g, " ");
+    assert.match(section, /a row on the suggestion `cover:0:0` may carry `"role": "surgeon"` and is refused with `"role": "innovator"`; a row on a finding `grok` raised may carry either\./);
+  });
+
   await test("a cover's suggestions are governor obligations like any reviewer's", () => {
     need();
     const f = fixture("suggestions", { reviewers: baseReviewers(), covers: [coverRow("grok", { suggested_improvements: ["Consider naming the constant."] })] });

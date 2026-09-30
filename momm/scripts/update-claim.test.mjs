@@ -126,6 +126,60 @@ try {
     fs.unlinkSync(claim); untouched();
   });
 
+  // Final review of 1.17.0 (release-claim-unlink-toctou): the claim was compared, then unlinked by path, so a
+  // claim that replaced it in between was removed. The race is forced: immediately before any call that takes
+  // update.active away from its path, another updater's claim takes its place.
+  await test('a claim replaced during the release is never removed', async () => {
+    stale();
+    const replacement = JSON.stringify({ pid: process.pid, token: randomUUID(), started: '2026-09-30T00:00:01.000Z' });
+    const original = { unlinkSync: fs.unlinkSync, renameSync: fs.renameSync };
+    let fired = false;
+    // The updater works on the real path (see printed), so match either spelling of the claim.
+    const isClaim = (p) => [path.resolve(claim), printed(claim)].includes(path.resolve(String(p)));
+    const swap = (p) => { if (!fired && isClaim(p)) { fired = true; original.unlinkSync.call(fs, claim); fs.writeFileSync(claim, replacement, { flag: 'wx' }); } };
+    const listing = fs.readdirSync(dir).sort();
+    fs.unlinkSync = function (p, ...rest) { swap(p); return original.unlinkSync.call(this, p, ...rest); };
+    fs.renameSync = function (from, to, ...rest) { swap(from); return original.renameSync.call(this, from, to, ...rest); };
+    try { await assert.rejects(release(TOKEN), /changed while it was inspected/); }
+    finally { fs.unlinkSync = original.unlinkSync; fs.renameSync = original.renameSync; }
+    assert(fired, 'the race was not forced');
+    assert.equal(fs.readFileSync(claim, 'utf8'), replacement, 'the replacement claim must stand');
+    assert.deepEqual(fs.readdirSync(dir).sort(), listing, 'nothing may be left beside it');
+    untouched(); fs.unlinkSync(claim);
+  });
+
+  // Final review of 1.17.0 (unhandled-unsafe-journal-in-release-claim): after the release, an unsafe
+  // transaction.json threw, so the release was never reported and the recovery command never printed.
+  await test('an unsafe transaction.json after the release still reports the release and the recovery command', async () => {
+    const saved = fs.readFileSync(journal);
+    fs.unlinkSync(journal); fs.mkdirSync(journal);
+    try {
+      stale();
+      const { out } = await release(TOKEN);
+      assert.equal(fs.existsSync(claim), false, 'claim still present');
+      assert.match(out, /Released update claim/); assert.match(out, /--rollback --yes/);
+    } finally { fs.rmdirSync(journal); fs.writeFileSync(journal, saved); }
+    untouched();
+  });
+
+  // Final review of 1.17.0 (unverified-retained-path-in-claim-refusal): with no retained update.mjs in the
+  // state folder (an install interrupted before it copied one), the commands named a file that did not exist.
+  await test('with no retained updater, every printed command names an updater that exists', async () => {
+    const saved = fs.readFileSync(retained), named = (m) => [...m.matchAll(/node "([^"]+)"/g)].map((x) => x[1]);
+    fs.unlinkSync(retained);
+    try {
+      stale();
+      let message = '';
+      await assert.rejects(update(['--repo', temp, '--rollback', '--yes'], { log() {}, reinstall() {}, inventory() {} }), e => { message = e.message; return true; });
+      assert.equal(named(message).length, 2, message);
+      for (const f of named(message)) assert(fs.existsSync(f), `refusal names a missing updater: ${f}`);
+      const { out } = await release(TOKEN);
+      assert.match(out, /--rollback --yes/);
+      for (const f of named(out)) assert(fs.existsSync(f), `release names a missing updater: ${f}`);
+    } finally { fs.writeFileSync(retained, saved); }
+    untouched();
+  });
+
   console.log(JSON.stringify({ passed: results.every(r => r.passed), release_claim: results }, null, 2));
   assert(results.every(r => r.passed), 'release-claim regression failed');
 } finally {

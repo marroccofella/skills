@@ -201,6 +201,15 @@ await check('a quote that mixes removed and added lines is refused, and its diag
   assert.equal(row?.reason, 'not_found');
   assert.deepEqual(row.steps_tried, ['exact', 'line_endings', 'look_alikes_and_whitespace', 'diff_one_side']);
 });
+// Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f, governor note): attempts.mjs kept only the first three
+// step names, so the private attempt record understated the comparisons tried for a diff artifact.
+await check('the private attempt record keeps the diff step the diagnostic reports, and still drops unknown steps', () => {
+  const quote = '  return a.reduce((s, x) => s + x, 0) / a.length;\n  if (!a.length) return null;';
+  const rows = contract.quotationDiagnostics(answer(scoped(quote)), diffArtifact);
+  const record = attemptRecord({ agent: 'codex', status: 'invalid_output', quotation_diagnostics: [{ ...rows[0], steps_tried: [...rows[0].steps_tried, 'invented_step'] }] },
+    { runId: 'rev_quotation_fixture', piece: 'whole', inputHash: sha('x'), pieceHash: sha('x'), ordinal: 1, durationMs: 1, startedAt: new Date().toISOString() });
+  assert.deepEqual(record.quotation_diagnostics[0].steps_tried, ['exact', 'line_endings', 'look_alikes_and_whitespace', 'diff_one_side']);
+});
 await check('a markerless quote that crosses two hunks is refused', () => {
   assert.match(contract.scopeProblem(scoped('}\nconst tail = 1;'), diffArtifact) ?? '', /quote the supplied artifact exactly/);
 });

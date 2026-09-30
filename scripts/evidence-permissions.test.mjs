@@ -93,13 +93,25 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  {
   const home=path.resolve('synthetic-home'),folder=path.join(home,'0123456789abcdef0123456789abcdef');
   for(const platform of ['linux','win32']){
-   const withHome=evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home});
-   assert(withHome.includes(`multi-review.mjs" evidence --evidence-home "${home}" --protect`),withHome);
-   assert(evidenceRemediation(path.join(folder,'reports'),platform,{MOMM_EVIDENCE_HOME:home}).includes(`--evidence-home "${home}" --protect`));
+   const quoted=`'${home.replaceAll("'",platform==='win32'?"''":"'\\''")}'`,withHome=evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home});
+   assert(withHome.includes(`multi-review.mjs" evidence --evidence-home ${quoted} --protect`),withHome);
+   assert(evidenceRemediation(path.join(folder,'reports'),platform,{MOMM_EVIDENCE_HOME:home}).includes(`--evidence-home ${quoted} --protect`));
    for(const env of [{},{MOMM_EVIDENCE_HOME:''},{MOMM_EVIDENCE_HOME:'relative-home'},{MOMM_EVIDENCE_HOME:path.resolve('other-home')}])
     assert(evidenceRemediation(folder,platform,env).includes('multi-review.mjs" evidence --protect'),JSON.stringify(env));
    assert(evidenceRemediation(dir,platform,{MOMM_EVIDENCE_HOME:home}).includes('multi-review.mjs" evidence --protect'),'the in-project folder needs no home');
   }
+  checks++;
+ }
+ // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the printed command is one literal argument per path,
+ // single-quoted as the completion check is, so a home holding a quote, a dollar sign or an apostrophe cannot
+ // break the command or expand. The POSIX chmod equivalent quotes its folder the same way.
+ {
+  const home=path.resolve(`synthetic "h'o$me`),folder=path.join(home,'0123456789abcdef0123456789abcdef');
+  const posix=evidenceRemediation(folder,'linux',{MOMM_EVIDENCE_HOME:home}),windows=evidenceRemediation(folder,'win32',{MOMM_EVIDENCE_HOME:home});
+  assert(posix.includes(`evidence --evidence-home '${home.replaceAll("'","'\\''")}' --protect`),posix);
+  assert(posix.includes(`chmod -R go-rwx '${folder.replaceAll("'","'\\''")}'`),posix);
+  assert(windows.includes(`evidence --evidence-home '${home.replaceAll("'","''")}' --protect`),windows);
+  assert(!posix.includes(`"${home}"`)&&!windows.includes(`"${home}"`));
   checks++;
  }
  // The protect action only ever targets a directory named .ensemble_reviews, and spawns nothing otherwise.

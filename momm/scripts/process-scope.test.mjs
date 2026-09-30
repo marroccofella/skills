@@ -293,6 +293,15 @@ if(scopeModule) {
     scope.spawn('git',['status'],{cwd:proj,env:{PATH:'/proj/bin'}});
     assert.equal(seen[0].c,'/usr/bin/git','the child PATH was removed, so the system directories decide');assert.equal('PATH' in seen[0].o.env,false);
   });
+  // CI run 36667179658 (Ubuntu): with every PATH entry inside the project the scrubbed PATH is removed, so the
+  // system directories are searched and the reason read "not found". The caller's PATH now says why.
+  await test('POSIX scope.spawn still says "only found inside the reviewed project" when scrubbing removed every entry',()=>{
+    const f=fixture('linux');const seen=[];
+    const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push(c);return f.spawn(c,a,o);},spawnSync:()=>({status:0}),fs:tool({'/bin':'dir','/proj/bin/codex':0o100755,'/fixture':'dir'}),...f.clock});
+    assert.throws(()=>scope.spawn('codex',[],{cwd:proj,env:{PATH:'/proj/bin'}}),notInstalled(/^codex: not installed \(only found inside the reviewed project\)/));
+    assert.throws(()=>scope.spawn('claude',[],{cwd:proj,env:{PATH:'/proj/bin'}}),notInstalled(/^claude: not installed \(not found/),'absent everywhere still reads not found');
+    assert.deepEqual(seen,[],'nothing was launched');
+  });
   await test('posix child PATH: relative, empty, "." and in-project entries are removed; the caller\'s object is not mutated',()=>{
     const env={PATH:'.:/proj/bin::bin:/alias:/usr/bin:/opt/tools',HOME:'/h'};
     const out=scopeModule.posixChildEnv(env,{cwd:proj,fs:tool({'/opt/tools':'dir'},{'/alias':'/proj/bin'})});

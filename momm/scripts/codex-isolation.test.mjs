@@ -134,6 +134,8 @@ try{
     const release=fs.readFileSync(new URL('../references/release-1.17.0.md',import.meta.url),'utf8');
     const limits=release.slice(release.indexOf('**Known limits.**'),release.indexOf('Details:',release.indexOf('**Known limits.**')));
     assert.match(limits,/Codex picture generation keeps its 1\.16\.1 command/);assert.match(limits,/--sandbox workspace-write/);
+    // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the limit names the switches it runs without, the review's own.
+    assert.match(limits.replace(/\s+/g,' '),/without the review's `--ignore-user-config --ignore-rules`/);assert.ok(['--ignore-user-config','--ignore-rules'].every(f=>isolation.CODEX_REVIEW_ISOLATION_ARGS.includes(f)));
   });
   // ---- the review adapter ----
   function adapter(fakeHome,env={}){

@@ -26,12 +26,15 @@ const SYSTEM_TOOLS = new Map([['cmd', 'cmd.exe'], ['cmd.exe', 'cmd.exe'],
 // entries are never searched, and anything that cannot be resolved is refused, not assumed safe.
 // One rule for every resolver: before 1.16.1 each had its own loop, and a fix applied to one of them
 // was missed in the next (independent review of 3d7a8be).
+// foldCase (final review of 1.17.0): case is folded on every platform, as update.mjs does. On a
+// case-insensitive volume (Windows, and macOS by default) a spelling that differs only in case is the
+// same folder, so it counts as inside; on a case-sensitive volume folding can only refuse more.
 export function pathEntryOutside(entry, root, { platform = process.platform, fs: files = nodeFs } = {}) {
   const win = platform === 'win32', p = win ? nodePath.win32 : nodePath.posix;
   const bare = String(entry ?? '').replace(/^"|"$/g, '');
   if (!bare || !p.isAbsolute(bare)) return false;
   const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
-  const key = q => (win ? q.toLowerCase() : q);
+  const key = q => q.toLowerCase(); // case folded on every platform: see foldCase above
   const rootLiteral = p.resolve(String(root || '.')), rootReal = real(rootLiteral);
   if (!rootReal) return false;
   const resolved = real(bare);
@@ -45,7 +48,7 @@ export function pathEntryOutside(entry, root, { platform = process.platform, fs:
 export function executableOutside(resolved, root, { platform = process.platform, fs: files = nodeFs } = {}) {
   const win = platform === 'win32', p = win ? nodePath.win32 : nodePath.posix;
   const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
-  const key = q => (win ? q.toLowerCase() : q);
+  const key = q => q.toLowerCase(); // case folded on every platform: see foldCase above
   const rootLiteral = p.resolve(String(root || '.')), rootReal = real(rootLiteral);
   if (!rootReal || !resolved) return false;
   const within = (base, q) => { const rel = p.relative(key(base), key(q)); return rel === '' || (rel !== '..' && !rel.startsWith('..' + p.sep) && !p.isAbsolute(rel)); };
@@ -311,7 +314,19 @@ export function createProcessScope(deps = {}) {
         const env = posixChildEnv(options.env ?? proc.env, { cwd, project, fs: files });
         const where = { env, cwd, project, fs: files };
         if (options.shell) options = { ...options, env, ...(typeof options.shell === 'string' ? { shell: posixTool(options.shell, where) } : {}) };
-        else { command = posixTool(command, where); options = { ...options, env }; }
+        else {
+          try { command = posixTool(command, where); }
+          catch (error) {
+            // Only to say WHY: when scrubbing removed every PATH entry that held the name, the scrubbed PATH
+            // cannot tell "inside the project" from "absent". Ask the caller's PATH, and never launch from it.
+            if (error?.momm_not_installed === 'absent') {
+              try { posixTool(command, { ...where, env: options.env ?? proc.env }); }
+              catch (why) { if (why?.momm_not_installed === 'inside') throw why; }
+            }
+            throw error;
+          }
+          options = { ...options, env };
+        }
       }
       const child = launch(command, args, {...options,detached:proc.platform !== 'win32'});
       owned.set(child, {timer:null,terminating:false});

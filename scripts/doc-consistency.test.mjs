@@ -166,9 +166,15 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   // grok-typeless-line-unspecified: grokStreamReview refuses the whole answer on a typeless line.
   const grokText = flatText(read('momm/references/cli/grok.md'));
   assert(/a line that is not a JSON object with a string `type` makes the whole answer `invalid_output` \(it is never skipped\)/.test(grokText), 'grok.md must say what a typeless line does');
-  assert(/a further line after the `end` \(a second `end` included\), or an `end` whose `stopReason` is not `end_turn` is `invalid_output`/.test(grokText), 'grok.md must say what a second end or another stopReason does');
+  // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the rules are an ordered list, so "first decisive one
+  // wins" is not read as covering unknown types, and an error line after the end is an error, as the code decides.
+  const grokRaw = read('momm/references/cli/grok.md').replace(/\r\n/g, '\n');
+  assert(['1. Anywhere in the stream, a line', '2. Otherwise the lines are read in order', '3. A line of an unknown type decides nothing', '4. After the last line'].every((item) => grokRaw.includes(`\n${item}`)), 'grok.md must give the stream rules as an ordered list');
+  assert(/an `error` line, or a line marked as an error, makes the run an `error`, even after the `end`; any other line after the `end` \(a second `end` included\) makes it `invalid_output`/.test(grokText), 'grok.md must say what a line after the end does');
+  assert(/a missing `end`, or an `end` whose `stopReason` is not `end_turn`, is `invalid_output`/.test(grokText), 'grok.md must say what a missing end or another stopReason does');
   const { grokStreamReview } = await import('../momm/scripts/grok-stream.mjs');
   const end = JSON.stringify({ type: 'end', stopReason: 'end_turn' });
   assert(grokStreamReview(`{"data":"x"}\n${end}\n`).envelope === null && grokStreamReview(`${end}\n${end}\n`).envelope === null && grokStreamReview('{"type":"end","stopReason":"max_turns"}\n').envelope === null, 'grok-stream.mjs must refuse what grok.md says it refuses');
+  assert(grokStreamReview(`${end}\n{"type":"error"}\n`).status === 'error' && grokStreamReview(`{"type":"mystery"}\n${end}\n`).envelope !== null && grokStreamReview(`${end}\n{"type":"mystery"}\n`).envelope === null, 'grok-stream.mjs must decide a line after the end as grok.md says');
 }
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));
