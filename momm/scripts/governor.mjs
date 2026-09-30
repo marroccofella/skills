@@ -373,6 +373,9 @@ export function inspectCompletion(root, runId, options = {}) {
       const rows = (report.attempt_evidence ?? []).filter(a => a.route === agent && a.piece === piece && a.cover_for === undefined);
       return rows.length || 1;
     };
+    // The budget is per piece and role, so earlier covers of the same failed route on the same piece
+    // count against it; and, as the dispatcher chooses them, a route covers at most one role per piece.
+    const coverSpent = new Map(), coverSeats = new Set();
     const coverRows = covers.map(c => {
       const piece = c?.piece ?? null;
       const wellFormed = c && typeof c === "object" && c.cover === true && nonempty(c.agent) && nonempty(c.covering_for) && c.agent !== c.covering_for
@@ -381,7 +384,12 @@ export function inspectCompletion(root, runId, options = {}) {
       if (!wellFormed) { state.errors.push("malformed cover row"); return null; }
       const label = `${c.agent} covering ${c.covering_for}`;
       if (!COVERABLE_STATUSES.includes(c.covered_status) || nativeStatus(c.covering_for, piece) !== c.covered_status) { state.errors.push(`cover does not match a coverable failure: ${label}`); return null; }
-      if (c.attempts !== 1 || nativeAttempts(c.covering_for, piece) + 1 > ATTEMPT_BUDGET) { state.errors.push(`cover exceeds the attempt budget: ${label}`); return null; }
+      const seat = JSON.stringify([piece, c.agent]), slot = JSON.stringify([piece, c.covering_for]);
+      if (coverSeats.has(seat)) { state.errors.push(`a route covers at most one role per piece: ${label}`); return null; }
+      coverSeats.add(seat);
+      const earlier = coverSpent.get(slot) ?? 0;
+      coverSpent.set(slot, earlier + (Number.isInteger(c.attempts) && c.attempts > 0 ? c.attempts : ATTEMPT_BUDGET));
+      if (c.attempts !== 1 || nativeAttempts(c.covering_for, piece) + earlier + 1 > ATTEMPT_BUDGET) { state.errors.push(`cover exceeds the attempt budget: ${label}`); return null; }
       if (c.status === "success") demand(VERIFIED_CONTRACTS.has(c.review_contract) && Array.isArray(c.reviewed_scope) && c.reviewed_scope.length, "legacy/unverified reply contract; needs a fresh review");
       return { ...c, piece };
     }).filter(Boolean);

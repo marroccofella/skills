@@ -272,8 +272,8 @@ in C2's property tests, and the report shows roles covered per piece.
 ### B4. A harder accept gate
 
 1. **Mechanical `style` (closes the `change_kind` loophole).** A decision may be `style` only when,
-   for every file it touched, every changed line is whitespace or a comment in both its old and new
-   form. A line turned from code into a comment is therefore a behaviour change, and so is any comment that
+   for every file it touched, every changed line is whitespace or a comment line that is added, removed or
+   reworded (never code in its old or its new form). A line turned from code into a comment is therefore a behaviour change, and so is any comment that
    carries a tool directive (for example `eslint-disable`, `@ts-expect-error`, `@ts-ignore`,
    `prettier-ignore`, `istanbul ignore`, `noqa`, `type: ignore`, `pragma`), from one versioned list. A
    code line whose only change is whitespace counts as style, except in whitespace-significant files

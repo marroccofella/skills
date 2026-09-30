@@ -16,7 +16,10 @@ const workflow = fs.readFileSync(path.join(root, '.github/workflows/self-test.ym
 const commands = [...new Set([...workflow.matchAll(/node ((?:momm\/scripts|scripts)\/[A-Za-z0-9_./-]+\.mjs)([^\n"]*)/g)]
   .map((m) => [m[1], ...m[2].trim().split(/\s+/).filter(Boolean)].join(' ')))];
 const args = process.argv.slice(2), grep = args.includes('--grep') ? args[args.indexOf('--grep') + 1] : null;
+// A filter that names nothing, or matches nothing, is an error: "0 of 0 suites passed" is not a pass.
+if (args.includes('--grep') && (!grep || grep.startsWith('--'))) { process.stderr.write('--grep needs a value: part of a suite path, such as --grep ledger\n'); process.exit(2); }
 const selected = commands.filter((c) => !grep || c.includes(grep));
+if (!selected.length) { process.stderr.write(`no suite in .github/workflows/self-test.yml matches ${JSON.stringify(grep)}; nothing was run\n`); process.exit(1); }
 if (args.includes('--list')) { process.stdout.write(selected.join('\n') + '\n'); process.exit(0); }
 // Same launch guard the workflow relies on; the security suites unset it themselves where they must.
 const env = { ...process.env, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1' };
@@ -25,11 +28,14 @@ let failed = 0;
 for (const command of selected) {
   const [file, ...rest] = command.split(' ');
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [path.join(root, file), ...rest], { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 15 * 60_000, windowsHide: true });
+  // Both streams are kept (many suites print their assertion failures on stdout) and only a tail of each is
+  // shown on failure; the buffer is large so a chatty suite is never killed for its output.
+  const r = spawnSync(process.execPath, [path.join(root, file), ...rest], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 15 * 60_000, windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
   const code = r.status ?? (r.signal ? `signal ${r.signal}` : 'error');
   if (code !== 0) failed++;
   process.stdout.write(`${code === 0 ? 'PASS' : 'FAIL'} ${String(code).padStart(3)} ${Math.round((Date.now() - t0) / 1000)}s ${command}\n`);
-  if (code !== 0 && r.stderr) process.stdout.write(r.stderr.split('\n').slice(-8).map((l) => '      ' + l).join('\n') + '\n');
+  const tail = (text, label) => { const lines = String(text ?? '').trimEnd().split('\n').filter((l) => l.trim()).slice(-8); if (lines.length) process.stdout.write(`      ${label}:\n` + lines.map((l) => '      ' + l).join('\n') + '\n'); };
+  if (code !== 0) { tail(r.stdout, 'stdout (last lines)'); tail(r.stderr, 'stderr (last lines)'); }
 }
 process.stdout.write(`${selected.length - failed} of ${selected.length} suites passed on ${process.platform} ${process.arch}, Node ${process.version}\n`);
 process.exitCode = failed ? 1 : 0;

@@ -238,11 +238,18 @@ export function windowsLauncher(command, args, env, platform = process.platform,
     try { return { command: posixTool(command, { env, cwd, project, fs: files }), args }; }
     catch (error) { return { error }; }
   }
-  // A command that already names a location (absolute, or a relative path the caller chose) is used
-  // as given. A bare NAME is never handed to spawn on Windows: older libuv looks for it in the
+  // A relative path the caller chose is used as given. A bare NAME is never handed to spawn on Windows: older libuv looks for it in the
   // working directory first, and a probe's working directory is a project that is not trusted. It
   // is resolved here against the absolute PATH entries only, or refused as not installed.
-  if (path.isAbsolute(command) || /[\\/]/.test(command)) return { command, args };
+  // An absolute path (resolveCommand names ~/.grok/bin/grok.exe and %LOCALAPPDATA%\agy\bin\agy.exe
+  // without checking them) is launched only by its real path, outside the probe's working directory
+  // and MOMM's own, as processScope does (gate-3 review of 1.17.0).
+  if (path.isAbsolute(command)) {
+    let resolved = null; try { resolved = fs.realpathSync(command); } catch { /* missing or unresolvable: refused */ }
+    if (resolved && [cwd, project].every(root => [resolved, path.resolve(command)].every(q => executableOutside(q, root, { platform: process.platform })))) return { command: resolved, args };
+    return { error: Object.assign(new Error(`spawn ${command} ENOENT: not found, or its real path lies inside the reviewed project`), { code: "ENOENT" }) };
+  }
+  if (/[\\/]/.test(command)) return { command, args };
   const namesExe = /\.exe$/i.test(command);
   const pathKey = Object.keys(env).find(k => k.toLowerCase() === "path");
   const dirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p))

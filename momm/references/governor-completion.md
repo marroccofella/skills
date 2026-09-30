@@ -90,8 +90,11 @@ recorded sources. Add `finding_id` for existing ledger severity attribution.
 
 Optional `role` (1.17): copy the role that reviewer held from the report, `reviewers[].role`, or
 `reviewers[].persona` for a report sealed before roles were recorded. The validator refuses a
-`role` that is empty or differs from the report's value for the row's `reviewer`. When a row has
-no `role`, the scorecard derives it from the report the same way. It feeds only the scorecard's
+`role` that is empty or is not a role the report gives the row's `reviewer` for that item: its
+`reviewers[]` value for its own suggestions; for a cover's suggestion, the role that cover performed
+(the covered role, see Role cover below); for a finding, either of those. When a row has no `role`,
+the scorecard takes the reviewer's `reviewers[].role`, else `reviewers[].persona`,
+else, for a route that only covered, its one covered role. It feeds only the scorecard's
 per-route, per-role roster (valid reviews, reproduced claims, false `CRITICAL`, median time, cover
 success), which is this project's governor decisions, not a benchmark; nothing routes on it.
 
@@ -112,12 +115,13 @@ whether it needs failing-before/passing-after evidence, is decided by the report
 whatever its type. These fields apply to findings only; they are refused on suggestion and
 `governor_direct` rows. Reports sealed under `momm-peer-review/2` (1.16.x) still validate; their
 findings are untyped.
+
 ### Mechanical `style` (1.17)
 
 `style` is decided from the bytes, never from the label (`scripts/style-classifier.mjs`,
 version `momm-style/1`). For every file the decision's after check binds that differs from
-the reviewed bytes, every changed line must be whitespace, or a comment in both its old and
-its new form. Otherwise the item stays unresolved with a reason such as
+the reviewed bytes, every changed line must be whitespace, or a comment line that is added, removed or
+reworded (never code in its old or its new form). Otherwise the item stays unresolved with a reason such as
 `change_kind style refused: src/a.js:12 changes code`, `... carries a directive` or
 `... file type unclassifiable (...)`; record it as `behavior` with failing-before and
 passing-after evidence instead.
@@ -169,12 +173,15 @@ always `unknown`; a field the report does not record is `unknown`, never a match
 is true only when something recorded differs. A stale review can still be completed, and
 the receipt carries the block.
 
-Role cover (1.17, `--cover`). A report may carry `covers[]`: another route answering a failed route's
+### Role cover (1.17, `--cover`)
+
+A report may carry `covers[]`: another route answering a failed route's
 role on one piece. The validator recounts covers and never trusts their flags: a cover must name a
 coverable failure (`timeout`, `invalid_output`, `provider_unavailable` or `error`) that the report
 records for that route and piece, must be a single invocation within the budget of two per piece and
-role, and counts toward quorum only if its model family (the report's `model_families`) is known and
-new to that piece. A cover claiming a vote the family rule does not give is an error. A successful
+role (the native attempts and every earlier cover of that role on that piece count), must come from a
+route that covers no other role on that piece, and counts toward quorum only if its model family (the
+report's `model_families`) is known and new to that piece. A cover claiming a vote the family rule does not give is an error. A successful
 cover's suggestions are items like any reviewer's (`reviewer` is the cover route; the `index` is
 `cover:<row>:<n>`), and its findings are already merged into `findings` under that route's name.
 An optional decision `role` (B6) on a cover's suggestion must be the cover's role (the role it covered);

@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { privateTestFixture } from './private-test-fixture.mjs';
 import { preparePrivateEvidence, requirePrivateEvidence, inspectEvidencePermissions, protectEvidence } from './evidence-permissions.mjs';
@@ -100,6 +101,33 @@ try {
     assert.throws(() => take(['node', 'x', '--evidence-home', home, '--evidence-home', home], {}), { code: 'MOMM_EVIDENCE_LOCATION' });
     const untouched = ['node', 'x', '--input', 'a.txt'], env3 = {};
     take(untouched, env3); assert.deepEqual(untouched, ['node', 'x', '--input', 'a.txt']); assert.equal(env3.MOMM_EVIDENCE_HOME, undefined);
+  });
+  // Gate-3 review of 1.17.0: "--evidence-home -v" took the next flag as the directory.
+  await check('--evidence-home refuses an option-shaped value instead of taking it as the directory', () => {
+    const take = need('takeEvidenceHomeOption');
+    for (const next of ['-v', '-h', '--json']) {
+      const argv = ['node', 'multi-review.mjs', '--evidence-home', next], env = {};
+      assert.throws(() => take(argv, env), (e) => e.code === 'MOMM_EVIDENCE_LOCATION' && /needs a directory/.test(e.message), next);
+      assert.equal(env.MOMM_EVIDENCE_HOME, undefined); assert.equal(argv.length, 4);
+    }
+  });
+  await check('SKILL.md says --evidence-home also selects the folder for evidence --status and --protect, and wins over the variable', () => {
+    const skill = fs.readFileSync(path.join(scripts, '..', 'SKILL.md'), 'utf8');
+    assert.match(skill, /`--evidence-home <dir>` works with every `multi-review\.mjs` command, `evidence --status` and `evidence --protect` included, and for that run it takes precedence over `MOMM_EVIDENCE_HOME`/);
+  });
+  // Gate-3 review of 1.17.0: if the configured home failed to resolve while the outstanding actions were
+  // built, they named the in-project ledger, which the completion check does not read in that mode.
+  await check('the outstanding actions follow the evidence-home setting even when resolving it fails there', () => {
+    const source = fs.readFileSync(path.join(scripts, 'multi-review.mjs'), 'utf8');
+    const a = source.indexOf('function buildOutstanding('), b = source.indexOf('function buildInsights(', a);
+    assert(a > 0 && b > a, 'buildOutstanding extraction boundaries moved');
+    const actions = (env, evidenceLocation) => vm.runInNewContext(source.slice(a, b) + ';buildOutstanding', { evidenceLocation, fs, path, process: { env, platform: process.platform }, Math, JSON, String, Array })(
+      [{ severity: 'CRITICAL' }], [], 'rev_fixture', projectA).required_next_actions.join('\n');
+    const refused = () => { throw Object.assign(new Error('unresolvable'), { code: 'MOMM_EVIDENCE_LOCATION' }); };
+    const failing = actions({ MOMM_EVIDENCE_HOME: home }, refused);
+    assert.match(failing, /evidence folder under MOMM_EVIDENCE_HOME/); assert(!failing.includes('.ensemble_reviews/dispositions.jsonl'), failing);
+    assert.match(actions({ MOMM_EVIDENCE_HOME: home }, need('evidenceLocation')), /evidence folder under MOMM_EVIDENCE_HOME/);
+    assert.match(actions({}, need('evidenceLocation')), /\.ensemble_reviews\/dispositions\.jsonl/);
   });
   await check('logical .ensemble_reviews references map into the resolved folder; project files stay in the project', () => {
     const evidenceFile = need('evidenceFile');

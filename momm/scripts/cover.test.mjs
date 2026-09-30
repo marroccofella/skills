@@ -203,6 +203,18 @@ try {
     assert.match(fs.readFileSync(path.join(scripts, "..", "SKILL.md"), "utf8"), /--cover/);
   });
 
+  // Gate-3 follow-up: on a split run the same route covers the same role on several pieces, and each cover
+  // reaches buildOutstanding under one label; the per-reviewer count kept only the last one.
+  await test("outstanding suggestions by reviewer add every cover's suggestions under one label", () => {
+    const code = source.slice(source.indexOf("function buildOutstanding("), source.indexOf("function buildInsights("));
+    const evidenceLocation = ({ cwd }) => ({ dir: path.join(cwd, ".ensemble_reviews"), home: null });
+    const build = vm.runInNewContext(`${code};buildOutstanding`, { fs, path, process, evidenceLocation });
+    const piece = (n) => ({ agent: "claude (cover for codex)", status: "success", review: { improvements: Array.from({ length: n }, (_, i) => `s${i}`) } });
+    const out = build([], [{ agent: "claude", status: "success", review: { improvements: ["native"] } }, piece(2), piece(3)], "rev_synthetic", os.tmpdir(), 1, null, { met: true });
+    assert.equal(out.untriaged_suggestions, 6);
+    assert.deepEqual({ ...out.suggestions_by_reviewer }, { claude: 1, "claude (cover for codex)": 5 });
+  });
+
   // ---- completion validator: covers are recounted, never trusted ----------------------------------
   const base = privateTestFixture("momm-cover-governor-");
   const write = (dir, p, value) => { const f = path.join(dir, p); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, typeof value === "string" ? value : JSON.stringify(value, null, 2)); };
@@ -257,6 +269,34 @@ try {
     assert.ok(inspectCompletion(mismatch.dir, mismatch.id).errors.some((e) => /cover does not match a coverable failure/.test(e)));
     const governorCover = fixture("governor_cover", { reviewers: baseReviewers(), covers: [coverRow("antigravity")] });
     assert.ok(inspectCompletion(governorCover.dir, governorCover.id).errors.some((e) => /malformed cover row/.test(e)));
+  });
+
+  // Gate-3 triage of rev_20260930003709_e5847282134d (cover-attempt-budget-leak): every row was checked
+  // alone, so two covers of one failed route on one piece each passed native 1 + 1 <= 2.
+  await test("the completion validator counts earlier covers of a role against its budget; a route covers one role per piece", () => {
+    need();
+    const reviewers = [...baseReviewers(), native("copilot", "timeout")];
+    const both = fixture("two_covers_one_role", { reviewers, covers: [coverRow("grok"), coverRow("copilot", { counted_for_quorum: false })] });
+    const twoCovers = inspectCompletion(both.dir, both.id);
+    assert.ok(twoCovers.errors.some((e) => /cover exceeds the attempt budget: copilot covering codex/.test(e)), JSON.stringify(twoCovers.errors));
+    assert.ok(!twoCovers.errors.some((e) => /attempt budget: grok covering codex/.test(e)), "the first cover stays within the budget");
+    const oneRoute = fixture("one_route_two_roles", { reviewers, covers: [coverRow("grok"), coverRow("grok", { covering_for: "copilot", counted_for_quorum: false })] });
+    const r = inspectCompletion(oneRoute.dir, oneRoute.id);
+    assert.ok(r.errors.some((e) => /a route covers at most one role per piece: grok covering copilot/.test(e)), JSON.stringify(r.errors));
+    const doc = fs.readFileSync(path.join(scripts, "..", "references", "governor-completion.md"), "utf8");
+    assert.match(doc, /every earlier cover of that role on that piece count/);
+  });
+
+  // Gate-3 triage (role-cover-contradiction, and the two heading suggestions): the B6 paragraph must state
+  // the cover exception the validator applies, and Role cover is its own section.
+  await test("governor-completion.md states the decision-role rule for covers without contradiction", () => {
+    const doc = fs.readFileSync(path.join(scripts, "..", "references", "governor-completion.md"), "utf8").replace(/\r\n/g, "\n");
+    const para = doc.split("\n\n").find((p) => p.startsWith("Optional `role` (1.17)")) ?? "";
+    assert.match(para, /for a cover's suggestion, the role that cover performed/);
+    assert.match(para, /else, for a route that only covered, its one covered role/);
+    assert.doesNotMatch(para, /differs from the report's value for the row's `reviewer`/);
+    assert.match(doc, /^### Role cover \(1\.17, `--cover`\)$/m);
+    assert.match(doc, /\n\n### Mechanical `style` \(1\.17\)/);
   });
 
   await test("a cover's suggestions are governor obligations like any reviewer's", () => {

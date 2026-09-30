@@ -1,6 +1,8 @@
 // MOMM 1.17 B4.1 — mechanical `style`. A governor's decision may be recorded as `style` only when the
-// bytes say so: every changed line is whitespace, or a comment in both its old and its new form. The
-// label is never taken on trust (plan-1.17.md, "Mechanical style"; owner decision D4).
+// bytes say so: every changed line is whitespace, or a comment line that is added, removed or reworded
+// (a whole comment line inserted or deleted is style; a line that is code in its old or its new form is
+// behavior), and no changed comment carries a tool directive. The label is never taken on trust
+// (plan-1.17.md, "Mechanical style"; owner decision D4).
 //
 // Fail closed everywhere. Anything this file cannot read with confidence is `behavior`, which needs a
 // failing-before and passing-after record: a type with no known comment syntax (Markdown, JSON, HTML,
@@ -306,7 +308,10 @@ function openLiteral(lang, line, i, ctx) {
       if (c === '"') return string('"', i + 1, { multi: lang === "rs" });
       if (c === "'") {
         if (lang === "rs") {
-          if (line[i + 1] === "\\") { const end = scanClosed(i + 2, "'"); return end >= 0 ? { end } : null; }
+          // Scan from the backslash itself so the escape is consumed whole: an escaped backslash or quote
+          // (a char literal holding one backslash, or one quote) no longer swallows the closing quote and
+          // the code after it (gate-3 review of 1.17.0).
+          if (line[i + 1] === "\\") { const end = scanClosed(i + 1, "'"); return end >= 0 ? { end } : null; }
           if (line[i + 2] === "'") return { end: i + 3 };
           return null; // a lifetime
         }

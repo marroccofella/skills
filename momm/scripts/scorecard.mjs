@@ -20,7 +20,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
-import { evidenceDir } from './evidence-location.mjs';
+import { evidenceDir, evidenceReference } from './evidence-location.mjs';
 
 export const SCORE_MIN_RULED = 8;
 // The formula, in one place, so nobody has to guess what the number rewards.
@@ -68,15 +68,22 @@ function readEvidence(project) {
   return { er, present: log.present || decisions.present || names.length > 0, reports, decisions: decisions.rows, integrity: { unreadable_log_lines: log.unreadable, unreadable_disposition_lines: decisions.unreadable, unreadable_reports: unreadableReports } };
 }
 
-// A decision row's check reference, read only if it is a bounded regular file inside the project whose
-// bytes match the recorded sha256. Anything else is treated as no evidence, never as a failure.
-function readCheck(project, ref) {
+// A decision row's check reference, read only if it is a bounded regular file whose bytes match the
+// recorded sha256, inside the folder the reference resolves to: '.ensemble_reviews/...' in the resolved
+// evidence folder (1.17 A7, as governor.mjs and checks.mjs resolve it), anything else in the project.
+// Anything else is treated as no evidence, never as a failure.
+function readCheck(project, ref, evidence = evidenceDir({ cwd: project, env: process.env })) {
   if (!ref || typeof ref !== "object" || typeof ref.path !== "string" || !/^[a-f0-9]{64}$/.test(ref.sha256 ?? "")) return null;
   const rel = ref.path;
   if (path.isAbsolute(rel) || rel.includes(":") || rel.includes("\\") || rel.split("/").some((p) => !p || p === "." || p === "..")) return null;
   try {
-    const base = fs.realpathSync.native(project), file = path.join(base, ...rel.split("/")), stat = fs.lstatSync(file);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8_000_000 || !fs.realpathSync.native(file).startsWith(base + path.sep)) return null;
+    const { base: from, parts } = evidenceReference(rel, { root: project, dir: evidence });
+    // An evidence home folder reached through a link is not followed (the governor refuses it too).
+    if (from !== path.resolve(project) && fs.lstatSync(from).isSymbolicLink()) return null;
+    const base = fs.realpathSync.native(from), file = path.join(base, ...parts), stat = fs.lstatSync(file);
+    // A project at a filesystem root already ends in the separator ("C:\", "/").
+    const inside = base.endsWith(path.sep) ? base : base + path.sep;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8_000_000 || !fs.realpathSync.native(file).startsWith(inside)) return null;
     const bytes = fs.readFileSync(file);
     if (createHash("sha256").update(bytes).digest("hex") !== ref.sha256) return null;
     const check = JSON.parse(bytes.toString("utf8"));
@@ -101,7 +108,7 @@ export function scoreOf({ acceptance_rate, valid_rate, unique_share, severity_in
 }
 
 export function buildScorecard(project) {
-  const { present, reports, decisions, integrity } = readEvidence(project);
+  const { er, present, reports, decisions, integrity } = readEvidence(project);
   const rulings = decisions.filter((d) => d.kind !== "review_rating" && typeof d.disposition === "string");
   const ratingRows = decisions.filter((d) => d.kind === "review_rating" && Number.isInteger(d.rating));
   const byFinding = new Map(); // run_id + finding_id -> ruling (the latest wins)
@@ -172,8 +179,8 @@ export function buildScorecard(project) {
         const route = typeof ruling.reviewer === "string" && ruling.reviewer ? lower(ruling.reviewer) : sources.length === 1 ? sources[0] : null;
         if (route && sources.includes(route)) {
           const place = seat(route, typeof ruling.role === "string" && ruling.role.trim() ? clean(ruling.role, 80) : routeRole(report, route));
-          if (g === "accepted") { place.applied_findings++; const before = readCheck(project, ruling.reproduction); if (before?.phase === "before" && before.exit_code !== 0) place.reproduced_claims++; }
-          if (critical) { place.critical_ruled++; const probe = g === "rejected" ? readCheck(project, ruling.verification) : null; if (probe?.phase === "investigation" && probe.exit_code === 0) place.critical_false++; }
+          if (g === "accepted") { place.applied_findings++; const before = readCheck(project, ruling.reproduction, er); if (before?.phase === "before" && before.exit_code !== 0) place.reproduced_claims++; }
+          if (critical) { place.critical_ruled++; const probe = g === "rejected" ? readCheck(project, ruling.verification, er) : null; if (probe?.phase === "investigation" && probe.exit_code === 0) place.critical_false++; }
         }
       }
       for (const s of sources) {

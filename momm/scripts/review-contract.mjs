@@ -38,6 +38,33 @@ const lookAlike = (value) => value
   .replace(/\u2026/g, "...")
   .replace(/\s+/g, " ")
   .trim();
+// 1.17 A4.2 follow-through: the diagnostic range run (rev_20260930003709_e5847282134d) showed reviewers
+// copying several lines of one side of a diff without its one-character line markers. Such a quote is
+// an exact excerpt of the old or the new file, which the diff fully determines, so it counts. Each hunk
+// gives its old side (context and removed lines) and its new side (context and added lines); hunks are
+// kept apart by a NUL line, so no quote spans two, and no quote can mix removed and added lines. Only
+// text with a unified-diff hunk header is read this way; the comparison is exact.
+const HUNK = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
+function diffSides(artifact) {
+  const lines = artifact.replaceAll("\r\n", "\n").split("\n");
+  if (!lines.some(line => HUNK.test(line))) return null;
+  const sides = [[], []];
+  let hunk = null;
+  const flush = () => { if (hunk) { sides[0].push(hunk[0].join("\n")); sides[1].push(hunk[1].join("\n")); } hunk = null; };
+  for (const line of lines) {
+    if (HUNK.test(line)) { flush(); hunk = [[], []]; continue; }
+    if (!hunk) continue;
+    const mark = line[0], body = line.slice(1);
+    if (mark === " ") { hunk[0].push(body); hunk[1].push(body); }
+    else if (mark === "-") hunk[0].push(body);
+    else if (mark === "+") hunk[1].push(body);
+    else if (mark !== "\\") flush();
+  }
+  flush();
+  return sides.map(side => side.join("\n\u0000\n"));
+}
+const oneSideQuoted = (quote, sides) => Boolean(sides) && !quote.includes("\u0000")
+  && sides.some(side => side.includes(quote.replaceAll("\r\n", "\n")));
 /**
  * The reviewed_scope quote rule on its own (1.17 B5 reuses it for a second look): 1 to 12 entries,
  * each quoting the supplied artifact exactly (typographic look-alikes and whitespace runs aside) with
@@ -51,7 +78,7 @@ export function scopeProblem(scope, artifact, { attachments = [] } = {}) {
   // (see lookAlike); every other character still matches literally. Input hashes
   // remain over the original sanitized bytes and are never recomputed here.
   const quotedArtifact = artifact.replaceAll('\r\n', '\n');
-  let comparableArtifact = null;
+  let comparableArtifact = null, sides;
   const sent = new Map((Array.isArray(attachments) ? attachments : [])
     .filter(a => typeof a?.sha256 === "string" && /^[a-f0-9]{64}$/.test(a.sha256)).map(a => [a.sha256, a]));
   let quotes = 0;
@@ -64,7 +91,8 @@ export function scopeProblem(scope, artifact, { attachments = [] } = {}) {
     quotes += 1;
     if (!text(s?.quote, 500) || !text(s?.assessment, 1000)
       || !(artifact.includes(s.quote) || quotedArtifact.includes(s.quote.replaceAll('\r\n', '\n'))
-        || (lookAlike(s.quote) && (comparableArtifact ??= lookAlike(artifact)).includes(lookAlike(s.quote))))) return "reviewed_scope must quote the supplied artifact exactly (typographic look-alikes and whitespace runs aside) and assess it";
+        || (lookAlike(s.quote) && (comparableArtifact ??= lookAlike(artifact)).includes(lookAlike(s.quote)))
+        || oneSideQuoted(s.quote, sides === undefined ? (sides = diffSides(artifact)) : sides))) return "reviewed_scope must quote the supplied artifact exactly (typographic look-alikes and whitespace runs aside) and assess it";
   }
   // Observations are unverifiable: while there is text, the review must still quote it.
   if (!quotes) return "reviewed_scope must quote the supplied text artifact at least once; attachment observations alone cannot anchor the review";
@@ -108,6 +136,7 @@ export function quotationDiagnostics(p, artifact, { redact = (value) => value } 
   if (typeof artifact !== "string" || !Array.isArray(p?.reviewed_scope)) return [];
   const quotedArtifact = artifact.replaceAll("\r\n", "\n");
   let comparableArtifact = null;
+  const sides = diffSides(artifact);
   const rows = [];
   for (const [index, entry] of p.reviewed_scope.slice(0, 12).entries()) {
     // An attachment observation (contract /3) is not a quote; reviewProblem judges it separately.
@@ -118,6 +147,7 @@ export function quotationDiagnostics(p, artifact, { redact = (value) => value } 
     let found = artifact.includes(quote);
     if (!found) { steps.push("line_endings"); found = quotedArtifact.includes(quote.replaceAll("\r\n", "\n")); }
     if (!found && lookAlike(quote)) { steps.push("look_alikes_and_whitespace"); found = (comparableArtifact ??= lookAlike(artifact)).includes(lookAlike(quote)); }
+    if (!found && sides) { steps.push("diff_one_side"); found = oneSideQuoted(quote, sides); }
     if (found && quote.length <= 500) continue;
     rows.push({ index, reason: found ? "oversized" : "not_found", sha256: createHash("sha256").update(quote).digest("hex"), length: [...quote].length,
       prefix: [...String(redact(quote))].slice(0, 80).join(""), steps_tried: steps });

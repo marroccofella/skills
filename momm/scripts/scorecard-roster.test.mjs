@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as mod from './scorecard.mjs';
+import { evidenceDir } from './evidence-location.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const results = [], failures = [];
@@ -130,6 +131,54 @@ try {
     const json = JSON.parse(r.stdout);
     assert(Array.isArray(json.roster?.rows) && json.roster.rows.length >= 6);
     assert.equal(json.roster.rows.find(x => x.route === 'grok').false_critical_rate, null);
+  });
+  // Gate-3 triage of rev_20260930003709_e5847282134d (root-project-check-path): for a project at a
+  // filesystem root the containment prefix doubled the separator, so no check file was ever credited.
+  // The root is simulated: the project's real path is reported as the root, and reads under a probe
+  // folder at the root are served from the temporary project.
+  test('a project at a filesystem root still credits its check files', () => {
+    const project = path.join(root, 'at-root'), rer = path.join(project, '.ensemble_reviews'), ROOT = path.parse(project).root, probe = 'momm-roster-root-probe';
+    fs.mkdirSync(path.join(rer, 'reports'), { recursive: true }); fs.mkdirSync(path.join(project, probe));
+    const bytes = JSON.stringify({ schema: 'momm-check/1', phase: 'before', exit_code: 1, observed_at: '2026-09-30T00:00:00Z', command_label: 't' });
+    fs.writeFileSync(path.join(project, probe, 'before.json'), bytes);
+    fs.writeFileSync(path.join(rer, 'reports', 'rev_root.json'), JSON.stringify({ run_id: 'rev_root', governor: 'claude', input_sha256: 'a'.repeat(64), reviewers: [reviewer('codex', 'success', { role: 'surgeon' })], findings: [finding('f1', 'WARNING', ['codex'])] }));
+    fs.writeFileSync(path.join(rer, 'dispositions.jsonl'), JSON.stringify({ run_id: 'rev_root', finding_id: 'f1', reviewer: 'codex', disposition: 'applied', reason: 'r', reproduction: { path: `${probe}/before.json`, sha256: sha(bytes) } }) + '\n');
+    const fake = path.join(ROOT, probe), map = p => (typeof p === 'string' && (p === fake || p.startsWith(fake + path.sep)) ? path.join(project, p.slice(ROOT.length)) : p);
+    const original = { native: fs.realpathSync.native, lstat: fs.lstatSync, readFile: fs.readFileSync };
+    fs.realpathSync.native = (p, ...rest) => (p === project ? ROOT : typeof p === 'string' && p.startsWith(fake) ? p : original.native(p, ...rest));
+    fs.lstatSync = (p, ...rest) => original.lstat(map(p), ...rest);
+    fs.readFileSync = (p, ...rest) => original.readFile(map(p), ...rest);
+    let seat;
+    try { seat = mod.buildScorecard(project).roster.rows.find(r => r.route === 'codex' && r.role === 'surgeon'); }
+    finally { fs.realpathSync.native = original.native; fs.lstatSync = original.lstat; fs.readFileSync = original.readFile; }
+    assert.deepEqual([seat?.applied_findings, seat?.reproduced_claims], [1, 1]);
+  });
+  // Gate-3 follow-up: with MOMM_EVIDENCE_HOME (1.17 A7) the check records a decision row names as
+  // '.ensemble_reviews/checks/...' live in the evidence home, and readCheck looked for them in the project.
+  test('with an evidence home, reproduced claims and false CRITICALs are read from checks stored there', () => {
+    const project = path.join(root, 'homed-project'), home = path.join(root, 'evidence-home');
+    fs.mkdirSync(project); fs.mkdirSync(home);
+    const saved = process.env.MOMM_EVIDENCE_HOME;
+    process.env.MOMM_EVIDENCE_HOME = home;
+    let seat;
+    try {
+      const dir = evidenceDir({ cwd: project, env: process.env });
+      assert(!dir.startsWith(project + path.sep), 'the evidence folder must be outside the project');
+      fs.mkdirSync(path.join(dir, 'reports'), { recursive: true }); fs.mkdirSync(path.join(dir, 'checks'));
+      const stored = (name, phase, exitCode) => {
+        const bytes = JSON.stringify({ schema: 'momm-check/1', phase, exit_code: exitCode, observed_at: '2026-09-30T00:00:00Z', command_label: 't' });
+        fs.writeFileSync(path.join(dir, 'checks', `${name}.json`), bytes);
+        return { path: `.ensemble_reviews/checks/${name}.json`, sha256: sha(bytes) };
+      };
+      fs.writeFileSync(path.join(dir, 'reports', 'rev_home.json'), JSON.stringify({ run_id: 'rev_home', governor: 'claude', input_sha256: 'a'.repeat(64), reviewers: [reviewer('codex', 'success', { role: 'surgeon' })], findings: [finding('h1', 'WARNING', ['codex']), finding('h2', 'CRITICAL', ['codex'])] }));
+      fs.writeFileSync(path.join(dir, 'dispositions.jsonl'), [
+        { run_id: 'rev_home', finding_id: 'h1', reviewer: 'codex', disposition: 'applied', reason: 'r', reproduction: stored('before', 'before', 1) },
+        { run_id: 'rev_home', finding_id: 'h2', reviewer: 'codex', disposition: 'rejected', reason: 'r', verification: stored('probe', 'investigation', 0) },
+      ].map(r => JSON.stringify(r)).join('\n') + '\n');
+      assert.equal(fs.existsSync(path.join(project, '.ensemble_reviews')), false);
+      seat = mod.buildScorecard(project).roster.rows.find(r => r.route === 'codex' && r.role === 'surgeon');
+    } finally { if (saved === undefined) delete process.env.MOMM_EVIDENCE_HOME; else process.env.MOMM_EVIDENCE_HOME = saved; }
+    assert.deepEqual([seat?.applied_findings, seat?.reproduced_claims, seat?.critical_ruled, seat?.critical_false], [1, 1, 1, 1]);
   });
 } finally { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
 

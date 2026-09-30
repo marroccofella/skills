@@ -114,7 +114,8 @@ export function takeEvidenceHomeOption(argv, env = process.env) {
     let value;
     if (arg === '--evidence-home') {
       value = argv[i + 1];
-      if (typeof value !== 'string' || value === '' || value.startsWith('--')) throw fail('--evidence-home needs a directory: --evidence-home <dir>');
+      // Any option-shaped value (-v, --json) is the next flag, not a directory (gate-3 review of 1.17.0).
+      if (typeof value !== 'string' || value === '' || value.startsWith('-')) throw fail('--evidence-home needs a directory: --evidence-home <dir>');
       argv.splice(i, 2);
     } else if (typeof arg === 'string' && arg.startsWith('--evidence-home=')) {
       value = arg.slice('--evidence-home='.length);

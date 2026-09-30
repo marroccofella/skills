@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { evidenceDir, EVIDENCE_FOLDER, PROJECT_MARKER } from './evidence-location.mjs';
+import { evidenceDir, EVIDENCE_FOLDER, EVIDENCE_HOME_ENV, PROJECT_MARKER } from './evidence-location.mjs';
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -141,9 +141,14 @@ const REASON_WORDS = {
 };
 // What the owner can do about a refusal. MOMM never changes permissions on its own; the protect
 // action below runs only when the owner types it.
-export function evidenceRemediation(directory, platform = process.platform) {
+export function evidenceRemediation(directory, platform = process.platform, env = process.env) {
   const target = path.resolve(directory);
-  const action = 'node "<installed-momm>/scripts/multi-review.mjs" evidence --protect';
+  // With an evidence home (1.17 A7) the folder is <home>/<32 hex>; the printed command names the same home,
+  // since --evidence-home given to one command does not carry to the next (gate-3 review of 1.17.0).
+  const chosen = env?.[EVIDENCE_HOME_ENV];
+  const home = typeof chosen === 'string' && path.isAbsolute(chosen) ? path.resolve(chosen) : null;
+  const inHome = home !== null && /^[0-9a-f]{32}$/.test(path.relative(home, target).split(path.sep)[0]);
+  const action = `node "<installed-momm>/scripts/multi-review.mjs" evidence${inHome ? ` --evidence-home "${home}"` : ''} --protect`;
   return platform === 'win32'
     ? `Run ${action} from the project (it restricts ${target} to your account and makes everything inside inherit that), or move the project's evidence to a location only you can access.`
     : `Run ${action} from the project (equivalent to: chmod -R go-rwx "${target}"), or move the project's evidence to a location only you can access.`;

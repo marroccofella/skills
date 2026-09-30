@@ -607,6 +607,53 @@ await test("evidence home: state, pictures, blind copies, critique and gallery l
   } finally { if (previous === undefined) delete process.env.MOMM_EVIDENCE_HOME; else process.env.MOMM_EVIDENCE_HOME = previous; }
 });
 
+// Gate-3 (1.17.0 self-review, image-input-not-bound and grok suggestions 26 and 28).
+await test("round 2: who is sent pictures is what the question said, even when the matrix changed after it", async () => {
+  const s = await setup({ entries: NO_AGY_INPUT });
+  const r1 = await toRoundOne(s);
+  assert.equal(r1.entries.length, 3);
+  judge(s, 1);
+  const q = gen.question({ ...base(s), round: 2, effective: s.m });
+  assert.deepEqual([q.image_input.antigravity, q.image_input.codex], [false, true]);
+  // Afterwards Antigravity could take a picture in and Codex no longer can.
+  const later = matrix([{ route: "codex", direction: "input", modality: "image", blocker: "probe_failed" }]);
+  const before = s.calls.length;
+  await gen.runRound(runOpts(s, { round: 2, consent: true, effective: later }));
+  const entries = Object.fromEntries(stateOf(s).rounds["2"].entries.map((e) => [e.maker, e]));
+  const calls = Object.fromEntries(s.calls.slice(before).map((c) => [c.route, c]));
+  assert.equal(entries.antigravity.image_input, false, "notes only, as the user was told");
+  assert.deepEqual(entries.antigravity.reference_images, []);
+  assert.ok(calls.antigravity && !/[\\/]in[\\/]01-/.test(calls.antigravity.prompt), "no picture reaches Antigravity");
+  assert.equal(entries.codex.status, "blocked", "Codex was promised its picture and cannot take it: blocked, not a different round");
+  assert.ok(!calls.codex, "nothing is sent to Codex");
+  assert.equal(entries.grok.status, "complete");
+});
+await test("combine: one previous picture is described as one, in the question and in the prompt", async () => {
+  const s = await setup();
+  gen.writeChecklist({ ...base(s), checklist: CHECKLIST });
+  gen.confirmChecklist(base(s));
+  gen.question({ ...base(s), round: 1, effective: s.m, makers: ["codex"] });
+  await gen.runRound(runOpts(s, { round: 1, consent: true }));
+  judge(s, 1);
+  const q = gen.question({ ...base(s), round: 2, effective: s.m, combine: true, makers: ["codex"] });
+  assert.match(q.text, /Codex will receive the one picture so far\./);
+  assert.doesNotMatch(q.text, /all 1 pictures/);
+  await gen.runRound(runOpts(s, { round: 2, consent: true, combine: true, shareAll: true }));
+  assert.match(s.calls.at(-1).prompt, /The one picture so far is attached as an input image: round 1 picture A\. Make one final picture that combines the best of it\./);
+  // Gate-3 coordinator note (docs s:92830fbf): no sideways scroll on a narrow phone (checked at 300 px in a
+  // browser): grid columns never exceed the page, and the long generation id wraps.
+  const html = fs.readFileSync(path.join(s.cwd, gen.gallery(base(s)).path), "utf8");
+  assert.ok(html.includes("grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))"), "grid columns shrink to the page");
+  assert.match(html, /body\{[^}]*overflow-wrap:anywhere/, "long unbroken words wrap");
+});
+await test("CLI help: blind makes one lettered copy per picture, not a fixed A, B, C", () => {
+  const r = spawnSync(process.execPath, [path.join(here, "generation-rounds.mjs"), "--help"], { encoding: "utf8", timeout: 30_000, windowsHide: true });
+  assert.equal(r.status, 0);
+  const line = r.stderr.split("\n").find((l) => /^\s+blind /.test(l));
+  assert.match(line, /one lettered copy per picture \(A, B, and so on\) in a random order/);
+  assert.ok(!line.includes("A, B, C"));
+});
+
 await test("source: the rounds module never calls a model to critique and never publishes", () => {
   const src = fs.readFileSync(path.join(here, "generation-rounds.mjs"), "utf8");
   assert.ok(!/\bfetch\(|https?:\/\/(?!www\.w3\.org)/.test(src), "no network");

@@ -53,5 +53,22 @@ await test('usage cells escape their counts as well as their value',()=>{
  assert.equal(reportedCell(2,3,'1,024'),'1,024<small>2 of 3 reported</small>');
  assert.equal(reportedCell(0,3,'x'),'<span class="not-reported">not reported</span><small>0 of 3 reported</small>');
 });
+// Gate-3 (1.17.0 self-review, grep-empty-success and suggestions): scripts/run-ci-suites.mjs, run in a sandbox
+// with a synthetic workflow. A --grep that names nothing or matches nothing fails; a failing suite's stdout tail is shown.
+await test('run-ci-suites: an empty or unmatched --grep is an error, and a failure shows its stdout',async()=>{
+ const {spawnSync}=await import('node:child_process');const os=await import('node:os');const path=await import('node:path');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'momm-ci-suites-'));
+ try{
+  const put=(rel,text)=>{fs.mkdirSync(path.dirname(path.join(root,rel)),{recursive:true});fs.writeFileSync(path.join(root,rel),text);};
+  put('scripts/run-ci-suites.mjs',fs.readFileSync(new URL('./run-ci-suites.mjs',import.meta.url)));
+  put('.github/workflows/self-test.yml','jobs:\n  t:\n    steps:\n      - run: node scripts/synthetic-ok.mjs\n      - run: node scripts/synthetic-bad.mjs\n');
+  put('scripts/synthetic-ok.mjs','process.exitCode = 0;\n');put('scripts/synthetic-bad.mjs',"console.log('SYNTHETIC-ASSERTION-ON-STDOUT'); process.exitCode = 1;\n");
+  const ci=(...a)=>spawnSync(process.execPath,[path.join(root,'scripts/run-ci-suites.mjs'),...a],{cwd:root,encoding:'utf8',timeout:30000,windowsHide:true});
+  const none=ci('--grep','no-such-suite');assert.equal(none.status,1);assert.doesNotMatch(none.stdout,/0 of 0 suites passed/);assert.match(none.stderr,/nothing was run/);
+  const bare=ci('--grep');assert.equal(bare.status,2);assert.doesNotMatch(bare.stdout,/PASS|FAIL/);
+  const bad=ci('--grep','synthetic-bad');assert.equal(bad.status,1);assert.match(bad.stdout,/SYNTHETIC-ASSERTION-ON-STDOUT/);assert.match(bad.stdout,/0 of 1 suites passed/);
+  const ok=ci('--grep','synthetic-ok');assert.equal(ok.status,0);assert.match(ok.stdout,/1 of 1 suites passed/);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
 console.log(JSON.stringify({checks,browser_verified:false},null,2));
 process.exitCode=checks.every(c=>c.passed)?0:1;

@@ -82,6 +82,16 @@ try{
     const r=codexIsolationArgs({home:home('notes = """\nmodel = "smuggled"\n"""\nnotify = [\n  "model = \\"x\\"",\n]\nmodel_reasoning_effort = "medium"\n'),env:{},fs});
     assert.ok(!r.args.includes('smuggled'));assert.equal(r.model,null);assert.equal(r.reasoning_effort,'medium');
   });
+  // Gate-3 review of 1.17.0: any triple quote on a line inside a multi-line array made the whole file
+  // unusable, even inside a one-line string. Only a real multi-line opener does now, and one opened on
+  // the array's own first line is caught too.
+  await test('three quotes inside a one-line string in a multi-line array no longer hide later keys; a real opener still does',()=>{
+    const read=(text)=>{const r=isolation.readTopLevelTomlStrings(text,['model','model_reasoning_effort']);return {found:plain(r.found),unusable:[...r.unusable].sort()};};
+    assert.deepEqual(read("items = [\n  'a\"\"\"b',\n  \"it'''s\",\n]\nmodel = \"gpt-5.1\"\nmodel_reasoning_effort = \"high\"\n"),{found:{model:'gpt-5.1',model_reasoning_effort:'high'},unusable:[]});
+    assert.deepEqual(read('items = ["""closed on this line"""]\nmodel = "gpt-5.1"\n'),{found:{model:'gpt-5.1'},unusable:[]});
+    for(const text of ['items = [\n  """\nmodel = "evil"\n  """,\n]\nmodel = "gpt-5.1"\n','items = ["""\n]\nmodel = "evil"\n"""]\nmodel = "gpt-5.1"\n',"items = [\n  '''\n]\nmodel = 'evil'\n''',\n]\n"])
+      assert.deepEqual(read(text),{found:{},unusable:['model','model_reasoning_effort']},text);
+  });
   await test('CODEX_HOME is honoured when absolute; a relative one reads nothing',()=>{
     const codexHome=path.join(root,'codex-home');fs.mkdirSync(codexHome);fs.writeFileSync(path.join(codexHome,'config.toml'),'model = "from-codex-home"\n');
     const r=codexIsolationArgs({home:home('model = "from-home"\n'),env:{CODEX_HOME:codexHome},fs});
@@ -108,6 +118,22 @@ try{
     const dir=home();fs.mkdirSync(path.join(dir,'.codex','config.toml'));
     const odd=codexIsolationArgs({home:dir,env:{},fs});
     assert.equal(odd.model,null);assert.equal(odd.notices.length,1);
+  });
+  // Gate-3 review of 1.17.0: a read that stopped short of the size fstat reported was parsed as the whole file.
+  await test('a configuration that changes while it is read passes nothing, with a notice',()=>{
+    const bytes=Buffer.from('# settings\n'+'#'.repeat(64)+'\nmodel = "gpt-5.1"\n');let fd=0;
+    const short={openSync:()=>++fd,closeSync:()=>{},fstatSync:()=>({isFile:()=>true,size:bytes.length}),readSync:(_f,buffer,offset)=>{if(offset>0)return 0;bytes.copy(buffer,0,0,11);return 11;}};
+    const r=codexIsolationArgs({home:home(),env:{},fs:short});
+    assert.equal(r.model,null);assert.equal(r.notices.length,1);assert.match(r.notices[0],/changed while MOMM read it/);
+    const whole={...short,readSync:(_f,buffer,offset)=>{const n=Math.min(7,bytes.length-offset);bytes.copy(buffer,offset,offset,offset+n);return n;}};
+    assert.equal(codexIsolationArgs({home:home(),env:{},fs:whole}).model,'gpt-5.1','several short chunks that add up to the whole file are still read');
+  });
+  await test('the notes disclose what the Codex isolation does not cover: profile-only values and picture generation',()=>{
+    const notes=fs.readFileSync(new URL('../references/release-1.17-draft-notes.md',import.meta.url),'utf8').split('\n').find(l=>l.includes('Codex reviews no longer load your Codex setup (A2)'))??'';
+    assert.match(notes,/only inside a table such as `\[profiles\.<name>\]` is not read/);assert.match(notes,/codex_default/);
+    const release=fs.readFileSync(new URL('../references/release-1.17.0.md',import.meta.url),'utf8');
+    const limits=release.slice(release.indexOf('**Known limits.**'),release.indexOf('Details:',release.indexOf('**Known limits.**')));
+    assert.match(limits,/Codex picture generation keeps its 1\.16\.1 command/);assert.match(limits,/--sandbox workspace-write/);
   });
   // ---- the review adapter ----
   function adapter(fakeHome,env={}){

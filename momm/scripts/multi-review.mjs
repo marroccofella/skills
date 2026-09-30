@@ -2155,14 +2155,17 @@ function buildOutstanding(findings, results, runId, cwd, minSuccess = 1, complet
   for (const result of results) {
     const improvements = result.review?.improvements;
     if (Array.isArray(improvements) && improvements.length) {
-      byReviewer[result.agent] = improvements.length;
+      // Added, not assigned: one cover label can arrive once per piece.
+      byReviewer[result.agent] = (byReviewer[result.agent] ?? 0) + improvements.length;
       total += improvements.length;
     }
   }
   let logged = 0;
   // 1.17 A7: with MOMM_EVIDENCE_HOME the ledger lives outside the project; the action says where to
-  // look without writing a local path into the sealed report.
-  let evidenceHome = false;
+  // look without writing a local path into the sealed report. The wording follows the setting, not the
+  // lookup: a setting that fails to resolve here must not send the governor to the in-project ledger.
+  const chosenHome = process.env.MOMM_EVIDENCE_HOME;
+  let evidenceHome = chosenHome !== undefined && chosenHome !== null && chosenHome !== "";
   try {
     const location = evidenceLocation({ cwd, env: process.env });
     evidenceHome = location.home !== null;
@@ -3395,7 +3398,9 @@ function guidanceCommand(args) {
 async function secondLookCommand(options) {
   if (!options.secondLook || !options.finding) throw new Error("--second-look needs <run_id> and --finding <finding_id>");
   const extra = [["--input", options.input], ["--range", options.range], ["--attach", options.attach?.length], ["--split", options.split], ["--cover", options.cover], ["--personas", options.personas], ["--guidance", options.guidance || options.guidanceFile], ["--tier", options.tier], ["--min-success", options.minSuccess], ["--strict", options.strict], ["--retry-invalid", options.retryInvalid]].filter(([, value]) => value).map(([flag]) => flag);
-  if (extra.length) throw new Error(`--second-look takes only --finding, --reviewers <route>, --timeout, --effort and --pretty; remove ${extra.join(", ")}`);
+  if (extra.length) throw new Error(`--second-look takes only --finding, --reviewers <route>, --governor, --timeout, --effort and --pretty; remove ${extra.join(", ")}`);
+  // The same guard as a review: a non-numeric --timeout never reaches the route's timer.
+  if (!Number.isFinite(options.timeoutMs)) throw new Error("Timeout and size limits must be numbers");
   const result = await runSecondLook({
     root: process.cwd(), runId: options.secondLook, findingId: options.finding, reviewers: options.reviewersExplicit ? options.reviewers : null, governor: options.governor ?? null,
     sanitize: (text) => sanitizeText(text).value, dispatcherVersion: MOMM_VERSION, requirePrivate: () => requirePrivateEvidence(evidenceDir({ cwd: process.cwd(), env: process.env })),
@@ -3587,7 +3592,7 @@ async function main() {
       // route input limit (the split hard cap), so the panel still reviews it.
       split = { ceiling_bytes: ceilingBytes, ...capped, ...splitDiff(sanitized.value, { ceilingBytes, lineSplit: options.lineSplit !== false, maxPieceBytes: inputLimit }) };
       emitEvent(options.stream, { event: "split", ceiling_bytes: ceilingBytes, ...capped, line_split_hunks: split.stats.lineSplitHunks, pieces: split.pieces.map((piece) => ({ id: piece.id, bytes: piece.bytes, files: piece.files.length, ...(piece.lineSplit ? { line_split: { path: piece.lineSplit.path, part: piece.lineSplit.part, parts: piece.lineSplit.parts } } : {}), ...(piece.overCeiling ? { over_ceiling: true } : {}) })), governor_direct: split.oversize.map((o) => ({ id: o.id, path: o.path, bytes: o.bytes })) });
-      if (!options.stream) process.stderr.write(`momm split: ${split.pieces.length} pieces under ${Math.round(ceilingBytes / 1024)} KB${cappedFor.length ? ` (capped from ${Math.round(requestedBytes / 1024)} KB for ${cappedFor.join(", ")})` : ""}${split.stats.overCeilingPieces ? `, ${split.stats.overCeilingPieces} over the ceiling (a change block kept whole)` : ""}${split.stats.lineSplitHunks ? `, ${split.stats.lineSplitHunks} large hunk(s) divided at line boundaries` : ""}${split.oversize.length ? `, ${split.oversize.length} oversize hunk(s) for the governor` : ""}\n`);
+      if (!options.stream) process.stderr.write(`momm split: ${split.pieces.length} pieces at a ${Math.round(ceilingBytes / 1024)} KB ceiling${cappedFor.length ? ` (capped from ${Math.round(requestedBytes / 1024)} KB for ${cappedFor.join(", ")})` : ""}${split.stats.overCeilingPieces ? `, ${split.stats.overCeilingPieces} over the ceiling (a change block kept whole)` : ""}${split.stats.lineSplitHunks ? `, ${split.stats.lineSplitHunks} large hunk(s) divided at line boundaries` : ""}${split.oversize.length ? `, ${split.oversize.length} oversize hunk(s) for the governor` : ""}\n`);
     }
   }
   const scheduler = createScheduler({ jobs: options.jobs ?? Math.min(6, uniqueReviewers.length * (split ? 2 : 1)) });

@@ -61,13 +61,20 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
   // Off Windows this used to hand the name back unchanged, leaving the choice to the child's PATH
   // (1.17 A1): it now resolves under the POSIX rule, or fails as not installed.
   if (platform !== 'win32') return posixTool(command, { env, cwd, project, fs: files });
-  if (/[\\/]/.test(name)) return command;
   const win = nodePath.win32, value = key => Object.entries(env ?? {}).find(([k]) => k.toLowerCase() === key)?.[1];
   const system32 = win.join(value('systemroot') || value('windir') || 'C:\\Windows', 'System32');
-  const system = SYSTEM_TOOLS.get(name.toLowerCase());
-  if (system) return win.join(system32, system);
   const real = p => { try { return String(files.realpathSync.native(p)); } catch { return null; } };
   const roots = rootsOf(win.resolve(String(cwd || '.')), project), where = { platform: 'win32', fs: files };
+  if (/[\\/]/.test(name)) {
+    // A relative location is refused by processScope.spawn before this is reached. An absolute one is
+    // launched only by its real path, outside the project (gate-3 review of 1.17.0): a caller that
+    // named a link, or a path inside the project, gets the not-found path instead.
+    if (!win.isAbsolute(name)) return command;
+    const resolved = real(name);
+    return resolved && roots.every(root => executableOutside(resolved, root, where) && executableOutside(win.resolve(name), root, where)) ? resolved : win.join(system32, 'momm-tool-not-found', win.basename(name));
+  }
+  const system = SYSTEM_TOOLS.get(name.toLowerCase());
+  if (system) return win.join(system32, system);
   const extensions = win.extname(name) ? [''] : ['.exe', '.com'];
   for (const entry of String(value('path') ?? '').split(';').map(d => d.replace(/^"|"$/g, '')).filter(d => roots.every(root => pathEntryOutside(d, root, where)))) {
     for (const extension of extensions) {
@@ -94,8 +101,8 @@ export function windowsTool(command, { env = process.env, cwd = process.cwd(), p
 // an execute bit, and the executable's real path must be outside the project as well, so a link outside
 // that points inside is refused. What was checked is what is returned, so a link cannot be followed a
 // second time at exec time. A command containing "/" must be an absolute path MOMM resolved itself (the
-// verified Grok binary, process.execPath); a relative one would be looked up from the working directory,
-// the project, and is refused. Nothing found means a not-installed failure, never a launch: POSIX has no
+// verified Grok binary, process.execPath), and its real path must lie outside the project too; a relative
+// one would be looked up from the working directory, the project, and is refused. Nothing found means a not-installed failure, never a launch: POSIX has no
 // path that is guaranteed not to exist, so the Windows trick of an impossible absolute path is not used.
 export function notInstalled(command, reason) {
   const name = String(command);
@@ -107,14 +114,28 @@ export function notInstalled(command, reason) {
 }
 export function posixTool(command, { env = process.env, cwd = process.cwd(), project, fs: files = nodeFs } = {}) {
   const p = nodePath.posix, name = String(command), where = { platform: 'linux', fs: files }; // any non-win32 value selects POSIX rules
-  if (name.includes('/')) { if (p.isAbsolute(name)) return name; throw notInstalled(name, 'relative'); }
-  if (!name || name === '.' || name === '..') throw notInstalled(name, 'absent');
   const roots = rootsOf(p.resolve(String(cwd || '.')), project);
   const real = q => { try { return String(files.realpathSync(q)); } catch { return null; } };
+  if (name.includes('/')) {
+    if (!p.isAbsolute(name)) throw notInstalled(name, 'relative');
+    // An absolute path is held to the same rule as a name found on PATH (gate-3 review of 1.17.0): its
+    // real path must lie outside the project, and that real path is what is launched. probes.mjs handed
+    // ~/.grok/bin/grok through unchecked, so a link there into the project would have been started. The
+    // path as named must lie outside too: a link inside the project would let the project choose.
+    const resolved = real(name);
+    if (!resolved) throw notInstalled(name, 'absent');
+    if (!roots.every(root => executableOutside(resolved, root, where) && executableOutside(p.resolve(name), root, where))) throw notInstalled(name, 'inside');
+    return resolved;
+  }
+  if (!name || name === '.' || name === '..') throw notInstalled(name, 'absent');
   const runnable = q => { try { const st = files.statSync(q); return st.isFile() && (Number(st.mode) & 0o111) !== 0; } catch { return false; } };
   let inside = false;
-  // POSIX environment names are case-sensitive; execvp reads PATH and nothing else.
-  for (const entry of String(env?.PATH ?? '').split(':')) {
+  // POSIX environment names are case-sensitive; execvp reads PATH and nothing else. With no PATH at all
+  // the child's execvp searches the system default directories (libuv and the C library use
+  // /usr/bin:/bin), and posixChildEnv removes PATH when nothing survives, so resolve against the same
+  // two directories under the same rule; an empty PATH still means the working directory, refused below.
+  const searched = env?.PATH === undefined || env?.PATH === null ? '/usr/bin:/bin' : String(env.PATH);
+  for (const entry of searched.split(':')) {
     if (!roots.every(root => pathEntryOutside(entry, root, where))) {
       // Only to say WHY nothing was found; a refused entry is never launched. A relative or empty entry
       // is read from the working directory, which is where execvp would have looked.

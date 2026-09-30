@@ -279,6 +279,29 @@ try {
     } finally { fs.rmSync(workspace, { recursive: true, force: true }); }
   });
 
+  // Gate-3 triage of rev_20260930003709_e5847282134d: recoverArtifact had no default sanitizer (a direct
+  // call threw TypeError) and sanitized each matching candidate twice.
+  await test("B5: recoverArtifact defaults to no sanitizer like its siblings and sanitizes a candidate once", () => {
+    need();
+    const report = { input_text: CODE, input_sha256: sha256(CODE) };
+    assert.deepEqual(look.recoverArtifact({ root: base, report }), { text: CODE, source: "input_text" });
+    let calls = 0;
+    assert.equal(look.recoverArtifact({ root: base, report, sanitize: (t) => { calls++; return t; } }).text, CODE);
+    assert.equal(calls, 1);
+  });
+
+  // Gate-3 triage (second-look-skips-timeout-guard, and the flag list naming --governor).
+  await test("B5: a second look refuses a non-numeric --timeout like a review, and its flag list names --governor", () => {
+    const dir = fs.mkdtempSync(path.join(base, "cli-"));
+    const cli = (...args) => spawnSync(process.execPath, [path.join(scripts, "multi-review.mjs"), ...args], { cwd: dir, encoding: "utf8", windowsHide: true, timeout: 30000, env: { ...process.env, NO_UPDATE_CHECK: "1", GOVERNING_AGENT: "" } });
+    const timeout = cli("--second-look", "rev_20260929000000_none", "--finding", CLAIM.id, "--timeout", "abc");
+    assert.equal(timeout.status, 1, timeout.stderr);
+    assert.match(timeout.stderr, /Timeout and size limits must be numbers/);
+    const extra = cli("--second-look", "rev_20260929000000_none", "--finding", CLAIM.id, "--strict");
+    assert.equal(extra.status, 1);
+    assert.match(extra.stderr, /--second-look takes only --finding, --reviewers <route>, --governor, --timeout, --effort and --pretty; remove --strict/);
+  });
+
   await test("B5: the dispatcher refuses a source route and incomplete arguments before launching anything; help and SKILL.md document it", () => {
     const p = project({ storeInput: true });
     const cli = (...args) => spawnSync(process.execPath, [path.join(scripts, "multi-review.mjs"), ...args], { cwd: p.dir, encoding: "utf8", windowsHide: true, timeout: 30000, env: { ...process.env, NO_UPDATE_CHECK: "1", GOVERNING_AGENT: "" } });

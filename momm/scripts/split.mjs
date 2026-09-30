@@ -377,12 +377,16 @@ function packUnits(units, ceiling) {
 
 // maxPieceBytes (1.17 A4.1): the largest piece a route may be sent. The
 // dispatcher passes its input limit; the default is the ceiling, so a caller
-// that names no limit never receives a piece over the ceiling.
+// that names no limit never receives a piece over the ceiling. A limit below
+// the ceiling is refused (TypeError).
 export function splitDiff(text, { ceilingBytes, minCeilingBytes = 4096, lineSplit = false, maxPieceBytes } = {}) {
   if (!Number.isFinite(ceilingBytes) || ceilingBytes <= 0) throw new TypeError("splitDiff: ceilingBytes must be a positive number");
   if (maxPieceBytes !== undefined && (!Number.isFinite(maxPieceBytes) || maxPieceBytes <= 0)) throw new TypeError("splitDiff: maxPieceBytes must be a positive number");
   const ceiling = Math.max(Math.floor(ceilingBytes), Math.floor(minCeilingBytes));
-  const pieceLimit = maxPieceBytes === undefined ? ceiling : Math.max(ceiling, Math.floor(maxPieceBytes));
+  // A limit below the ceiling cannot be honoured (pieces are packed up to the ceiling): refused, never
+  // silently raised to the ceiling.
+  if (maxPieceBytes !== undefined && Math.floor(maxPieceBytes) < ceiling) throw new TypeError(`splitDiff: maxPieceBytes (${maxPieceBytes}) is below the ceiling (${ceiling}); a route limit that small cannot be met`);
+  const pieceLimit = maxPieceBytes === undefined ? ceiling : Math.floor(maxPieceBytes);
   let source = String(text ?? "");
   // git diff output always ends with a newline; restore a missing one so file
   // texts concatenate into valid diffs.

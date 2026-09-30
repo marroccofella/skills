@@ -121,6 +121,9 @@ export function imageDimensions(b) {
       if (b[pos++] !== 255) return null;
       while (b[pos] === 255) pos++;
       const marker = b[pos++];
+      // TEM, RSTn, SOI and EOI carry no length. Before the frame header they mean the header cannot be
+      // read with confidence: bounds unknown, never a length guessed from the bytes after them.
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) return null;
       if (pos + 2 > b.length) return null;
       const n = b.readUInt16BE(pos);
       if (JPEG_FRAMES.includes(marker)) {

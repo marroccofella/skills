@@ -115,21 +115,28 @@ replies into the discussion.
 Install, upgrade, rollback, re-upgrade, tamper refusal and interrupted-upgrade recovery run on GitHub's
 hosted Windows, macOS and Linux runners, on Node 18 and 24, against the signed development checkpoint of
 the candidate. The drill tool lives on the never-merged branch `drills/momm-1.17`, not in the candidate.
-If you have a spare machine and want to run it yourself, use a second clone:
+If you have a spare machine and want to run it yourself, use a second clone, pinned like the first:
 
 ```text
-git clone --branch drills/momm-1.17 https://github.com/marroccofella/skills momm-117-drills
+git clone https://github.com/marroccofella/skills momm-117-drills
 cd momm-117-drills
+git checkout --detach <DRILL_SHA>
+git rev-parse HEAD
+git status --porcelain
 node scripts/momm-lifecycle-drill.mjs --checkpoint <CHECKPOINT_SHA> --expect 1.17.0 --from momm-1.16.1,momm-1.16.0 --out drill-receipts
 ```
 
-`<CHECKPOINT_SHA>` is the commit of the signed development checkpoint named in the discussion (it exists
-only after the candidate is merged and checkpointed). The drill works in disposable user profiles,
+`<DRILL_SHA>` is the full 40-character commit of the drill tool on `drills/momm-1.17`, named in the
+discussion next to the checkpoint. `HEAD` must print exactly that commit and `status` must print nothing
+before you run the drill. If you were given no full drill commit, stop and ask; never run the drill from
+the branch tip, which can move. `<CHECKPOINT_SHA>` is the commit of the signed development checkpoint
+named in the discussion (it exists only after the candidate is merged and checkpointed). The drill works in disposable user profiles,
 needs `gitsign`, and never touches your real MOMM.
 
 ## 7. How to report
 
-Post one comment in the discussion using this outline:
+Post one comment in the discussion using this outline. If you ran the lifecycle drill (section 6), fill in
+`Drill commit: <DRILL_SHA>` with the exact commit `git rev-parse HEAD` printed in the drill clone.
 
 ```text
 ## MOMM 1.17 candidate review — <your name or handle> — READY | NOT READY | BLOCKED
@@ -141,6 +148,7 @@ Self-tests: dispatcher <pass|fail>, Setup Center <pass|fail>
 Unix-only security tests run: yes | no
 Items checked (section 4): <A1 ok, A2 ok, ...; anything missing>
 Live checks (section 5, optional): <what you ran, which routes, results>
+Drill commit: <DRILL_SHA, or "not run">   Checkpoint: <CHECKPOINT_SHA, or "not run">   Drill result: <...>
 
 ### DEFECT <n> — release-blocking | not blocking — <title>
 What you did, what you expected, what happened, how to reproduce (commands), and the output.

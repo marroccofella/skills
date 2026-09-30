@@ -287,7 +287,7 @@ function questionText(sel, imageInput, { suggestionText, userNote, previousPictu
     "One more option: each image maker could see all the pictures so far, along with my notes, and have a final go at combining the best of them. This often gets closest to what you meant, but the results can start to look alike, and every picture is shared with every provider taking part.",
     `It goes to ${names}, makes ${more}, and ${allowance}.`,
   ];
-  if (withInput.length) parts.push(`${listNames(withInput)} will receive all ${previousPictures} pictures so far.`);
+  if (withInput.length) parts.push(`${listNames(withInput)} will receive ${previousPictures === 1 ? "the one picture so far" : `all ${previousPictures} pictures so far`}.`);
   if (without.length) parts.push(`${listNames(without)} cannot take pictures in and ${without.length === 1 ? "gets" : "get"} my notes only.`);
   return [...parts, ...extras, "Shall I do that?"].join(" ");
 }
@@ -340,8 +340,11 @@ export async function runRound({ cwd = process.cwd(), gen, round, consent = fals
   const critiqueOf = (r) => (critiques[r] ??= loadCritique(dir, state.rounds[String(r)]));
   const notePrompt = userNote == null ? null : userNote;
   // Build every maker's prompt and verify every reference picture BEFORE anything is sent.
+  // Whether a maker is sent pictures is what the user was asked (the question's image_input), never
+  // recomputed: a maker that can no longer take one in is recorded blocked by the planner below, and one
+  // that now could still gets notes only.
   const jobs = selection.makers.map((maker) => {
-    const imageInput = takesImagesIn(matrix, maker);
+    const imageInput = q.image_input?.[maker] === true;
     let refs = [], reviewer = null;
     if (selection.kind === "notes") {
       const own = revealedOf(state, n - 1).filter(([, p]) => p.maker === maker);
@@ -355,7 +358,7 @@ export async function runRound({ cwd = process.cwd(), gen, round, consent = fals
       const blocks = [checklistBlock(items), "My notes on every picture so far:", ...all.map((p) => pictureNotes(`Round ${p.round}, picture ${p.label}:`, critiqueOf(p.round).pictures[p.label], items))];
       if (suggestionText != null) blocks.push(`The change the user picked from my suggestions:\n${suggestionText}`);
       blocks.push(imageInput
-        ? `All ${all.length} pictures are attached as input images, in this order: ${all.map((p) => `round ${p.round} picture ${p.label}`).join(", ")}. Make one final picture that combines the best of them.`
+        ? `${all.length === 1 ? "The one picture so far is" : `All ${all.length} pictures are`} attached as ${all.length === 1 ? "an input image" : "input images, in this order"}: ${all.map((p) => `round ${p.round} picture ${p.label}`).join(", ")}. Make one final picture that combines the best of ${all.length === 1 ? "it" : "them"}.`
         : "You receive these notes only; the pictures are not attached. Make one final picture that combines the best of what the notes describe.");
       reviewer = reviewerSection(COMBINE_HEADING, blocks);
       refs = imageInput ? all.map((p) => ({ round: p.round, label: p.label, path: p.path, sha256: p.sha256 })) : [];
@@ -588,8 +591,8 @@ ${entry.notes_text ? `<pre>${esc(entry.notes_text)}</pre>` : ""}${entry.user_not
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'">
 <title>MOMM generation ${esc(state.gen_id)}</title>
 <style>:root{color-scheme:light dark;--bg:#fbfaf7;--fg:#1d1d1b;--dim:#6b6860;--line:#ddd8cc;--warn:#9a3b12}@media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecebe6;--dim:#a19d93;--line:#3a3833;--warn:#f0a070}}
-body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0 auto;max-width:1200px;padding:16px}.dim{color:var(--dim)}.warn{color:var(--warn)}
-pre{white-space:pre-wrap;word-break:break-word;border:1px solid var(--line);padding:8px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0 auto;max-width:1200px;padding:16px;overflow-wrap:anywhere}.dim{color:var(--dim)}.warn{color:var(--warn)}
+pre{white-space:pre-wrap;word-break:break-word;border:1px solid var(--line);padding:8px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:16px}
 figure{margin:0;border:1px solid var(--line);padding:8px}img{max-width:100%;height:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-top:1px solid var(--line);padding:4px;text-align:left;vertical-align:top}
 .banner{border:2px solid var(--line);padding:8px 12px}</style></head><body>
 <h1>Guided image generation <span class="dim">${esc(state.gen_id)}</span></h1>
@@ -615,7 +618,7 @@ function usage() {
     "                                                      the costed question for the round (names the makers and the picture count)",
     "  round --gen <id> --round <n> --consent [--makers a,b] [--combine --share-all] [--suggestion <k>] [--user-note <text>]",
     "                                                      one round, only after the user's yes; --share-all is the separate yes to share pictures",
-    "  blind --gen <id> --round <n>                        label the pictures A, B, C in a random order; prints blind paths only",
+    "  blind --gen <id> --round <n>                        one lettered copy per picture (A, B, and so on) in a random order; prints blind paths only",
     "  critique --gen <id> --round <n> --file <json>       record the governor's blind critique (hash and time saved before any reveal)",
     "  reveal --gen <id> --round <n>                       reveal who made which picture (after the critique)",
     "  gallery --gen <id>                                  write the private local gallery page",

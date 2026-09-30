@@ -198,6 +198,10 @@ try {
       ['a.ps1', "$s = @'\n# inside\n'@\n", "$s = @'\n# changed\n'@\n"],
       ['a.rs', 'let s = r#"\n// inside\n"#;\n', 'let s = r#"\n// changed\n"#;\n'],
       ['a.rs', 'let s = "\n// inside\n";\n', 'let s = "\n// changed\n";\n'],
+      // Gate-3 review of 1.17.0: an escaped char literal ('\\' here) swallowed its closing quote, so the
+      // string that follows was misread and a line inside it looked like a comment.
+      ['a.rs', "let s = ('\\\\', \"x');\n// inside string\n\"); let t = '\"';\n", "let s = ('\\\\', \"x');\n// changed string\n\"); let t = '\"';\n"],
+      ['a.rs', "let q = '\\'';\nlet s = \"a\n// in\n\";\n", "let q = '\\'';\nlet s = \"a\n// out\n\";\n"],
       ['a.cs', 'var s = @"\n// inside\n";\n', 'var s = @"\n// changed\n";\n'],
       ['a.go', 's := `\n// inside\n`\n', 's := `\n// changed\n`\n'],
       ['a.java', 'String s = """\n// inside\n""";\n', 'String s = """\n// changed\n""";\n'],
@@ -251,6 +255,15 @@ try {
     const line = 'x = a(b)/c; ' + 'q(r)/s; '.repeat(50_000) + '\n', started = Date.now();
     assert.equal(S('a.js', line, '// minified\n' + line).style, true);
     assert(Date.now() - started < 10_000, `took ${Date.now() - started} ms`);
+  });
+  test('mechanical style: a Rust escaped char literal never opens a phantom string (gate-3 rust-char-escape-scan-offset)', () => {
+    // '\\' was scanned from the escaped character, so the next '"' opened a string and real string content
+    // was compared as code with its whitespace collapsed: a string change passed as style.
+    const before = String.raw`let a = ('\\', '"'); let s = "a  b";` + '\n' + String.raw`let t = "c"; let u = '"';` + '\n';
+    const r = S('src/x.rs', before, before.replace('"a  b"', '"a b"'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'src/x.rs:1 changes code');
+    assert.equal(S('src/x.rs', String.raw`let q = ['\'', '"']; let s = "a  b";` + '\n', String.raw`let q = ['\'', '"']; let s = "a b";` + '\n').style, false);
+    assert.equal(S('src/x.rs', String.raw`let c = '\\';` + '\n', String.raw`let c = '\\';` + '\n// why\n').style, true, 'a comment beside it is still style');
   });
 
   write("mean.cjs", buggy);

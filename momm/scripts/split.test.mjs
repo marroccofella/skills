@@ -558,6 +558,12 @@ test("A4.1: a unit beyond the route input limit is oversize (governor_direct), w
   assert.equal(fits.pieces[0].overCeiling, true);
   assert.throws(() => splitDiff(src, { ceilingBytes: CEILING, maxPieceBytes: Number.NaN }), TypeError);
 });
+test("gate-3 piece-limit-clamped-to-ceiling: a route limit below the ceiling is refused, never raised to the ceiling", () => {
+  const diff = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+  assert.throws(() => splitDiff(diff, { ceilingBytes: 1000, maxPieceBytes: 10, lineSplit: true }), (e) => e instanceof TypeError && /maxPieceBytes \(10\) is below the ceiling \(4096\)/.test(e.message));
+  assert.throws(() => splitDiff(diff, { ceilingBytes: 8192, maxPieceBytes: 8000 }), TypeError);
+  assert.equal(splitDiff(diff, { ceilingBytes: CEILING, maxPieceBytes: CEILING }).stats.maxPieceBytes, CEILING, "a limit equal to the ceiling is accepted");
+});
 test("A4.1: a replaced multi-line block is never cut between its removals and its additions", () => {
   const body = [];
   for (let i = 0; i < 60; i += 1) body.push(` lead_${i}_${"c".repeat(36)}`);

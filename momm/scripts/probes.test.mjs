@@ -485,8 +485,20 @@ try {
     }
     const cwdOnly = windowsLauncher("grok", [], { PATH: "." }, "win32");
     assert.equal(cwdOnly.error?.code, "ENOENT", "a relative PATH entry (the working directory) is never searched");
+    // An absolute path outside the project is launched, by the real path that was checked (the same file
+    // through an aliased temp folder); since gate-3 of 1.17.0 one that lies inside the project is refused.
     const absolute = path.join(bin, "grok.exe");
-    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: absolute, args: ["x"] });
+    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: fs.realpathSync(absolute), args: ["x"] });
+    const project = path.join(fixture, "launcher-project"); fs.mkdirSync(path.join(project, "bin"), { recursive: true });
+    const planted = path.join(project, "bin", "grok.exe"); fs.writeFileSync(planted, "MZ");
+    for (const [label, cwd, opts] of [["the probe's working directory", project, {}], ["MOMM's own directory", bin, { project }]]) {
+      const inside = windowsLauncher(planted, ["x"], env, "win32", cwd, opts);
+      assert.equal(inside.command, undefined, `an absolute path inside ${label} is refused`); assert.equal(inside.error?.code, "ENOENT");
+    }
+    const alias = path.join(fixture, "launcher-alias"); fs.symlinkSync(path.join(project, "bin"), alias, "junction");
+    const linked = windowsLauncher(path.join(alias, "grok.exe"), ["x"], env, "win32", project);
+    assert.equal(linked.command, undefined, "an outside link whose real file is inside the project is refused"); assert.equal(linked.error?.code, "ENOENT");
+    assert.equal(windowsLauncher(path.join(fixture, "no-such", "grok.exe"), [], env, "win32").error?.code, "ENOENT", "a missing absolute path is refused, not launched");
   });
   // nan-timeout-from-argv
   await test("timeout_argument_is_validated", () => {

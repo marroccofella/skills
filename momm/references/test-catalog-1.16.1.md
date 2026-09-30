@@ -1,5 +1,8 @@
 # 1.16.1 offline test catalog
 
+This is the living inventory of offline suites: it keeps its 1.16.1 name (pinned by CONTRIBUTING and
+the workflow tests) and also lists every suite added in 1.17.
+
 `momm/scripts/scope-closure.test.mjs` reproduces stale update results, native
 owner-only export/refusal (including forced companion overwrite), and checks
 the current acceptance guide's retry and ledger-ticket instructions.
@@ -89,8 +92,8 @@ attempt record only.
 - `momm/scripts/grok-stream.test.mjs`
 - `momm/scripts/guidance.test.mjs`
 - `momm/scripts/install-completion.test.mjs`
-- `momm/scripts/invariants.test.mjs`
 - `momm/scripts/installations.test.mjs`
+- `momm/scripts/invariants.test.mjs`
 - `momm/scripts/lock-ownership.test.mjs`
 - `momm/scripts/media-bytes.test.mjs`
 - `momm/scripts/migrate-legacy.test.mjs`
@@ -99,8 +102,8 @@ attempt record only.
 - `momm/scripts/path-resolution.test.mjs`
 - `momm/scripts/probes.test.mjs`
 - `momm/scripts/process-scope.test.mjs`
-- `momm/scripts/roles.test.mjs`
 - `momm/scripts/quotation-diagnostics.test.mjs`
+- `momm/scripts/roles.test.mjs`
 - `momm/scripts/scheduler.test.mjs`
 - `momm/scripts/scorecard-roster.test.mjs`
 - `momm/scripts/scorecard.test.mjs`

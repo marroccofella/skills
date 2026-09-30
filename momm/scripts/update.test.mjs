@@ -7,7 +7,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { update, parse, git, run, resolveTool, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
+import { update, parse, git, run, resolveTool, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, cliBinary, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // The synthetic home is installed BEFORE the imported suites run. Neither of them reads HOME today,
@@ -451,6 +451,27 @@ try {
     const probe = path.join(dir, "probe.exe"); fs.copyFileSync(process.execPath, probe); // harmless stand-in executable
     const r = captureExec(probe, ["--version"]);
     assert.equal(r.code, 0, `literal percent path must launch: ${r.stderr}`); assert.match(r.stdout, /^v\d+\./);
+  });
+  // Gate-3 review of 1.17.0: cliBinary named the installer's location without checking it, and an
+  // absolute command was started as given. Both now take only a real path outside the working directory
+  // (a reviewed project, for --check-all) and the clone.
+  await test("cli_binary_and_capture_exec_take_an_absolute_path_only_outside_the_project", () => {
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(checkFixture, "abs-"))), project = path.join(base, "project"), store = path.join(base, "store");
+    const exe = process.platform === "win32" ? "grok.exe" : "grok";
+    fs.mkdirSync(path.join(project, "bin"), { recursive: true }); fs.mkdirSync(store);
+    fs.copyFileSync(process.execPath, path.join(project, "bin", exe)); fs.copyFileSync(process.execPath, path.join(store, exe));
+    for (const f of [path.join(project, "bin", exe), path.join(store, exe)]) fs.chmodSync(f, 0o755);
+    const home = (name, target) => { const h = path.join(base, name); fs.mkdirSync(path.join(h, ".grok"), { recursive: true }); fs.symlinkSync(target, path.join(h, ".grok", "bin"), "junction"); return h; };
+    const outsideHome = home("home-out", store), linkedHome = home("home-in", path.join(project, "bin"));
+    assert.equal(cliBinary("grok", { home: outsideHome, cwd: project }), fs.realpathSync(path.join(store, exe)), "the checked real path, not the link");
+    assert.equal(cliBinary("grok", { home: linkedHome, cwd: project }), "grok", "a link into the project falls back to the resolver");
+    assert.equal(cliBinary("grok", { home: outsideHome, cwd: base, project: store }), "grok", "the clone counts as well as the working directory");
+    const inside = captureExec(path.join(project, "bin", exe), ["--version"], { cwd: project });
+    assert.equal(inside.code, -1); assert.equal(inside.error?.code, "ENOENT"); assert.equal(inside.stdout, "", "nothing inside the project was started");
+    const viaLink = captureExec(path.join(linkedHome, ".grok", "bin", exe), ["--version"], { cwd: project });
+    assert.equal(viaLink.error?.code, "ENOENT", "an outside link whose real file is inside the project is refused");
+    const outside = captureExec(path.join(outsideHome, ".grok", "bin", exe), ["--version"], { cwd: project });
+    assert.equal(outside.code, 0, outside.stderr); assert.match(outside.stdout, /^v\d+\./);
   });
   await test("prerelease_installed_version_is_kept_and_compares_below_its_stable", async () => {
     assert.equal(newer("1.2.3", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.1", "1.2.3"), false); assert.equal(newer("1.2.3-beta.1", "1.2.3-beta.1"), false);

@@ -103,8 +103,12 @@ export function chooseSecondLookRoute({ report, finding, reviewers = null, gover
 // The artifact the original reviewers received, bound by the report's input_sha256: the stored input
 // (--store-input), else the committed range re-read from Git, else the reviewed file itself, else the
 // working-tree diff. A candidate is used only when its sanitized hash equals input_sha256.
-export function recoverArtifact({ root, report, sanitize }) {
-  const matches = (candidate) => typeof candidate === "string" && candidate.trim() && sha256(sanitize(candidate)) === report.input_sha256 ? sanitize(candidate) : null;
+export function recoverArtifact({ root, report, sanitize = (t) => t }) {
+  const matches = (candidate) => {
+    if (typeof candidate !== "string" || !candidate.trim()) return null;
+    const clean = sanitize(candidate);
+    return sha256(clean) === report.input_sha256 ? clean : null;
+  };
   const stored = matches(report.input_text);
   if (stored !== null) return { text: stored, source: "input_text" };
   const snapshot = report.source_snapshot;

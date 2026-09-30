@@ -95,7 +95,8 @@ try {
   const result = ledger(linked);
   assert.ifError(result.error);
   assert.notEqual(result.status, 0, 'an evidence tree with a link is refused');
-  assert.match(result.stderr, /linked_entry|link or junction/);
+  // Windows words it "link or junction"; POSIX reports linked_or_special_entry.
+  assert.match(result.stderr, /linked_entry|linked_or_special_entry|link or junction/);
   assert.equal(fs.existsSync(path.join(er, 'ledger.html')), false, 'and no page is written');
 } finally {
   fs.rmSync(linked, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

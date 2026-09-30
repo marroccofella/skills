@@ -88,6 +88,20 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  assert.throws(()=>requirePrivateEvidence(dir,{...winBase,fsx,run:broadRun}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='additional_principal'
   &&/other accounts or groups can access it/.test(e.message)&&/evidence --protect/.test(e.message)&&/No permission changes were made/.test(e.message));checks++;
  assert.match(evidenceRemediation(dir,'linux'),/chmod -R go-rwx/);checks++;
+ // Gate-3 review of 1.17.0: with an evidence home the printed command names the same home, because
+ // --evidence-home given to the review does not carry over to the next command.
+ {
+  const home=path.resolve('synthetic-home'),folder=path.join(home,'0123456789abcdef0123456789abcdef');
+  for(const platform of ['linux','win32']){
+   const withHome=evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home});
+   assert(withHome.includes(`multi-review.mjs" evidence --evidence-home "${home}" --protect`),withHome);
+   assert(evidenceRemediation(path.join(folder,'reports'),platform,{MOMM_EVIDENCE_HOME:home}).includes(`--evidence-home "${home}" --protect`));
+   for(const env of [{},{MOMM_EVIDENCE_HOME:''},{MOMM_EVIDENCE_HOME:'relative-home'},{MOMM_EVIDENCE_HOME:path.resolve('other-home')}])
+    assert(evidenceRemediation(folder,platform,env).includes('multi-review.mjs" evidence --protect'),JSON.stringify(env));
+   assert(evidenceRemediation(dir,platform,{MOMM_EVIDENCE_HOME:home}).includes('multi-review.mjs" evidence --protect'),'the in-project folder needs no home');
+  }
+  checks++;
+ }
  // The protect action only ever targets a directory named .ensemble_reviews, and spawns nothing otherwise.
  const noSpawn=()=>{throw Error('Must not spawn');};
  assert.throws(()=>protectEvidence(path.resolve('Documents'),{...winBase,run:noSpawn,fsx}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/only ever changes a directory named \.ensemble_reviews/.test(e.message));checks++;

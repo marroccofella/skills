@@ -262,6 +262,37 @@ if(scopeModule) {
     const userGrok = ['', 'home', 'u', '.grok', 'bin', 'grok'].join('/'); // assembled: no machine-path literal in source
     assert.equal(resolve(userGrok,'/usr/bin',{}),userGrok);
   });
+  // Gate-3 review of 1.17.0: an absolute path went to spawn unchecked, and probes.mjs names ~/.grok/bin/grok
+  // without checking it, so a link there into the project would have been started.
+  await test('posix tool: an absolute path is launched by its real path, and one that really lies inside the project is refused',()=>{
+    const userGrok=['','home','u','.grok','bin','grok'].join('/');
+    assert.equal(resolve(userGrok,'/usr/bin',{'/opt/tools':'dir','/opt/tools/grok':0o100755},{[userGrok]:'/opt/tools/grok'}),'/opt/tools/grok','the checked real path, not the link');
+    assert.throws(()=>resolve(userGrok,'/usr/bin',{'/proj/planted':0o100755},{[userGrok]:'/proj/planted'}),notInstalled(/only found inside the reviewed project/));
+    assert.throws(()=>resolve('/proj/bin/codex','/usr/bin',{'/proj/bin/codex':0o100755}),notInstalled(/only found inside the reviewed project/));
+    const f=fixture('linux');f.proc.cwd=()=>proj;const seen=[];
+    const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push(c);return f.spawn(c,a,o);},spawnSync:()=>({status:0}),fs:tool({'/proj/planted':0o100755,'/tmp/work':'dir'},{[userGrok]:'/proj/planted'}),...f.clock});
+    assert.throws(()=>scope.spawn(userGrok,['models'],{cwd:'/tmp/work',env:{PATH:'/usr/bin'}}),notInstalled(/only found inside the reviewed project/));
+    assert.deepEqual(seen,[]);
+  });
+  await test('windows tool: an absolute path whose real path lies inside the project gets the not-found path',()=>{
+    const userGrokExe = ['C:', 'Users', 'u', '.grok', 'bin', 'grok.exe'].join('\\'); // assembled: no machine-path literal in source
+    const linked={statSync:()=>({isFile:()=>true}),realpathSync:{native:p=>String(p).toLowerCase()===userGrokExe.toLowerCase()?'C:\\proj\\planted.exe':String(p)}};
+    assert.equal(scopeModule.windowsTool(userGrokExe,{env:{SystemRoot:'C:\\Windows'},cwd:'C:\\proj',platform:'win32',fs:linked}),'C:\\Windows\\System32\\momm-tool-not-found\\grok.exe');
+    assert.equal(scopeModule.windowsTool('C:\\proj\\bin\\codex.exe',{env:{SystemRoot:'C:\\Windows'},cwd:'C:\\proj',platform:'win32',fs:linked}),'C:\\Windows\\System32\\momm-tool-not-found\\codex.exe');
+    assert.equal(scopeModule.windowsTool('C:\\tools\\grok.exe',{env:{SystemRoot:'C:\\Windows'},cwd:'C:\\proj',platform:'win32',fs:linked}),'C:\\tools\\grok.exe');
+  });
+  // Gate-3 review of 1.17.0: with no PATH the child searches the system directories, so the resolver does too.
+  await test('posix tool: with no PATH at all, /usr/bin and then /bin are searched under the same rule; an empty PATH is still the working directory',()=>{
+    const files={'/bin':'dir','/usr/bin/git':0o100755,'/bin/sh':0o100755,'/proj/git':0o100755};
+    assert.equal(scopeModule.posixTool('git',{env:{HOME:'/h'},cwd:proj,fs:tool(files)}),'/usr/bin/git');
+    assert.equal(scopeModule.posixTool('sh',{env:{},cwd:proj,fs:tool(files)}),'/bin/sh');
+    assert.throws(()=>scopeModule.posixTool('git',{env:{},cwd:proj,fs:tool(files,{'/usr/bin/git':'/proj/git'})}),notInstalled(/only found inside the reviewed project/));
+    assert.throws(()=>scopeModule.posixTool('git',{env:{PATH:''},cwd:proj,fs:tool(files)}),notInstalled(/only found inside the reviewed project/));
+    const f=fixture('linux');const seen=[];
+    const scope=scopeModule.createProcessScope({process:f.proc,spawn:(c,a,o)=>{seen.push({c,o});return f.spawn(c,a,o);},spawnSync:()=>({status:0}),fs:tool({...files,'/proj/bin/git':0o100755,'/fixture':'dir'}),...f.clock});
+    scope.spawn('git',['status'],{cwd:proj,env:{PATH:'/proj/bin'}});
+    assert.equal(seen[0].c,'/usr/bin/git','the child PATH was removed, so the system directories decide');assert.equal('PATH' in seen[0].o.env,false);
+  });
   await test('posix child PATH: relative, empty, "." and in-project entries are removed; the caller\'s object is not mutated',()=>{
     const env={PATH:'.:/proj/bin::bin:/alias:/usr/bin:/opt/tools',HOME:'/h'};
     const out=scopeModule.posixChildEnv(env,{cwd:proj,fs:tool({'/opt/tools':'dir'},{'/alias':'/proj/bin'})});

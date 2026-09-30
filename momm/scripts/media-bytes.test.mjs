@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readMedia, validateMedia } from './media-bytes.mjs';
+import { readMedia, validateMedia, imageDimensions } from './media-bytes.mjs';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
 const jpeg = Buffer.from([255,216,255,192,0,8,8,0,1,0,1,1,255,218,0,6,1,1,0,0,1,255,217]);
 const tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'momm-bytes-'));
@@ -58,3 +58,15 @@ try {
 assert.throws(() => validateMedia(Buffer.from('1a45dfa3', 'hex'), 'input.md', { allowText: true }), undefined, 'EBML magic is never text');
 assert.throws(() => validateMedia(Buffer.from('abcdftypisom-text', 'latin1'), 'input.txt', { allowText: true }), undefined, 'an ISO ftyp box type is never text');
 assert.equal(validateMedia(Buffer.from('plain notes about ftyp boxes', 'utf8'), 'input.txt', { allowText: true }).modality, 'text', 'the word ftyp elsewhere is ordinary text');
+
+// Gate-3 (1.17.0 self-review, grok suggestion 35): TEM, RSTn, SOI and EOI carry no length. Reading the bytes
+// after one before the frame header skipped to a later, fake SOF (999x999); bounds are unknown instead.
+{
+  const realSof = [0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x14, 0x00, 0x0a, 0x01, 0x01, 0x11, 0x00];
+  const fakeSof = [0xff, 0xc0, 0x00, 0x0b, 0x08, 0x03, 0xe7, 0x03, 0xe7, 0x01, 0x01, 0x11, 0x00];
+  for (const marker of [0x01, 0xd0, 0xd7, 0xd8, 0xd9]) assert.equal(imageDimensions(Buffer.from([0xff, 0xd8, 0xff, marker, 0x00, 2 + realSof.length, ...realSof, ...fakeSof, 0xff, 0xd9])), null, `marker ${marker.toString(16)}`);
+  assert.deepEqual(imageDimensions(Buffer.from([0xff, 0xd8, ...realSof, 0xff, 0xd9])), { width: 10, height: 20 });
+  // A 7-byte SOF (length, precision, height, width) holds both dimensions inside the segment (jpeg-sof-length-off-by-one: not a defect).
+  assert.deepEqual(imageDimensions(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x07, 0x08, 0x00, 0x01, 0x00, 0x02, 0xff, 0xd9])), { width: 2, height: 1 });
+  assert.equal(imageDimensions(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x06, 0x08, 0x00, 0x01, 0x00, 0xff, 0xd9])), null);
+}

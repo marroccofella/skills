@@ -95,6 +95,25 @@ const skip = (name, why) => skipped.push({ name, why });
     assert.equal(posixTool('git', { cwd: proot, env: { PATH: `/opt/noexec:${ptrusted}` }, fs: pfiles }), P.join(ptrusted, 'git'));
     assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: '/opt/noexec' }, fs: pfiles, path: P }), null);
   });
+  // Gate-3 review of 1.17.0: an absolute command went to spawn unchecked. It is now launched only by its
+  // real path, outside the project; attack D (an outside path whose real file is inside) is refused.
+  check('an absolute command is taken by its real path outside the project, and refused when it really lies inside (every resolver)', () => {
+    assert.equal(posixTool('/usr/bin/git', { cwd: proot, env: {}, fs: pfiles }), '/usr/bin/git');
+    assert.throws(() => posixTool('/outside/git', { cwd: proot, env: {}, fs: pfiles }), (e) => e.code === 'ENOENT');
+    // Attack A: a link inside the project pointing out. The project would still choose the binary.
+    assert.throws(() => posixTool('/proj/bin/git', { cwd: proot, env: {}, fs: pfiles }), (e) => e.code === 'ENOENT');
+    assert.throws(() => posixTool('/proj/bin/git', { cwd: '/elsewhere', project: proot, env: {}, fs: pfiles }), (e) => e.code === 'ENOENT', 'MOMM\'s own directory counts when the child runs elsewhere');
+    assert.throws(() => resolveTool('/proj/bin/git', proot, { platform: 'linux', env: {}, fs: pfiles, project: proot }), (e) => e.code === 'ENOENT');
+    assert.match(windowsTool('C:\\project\\bin\\git.exe', { cwd: root, env: { SystemRoot: 'C:\\Windows' }, platform: 'win32', fs: files }), /momm-tool-not-found/);
+    assert.equal(resolveTool('/usr/bin/git', proot, { platform: 'linux', env: {}, fs: pfiles, project: proot }), '/usr/bin/git');
+    assert.throws(() => resolveTool('/outside/git', proot, { platform: 'linux', env: {}, fs: pfiles, project: proot }), (e) => e.code === 'ENOENT');
+    assert.throws(() => resolveTool('/usr/bin/git', '/elsewhere', { platform: 'linux', env: {}, fs: pfiles, project: '/usr' }), (e) => e.code === 'ENOENT', 'the clone counts as well as the working directory');
+    assert.equal(windowsTool('C:\\trusted\\git.exe', { cwd: root, env: { SystemRoot: 'C:\\Windows' }, platform: 'win32', fs: files }), 'C:\\trusted\\git.exe');
+    assert.match(windowsTool('C:\\outside\\git.exe', { cwd: root, env: { SystemRoot: 'C:\\Windows' }, platform: 'win32', fs: files }), /momm-tool-not-found/);
+    assert.equal(resolveTool('C:\\trusted\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), 'C:\\trusted\\git.exe');
+    assert.throws(() => resolveTool('C:\\outside\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), (e) => e.code === 'ENOENT');
+    assert.throws(() => resolveTool('C:\\project\\bin\\git.exe', root, { platform: 'win32', env: {}, fs: files, project: root }), (e) => e.code === 'ENOENT');
+  });
 }
 
 // ---- 2. Real folders: windowsLauncher (every host) and resolveTool (Windows) --------------------------

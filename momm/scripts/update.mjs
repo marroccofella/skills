@@ -63,10 +63,30 @@ function updaterExecutableOutside(resolved, root) {
 // to one attack matrix. The clone is the one this updater belongs to (a retained recovery copy lives
 // in <clone>/.git/momm, two levels down as well).
 const CLONE_ROOT = path.resolve(path.dirname(ENTRY), "../..");
+// An absolute command (gate-3 review of 1.17.0): its real path, and only when both it and the path as
+// named lie outside the working directory and the clone by both of their spellings; otherwise null. The same rule as
+// process-scope.mjs posixTool and windowsTool apply to an absolute path.
+function updaterAbsolute(command, cwd, { platform = process.platform, files = fs, project = CLONE_ROOT } = {}) {
+  const win = platform === "win32", P = win ? path.win32 : path.posix;
+  const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
+  const key = q => (win ? q.toLowerCase() : q);
+  const within = (base, q) => { const rel = P.relative(key(base), key(q)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + P.sep) && !P.isAbsolute(rel)); };
+  const resolved = P.isAbsolute(String(command)) ? real(String(command)) : null;
+  if (!resolved) return null;
+  for (const root of new Set([P.resolve(String(cwd || process.cwd())), project].filter(Boolean).map(String))) {
+    const rootReal = real(root);
+    if (!rootReal || [resolved, P.resolve(String(command))].some(q => within(root, q) || within(rootReal, q))) return null;
+  }
+  return resolved;
+}
 function updaterPosixTool(command, cwd, { env, files, project }) {
   const P = path.posix, name = String(command);
   if (name.includes("/")) {
-    if (P.isAbsolute(name)) return name;
+    if (P.isAbsolute(name)) {
+      const resolved = updaterAbsolute(name, cwd, { platform: "linux", files, project });
+      if (resolved) return resolved;
+      throw Object.assign(new Error(`${name}: refused: not found, or its real path lies inside the working directory or the skills clone`), { code: "ENOENT" });
+    }
     throw Object.assign(new Error(`${name}: refused: a relative path containing a separator would be looked up from the working directory`), { code: "ENOENT" });
   }
   const real = q => { try { return String(files.realpathSync(q)); } catch { return null; } };
@@ -89,7 +109,12 @@ function updaterPosixTool(command, cwd, { env, files, project }) {
 }
 export function resolveTool(command, cwd, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT } = {}) {
   if (platform !== "win32") return updaterPosixTool(command, cwd, { env, files, project });
-  if (/[\\/]/.test(command)) return command;
+  if (/[\\/]/.test(command)) {
+    if (!path.win32.isAbsolute(command)) return command;
+    const resolved = updaterAbsolute(command, cwd, { platform, files, project });
+    if (resolved) return resolved;
+    throw Object.assign(new Error(`${command}: refused: not found, or its real path lies inside the working directory or the skills clone`), { code: "ENOENT" });
+  }
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
   const real = p => fs.realpathSync.native(p);
   // An unresolvable working directory is a failure to CHECK, not a tool that is missing: say so
@@ -465,12 +490,16 @@ const MANAGER_NAMES = { ".volta": "volta", scoop: "scoop", chocolatey: "chocolat
 const NOT_INSTALLED = /is not recognized as an internal or external command|command not found|no such file or directory|enoent/i;
 // Keeps a prerelease suffix (1.2.3-beta.1) so an installed prerelease is never mistaken for its stable.
 const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/)?.[0] || null;
-export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+// The installer's own location is used only by its real path, and only when that lies outside the
+// working directory (--check-all runs from inside a reviewed project) and the clone (gate-3 review of
+// 1.17.0); otherwise the bare name goes to the resolver, which applies the same rule to PATH.
+export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir(), cwd = process.cwd(), project = CLONE_ROOT } = {}) {
+  const verified = (local, bare) => (fs.existsSync(local) && updaterAbsolute(local, cwd, { platform, project })) || bare;
   if (cli === "antigravity") {
     const local = platform === "win32" && env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe") : path.join(home, ".local", "bin", "agy");
-    return fs.existsSync(local) ? local : "agy";
+    return verified(local, "agy");
   }
-  if (cli === "grok") { const local = path.join(home, ".grok", "bin", platform === "win32" ? "grok.exe" : "grok"); return fs.existsSync(local) ? local : "grok"; }
+  if (cli === "grok") return verified(path.join(home, ".grok", "bin", platform === "win32" ? "grok.exe" : "grok"), "grok");
   return cli;
 }
 // PATH walk mirroring setup-ui.mjs detectInstallation, reduced to what
@@ -512,6 +541,8 @@ export function captureExec(command, args, { timeout = 20_000, cwd, env: sourceE
   // POSIX (1.17 A1 follow-up): --check-all runs from inside a reviewed project, so a bare CLI name is
   // resolved outside it (and outside the clone) first; a copy found only there reads as not installed.
   if (!win) { try { command = resolveTool(command, cwd || process.cwd(), { env }); } catch (error) { return { code: -1, stdout: "", stderr: "", error }; } }
+  // An absolute Windows path is started directly (below), so it is held to the same rule first.
+  else if (path.isAbsolute(command)) { try { command = resolveTool(command, cwd || process.cwd(), { env }); } catch (error) { return { code: -1, stdout: "", stderr: "", error }; } }
   const p = spawnSync(shell && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, env, encoding: "utf8", shell: shell ? systemTool("cmd.exe") : false, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
 }
@@ -591,7 +622,7 @@ export async function checkAll(root, lock, dependencies = {}) {
     const v = semver(JSON.parse(body).version); if (!v) throw new Error("no version in registry reply"); return v;
   };
   for (const cli of REVIEWER_CLIS) {
-    const binary = cliBinary(cli, { env, platform, home }), location = locateBinary(binary, { env, platform });
+    const binary = cliBinary(cli, { env, platform, home, cwd }), location = locateBinary(binary, { env, platform });
     const row = { cli, binary, installed: null, latest: null, latest_source: NPM_PACKAGES[cli] ? "npm registry" : cli === "grok" ? "grok update --check --stable --json" : "unknown (no check-only command)", update_available: null,
       path: location.path, package_manager_owned: location.package_manager_owned, manager: location.manager,
       update_command: location.package_manager_owned ? `update through ${location.manager}` : UPDATE_COMMANDS[cli], last_successful_review: report.reviews.routes[cli] || null, error: null };

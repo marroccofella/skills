@@ -55,10 +55,30 @@ export function readTopLevelTomlStrings(text, keys) {
     }
     return delta;
   };
+  // A multi-line string opened inside an array could hide a "]" or a key line, so it still makes the whole
+  // file unusable. Only an opener counts: three quotes outside any one-line string, not closed on the same
+  // line (gate-3 review of 1.17.0; '''s inside "it'''s" or """ inside 'a"""b' used to abort the file too).
+  const opensMultiline = (value) => {
+    let quote = null;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (quote) { if (quote === '"' && ch === "\\") i++; else if (ch === quote) quote = null; continue; }
+      if (ch === "#") return false;
+      const triple = value.startsWith('"""', i) ? '"""' : value.startsWith("'''", i) ? "'''" : null;
+      if (triple) {
+        let j = i + 3;
+        while (j < value.length && !value.startsWith(triple, j)) j += triple === '"""' && value[j] === "\\" ? 2 : 1;
+        if (j >= value.length) return true;
+        i = j + 2; continue;
+      }
+      if (ch === '"' || ch === "'") quote = ch;
+    }
+    return false;
+  };
   for (const raw of String(text).replace(/^﻿/, "").split(/\r?\n/)) {
     if (multiline) { if (raw.includes(multiline)) multiline = null; continue; }
     const line = raw.trim();
-    if (arrayDepth > 0) { arrayDepth += bracketDelta(line); if (/"""|'''/.test(line)) return { found: {}, unusable: new Set(keys) }; continue; }
+    if (arrayDepth > 0) { arrayDepth += bracketDelta(line); if (opensMultiline(line)) return { found: {}, unusable: new Set(keys) }; continue; }
     if (!line || line.startsWith("#")) continue;
     if (line.startsWith("[")) break;
     const match = /^([A-Za-z0-9_-]+|"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+')\s*=\s*(.*)$/.exec(line);
@@ -66,7 +86,7 @@ export function readTopLevelTomlStrings(text, keys) {
     const key = match[1].replace(/^["']|["']$/g, ""), value = match[2];
     const opener = /^("""|''')/.exec(value)?.[1];
     if (opener) { if (!value.slice(3).includes(opener)) multiline = opener; if (keys.includes(key)) unusable.add(key); continue; }
-    if (value.startsWith("[")) { arrayDepth = Math.max(0, bracketDelta(value)); if (keys.includes(key)) unusable.add(key); continue; }
+    if (value.startsWith("[")) { if (opensMultiline(value)) return { found: {}, unusable: new Set(keys) }; arrayDepth = Math.max(0, bracketDelta(value)); if (keys.includes(key)) unusable.add(key); continue; }
     if (!keys.includes(key)) continue;
     if (seen.has(key)) { unusable.add(key); delete found[key]; continue; }
     seen.add(key);
@@ -91,7 +111,9 @@ function readCodexConfigText({ home, env, fs }) {
     const buffer = Buffer.alloc(stat.size);
     let offset = 0;
     while (offset < buffer.length) { const read = fs.readSync(fd, buffer, offset, buffer.length - offset, offset); if (!read) break; offset += read; }
-    return { text: buffer.subarray(0, offset).toString("utf8"), notice: null };
+    // A short read means the file changed while it was read: a truncated file could hide a key, so none is used.
+    if (offset !== buffer.length) return { text: null, notice: "the Codex configuration changed while MOMM read it, so no model or reasoning effort was passed; Codex chooses." };
+    return { text: buffer.toString("utf8"), notice: null };
   } catch (error) {
     if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return { text: null, notice: null };
     return { text: null, notice: "the Codex configuration could not be read, so no model or reasoning effort was passed; Codex chooses." };

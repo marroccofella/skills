@@ -30,8 +30,9 @@ decision's change in the working tree, then run:
 node <candidate>/momm/scripts/checks.mjs --run <run_id> --item <item_id> --phase mutation --test tests/regression.mjs --artifact src/example.mjs
 ```
 
-Use the same test as the decision's after check and name the files whose change you reverted
-(`--item` and `--artifact` are required for this phase). The record copies the reverted bytes,
+Use the same test as the decision's after check. `--item` names the decision (its validator `item_id`), 64
+hexadecimal characters and never a file path, and `--artifact` names a file whose change you reverted;
+repeat `--artifact` for each such file. Both are required for this phase. The record copies the reverted bytes,
 because they are gone once you restore the file; restore it before final verification. Add the
 returned reference to the decision row as `"mutation": { "path": ..., "sha256": ... }`. It counts
 only when the run failed (exit code above zero); a passing run is reported as `mutation_survived`

@@ -29,6 +29,9 @@ try {
   recordInstall(temp, 'momm/scripts/install.mjs', [{ target: 'custom', status: 'linked', destination: path.join(temp, 'harness', 'momm') }]);
   const dir = stateDir(temp), claim = path.join(dir, 'update.active'), lock = path.join(dir, 'momm.lock'), journal = path.join(dir, 'transaction.json');
   const retained = path.join(dir, 'update.mjs');
+  // The updater prints real paths. A temp folder can be spelled differently from its real path (a
+  // Windows 8.3 short name such as RUNNER~1 on hosted runners, or a junction), so expect the real form.
+  const printed = (file) => path.join(fs.realpathSync.native(path.dirname(file)), path.basename(file));
   // An interrupted transaction: the journal and receipt must survive the release byte for byte.
   fs.writeFileSync(journal, JSON.stringify({ schema: 'momm-transaction/1', stage: 'prepared', fixture: true }, null, 2) + '\n');
   const journalBytes = fs.readFileSync(journal), lockBytes = fs.readFileSync(lock);
@@ -88,7 +91,7 @@ try {
     assert.equal(fs.existsSync(claim), false, 'claim still present');
     assert.deepEqual(fs.readdirSync(dir).sort(), listing.filter(n => n !== 'update.active'), 'only update.active may disappear');
     untouched();
-    assert(out.includes(claim), out); assert(out.includes(String(pid)), out); assert(out.includes(TOKEN), out);
+    assert(out.includes(printed(claim)), out); assert(out.includes(String(pid)), out); assert(out.includes(TOKEN), out);
     assert.match(out, /--rollback --yes/, 'the recovery command follows because a transaction is pending');
   });
 
@@ -98,9 +101,9 @@ try {
     await assert.rejects(update(['--repo', temp, '--rollback', '--yes'], { log() {}, reinstall() {}, inventory() {} }), e => { message = e.message; return true; });
     assert.match(message, /Existing update claim/);
     assert.match(message, /confirm no updater is running/i, 'the instruction to confirm must stay');
-    const command = `node "${retained}" --release-claim ${TOKEN}`;
+    const command = `node "${printed(retained)}" --release-claim ${TOKEN}`;
     assert(message.includes(command), message);
-    const recovery = `node "${retained}" --rollback --yes`;
+    const recovery = `node "${printed(retained)}" --rollback --yes`;
     assert(message.indexOf(recovery) > message.indexOf(command), 'recovery command must follow the release command');
     untouched(); assert(fs.existsSync(claim), 'refusal must never remove the claim');
   });

@@ -164,6 +164,52 @@ try {
   assert(resolved.startsWith(temporary + path.sep) && path.basename(resolved).startsWith('momm-quotation-diagnostics-test-'));
   fs.rmSync(resolved, { recursive: true, force: true });
 }
+// 1.17 A4.2 follow-through: the gate-3 diagnostic run (rev_20260930003709_e5847282134d) showed that 31
+// of Codex's 55 refused quotes were several lines of one side of a diff copied without the diff's
+// one-character line markers. Such a quote is an exact excerpt of the new (or old) file, which the
+// diff fully determines, so it counts; a quote that mixes sides or crosses hunks never does.
+const diffArtifact = [
+  'diff --git a/src/a.mjs b/src/a.mjs',
+  '--- a/src/a.mjs',
+  '+++ b/src/a.mjs',
+  '@@ -1,4 +1,5 @@',
+  ' export function mean(a) {',
+  '-  return a.reduce((s, x) => s + x, 0) / a.length;',
+  '+  if (!a.length) return null;',
+  '+  return a.reduce((s, x) => s + x, 0) / a.length;',
+  ' }',
+  '@@ -20,2 +21,2 @@',
+  ' const tail = 1;',
+  '+const next = 2;',
+  '',
+].join('\n');
+const scoped = (quote) => [{ quote, assessment: 'ASSESSMENT_MARKER the change.' }];
+await check('a markerless quote of the new side of one hunk counts', () => {
+  const quote = 'export function mean(a) {\n  if (!a.length) return null;\n  return a.reduce((s, x) => s + x, 0) / a.length;';
+  assert.equal(diffArtifact.includes(quote), false, 'the fixture quote must not match the raw diff');
+  assert.equal(contract.scopeProblem(scoped(quote), diffArtifact), null);
+  assert.deepEqual(contract.quotationDiagnostics(answer(scoped(quote)), diffArtifact), []);
+});
+await check('a markerless quote of the old side of one hunk counts', () => {
+  const quote = 'export function mean(a) {\n  return a.reduce((s, x) => s + x, 0) / a.length;\n}';
+  assert.equal(contract.scopeProblem(scoped(quote), diffArtifact), null);
+});
+await check('a quote that mixes removed and added lines is refused, and its diagnostic names the diff step', () => {
+  const quote = '  return a.reduce((s, x) => s + x, 0) / a.length;\n  if (!a.length) return null;';
+  assert.match(contract.scopeProblem(scoped(quote), diffArtifact) ?? '', /quote the supplied artifact exactly/);
+  const [row] = contract.quotationDiagnostics(answer(scoped(quote)), diffArtifact);
+  assert.equal(row?.reason, 'not_found');
+  assert.deepEqual(row.steps_tried, ['exact', 'line_endings', 'look_alikes_and_whitespace', 'diff_one_side']);
+});
+await check('a markerless quote that crosses two hunks is refused', () => {
+  assert.match(contract.scopeProblem(scoped('}\nconst tail = 1;'), diffArtifact) ?? '', /quote the supplied artifact exactly/);
+});
+await check('text that is not a unified diff gets no markerless comparison', () => {
+  const notDiff = 'notes\n+ first point\n+ second point\n';
+  assert.match(contract.scopeProblem(scoped('first point\n second point'), notDiff) ?? '', /quote the supplied artifact exactly/);
+  assert.match(contract.scopeProblem(scoped(' first point\n second point'), notDiff) ?? '', /quote the supplied artifact exactly/);
+});
+
 const failed = checks.filter((c) => !c.passed);
 console.log(JSON.stringify({ node: process.version, passed: checks.length - failed.length, total: checks.length, checks }, null, 2));
 process.exitCode = failed.length ? 1 : 0;
