@@ -1,9 +1,9 @@
 // Named security regression (1.16.1 charter item 8): executable resolution.
 //
-// What this covers: none of MOMM's five executable resolvers may take an executable from a PATH
-// directory inside the project, and nothing in this repository may launch a bare `git`. What it does
-// NOT cover: reviewer launches on macOS and Linux still pass a bare name to spawn, so a PATH entry
-// inside the project could supply a reviewer CLI there (owner decision 3 in plan-1.16.1.md).
+// What this covers: none of MOMM's executable resolvers may take an executable from a PATH directory
+// inside the project, and nothing in this repository may launch a bare `git`. Until 1.17, reviewer
+// launches on macOS and Linux still passed a bare name to spawn (owner decision 3 in plan-1.16.1.md);
+// since 1.17 A1 they go through posixTool, which is held to the same attack matrix below.
 // The independent review of 3d7a8be found two ways a repository could choose the executable:
 //   1. A PATH directory INSIDE the project holding a `git` link to any executable outside it. The
 //      resolvers checked only where the executable resolved to, so the project picked the binary,
@@ -20,7 +20,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { windowsTool, windowsChildEnv } from './process-scope.mjs';
+import { windowsTool, windowsChildEnv, posixTool, posixChildEnv } from './process-scope.mjs';
 import { resolveGit } from './governor.mjs';
 import { resolveTool } from './update.mjs';
 import { windowsLauncher } from './probes.mjs';
@@ -72,12 +72,29 @@ const skip = (name, why) => skipped.push({ name, why });
   const plinks = { '/proj/bin/git': '/usr/bin/python3', '/proj/linkdir': '/opt/evil', '/proj/linkdir/git': '/opt/evil/git', '/alias': '/proj/bin', '/alias/git': '/proj/bin/git', '/outside/git': '/proj/planted' };
   const preal = (p) => plinks[String(p)] ?? String(p);
   const ppresent = new Set(['/proj/bin/git', '/proj/linkdir/git', '/alias/git', '/outside/git', '/usr/bin/git']);
-  const pstat = (p) => { if (!ppresent.has(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return { isFile: () => true }; };
+  // Mode bits since 1.17 A1: a POSIX resolver takes only a regular file with an execute bit.
+  const pstat = (p) => { if (!ppresent.has(String(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return { isFile: () => true, mode: String(p) === '/opt/noexec/git' ? 0o100644 : 0o100755 }; };
   const pfiles = { statSync: pstat, realpathSync: Object.assign(preal, { native: preal }) };
   for (const [label, entry] of Object.entries({ A: '/proj/bin', B: '/proj/linkdir', C: '/alias', D: '/outside' })) {
     check(`resolveGit (POSIX) refuses attack ${label} and takes the trusted Git`, () =>
       assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: `${entry}:${ptrusted}` }, fs: pfiles, path: P }), P.join(ptrusted, 'git')));
+    check(`resolveTool (the updater copy, POSIX) refuses attack ${label} and takes the trusted Git`, () =>
+      assert.equal(resolveTool('git', proot, { platform: 'linux', env: { PATH: `${entry}:${ptrusted}` }, fs: pfiles, project: proot }), P.join(ptrusted, 'git')));
+    check(`resolveTool (the updater copy, POSIX) finds nothing when attack ${label} is the only entry`, () =>
+      assert.throws(() => resolveTool('git', proot, { platform: 'linux', env: { PATH: entry }, fs: pfiles, project: proot }), /not found on an absolute PATH entry outside/));
+    check(`posixTool refuses attack ${label} and takes the trusted Git`, () =>
+      assert.equal(posixTool('git', { cwd: proot, env: { PATH: `${entry}:${ptrusted}` }, fs: pfiles }), P.join(ptrusted, 'git')));
+    check(`posixTool reports not installed when attack ${label} is the only entry`, () =>
+      assert.throws(() => posixTool('git', { cwd: proot, env: { PATH: entry }, fs: pfiles }), (e) => e.code === 'ENOENT' && /^git: not installed/.test(e.message)));
+    if (label !== 'D') check(`posixChildEnv removes the attack-${label} directory from the child PATH`, () =>
+      assert.equal(posixChildEnv({ PATH: `${entry}:${ptrusted}` }, { cwd: proot, fs: pfiles }).PATH, ptrusted));
   }
+  ppresent.add('/opt/noexec/git');
+  check('resolveGit (POSIX) and posixTool skip a git without an execute bit', () => {
+    assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: `/opt/noexec:${ptrusted}` }, fs: pfiles, path: P }), P.join(ptrusted, 'git'));
+    assert.equal(posixTool('git', { cwd: proot, env: { PATH: `/opt/noexec:${ptrusted}` }, fs: pfiles }), P.join(ptrusted, 'git'));
+    assert.equal(resolveGit(proot, { platform: 'linux', env: { PATH: '/opt/noexec' }, fs: pfiles, path: P }), null);
+  });
 }
 
 // ---- 2. Real folders: windowsLauncher (every host) and resolveTool (Windows) --------------------------
@@ -114,7 +131,12 @@ const skip = (name, why) => skipped.push({ name, why });
         assert.equal(resolveTool('git', project, { env: { PATH: [...inProject, trusted].join(';') }, platform: 'win32' }).toLowerCase(), fs.realpathSync.native(trustedGit).toLowerCase()));
       check('resolveTool (the updater copy) finds nothing when only project directories are on PATH', () =>
         assert.throws(() => resolveTool('git', project, { env: { PATH: inProject.join(';') }, platform: 'win32' }), /not found on an absolute PATH entry outside/));
-    } else skip('resolveTool real-folder matrix', 'resolveTool only resolves on Windows; elsewhere it returns the name unchanged');
+    } else check('resolveTool (the updater copy, POSIX) refuses project directories and takes the trusted Git', () => {
+      // 1.17 A1 follow-up: off Windows the updater used to return the name unchanged.
+      for (const f of ['git', 'grok']) { fs.chmodSync(path.join(trusted, f + '.exe'), 0o755); for (const d of inProject) if (fs.existsSync(path.join(d, f + '.exe'))) fs.chmodSync(path.join(d, f + '.exe'), 0o755); }
+      assert.equal(resolveTool('git.exe', project, { env: { PATH: [...inProject, trusted].join(':') }, platform: process.platform }), fs.realpathSync(trustedGit));
+      assert.throws(() => resolveTool('git.exe', project, { env: { PATH: inProject.join(':') }, platform: process.platform }), /not found on an absolute PATH entry outside/);
+    });
   } finally { fs.rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 }
 

@@ -23,6 +23,22 @@ The tool captures actual output and exit status, test/source hashes, baseline sn
 verification archives the previous record by hash. Source/test/report mutation during a
 check refuses a success record. Zero is the test's result, not proof the chosen test is adequate.
 
+**Recorded mutation (1.17, optional).** After the after check passes, revert only that one
+decision's change in the working tree, then run:
+
+```
+node <candidate>/momm/scripts/checks.mjs --run <run_id> --item <item_id> --phase mutation --test tests/regression.mjs --artifact src/example.mjs
+```
+
+Use the same test as the decision's after check and name the files whose change you reverted
+(`--item` and `--artifact` are required for this phase). The record copies the reverted bytes,
+because they are gone once you restore the file; restore it before final verification. Add the
+returned reference to the decision row as `"mutation": { "path": ..., "sha256": ... }`. It counts
+only when the run failed (exit code above zero); a passing run is reported as `mutation_survived`
+for that item, a warning and not a refusal. The validator reports how many applied decisions carry
+a counting record and never requires one in 1.17. It is not proof: a revert that does not build
+also fails. Revert one decision at a time, never all fixes at once.
+
 Append decisions to the project's private dispositions log using the returned check references.
 Every original report and attempt remains unchanged. Completion still requires the separate
 governor validator, full source coverage, all dispositions and the required review quorum.

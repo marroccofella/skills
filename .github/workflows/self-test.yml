@@ -54,6 +54,12 @@ jobs:
       - name: Attempt accounting and tool-produced checks
         timeout-minutes: 2
         run: node momm/scripts/attempts.test.mjs
+      - name: Evidence home outside the project (1.17 A7)
+        timeout-minutes: 5
+        run: node momm/scripts/evidence-location.test.mjs
+      - name: Private quotation diagnostics (1.17 A4.2)
+        timeout-minutes: 2
+        run: node momm/scripts/quotation-diagnostics.test.mjs
       - name: Fail-closed Windows PATH identity
         timeout-minutes: 2
         run: node momm/scripts/path-resolution.test.mjs
@@ -108,6 +114,9 @@ jobs:
       - name: Effectiveness scorecard and training export (read-only, synthetic evidence)
         timeout-minutes: 2
         run: node momm/scripts/scorecard.test.mjs
+      - name: Route and role roster in the scorecard (1.17 B6, synthetic evidence)
+        timeout-minutes: 2
+        run: node momm/scripts/scorecard-roster.test.mjs
       - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
         timeout-minutes: 2
         run: node momm/scripts/installations.test.mjs
@@ -129,6 +138,9 @@ jobs:
       - name: update-clock module (1.16)
         timeout-minutes: 2
         run: node momm/scripts/update-clock.test.mjs
+      - name: Token-confirmed release of a stale update claim (1.17 A6b, temporary repositories)
+        timeout-minutes: 2
+        run: node momm/scripts/update-claim.test.mjs
       - name: probes module (1.16)
         timeout-minutes: 2
         run: node momm/scripts/probes.test.mjs
@@ -147,6 +159,9 @@ jobs:
       - name: modality runner regressions from the 1.16 readiness audit
         timeout-minutes: 2
         run: node momm/scripts/modality-evaluation.test.mjs
+      - name: guided image generation rounds, fake runner only (1.17 E)
+        timeout-minutes: 3
+        run: node momm/scripts/generation-rounds.test.mjs
       - name: Windows launch guard on every process-launching script
         timeout-minutes: 2
         run: node scripts/launch-guard.test.mjs
@@ -165,6 +180,7 @@ jobs:
           node scripts/momm-release-privacy.test.mjs
           node scripts/momm-media-contract.test.mjs
           node scripts/ledger-integrity.test.mjs
+          node scripts/ledger-media.test.mjs
           node scripts/reviewer-ux-regressions.test.mjs
           node scripts/ledger-serving.test.mjs
           node scripts/version-discovery.test.mjs
@@ -182,6 +198,12 @@ jobs:
           node momm/scripts/shutdown.test.mjs
           node momm/scripts/attachment-cleanup.test.mjs
           node momm/scripts/adapter-cleanup.test.mjs
+          node momm/scripts/codex-isolation.test.mjs
+          node momm/scripts/grok-stream.test.mjs
+          node momm/scripts/roles.test.mjs
+          node momm/scripts/cover.test.mjs
+          node momm/scripts/invariants.test.mjs
+          node momm/scripts/second-look.test.mjs
       - name: Doctor (no model calls)
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Native evidence permission gates (zero provider calls)

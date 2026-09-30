@@ -105,6 +105,43 @@ export function identifyMedia(b) {
   } else return refuse('unknown bytes');
   return { format: kind, modality: kinds[kind][0], mime: kinds[kind][1] };
 }
+// Pixel bounds as the image header states them (1.17 A3), read from the header bytes only — never
+// decoded. Returns { width, height } or null when the format or a truncated header does not say.
+// Callers treat null as "bounds unknown", never as permission to guess.
+const JPEG_FRAMES = [192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207];
+export function imageDimensions(b) {
+  if (!Buffer.isBuffer(b)) return null;
+  const ascii = (start, end) => b.subarray(start, end).toString('latin1');
+  let width = null, height = null;
+  if (b.length >= 24 && b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && ascii(12, 16) === 'IHDR') {
+    width = b.readUInt32BE(16); height = b.readUInt32BE(20);
+  } else if (b.length >= 4 && b[0] === 255 && b[1] === 216) {
+    let pos = 2;
+    while (pos + 4 <= b.length) {
+      if (b[pos++] !== 255) return null;
+      while (b[pos] === 255) pos++;
+      const marker = b[pos++];
+      if (pos + 2 > b.length) return null;
+      const n = b.readUInt16BE(pos);
+      if (JPEG_FRAMES.includes(marker)) {
+        if (n < 7 || pos + 7 > b.length) return null;
+        height = b.readUInt16BE(pos + 3); width = b.readUInt16BE(pos + 5); break;
+      }
+      if (marker === 218 || n < 2) return null; // scan reached with no frame header
+      pos += n;
+    }
+  } else if (b.length >= 10 && /^GIF8[79]a$/.test(ascii(0, 6))) {
+    width = b.readUInt16LE(6); height = b.readUInt16LE(8);
+  } else if (b.length >= 16 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') {
+    const chunk = ascii(12, 16);
+    if (chunk === 'VP8X' && b.length >= 30) { width = 1 + b.readUIntLE(24, 3); height = 1 + b.readUIntLE(27, 3); }
+    else if (chunk === 'VP8L' && b.length >= 25 && b[20] === 0x2f) { const bits = b.readUInt32LE(21); width = 1 + (bits & 0x3fff); height = 1 + ((bits >>> 14) & 0x3fff); }
+    else if (chunk === 'VP8 ' && b.length >= 30 && b[23] === 0x9d && b[24] === 0x01 && b[25] === 0x2a) { width = b.readUInt16LE(26) & 0x3fff; height = b.readUInt16LE(28) & 0x3fff; }
+  } else if (b.length >= 26 && ascii(0, 2) === 'BM' && b.readUInt32LE(14) >= 40) {
+    width = b.readInt32LE(18); height = Math.abs(b.readInt32LE(22));
+  }
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? { width, height } : null;
+}
 export function validateMedia(buffer, filename, { allowText = false } = {}) {
   const ext = path.extname(filename).slice(1).toLowerCase();
   let detected;
@@ -167,6 +204,8 @@ export function readMedia(file, options) {
     const after = fs.fstatSync(fd);
     if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs) return refuse('file changed during read');
     if (!chainIsClean() || key(real(absolute)) !== resolvedBefore) return refuse('path changed during read');
-    return { buffer, ...validateMedia(buffer, absolute, options) };
+    const detected = validateMedia(buffer, absolute, options);
+    const bounds = detected.modality === 'image' ? imageDimensions(buffer) : null;
+    return { buffer, ...detected, ...(bounds ?? {}) };
   } finally { fs.closeSync(fd); }
 }

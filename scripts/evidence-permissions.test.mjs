@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {inspectEvidencePermissions,requirePrivateEvidence,requirePrivateScratch,preparePrivateEvidence,createPrivateDirectory,protectEvidence,evidenceRemediation} from '../momm/scripts/evidence-permissions.mjs';
+import {evidenceLocation,recordEvidenceProject} from '../momm/scripts/evidence-location.mjs';
 const dir=path.resolve('synthetic-evidence');
 // Actual allocator code, isolated dependencies: a stripped Windows environment
 // must refuse with the privacy error before spawning or allocating anything.
@@ -52,11 +53,12 @@ const start=source.indexOf('  const currentDepth = parseReviewDepth(process.env.
 const end=source.indexOf('  const sourceSnapshot = captureSourceSnapshot',start);
 assert(start>=0&&end>start);
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-const dispatchPrelude=new AsyncFunction('process','parseReviewDepth','VALID_GOVERNORS','options','path','preparePrivateEvidence','collectArtifact',source.slice(start,end));
+// 1.17 A7: the prelude resolves the evidence folder first; the real resolver, in its default mode.
+const dispatchPrelude=new AsyncFunction('process','parseReviewDepth','VALID_GOVERNORS','options','path','preparePrivateEvidence','collectArtifact','evidenceLocation','recordEvidenceProject',source.slice(start,end));
 for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',false]]){
  let collected=0,created=0;
  const fixture={...fsx,mkdirSync:(_dir,options)=>{created++;assert.equal(options.mode,0o700);if(kind==='mkdir_failed')throw Error('SENSITIVE FIXTURE DETAIL');},lstatSync:()=>stat({mode:kind==='broad'?0o40755:0o40700})};
- const run=dispatchPrelude({env:{}},()=>0,new Set(['codex']),{governor:'codex',timeoutMs:1000,maxBytes:1024},path,d=>preparePrivateEvidence(d,{platform:'linux',uid:123,fsx:fixture}),async()=>{collected++;return 'synthetic input';});
+ const run=dispatchPrelude({env:{},cwd:()=>path.resolve('synthetic-project')},()=>0,new Set(['codex']),{governor:'codex',timeoutMs:1000,maxBytes:1024},path,d=>preparePrivateEvidence(d,{platform:'linux',uid:123,fsx:fixture}),async()=>{collected++;return 'synthetic input';},evidenceLocation,recordEvidenceProject);
  if(expected)await run;
  else await assert.rejects(run,error=>error.code==='MOMM_EVIDENCE_PERMISSIONS'&&!error.message.includes('SENSITIVE FIXTURE DETAIL'));
  assert.equal(created,1);assert.equal(collected,expected?1:0);checks++;

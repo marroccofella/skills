@@ -26,7 +26,7 @@ if (!gitAvailable) {
 }
 const results = [];
 const check = (name, fn) => { try { fn(); results.push({ name, passed: true }); } catch (e) { results.push({ name, passed: false, error: String(e.message).slice(0, 1200) }); process.exitCode = 1; } };
-const TEXT = /\.(?:mjs|cjs|js|json|md|yml|yaml|html|css|txt|svg|vtt|csv|xml|sha256)$/i;
+const TEXT = /\.(?:mjs|cjs|js|jsonl?|md|yml|yaml|html|css|txt|svg|vtt|csv|xml|sha256)$/i;
 const listed = spawnSync(GIT, ['ls-files', '-z'], { cwd: root, encoding: 'utf8', windowsHide: true, maxBuffer: 64_000_000 });
 const files = listed.status === 0 ? listed.stdout.split('\0').filter(f => f && TEXT.test(f)) : [];
 

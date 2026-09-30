@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { resolveGit as resolveGitForTest } from './governor.mjs';
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
-import { createProcessScope } from "./process-scope.mjs";
+import { createProcessScope, executableOutside } from "./process-scope.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 if (!path.isAbsolute(GIT)) throw new Error('no trusted Git was found outside the checkout; this suite never launches a bare name');
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
@@ -18,7 +18,7 @@ const start = source.indexOf("function platformCommand("), end = source.indexOf(
 assert(start >= 0 && end > start, "transport fixture boundaries moved; update the production extraction");
 const code = source.slice(start, end);
 const context = vm.createContext({ fs, os, path, process, spawn, Buffer, setTimeout, clearTimeout, setInterval, clearInterval,
-  processScope:createProcessScope(), DEFAULT_TIMEOUT_MS: 30000, MAX_OUTPUT_BYTES: 4096, cleanOauthEnv: () => process.env });
+  processScope:createProcessScope(), executableOutside, DEFAULT_TIMEOUT_MS: 30000, MAX_OUTPUT_BYTES: 4096, cleanOauthEnv: () => process.env });
 vm.runInContext(code + "\nthis.core = {platformCommand,runProcess,extractJsonObjects,unwrapReviewPayload};", context);
 const { core } = context;
 for (const fn of ["platformCommand", "runProcess", "extractJsonObjects", "unwrapReviewPayload"]) assert.equal(typeof core[fn], "function", `missing production helper ${fn}`);

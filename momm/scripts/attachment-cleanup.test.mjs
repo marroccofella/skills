@@ -9,6 +9,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {privateTestFixture} from './private-test-fixture.mjs';
 import {readMedia} from './media-bytes.mjs';
+import {takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject} from './evidence-location.mjs';
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');
@@ -119,8 +120,15 @@ try{
     const f=fixture(),r=actual(f,['--attach','synthetic.gif'],{expectedStatus:0,json:true});
     assert.equal(r.error,undefined);assert.equal(r.signal,null);assert.equal(r.status,0);
     const report=r.report;assert.equal(report.attachments[0].sha256,hash(input));
+    // 1.17 A3: the pixel bounds used to check observation regions are recorded with the descriptor.
+    assert.equal(report.attachments[0].width,1);assert.equal(report.attachments[0].height,1);
     assert.equal(report.reviewers[0].status,'self_excluded');assert.deepEqual(leftovers(f.temporary),[]);
     assert.equal(hash(fs.readFileSync(path.join(f.cwd,'synthetic.gif'))),hash(input));
+  });
+  await test('staged image descriptors carry the pixel bounds read from the header',()=>{
+    const f=fixture(),context=stageContext(f),staged=context.stage([path.join(f.cwd,'synthetic.gif')]);
+    try{assert.equal(staged.attachments[0].width,1);assert.equal(staged.attachments[0].height,1);}
+    finally{fs.rmSync(staged.directory,{recursive:true,force:true});}
   });
   await test('staging write failure removes even a partial output file',()=>{
     const f=fixture();const context=stageContext(f,{writeFileSync:(file,bytes,opts)=>{fs.writeFileSync(file,bytes.subarray(0,4),opts);throw Error('synthetic write failure');}});
@@ -138,6 +146,30 @@ try{
   });
   // Exercise actual main's ownership boundary with controlled dependencies.
   // No provider executable is called; each selected boundary throws after stage.
+  // 1.17 A5: every recent report showed version_status "timeout" for every route while a standalone
+  // --preflight answered in about a second: synchronous launch work starved its 5 s timers. Preflight
+  // now finishes before dispatch starts, so no route launch competes with it.
+  await test('preflight completes before dispatch starts',async()=>{
+    const f=fixture(),context=stageContext(f),order=[];
+    const options={governor:'codex',reviewers:['codex'],timeoutMs:1000,maxBytes:1000,attach:[path.join(f.cwd,'synthetic.gif')]};
+    Object.assign(context,{process:{argv:['node','fixture'],env:{},cwd:()=>f.cwd,stderr:{write(){},isTTY:false}},
+      parseArgs:()=>options,parseReviewDepth:()=>0,VALID_GOVERNORS:new Set(['codex']),collectArtifact:async()=> 'export const value=1;',
+      captureSourceSnapshot:()=>({}),inputLimitFor:()=>1000,sanitizeText:s=>({value:s}),applyTier(){},effectiveTimeoutMs:()=>1000,
+      preparePrivateEvidence:()=>({verified:true}),resolveDispatchCapabilities:async()=>({capabilities:null,registry:null}),
+      // 1.17 A7: the real resolver (default mode here: no MOMM_EVIDENCE_HOME in this stub process).
+      takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject,
+      clockTrigger(){},personaFor:()=>null,resolveGuidance:()=>({routes:{},notices:[]}),loadAllRoles:()=>({}),staleBriefNotices:()=>[],
+      createUi:()=>({start(){},preflight(){order.push('preflight-shown');},stop(){}}),emitEvent(){},
+      preflightCheck:async()=>{order.push('preflight-start');await new Promise(r=>setTimeout(r,50));order.push('preflight-end');return [];},
+      createScheduler:()=>{order.push('dispatch');throw Error('synthetic stop at dispatch');},
+      clipped:s=>s,os:{tmpdir:()=>f.temporary,homedir:()=>path.join(f.cwd,'home')},
+    });
+    context.moduleUrl=new URL('./multi-review.mjs',import.meta.url).href;
+    vm.runInContext(source.slice(mainStart,mainEnd).replaceAll('import.meta.url','moduleUrl')+';this.run=main;',context);
+    await assert.rejects(context.run(),/synthetic stop at dispatch/);
+    assert.ok(order.indexOf('preflight-end')>=0&&order.indexOf('preflight-end')<order.indexOf('dispatch'),`preflight must finish before dispatch: ${order.join(' > ')}`);
+    assert.deepEqual(leftovers(f.temporary),[]);
+  });
   for(const boundary of ['capabilities','guidance','scheduler'])await test(`${boundary} rejection after staging removes media`,async()=>{
     const f=fixture(),context=stageContext(f);
     const options={governor:'codex',reviewers:['codex'],timeoutMs:1000,maxBytes:1000,attach:[path.join(f.cwd,'synthetic.gif')]};
@@ -148,8 +180,10 @@ try{
       // This VM test targets staging ownership; native permission enforcement
       // is exercised independently by evidence-permissions-native.test.mjs.
       preparePrivateEvidence:()=>({verified:true}),
+      // 1.17 A7: the real resolver (default mode here: no MOMM_EVIDENCE_HOME in this stub process).
+      takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject,
       resolveDispatchCapabilities:boundary==='capabilities'?fail:async()=>({capabilities:null,registry:null}),
-      clockTrigger(){},personaFor:()=>null,resolveGuidance:boundary==='guidance'?fail:()=>({routes:{},notices:[]}),
+      clockTrigger(){},personaFor:()=>null,resolveGuidance:boundary==='guidance'?fail:()=>({routes:{},notices:[]}),loadAllRoles:()=>({}),staleBriefNotices:()=>[],
       createUi:()=>({start(){},preflight(){},stop(){}}),emitEvent(){},preflightCheck:async()=>[],
       createScheduler:fail,clipped:s=>s,os:{tmpdir:()=>f.temporary,homedir:()=>path.join(f.cwd,'home')},
     });

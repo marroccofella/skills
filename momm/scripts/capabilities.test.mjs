@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as cap from "./capabilities.mjs";
+import { commandShapeSha256 as CURRENT_SHAPE } from "./route-isolation.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const mommRoot = path.resolve(here, "..");
@@ -211,7 +212,8 @@ await test("effective: verified upgrades apply; probe_failed keeps the baseline 
   const m = matrixWith([
     { route: "grok", direction: "input", modality: "image", level: "verified" },
     { route: "codex", direction: "output", modality: "image_gen", blocker: "probe_failed", reason: "generic reply" },
-    { route: "codex", direction: "input", modality: "image", blocker: "probe_failed" },
+    // Earned by this MOMM's codex input command (1.17 A2 parity); an unfingerprinted one reads as reprobe.
+    { route: "codex", direction: "input", modality: "image", blocker: "probe_failed", command_shape_sha256: CURRENT_SHAPE("codex", "input", "image") },
     { route: "claude", direction: "input", modality: "pdf", level: "no" },
     { route: "antigravity", direction: "output", modality: "code_exec", blocker: null },
   ]);
@@ -541,6 +543,98 @@ for (const [label, mutate, expected] of [
     assert.ok(problems.some((p) => expected.test(p)), `expected ${expected} in ${JSON.stringify(problems)}`);
   });
 }
+
+// 29 September 2026: an `allowlist` blocker recorded against Grok image_gen came from reading
+// Antigravity's gate phrasing into a Grok reply. The probe skips a cell whose blocker it cannot
+// clear, so the wrong record also blocked the probe that would have corrected it. A recorded blocker
+// that is another route's own gate is a misclassification: it must read as `reprobe`, with the
+// original kept in the reason, never as a gate.
+await test("a gate recorded against a route it does not belong to reads as reprobe", () => {
+  const m = matrixWith([
+    { route: "grok", direction: "output", modality: "image_gen", level: "documented", blocker: "allowlist", reason: "reply named the allowlist gate: permissions.allow" },
+    { route: "antigravity", direction: "output", modality: "image_gen", level: "documented", blocker: "allowlist", reason: "denied run_command" },
+  ]);
+  const grok = m.routes.grok.output.image_gen, agy = m.routes.antigravity.output.image_gen;
+  assert.equal(grok.blocker, "reprobe");
+  assert.match(grok.reason, /allowlist/); assert.match(grok.reason, /antigravity/i);
+  assert.equal(agy.blocker, "allowlist", "Antigravity's own gate still stands");
+  assert.deepEqual(cap.ROUTE_SCOPED_BLOCKERS.allowlist, ["antigravity"]);
+});
+
+// 1.17 A9 (external review, 29 September 2026): a probe proves one command, not a route. The 1.17 probe
+// recorded Grok image generation as verified in the machine-wide overlay, which 1.16.1 also reads while
+// still sending the command that fails. Evidence carries the fingerprint of the command shape that earned
+// it; a different shape reads as reprobe. Entries without one are taken to have the 1.16.1 shape, so only
+// cells whose command changed need a new probe. Account gates do not depend on the command and stand.
+await test("capability evidence is bound to the command shape that earned it", async () => {
+  const { commandShapeSha256 } = await import("./route-isolation.mjs");
+  const verified = (route, modality, extra = {}) => ({ route, direction: "output", modality, level: "verified", blocker: null, ...extra });
+  const legacy = matrixWith([verified("grok", "image_gen"), verified("codex", "image_gen")]);
+  assert.equal(legacy.routes.grok.output.image_gen.blocker, "reprobe", "grok's command changed in 1.17, so its old evidence needs a new probe");
+  assert.match(legacy.routes.grok.output.image_gen.reason, /command/);
+  assert.equal(legacy.routes.codex.output.image_gen.blocker, null, "codex's command did not change; its evidence stands");
+  const current = matrixWith([verified("grok", "image_gen", { command_shape_sha256: commandShapeSha256("grok", "output", "image_gen") })]);
+  assert.equal(current.routes.grok.output.image_gen.blocker, null); assert.equal(current.routes.grok.output.image_gen.level, "verified");
+  const other = matrixWith([verified("grok", "image_gen", { command_shape_sha256: "0".repeat(64) })]);
+  assert.equal(other.routes.grok.output.image_gen.blocker, "reprobe");
+  const zdr = matrixWith([{ route: "grok", direction: "output", modality: "video_gen", level: "documented", blocker: "zdr" }]);
+  assert.equal(zdr.routes.grok.output.video_gen.blocker, "zdr", "an account gate stands whatever the command");
+  // The fingerprint survives the overlay write (the writer copies named fields only) and routes again.
+  const home = fs.mkdtempSync(path.join(tmp, "shape-")), shape = commandShapeSha256("grok", "output", "image_gen");
+  cap.writeOverlayEntry(home, { route: "grok", direction: "output", modality: "image_gen", level: "verified", blocker: null, cli_version: "1.0.41", command_shape_sha256: shape }, { machine: "m1" });
+  const stored = JSON.parse(fs.readFileSync(path.join(home, ".momm", "capabilities-m1.json"), "utf8")).entries.find((e) => e.route === "grok" && e.modality === "image_gen");
+  assert.equal(stored.command_shape_sha256, shape);
+  const live = cap.effective({ home, baseline, machine: "m1", installedVersions: { grok: "1.0.41" } });
+  assert.equal(live.routes.grok.output.image_gen.blocker, null);
+  assert.throws(() => cap.writeOverlayEntry(home, { route: "grok", direction: "output", modality: "image_gen", level: "verified", blocker: null, cli_version: "1.0.41", command_shape_sha256: "not-a-hash" }, { machine: "m1" }), /command_shape_sha256/);
+});
+
+// Review rev_20260929211625_0b5ba54cb0e5: 1.16.1 reads the same overlay and ignores new fields, so a 1.17
+// success on a cell whose command changed is written as probe_failed (which 1.16.1 refuses to route)
+// plus verified_command_shape_sha256, which only a MOMM with that exact command honours. The writer
+// always stamps a fingerprint, so an entry without one can only come from an older MOMM.
+await test("a success on a changed command is safe for older readers and verified for its own shape", async () => {
+  const { commandShapeSha256, legacyCommandShapeSha256, shapeChangedSinceLegacy } = await import("./route-isolation.mjs");
+  const probes = await import("./probes.mjs");
+  assert.equal(shapeChangedSinceLegacy("grok", "output", "image_gen"), true); assert.equal(shapeChangedSinceLegacy("codex", "output", "image_gen"), false);
+  const entry = probes.overlayEntryFor("grok", "1.0.41", "2026-09-29T00:00:00.000Z", { direction: "output", modality: "image_gen", status: "verified" });
+  assert.equal(entry.blocker, "probe_failed"); assert.equal(entry.verified_command_shape_sha256, commandShapeSha256("grok", "output", "image_gen"));
+  const home = fs.mkdtempSync(path.join(tmp, "safe-")), now = new Date("2026-09-29T00:00:00.000Z");
+  cap.writeOverlayEntry(home, entry, { machine: "m1", now });
+  const stored = JSON.parse(fs.readFileSync(path.join(home, ".momm", "capabilities-m1.json"), "utf8")).entries[0];
+  assert.equal(stored.blocker, "probe_failed", "an older reader sees a blocker it refuses to route");
+  assert.equal(stored.expires_at, new Date(now.getTime() + cap.SUCCESS_EXPIRY_MS).toISOString(), "and it expires like a success");
+  const live = cap.effective({ home, baseline, machine: "m1", now, installedVersions: { grok: "1.0.41" } });
+  assert.equal(live.routes.grok.output.image_gen.blocker, null, "this MOMM routes it"); assert.equal(live.routes.grok.output.image_gen.level, "verified");
+  // A MOMM with another command for the cell must not trust it.
+  const other = matrixWith([{ ...stored, verified_command_shape_sha256: legacyCommandShapeSha256("grok", "output", "image_gen") }]);
+  assert.equal(other.routes.grok.output.image_gen.blocker, "reprobe");
+  // Codex's command did not change: a plain success, as before.
+  const codex = probes.overlayEntryFor("codex", "0.157.1", "2026-09-29T00:00:00.000Z", { direction: "output", modality: "image_gen", status: "verified" });
+  assert.equal(codex.blocker, null); assert.equal(codex.verified_command_shape_sha256, undefined);
+  // The writer stamps its own fingerprint when a caller gives none.
+  const plain = fs.mkdtempSync(path.join(tmp, "stamp-"));
+  cap.writeOverlayEntry(plain, { route: "codex", direction: "input", modality: "image", level: "verified", blocker: null, cli_version: "1" }, { machine: "m2" });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(plain, ".momm", "capabilities-m2.json"), "utf8")).entries[0].command_shape_sha256, commandShapeSha256("codex", "input", "image"));
+});
+
+// 1.17 A2 parity (owner decision, 29 September 2026): Codex input cells now send the review's isolation
+// (--ignore-user-config --ignore-rules ...), so evidence earned by the 1.16.1 command reads as reprobe once;
+// a probe of the new command routes again. Codex generation did not change and its evidence stands.
+await test("codex input evidence from the 1.16.1 command reads as reprobe; the new command's evidence routes", async () => {
+  const { commandShapeSha256 } = await import("./route-isolation.mjs");
+  const input = (extra = {}) => ({ route: "codex", direction: "input", modality: "image", level: "verified", blocker: null, ...extra });
+  const old = matrixWith([input()]);
+  assert.equal(old.routes.codex.input.image.blocker, "reprobe"); assert.match(old.routes.codex.input.image.reason, /different MOMM command/);
+  const fresh = matrixWith([input({ command_shape_sha256: commandShapeSha256("codex", "input", "image") })]);
+  assert.equal(fresh.routes.codex.input.image.blocker, null); assert.equal(fresh.routes.codex.input.image.level, "verified");
+  const generation = matrixWith([{ route: "codex", direction: "output", modality: "image_gen", level: "verified", blocker: null }]);
+  assert.equal(generation.routes.codex.output.image_gen.blocker, null);
+  const probes = await import("./probes.mjs");
+  const entry = probes.overlayEntryFor("codex", "0.157.1", "2026-09-29T00:00:00.000Z", { direction: "input", modality: "image", status: "verified" });
+  assert.equal(entry.blocker, "probe_failed", "1.16.1 must not route a success its own command did not earn");
+  assert.equal(entry.verified_command_shape_sha256, commandShapeSha256("codex", "input", "image"));
+});
 
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 console.log(JSON.stringify({ passed, failures }, null, 2));

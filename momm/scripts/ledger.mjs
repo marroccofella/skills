@@ -18,6 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectCompletion } from "./governor.mjs";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { evidenceLocation, readEvidenceProject } from "./evidence-location.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
@@ -604,9 +605,13 @@ if (process.argv.includes("--self-test")) {
   ledgerSelfTest();
 }
 
-const er = path.resolve(".ensemble_reviews");
+// The resolved evidence folder (1.17 A7): ./.ensemble_reviews unless MOMM_EVIDENCE_HOME is set.
+let evidenceAt;
+try { evidenceAt = evidenceLocation({ cwd: process.cwd(), env: process.env }); }
+catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
+const er = evidenceAt.dir;
 if (!fs.existsSync(er)) {
-  process.stderr.write("No .ensemble_reviews here — run a momm review first, then rebuild your ledger.\n");
+  process.stderr.write(evidenceAt.home ? `No MOMM evidence for this project in ${er} — run a momm review first, then rebuild your ledger.\n` : "No .ensemble_reviews here — run a momm review first, then rebuild your ledger.\n");
   process.exit(1);
 }
 try { requirePrivateEvidence(er); }
@@ -681,12 +686,78 @@ for (const run of runs) {
 const data = {
   generated: new Date().toISOString(),
   private_note: "Generated locally from this workspace's telemetry; it stays in .ensemble_reviews and is never published unless you choose to.",
-  projects: [{ name: "This workspace", root: process.cwd().replaceAll("\\", "/"), runs, dispositions, reports }],
+  // An evidence-home folder names the project it belongs to (project.json, 1.17 A7).
+  projects: [{ name: "This workspace", root: ((evidenceAt.home ? readEvidenceProject(er) : null) ?? process.cwd()).replaceAll("\\", "/"), runs, dispositions, reports }],
   preflight: { routes: [], caveat: "run --preflight for live route status; this page is a snapshot of recorded evidence" },
   versions: { dispatcher: "momm ledger", repo: "github.com/marroccofella/skills" },
 };
 
 const HARNESS = { codex: "Codex CLI · ChatGPT OAuth", claude: "Claude Code · Anthropic OAuth", antigravity: "Antigravity CLI · Google OAuth", copilot: "GitHub Copilot CLI · GitHub OAuth", grok: "Grok CLI · xAI OAuth", gemini: "Gemini CLI · Google OAuth" };
+
+// Generated pictures (1.17 E): every momm-media/1 run report under .ensemble_reviews/media/<run>/.
+// A picture is shown only when the report names it inside that run's own folder and its bytes still
+// match the recorded sha256; anything else is listed with the reason and never displayed.
+// The containment check is lexical. It relies on requirePrivateEvidence below, which refuses an
+// evidence tree containing any link or junction (linked_entry) before the page is written; relax that
+// refusal and this check must resolve real paths (review rev_20260929164940_85056e2a02ed).
+const mediaRoot = path.join(er, "media");
+const mediaRuns = [];
+// A media run that belongs to a guided generation (1.17 E, generation-rounds.mjs) is linked by the run
+// id its momm-generation/1 state records. The ledger adds the round number and, once that round's
+// labels are revealed, the governor's critique summary per picture, matched by the picture's sha256.
+// Before the reveal nothing about the critique is shown (showing it beside the route would reveal the
+// map early). The hash and containment rules below still decide whether a picture is shown at all.
+const generationByRun = new Map();
+for (const name of (() => { try { return fs.readdirSync(path.join(er, "generation")).filter((n) => /^gen_\d{14}_[0-9a-f]{8}$/.test(n)).sort(); } catch { return []; } })()) {
+  let state;
+  try { state = JSON.parse(fs.readFileSync(path.join(er, "generation", name, "state.json"), "utf8")); } catch { continue; }
+  if (state?.schema !== "momm-generation/1" || state.gen_id !== name || !state.rounds || typeof state.rounds !== "object") continue;
+  for (const round of Object.values(state.rounds)) {
+    if (!Number.isInteger(round?.round)) continue;
+    const revealed = round.reveal?.pictures && typeof round.reveal.pictures === "object" ? round.reveal.pictures : {};
+    for (const entry of Array.isArray(round.entries) ? round.entries : []) {
+      if (typeof entry?.run_id !== "string") continue;
+      const bySha = {};
+      for (const [label, p] of Object.entries(revealed)) if (p?.run_id === entry.run_id && typeof p.sha256 === "string") bySha[p.sha256] = { label, critique: p.critique ?? null };
+      generationByRun.set(entry.run_id, { gen_id: name, round: round.round, bySha });
+    }
+  }
+}
+const critiqueSummary = (c) => {
+  if (!c || typeof c !== "object") return "";
+  const n = (k) => (Number.isInteger(c[k]) ? c[k] : 0);
+  return ` · governor's critique: ${n("met")} met, ${n("partly")} partly, ${n("missed")} missed, ${n("cant_tell")} can't tell${typeof c.letter_vs_spirit === "string" && c.letter_vs_spirit ? ` · letter vs spirit: ${c.letter_vs_spirit.slice(0, 240)}` : ""}`;
+};
+for (const name of (() => { try { return fs.readdirSync(mediaRoot).filter((n) => /^[A-Za-z0-9_.-]+$/.test(n)).sort().reverse(); } catch { return []; } })()) {
+  let report;
+  try { report = JSON.parse(fs.readFileSync(path.join(mediaRoot, name, "report.json"), "utf8")); } catch { continue; }
+  if (report?.schema !== "momm-media/1" || !Array.isArray(report.steps)) continue;
+  const runDir = path.join(mediaRoot, name);
+  const shown = [], refused = [];
+  for (const step of report.steps) for (const file of Array.isArray(step?.files) ? step.files : []) {
+    const rel = String(file?.path ?? "");
+    // Logical '.ensemble_reviews/...' references resolve inside the folder in use (1.17 A7).
+    const abs = rel.startsWith(".ensemble_reviews/") ? path.resolve(er, rel.slice(".ensemble_reviews/".length)) : path.resolve(path.dirname(er), rel);
+    const inside = path.relative(runDir, abs);
+    if (!rel.startsWith(`.ensemble_reviews/media/${name}/`) || !inside || inside.startsWith("..") || path.isAbsolute(inside)) { refused.push({ rel, why: "outside this run's folder" }); continue; }
+    let bytes; try { bytes = fs.readFileSync(abs); } catch { refused.push({ rel, why: "file missing" }); continue; }
+    if (createHash("sha256").update(bytes).digest("hex") !== file.sha256) { refused.push({ rel, why: "hash changed since it was recorded" }); continue; }
+    shown.push({ route: step.route ?? "?", step: step.step ?? null, src: path.relative(er, abs).split(path.sep).join("/"), sha256: file.sha256, mime: String(file.mime ?? ""), bytes: file.bytes ?? bytes.length });
+  }
+  const generation = generationByRun.get(report.run_id ?? name) ?? null;
+  for (const m of shown) {
+    const judged = generation?.bySha[m.sha256];
+    m.generation = generation ? ` · guided generation ${generation.gen_id} · round ${generation.round}${judged ? ` · picture ${judged.label}${critiqueSummary(judged.critique)}` : " · not yet revealed"}` : "";
+  }
+  mediaRuns.push({ run_id: report.run_id ?? name, at: report.at ?? "", status: report.status ?? "", prompt_sha256: report.prompt_sha256 ?? null, shown, refused });
+}
+const mediaCount = mediaRuns.reduce((n, r) => n + r.shown.length, 0);
+const mediaPanel = mediaRuns.length ? `<details class="track media" open><summary>Generated pictures · ${mediaCount} shown from ${mediaRuns.length} runs</summary>
+<p class="dim">Made by the named route through MOMM's modality runner; shown only while their bytes match the recorded sha256. AI-generated, not photographs.</p>
+${mediaRuns.map((r) => `<section class="media-run"><h3>${esc(r.run_id)} <span class="dim">${esc(r.at)} · ${esc(r.status)}${r.prompt_sha256 ? ` · prompt sha256 ${esc(String(r.prompt_sha256).slice(0, 12))}` : ""}</span></h3>
+<div class="media-grid">${r.shown.map((m) => `<figure>${/^image\//.test(m.mime) ? `<img loading="lazy" src="${esc(m.src)}" alt="Picture generated by ${esc(m.route)}" style="max-width:320px;height:auto">` : `<a href="${esc(m.src)}">${esc(m.src)}</a>`}<figcaption>${esc(m.route)} · step ${esc(m.step)} · ${esc(m.sha256.slice(0, 12))} · ${esc(m.bytes)} bytes${esc(m.generation)}</figcaption></figure>`).join("")}</div>
+${r.refused.length ? `<ul class="dim">${r.refused.map((x) => `<li>${esc(x.rel)} <em>not shown: ${esc(x.why)}</em></li>`).join("")}</ul>` : ""}</section>`).join("")}
+</details>` : "";
 
 const rows = runs.slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).map((run) => {
   const rpt = reports[run.run_id]?.report;
@@ -813,6 +884,7 @@ h4{margin:18px 0 4px;color:var(--accent);font:800 10px/1.4 var(--font-sans);lett
 <p class="note">${esc(data.private_note)}</p>
 <p class="note-meta">${esc(data.projects[0].root)} · generated ${esc(data.generated)} · rebuild: <code>${esc(LEDGER_CMD)}</code></p>
 ${integrityWarnings.length ? `<section role="alert"><h2>Evidence integrity warning</h2><p>This snapshot contains missing or damaged evidence. Intact history is shown below; do not treat this page as a completion certificate.</p><ul>${integrityWarnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></section>` : ""}
+${mediaPanel}
 ${trackPanel.replaceAll('<table class="momm-table">', '<div class="table-scroll" role="region" tabindex="0" aria-label="Review evidence table; scroll horizontally if needed"><table class="momm-table">').replaceAll('</table>', '</table></div>')}
 ${rows.replaceAll('<table class="momm-table">', '<div class="table-scroll" role="region" tabindex="0" aria-label="Review evidence table; scroll horizontally if needed"><table class="momm-table">').replaceAll('</table>', '</table></div>') || '<p class="dim">No runs recorded yet.</p>'}
 <p class="foot">Reviewer names identify harness CLIs, not inner model identities. Reports are content-addressed: quotes resolve to files whose sha256 is recorded beside them. Read-aloud uses your browser's local speech engine; nothing leaves this machine.</p>
@@ -834,7 +906,7 @@ try { requirePrivateEvidence(er); }
 catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
 try { fs.rmSync(outPath, { force: true }); } catch {}
 fs.writeFileSync(outPath, html, { mode: 0o600 });
-process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — this file stays in .ensemble_reviews/, which the momm protocol keeps out of git.)\n`);
+process.stdout.write(`Your private ledger: ${outPath}\n(${runs.length} runs, ${Object.keys(reports).length} sealed reports — ${evidenceAt.home ? "this file stays in your private evidence home, outside the project" : "this file stays in .ensemble_reviews/, which the momm protocol keeps out of git"}.)\n`);
 if (process.argv.includes("--open")) {
   const opener = process.platform === "win32" ? [path.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", "cmd.exe"), ["/c", "start", "", outPath]] : process.platform === "darwin" ? ["open", [outPath]] : ["xdg-open", [outPath]];
   try { spawn(opener[0], opener[1], { detached: true, stdio: "ignore" }).unref(); } catch {}

@@ -22,8 +22,10 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17 design.** 1.16.1 is released. A 1.17 plan is being written and reviewed on a branch; it is
-  not published here yet, and no 1.17 code is merged.
+- **Now: 1.17 candidate.** 1.16.1 is released. The reviewed plan is
+  [references/plan-1.17.md](references/plan-1.17.md); its scope is built on the `release/momm-1.17`
+  branch and goes to outside reviewers as a candidate before any signed tag. Its leading theme is
+  role-preserving review (see "1.17" below).
 - **1.16.1 (released).** Closed the holes 1.16.0 documented, proved the lifecycle 1.16.0 claimed and
   made reruns auditable. Charter, scope, non-goals and gates:
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
@@ -79,9 +81,28 @@ Unreadable tracked source now fails the hygiene check. These are candidate fixes
 their new tests, final-source peer coverage and native lifecycle gates still have
 to pass. No tag, installed-skill update or public release follows from local tests.
 
-## 1.17 (design; no code before its plan is reviewed)
+## 1.17 (candidate; built from its reviewed plan)
 
-Possible themes, each opt-in and fail-closed: `--early-exit` after quorum (needs in-flight
+**Leading theme: role-preserving review.** One writer, a harsher bench: versioned reviewer roles
+separate from routes, typed claims (`DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`) beside severity,
+opt-in cover of a failed role by another allowed route (labelled as a cover, never a quorum trick,
+never around authentication or quota), a narrow second look only on disagreement, and pairings chosen
+from measured evidence. Staging, deferred parts, refusals and the acceptance tests to write first:
+[references/ideas-register.md, "1.17 design candidate: role-preserving review"](references/ideas-register.md#117-design-candidate-role-preserving-review).
+
+**Second theme: loophole-aware critical review.** A lens for rules met to the letter but defeated in
+purpose (letter against spirit, relabelling, stale rules, permitted steps that chain into a forbidden
+state), used by the adversary role on reviewed work and turned on MOMM's own gates, each named
+loophole paired with a counter-measure labelled for whether it closes, narrows or only documents it:
+[references/ideas-register.md, "1.17 design candidate: loophole-aware critical review"](references/ideas-register.md#117-design-candidate-loophole-aware-critical-review).
+
+**Third theme: guided image generation** ([plan E](references/plan-1.17.md)). The governor acts as art
+director: an intent checklist the user confirms, one consented round at a time through
+`generation-rounds.mjs`, a blind critique saved before the makers are revealed, notes that reach each
+maker only about its own picture, and a separately consented combine round. The rounds command and its
+fake-runner tests exist on a work-package branch; the second live pilot waits for the owner (D7).
+
+Other possible themes, each opt-in and fail-closed: `--early-exit` after quorum (needs in-flight
 cancellation in `runProcess`); `--split auto` only after five live runs above 100 KB with at most
 10% coverage loss; ledger-derived route caps and a higher `--jobs` ceiling; optional
 `--cross-check` for `verify_first` findings; an opt-in global ledger index (links and counts, no

@@ -25,7 +25,7 @@ try {
     });
     const report={run_id:id,input_sha256:input,governor:'codex',findings:[],source_snapshot:{complete:true,files:[{path:'source.mjs',sha256:digest(fs.readFileSync(path.join(root,'source.mjs')))}]},
       gate_policy:{quorum_required:2,strict:false,requested_routes:['claude','grok']},attempt_evidence:rows,
-      reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/2',reviewed_scope:[{quote:'synthetic',assessment:'fixture'}]}],
+      reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/3',reviewed_scope:[{quote:'synthetic',assessment:'fixture'}]}],
       split:{pieces:rows.map(row=>({id:row.piece,reviewers:{[route]:row.status}})),governor_direct:[]}};
     amend?.(report);
     const name=`.ensemble_reviews/reports/${id}.json`;write(name,report);
@@ -66,6 +66,20 @@ try {
   // pin extra refusal boundaries requested by the review without inventing a defect.
   await assert.rejects(recordCheck(root,{runId:'rev_claims_1',test:'probe.mjs',timeout:10_000_000}),/timeout/);
   await assert.rejects(recordCheck(root,{runId:'rev_claims_1',test:'probe.mjs'},async()=>{write('source.mjs','export const x=2;\n');return {code:0,stdout:'changed',stderr:''};}),/changed during/);
+  // 1.17 B4.2: --phase mutation records the chosen test with one decision's change reverted. The
+  // reverted bytes are copied into the record, because the governor restores the file afterwards.
+  {
+    const item=digest('synthetic item');
+    await assert.rejects(recordCheck(root,{runId:'rev_claims_1',phase:'mutation',test:'probe.mjs',artifacts:['source.mjs']}),/mutation needs the decision's --item/);
+    await assert.rejects(recordCheck(root,{runId:'rev_claims_1',itemId:item,phase:'mutation',test:'probe.mjs'}),/mutation needs explicit --artifact/);
+    write('source.mjs','export const x=0;\n');
+    const mutated=await recordCheck(root,{runId:'rev_claims_1',itemId:item,phase:'mutation',test:'probe.mjs',artifacts:['source.mjs']},async()=>({code:1,stdout:'fails with the change reverted',stderr:''}));
+    const record=JSON.parse(fs.readFileSync(path.join(root,mutated.path),'utf8'));
+    assert.equal(mutated.exit_code,1);assert.equal(record.phase,'mutation');assert.equal(record.item_id,item);
+    assert.equal(record.artifacts[0].sha256,digest('export const x=0;\n'));
+    assert.equal(record.artifacts[0].snapshot.sha256,record.artifacts[0].sha256,'the reverted bytes travel with the record');
+    assert.equal(fs.readFileSync(path.join(root,record.artifacts[0].snapshot.path),'utf8'),'export const x=0;\n');
+  }
   const mismatch=make('rev_claims_policy','grok');mismatch.gate_policy.quorum_required=3;
   // A fresh correctly sealed fixture, not mutation of an existing reviewed run.
   const policyId='rev_claims_different_policy';mismatch.run_id=policyId;
