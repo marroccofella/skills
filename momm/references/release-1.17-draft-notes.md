@@ -1,7 +1,7 @@
-# MOMM 1.17 — draft notes (not released)
+# MOMM 1.17 — draft notes (superseded)
 
-User-visible changes, collected as each work package lands. Wording is provisional until the
-release notes are written.
+The release notes are [release-1.17.0.md](release-1.17.0.md). This file keeps the detailed notes
+collected as each work package landed, for reviewers who want the long form.
 
 - **Project review rules need trusting once.** A `.reviewrules` file that arrives with a cloned repository is no longer applied until you trust its exact hash; MOMM prints the file's hash and the one command to trust it. A changed file needs trusting again. (1.16 applied it for one release with a warning.)
 - **Reviewer readiness in reports is real again.** The version and login check now finishes before reviews start, so reports no longer show every route as "timeout" while it reviews normally. It adds about a second.

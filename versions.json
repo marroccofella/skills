@@ -1,8 +1,23 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.16.1",
+  "momm": "1.17.0",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.0",
+      "tag": "momm-1.17.0",
+      "changes": [
+        "On macOS and Linux a reviewer CLI or Git found only inside the reviewed project is reported as not installed and never launched, as on Windows; the updater, probes and Setup Center helpers follow the same rule.",
+        "A .reviewrules file that arrives with a clone is ignored until you trust its exact hash; Codex reviews no longer load your MCP servers, global instructions or skills (your model and effort are read, never changed); Grok runs isolated for reviews, probes and pictures.",
+        "Capability probes are tied to the exact command that earned them, so an older MOMM never uses evidence it cannot act on; optional MOMM_EVIDENCE_HOME keeps evidence under your own profile.",
+        "Reviews that finish: readiness completes before dispatch, splitting keeps removals with their replacements, Grok pieces are capped at 20 KB and streamed, and a rejected quotation keeps a short private diagnostic.",
+        "Peer contract momm-peer-review/3: claim types, image observations anchored by hash and pixel region; versioned reviewer roles with an adversary loophole checklist; opt-in --cover and --second-look.",
+        "A stricter completion check: style rulings are checked against the bytes, optional mutation records, a stale-review notice, and a scorecard roster per route and role.",
+        "Guided picture rounds with consent and cost before each round, blind governor critique and a private gallery; update.mjs --release-claim recovers an interrupted upgrade."
+      ],
+      "sha256": "6f984fee774bf4c44554324545234491bf2f378366e132499d019f60323994bc",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
+    },
     {
       "version": "1.16.1",
       "tag": "momm-1.16.1",

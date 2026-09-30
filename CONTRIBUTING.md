@@ -70,7 +70,7 @@ repository test suite. The safety workflow lists the selected commands and inlin
 Run each command with its own checked exit code: a later success must never mask a failure.
 New patch gates include byte-based media validation, expiry, immutable attempts/tool-produced
 checks, installation completion, and PATH-resolution refusals. Exact native-machine and
-signed-lifecycle results belong in the [gate record](momm/references/gates-1.16.1.md).
+signed-lifecycle results belong in the release's gate record ([1.17](momm/references/gates-1.17.md); [1.16.1](momm/references/gates-1.16.1.md)).
 
 1. Work in an isolated branch. Preserve unrelated skills and concurrent edits.
 2. Bump the dispatcher, manifest, README and release notes together. Regenerate

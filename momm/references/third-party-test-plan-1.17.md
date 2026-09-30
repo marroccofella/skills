@@ -25,7 +25,9 @@ node --version
 git --version
 ```
 
-`HEAD` must print exactly the pinned commit and `status` must print nothing. Record your operating system
+`HEAD` must print exactly the pinned commit and `status` must print nothing. On the sealed candidate the
+dispatcher declares `1.17.0` (`node momm/scripts/multi-review.mjs --version`) and
+`node scripts/momm-release.mjs --check` passes. Record your operating system
 and version, CPU architecture, Node and Git versions, the harness you are using (Claude Code, Codex,
 Copilot, and so on) and the UTC time. Node 18, 20, 22 and 24 are all tested in CI; please say which you used.
 
@@ -71,21 +73,21 @@ the pinned commit; the tests already ran in section 3.
 | Item | What should now be true | Where it is proven |
 | --- | --- | --- |
 | A1 | On macOS and Linux a reviewer CLI or Git found only inside the reviewed project is reported as not installed, never launched; the child PATH has no project entries. The updater, direct probe runs and the Setup Center's terminal and browser helpers follow the same rule. | `process-scope.test.mjs`, `executable-resolution.test.mjs`, `update.test.mjs`, `probes.test.mjs` |
-| A2 | Codex runs with `--ignore-user-config --ignore-rules`; your model and effort are read from your Codex settings (read-only) and passed explicitly; your MCP servers and global instructions are no longer loaded. | `adapter-cleanup.test.mjs`; live check in section 5 |
+| A2 | Codex runs with `--ignore-user-config --ignore-rules`; your model and effort are read from your Codex settings (read-only) and passed explicitly; your MCP servers and global instructions are no longer loaded. | `codex-isolation.test.mjs`, `adapter-cleanup.test.mjs`; live check in section 5 |
 | A3 | In an image review, a reviewer may cite what it saw by the attachment's sha256 and a pixel region; a wrong digest or a region outside the image is refused. | `scripts/momm-media-contract.test.mjs` |
-| A4 | Splitting never separates removed lines from the lines that replace them; a split run with Grok caps pieces at 20 KB; Grok reviews stream, so a timeout still records what arrived; a rejected quote keeps a short private diagnostic. | `split.test.mjs`, `adapter-cleanup.test.mjs`, `attempts.test.mjs` |
+| A4 | Splitting never separates removed lines from the lines that replace them; a split run with Grok caps pieces at 20 KB; Grok reviews stream, so a timeout still records what arrived; a rejected quote keeps a short private diagnostic. | `split.test.mjs`, `grok-stream.test.mjs`, `quotation-diagnostics.test.mjs`, `adapter-cleanup.test.mjs` |
 | A5 | Reports show real reviewer versions instead of "timeout": preflight finishes before reviews start. | `attachment-cleanup.test.mjs` |
-| A6 | An upgrade killed mid-transaction can be recovered. After a crash, the stale claim is released with `update.mjs --release-claim <token>` (the refusal message prints it) and then `--rollback --yes`. | `update.test.mjs`; the lifecycle drills (section 6) |
-| A7 | `MOMM_EVIDENCE_HOME` (or `--evidence-home`) keeps a project's evidence under your own profile, one hashed folder per project, with the same privacy check; a location inside the project is refused. | the evidence-location suite |
+| A6 | An upgrade killed mid-transaction can be recovered. After a crash, the stale claim is released with `update.mjs --release-claim <token>` (the refusal message prints it) and then `--rollback --yes`. | `update.test.mjs`, `update-claim.test.mjs`; the lifecycle drills (section 6) |
+| A7 | `MOMM_EVIDENCE_HOME` (or `--evidence-home`) keeps a project's evidence under your own profile, one hashed folder per project, with the same privacy check; a location inside the project is refused. | `evidence-location.test.mjs` |
 | A8 | A `.reviewrules` file that arrives with a clone is ignored until you trust its exact hash; a changed file needs trusting again. | `guidance.test.mjs` |
 | A9 | A capability probe is tied to the exact command that earned it. A 1.17 success on a command that changed since 1.16.1 is stored so 1.16.1 cannot use it. | `capabilities.test.mjs`, `probes.test.mjs` |
 | A10 | Grok runs isolated from your Claude Code and Cursor setup for reviews, probes and picture generation alike. | `modality.test.mjs`, `adapter-cleanup.test.mjs` |
-| B1, C1 | Reviewer roles are versioned files under `momm/roles/` with a review date; the report records each role's version and hash; only the adversary role carries the loophole checklist. | the roles suite |
+| B1, C1 | Reviewer roles are versioned files under `momm/roles/` with a review date; the report records each role's version and hash; only the adversary role carries the loophole checklist. | `roles.test.mjs` |
 | B2 | Findings may carry a claim type (`DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`); a merge keeps the most blocking type; a `CRITICAL` or `WARNING` needs reproduction whatever its type. | `governor.test.mjs` |
-| B3, C2 | With `--cover`, a failed role is covered by another requested route, never after a login or quota failure; at most two attempts per piece and role; a cover never counts twice for one model family. A property test drives every short sequence of retries, covers and splits. | the cover and invariants suites |
+| B3, C2 | With `--cover`, a failed role is covered by another requested route, never after a login or quota failure; at most two attempts per piece and role; a cover never counts twice for one model family. A property test drives every short sequence of retries, covers and splits. | `cover.test.mjs`, `invariants.test.mjs` |
 | B4 | A decision marked `style` is checked against the bytes (a commented-out line, a tool directive, a Python reindent is not style); mutation records are optional and reported; the validator says whether a review is stale. | `governor.test.mjs`, `review-claims.test.mjs` |
-| B5 | `--second-look <run> --finding <id>` asks one route that was not a source to confirm or refute one claim; the original report never changes. | the second-look suite |
-| B6 | The scorecard shows a roster per route and role, labelled as this project's decisions, not a benchmark. | `scorecard.test.mjs` |
+| B5 | `--second-look <run> --finding <id>` asks one route that was not a source to confirm or refute one claim; the original report never changes. | `second-look.test.mjs` |
+| B6 | The scorecard shows a roster per route and role, labelled as this project's decisions, not a benchmark. | `scorecard.test.mjs`, `scorecard-roster.test.mjs` |
 | E | `generation-rounds.mjs` runs consented picture rounds: a costed question each round, the user's words sent unchanged, blind critique saved before labels are revealed, and a local gallery. The ledger shows generated pictures only while their bytes match. | `generation-rounds.test.mjs`, `scripts/ledger-media.test.mjs` |
 
 If a row's suite does not exist at the pinned commit, report that as a finding: the item is not done.

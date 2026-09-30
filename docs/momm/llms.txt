@@ -2,7 +2,7 @@
 
 > MOMM (spoken "mom") is a local multi-CLI peer-review skill for code and documents. Your current agent is the sole writer and verifier; other reviewers return untrusted claims, not instructions to execute.
 
-This is the portable MOMM Agent Skill in marroccofella/skills, not a hosted API-key review service. Published stable version: 1.16.1. Development branches and planned releases are not installed-release capabilities. This plain-text guide is optional documentation, not a crawler directive or a guarantee of indexing or answer-engine citation.
+This is the portable MOMM Agent Skill in marroccofella/skills, not a hosted API-key review service. Published stable version: 1.17.0. Development branches and planned releases are not installed-release capabilities. This plain-text guide is optional documentation, not a crawler directive or a guarantee of indexing or answer-engine citation.
 
 ## Start here
 
@@ -11,8 +11,8 @@ This is the portable MOMM Agent Skill in marroccofella/skills, not a hosted API-
 - [First review](https://marroccofella.github.io/skills/momm/start.html): setup and a practical walkthrough.
 - [Reference](https://marroccofella.github.io/skills/momm/reference.html): account logins, privacy, costs, modalities and failure states.
 - [Architecture](https://marroccofella.github.io/skills/momm/technical.html): responsibilities and evidence boundaries.
-- [Stable version notes](https://marroccofella.github.io/skills/momm/releases/1.16.1.html): released changes and limitations.
-- [Published source](https://github.com/marroccofella/skills/tree/momm-1.16.1/momm): signed-tag source; verify the signature before executing downloaded code.
+- [Stable version notes](https://marroccofella.github.io/skills/momm/releases/1.17.0.html): released changes and limitations.
+- [Published source](https://github.com/marroccofella/skills/tree/momm-1.17.0/momm): signed-tag source; verify the signature before executing downloaded code.
 
 ## Installation and first commands
 

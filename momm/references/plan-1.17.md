@@ -1,9 +1,9 @@
 # MOMM 1.17 plan: one pen, a harder bench
 
-Status: **design, not released, not published.** The current release is 1.16.1 (signed tag
-`momm-1.16.1`, 28 September 2026). This plan lives on the local branch `release/momm-1.17`; until it
-is published, public `main` still carries the pre-1.16.1 roadmap wording. No 1.17 code is merged
-before this plan has a completed review with quorum and a receipt, bound to its final text.
+Status: **built; sealed candidate 1.17.0, not released.** The current release is 1.16.1 (signed tag
+`momm-1.16.1`, 28 September 2026). The plan had its completed review (quorum and a receipt) before any
+1.17 code was merged; every scope item is now implemented on `release/momm-1.17` (see Progress), and
+the release gates decide whether it becomes the signed tag `momm-1.17.0`.
 
 **One plan.** A parallel draft written the same day in another session
 (`momm-1.17-plan`, "safer review coverage, measured improvement") and two external reviews of the
@@ -535,41 +535,41 @@ code.
 
 ## Traceability
 
-Every proposal on record, where it went, and its status (Open, Implemented or Out). The work order
-schedules every Open row.
+Every proposal on record, where it went, and its status (Open, Implemented or Out). Every row
+that was Open is now Implemented; the release gates are tracked separately.
 
 | Source | Proposal | Disposition | Status |
 | --- | --- | --- | --- |
-| Register, planned for 1.17 | POSIX launch resolution | A1 | Open |
-| Register, planned for 1.17 | Full Codex isolation | A2 | Open |
-| Register, planned for 1.17 | Image quotation | A3 (D8) | Open |
-| Register, planned for 1.17 | Full-range review can finish | A4 | Open |
-| Register, planned for 1.17 | In-review preflight timeouts | A5 | Open |
-| Register, planned for 1.17 / 1.16.1 gate record | Interrupted-install drill | A6 | Open |
-| Register, planned for 1.17 | Evidence outside the project | A7 (D1) | Open |
+| Register, planned for 1.17 | POSIX launch resolution | A1 | Implemented |
+| Register, planned for 1.17 | Full Codex isolation | A2 | Implemented |
+| Register, planned for 1.17 | Image quotation | A3 (D8) | Implemented |
+| Register, planned for 1.17 | Full-range review can finish | A4 | Implemented |
+| Register, planned for 1.17 | In-review preflight timeouts | A5 | Implemented |
+| Register, planned for 1.17 / 1.16.1 gate record | Interrupted-install drill | A6 | Implemented |
+| Register, planned for 1.17 | Evidence outside the project | A7 (D1) | Implemented |
 | Register, planned for 1.17 | Film captions, poster | Out: owner's media pipeline | Out |
 | Register, 1.17 candidates | `--early-exit`, `--split auto`, caps and `--jobs`, adaptive timeouts | Out; status corrected under "Verified starting point" | Out |
-| Register, 1.17 candidates | `--cross-check` | B5 (narrowed to one claim) | Open |
+| Register, 1.17 candidates | `--cross-check` | B5 (narrowed to one claim) | Implemented |
 | Register, 1.17 candidates | One observation across finding ids | Out | Out |
 | Register, 1.17 candidates | Bounded surrounding context | Out | Out |
 | Register, 1.17 candidates | Deterministic evidence beside reviews | Exists (`checks.mjs`); pre-review runner out | Out |
-| Register, 1.17 candidates | Persona on dispositions | B6 | Open |
-| Register, measurement | Receipt invalidation on change | B4.3 | Open |
+| Register, 1.17 candidates | Persona on dispositions | B6 | Implemented |
+| Register, measurement | Receipt invalidation on change | B4.3 | Implemented |
 | Register, measurement | Benchmark, scoreboard, training sets, signed receipts, MOMM World, CLI health feed | Out | Out |
 | Register, installation management | F3 to F8 | Out (D10) | Out |
-| `guidance.mjs` promise | `.reviewrules` grace ends | A8 (D9) | Open |
-| Owner, 28 September | Role-preserving review | B1 to B6 | Open |
-| Owner, 28 September | Loophole-aware critical review | C1, C2, gate self-audit, B4.1, B4.2 | Open |
-| Owner, 29 September | Guided image generation, suggested rounds | E | Open |
+| `guidance.mjs` promise | `.reviewrules` grace ends | A8 (D9) | Implemented |
+| Owner, 28 September | Role-preserving review | B1 to B6 | Implemented |
+| Owner, 28 September | Loophole-aware critical review | C1, C2, gate self-audit, B4.1, B4.2 | Implemented |
+| Owner, 29 September | Guided image generation, suggested rounds | E | Implemented |
 | Grok pilot, 29 September | G1 to G3 | Implemented (E2a) | Implemented |
-| Grok pilot, 29 September | G4 generation isolation | A10 | Open |
+| Grok pilot, 29 September | G4 generation isolation | A10 | Implemented |
 | Grok pilot, 29 September | G5 video under ZDR (zero data retention) | Owner setting; stays fail-closed | Out |
-| Grok pilot, 29 September | G6 review timeouts | A4.3 | Open |
-| External review, 29 September | Cross-version capability evidence | A9 | Open |
-| External review, 29 September | Plan and roadmap status wording | Status paragraph; docs change on `main` (work order) | Open |
-| External review, 29 September | Improvement page and observer wording | Docs change on `main` (work order) | Open |
+| Grok pilot, 29 September | G6 review timeouts | A4.3 | Implemented |
+| External review, 29 September | Cross-version capability evidence | A9 | Implemented |
+| External review, 29 September | Plan and roadmap status wording | Status paragraph; docs change on `main` (work order) | Implemented |
+| External review, 29 September | Improvement page and observer wording | Docs change on `main` (work order) | Implemented |
 | External review, 29 September | Broader workflow products | Out, named | Out |
-| Mannin, 28 September | Evidence folder refused on inherited grants | A7 | Open |
+| Mannin, 28 September | Evidence folder refused on inherited grants | A7 | Implemented |
 | Mannin, 28 September | Canvas image routing | Out: Mannin repair contract | Out |
 | Earlier proposals | Paid managed reviewers | Out | Out |
 
@@ -611,8 +611,9 @@ every suggestion gets a disposition.
 
 ## Progress
 
-Merged on `release/momm-1.17` (local), each with failing-first tests. The full CI suite set is re-run
-after each merge batch.
+Every item in the scope table is built and merged on `release/momm-1.17`, each with failing-first
+tests; the full CI suite set passed after every merge batch (91 suites on the final merge). What
+remains is the release gates.
 
 - **Grok route (E2a pilot findings):** G1 media-tool grants, G2 route-scoped gate phrasing, G3 a
   misread gate reads as reprobe.
@@ -620,66 +621,57 @@ after each merge batch.
 - **A9:** capability evidence bound to a canonical command-shape fingerprint; the writer always stamps
   one; a success on a command changed since 1.16.1 is stored as `probe_failed` plus
   `verified_command_shape_sha256`, so 1.16.1 never routes it; account gates stand.
-- **E:** the rounds command (`generation-rounds.mjs`: start, checklist, confirmation, costed question,
-  consented rounds in parallel, blind labels, critique saved before reveal, local gallery) with a
-  fake-runner suite; the ledger shows generated pictures only while their bytes match their hash, with
-  the round and, after the reveal, the critique summary. Blind copies keep any provider metadata inside
-  the image file; the governor judges pixels, not metadata. The second live pilot waits for D7.
 - **A8:** an untrusted `.reviewrules` is skipped until its exact hash is trusted.
 - **A5:** preflight finishes before dispatch.
 - **A4.1:** a replaced block is one cut unit; one over the ceiling is its own piece up to the 2 MB cap.
-- **A4.3 (piece ceiling):** a split run with Grok caps the ceiling at 20 KB and records it.
-- **C2 (split part):** a seeded 200-case property test for reassembly and paired halves.
+- **A4.2:** a quotation refusal leaves each failing quote's SHA-256, length, redacted 80-character
+  prefix and the comparisons tried in the private attempt record only.
+- **A4.3:** a split run with Grok caps the ceiling at 20 KB and records it; Grok reviews read
+  `--output-format streaming-json` in the shape verified on a live Grok CLI 1.0.41 capture (`text`
+  lines, then one `end`); a timeout keeps `first_output_ms`, `stdout_bytes`, `stream_events` and
+  `last_event_type` and stays `timeout`.
+- **A2:** `--ignore-user-config --ignore-rules`; `model` and `model_reasoning_effort` read read-only
+  from the user's Codex configuration and passed only when set and valid (`route_settings` in the
+  report); probes send the review's own command line, and Codex input cells carry the isolation in their
+  command shape, so 1.16.1 evidence reads as reprobe once. Codex generation is unchanged.
+  Live evidence, 30 September 2026 (disclosed quota, D6): a synthetic review from the candidate
+  returned a valid `momm-peer-review/3` answer with preflight version 0.157.1 and model and effort from
+  the user's configuration; with four MCP servers configured (three local processes), the process tree
+  of a candidate run started none of them, while the same run under installed 1.16.1 started all three.
 - **A1 and follow-ups:** one launch resolver for every platform, also in the updater (including
   `--check-all`), direct probe runs and the Setup Center's terminal and browser helpers.
 - **B2 and A3:** typed claims (merge keeps the most blocking type; severity still gates; recorded
   re-typing only) and image observations bound to a sent attachment's sha256 and pixel bounds, under
   peer contract `momm-peer-review/3` (sealed /2 reports still validate).
+- **B1 and C1:** role briefs are versioned files in `momm/roles` with a review date; the report records
+  `role` and `role_brief`; the loophole checklist is on the adversary only.
+- **B3 and C2:** `--cover` with one attempt budget per piece and role, never after a login or quota
+  failure, and family-gated votes that the validator recounts; a seeded 200-case split property test and
+  a depth-5 step-alphabet property test for retries, covers and splits.
 - **B4:** `style` decided from the bytes by `style-classifier.mjs` (directives, whitespace-significant
   and unclassifiable files fail closed); `checks.mjs --phase mutation` recorded and reported, never
   required; the validator reports `stale` against the installed dispatcher, peer contract, process
-  scope, governor, file-based guidance and recorded command fingerprints (CLI versions, models and
-  attachments are `unknown`), and the receipt carries it.
-- **A7 (per D1) and A4.2 recording:** opt-in `MOMM_EVIDENCE_HOME` / `--evidence-home` resolves, through one
-  module (`evidence-location.mjs`), to a private per-project folder named by a hash of the project's real
-  path, refused inside the project by either spelling; the dispatcher, attempts, checks (including the
-  mutation phase), governor, ledger, scorecard, media, generation rounds, second looks, `evidence --status/--protect`,
-  the Setup Center, the probe ledger and the updater's review-log search (a pinned self-contained copy of
-  the rule) all follow it; the default location is unchanged. A quotation refusal leaves each failing
-  quote's SHA-256, length, redacted 80-character prefix and the comparisons tried in the private attempt
-  record only; the disclosed A4.2 diagnostic run still needs the owner's quota.
+  scope, governor, file-based guidance, role brief hashes and recorded command fingerprints (CLI
+  versions, models and attachments are `unknown`), and the receipt carries it.
+- **B5:** `--second-look <run> --finding <id>` sends one claim to one route that was not its source and
+  writes a separate `momm-second-look/1` report; the original is never changed.
+- **B6 and A6b:** an optional `role` on decision rows (a cover's rows carry the role it covered) and the
+  scorecard's per-route, per-role roster reading `covers[]`, labelled as this project's governor
+  decisions; `update.mjs --release-claim <token>` removes only `update.active`, only for the exact token
+  and a process that is not running, and the refusal prints it before the recovery command.
+- **A7 (per D1):** opt-in `MOMM_EVIDENCE_HOME` / `--evidence-home` resolves, through
+  `evidence-location.mjs`, to a private per-project folder named by a hash of the project's real path,
+  refused inside the project; every evidence reader and writer follows it; the default is unchanged.
+- **E:** the rounds command (`generation-rounds.mjs`) with a fake-runner suite; the ledger shows
+  generated pictures only while their bytes match their hash. Blind copies keep any provider metadata
+  inside the image file. The second live pilot is optional (D7).
+- **A6:** on `drills/momm-1.17`, the interrupted-upgrade step; rehearsal 1 (run 36635871345) found the
+  stale claim, rehearsal 2 (run 36637157857) passed all six cells.
+- **Docs on `main`:** roadmap now and next and the Improvement page status (PR #30), merged into this
+  branch.
 - **Owner decisions D1 to D10:** delegated to the recommended options on 29 September 2026 ("complete
   any and all outstanding items").
 
-In progress on separate branches: B1, C1, B3,
-the step-alphabet part of C2, and B5 (done with failing-first tests on `wip/momm-1.17-wp9-roles`,
-rebased on ea210e0, awaiting merge: role briefs in `momm/roles` with `role`/`role_brief` in the
-report and brief hashes in the stale check; the loophole checklist on the adversary only; `--cover`
-with one attempt budget per piece and role and family-gated votes that the validator recounts and the
-roster reads from `covers[]`; the depth-5 step-alphabet property test; `--second-look` with a
-separate `momm-second-look/1` report); B6 and A6b (token-confirmed `--release-claim`); A2 and A4.3
-streaming Grok output. A6 is on `drills/momm-1.17`: the rehearsal (run 36635871345) found that
-recovery after a crash needs a manual release of the stale update claim; the drill now performs and
-records that step.
-
-Still to do after those: the A2 live probe (owner quota), the A4.2 diagnostic run (owner quota), the
-release documents and the release gates.
-In progress on separate branches: B4 (harder accept gate), E (the rounds command), A6 on `drills/momm-1.17`, and on `wip/momm-1.17-wp11-codex`
-A2 and A4.3 streaming. **A2:** code done (`codexIsolationArgs` in `route-isolation.mjs`: `--ignore-user-config
---ignore-rules`, `model` and `model_reasoning_effort` read read-only from the user's Codex configuration and
-passed only when set and valid, `route_settings` in the report). Codex probes send the review's own command
-(`codexReviewArgs`) and Codex input cells carry the isolation in their command shape, so 1.16.1 evidence
-reads as reprobe once; generation is unchanged. The disclosed synthetic probe and the MCP canary are pending
-the owner's quota approval (D6). **A4.3 streaming:** done (`grok-stream.mjs`; Grok reviews read
-`--output-format streaming-json` in the shape verified on a live Grok CLI 1.0.41 capture, `text` lines then
-one `end`; a timeout keeps `first_output_ms`, `stdout_bytes`, `stream_events` and `last_event_type` and stays
-`timeout`). The A6 rehearsal (run
-36635871345) found that recovery after a crash needs a manual release of the stale update claim; the
-drill now performs and records that step. On `wip/momm-1.17-wp10-roster`, with failing-first tests:
-**A6b**, `update.mjs --release-claim <token>` (removes only `update.active`, only for the exact token
-and a PID that is not running; the refusal prints that command, then the recovery command), and
-**B6**, an optional `role` on decision rows (validated against the report; derived from
-`reviewers[].role`, else `persona`, when absent) and the scorecard's per-route, per-role roster in
-`--json`, Markdown and HTML, labelled as this project's governor decisions.
-
-Not started: nothing in the scope table; the release gates remain.
+Release gates still open: gate 1 on the sealed commit, gate 2 on its signed checkpoint, gate 3 (the
+self-review of this delta), gate 5 (one live image review), and gate 6 (the owner's go-ahead). The
+A4.2 diagnostic range run is part of gate 3.

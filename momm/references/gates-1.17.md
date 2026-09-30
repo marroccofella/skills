@@ -27,6 +27,15 @@ or rejected with evidence, and every review has a completion receipt in the priv
 - `rev_20260929211625_0b5ba54cb0e5` — the full committed base, split in six pieces (10 real findings
   fixed; two CRITICALs and one WARNING were split-piece misreads, rejected with investigation evidence).
 
+## Live checks (disclosed quota, D6)
+
+- **A2, 30 September 2026:** a synthetic review from the candidate (`rev_20260929232813_42d22e212a6b`)
+  returned a valid `momm-peer-review/3` answer (Codex 0.157.1 in preflight, login ok, the planted defect
+  found as a typed `DEFECT`), with model and effort read from the user's Codex configuration. MCP
+  canary: the user's Codex configuration lists four MCP servers, three of them local processes. The
+  process tree of the candidate run, sampled every 250 ms, started none of them; the same run under
+  installed 1.16.1 started all three (control).
+
 ## Lifecycle drills
 
 Branch `drills/momm-1.17` (never merged) adds an interrupted-upgrade step (plan A6): after each

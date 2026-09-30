@@ -1,6 +1,6 @@
-# MOMM 1.17 — release notes
+# MOMM 1.17.0 — release notes
 
-**Candidate, not released.** Until the signed tag `momm-1.17.0` is published, the current signed release
+**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.17.0` is published, the current signed release
 remains 1.16.1. Do not install an unsigned branch as a signed release.
 
 1.17 keeps one writer and makes everything around it harder to fool. Reviewers stay read-only; the
@@ -24,6 +24,8 @@ governor is the only writer; account logins only; automatic updates stay off.
 - Reports show real reviewer versions again: the readiness check finishes before reviews start.
 - Splitting never separates removed lines from the lines that replace them; with Grok reviewing, pieces
   are capped at 20 KB, and Grok's output streams, so a timeout still records what arrived.
+- When a reviewer’s quotation fails the exact-text rule, the private attempt record keeps a short
+  diagnostic (the failing quote’s hash, length and first 80 characters after redaction).
 - In an image review, reviewers may cite what they saw by the attachment's hash and a pixel region.
 - Findings may carry a claim type (`DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`). Severity still decides
   what needs reproduction.
@@ -57,4 +59,5 @@ governor is the only writer; account logins only; automatic updates stay off.
 and attachment bytes are reported as unknown in the stale check. Grok video generation is refused while
 your Grok account has zero data retention on.
 
-Details: [plan](plan-1.17.md) · [gate record](gates-1.17.md) · [reviewer pack](third-party-test-plan-1.17.md)
+Details: [plan](plan-1.17.md) · [gate record](gates-1.17.md) · [reviewer pack](third-party-test-plan-1.17.md) ·
+[long-form notes](release-1.17-draft-notes.md)
