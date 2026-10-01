@@ -584,6 +584,22 @@ try {
     // Receipts carry names and booleans only: no hashes, versions or text travel in this block.
     assert(!JSON.stringify(b).includes('2.1.0') && !JSON.stringify(b).includes('b'.repeat(64)));
   });
+  // Final review of 1.17.0 (staleness-catch-reports-fresh): a comparison that threw part-way (here an attachment
+  // name that cannot become a string) replaced the differences already found with stale:false, changed:[].
+  test('a comparison that cannot finish keeps the differences it found and names the rest unknown', () => {
+    const odd = { ...report, governor_sha256: '0'.repeat(64), attachments: [{ name: { toString: 1 }, modality: 'image', bytes: 3, sha256: 'a'.repeat(64) }] };
+    const direct = reviewStaleness(odd, fixture);
+    assert.equal(direct.stale, true, JSON.stringify(direct));
+    assert(direct.changed.includes('governor_sha256') && direct.unknown.includes('installation') && !direct.matched.includes('governor_sha256'), JSON.stringify(direct));
+    const id = 'rev_fixture_stale_unfinished', p = `.ensemble_reviews/reports/${id}.json`;
+    write(p, { ...odd, run_id: id });
+    const log = path.join(fixture, '.ensemble_reviews/review-log.jsonl'), original = fs.readFileSync(log);
+    fs.appendFileSync(log, JSON.stringify({ run_id: id, report_path: p, report_sha256: ref(p).sha256, input_sha256: odd.input_sha256 }) + '\n');
+    try {
+      const sealed = inspectCompletion(fixture, id).stale;
+      assert(sealed?.stale === true && sealed.changed.includes('governor_sha256') && sealed.unknown.includes('installation'), JSON.stringify(sealed));
+    } finally { fs.writeFileSync(log, original); fs.unlinkSync(path.join(fixture, p)); }
+  });
   test('an updated final manifest alone cannot justify changed source',()=>{
     const file=path.join(fixture,`.ensemble_reviews/verification/${report.run_id}.json`),original=fs.readFileSync(file);
     write('mean.cjs',good+'// unaccounted change\n');write(`.ensemble_reviews/verification/${report.run_id}.json`,observation('run','final','evidence/after.txt',0,'2026-01-01T00:00:05Z'));

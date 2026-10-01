@@ -699,7 +699,10 @@ export function releaseClaim(dir, token, { kill = (pid, signal) => process.kill(
   let same = false;
   try { const now = fs.lstatSync(moved); same = now.isFile() && !now.isSymbolicLink() && now.ino === inspected.ino && fs.readFileSync(moved).equals(bytes); } catch { same = false; }
   if (!same) {
-    try { fs.linkSync(moved, file); } catch { throw new Error(`Update claim ${file} changed while it was released and another claim now stands there; the file that was moved aside is kept at ${moved}. Nothing else was changed; inspect both.`); }
+    // A volume without hard links (FAT, exFAT) refuses link() itself: an exclusive copy puts the claim back with
+    // the same promise, never over a claim made meanwhile. rename() is never used: it would replace such a claim.
+    const putBack = () => { try { fs.linkSync(moved, file); } catch (error) { if (error?.code === "EEXIST") throw error; fs.copyFileSync(moved, file, fs.constants.COPYFILE_EXCL); } };
+    try { putBack(); } catch { throw new Error(`Update claim ${file} changed while it was released and another claim now stands there; the file that was moved aside is kept at ${moved}. Nothing else was changed; inspect both.`); }
     fs.unlinkSync(moved);
     throw changed();
   }

@@ -95,11 +95,12 @@ Optional `role` (1.17): copy the role that reviewer held from the report, `revie
 (the covered role, see Role cover below); for a finding, either of those. Only a finding's `role`
 reaches the scorecard: when a finding's row has no `role`, the scorecard takes the reviewer's
 `reviewers[].role`, else `reviewers[].persona`,
-else, for a route that only covered, its one covered role (none when it covered more than one).
-A suggestion's `role` is checked but counted in no roster column, so a cover's suggestion without
-one is never credited to the route's native role. The role feeds only the scorecard's
-per-route, per-role roster (valid reviews, reproduced claims, false `CRITICAL`, median time, cover
-success), which is this project's governor decisions, not a benchmark; nothing routes on it.
+else, for a route that only covered, its one covered role (none when it covered more than one);
+a finding's role feeds only the scorecard's per-route, per-role roster (valid reviews, reproduced
+claims, false `CRITICAL`, median time, cover success), which is this project's governor decisions,
+not a benchmark; nothing routes on it. A suggestion's `role` is checked but counted in no roster
+column: no suggestion row, a cover's included, with or without `role`, is credited to any role,
+native or covered, or to cover success.
 
 Re-typing a claim (peer contract `momm-peer-review/3`). A finding may carry a `claim_type`
 (`DEFECT`, `RISK`, `QUESTION`, `IDEA` or `NOISE`; `null` when untyped). The report's merged

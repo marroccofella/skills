@@ -9,7 +9,9 @@ governor is the only writer; account logins only; automatic updates stay off.
 **Safer by default**
 - On macOS and Linux, MOMM now launches a reviewer CLI or Git only from a PATH folder outside the project
   you are reviewing, as it already did on Windows. A CLI installed only inside that project is reported as
-  not installed. The updater, probes and the Setup Center's helpers follow the same rule.
+  not installed. The updater, probes and the Setup Center's helpers follow the same rule. A command
+  given as an absolute path is launched only by its real path, and only when both the path as named and
+  the real path lie outside the project.
 - A `.reviewrules` file that arrives with a cloned repository is ignored until you trust its exact hash.
   MOMM prints the hash and the one command to trust it. (1.16 applied it for one release with a warning.)
 - Codex reviews no longer load your Codex MCP servers, global instructions or skills. Your model and
@@ -26,6 +28,8 @@ governor is the only writer; account logins only; automatic updates stay off.
   are capped at 20 KB, and Grok's output streams, so a timeout still records what arrived.
 - When a reviewer’s quotation fails the exact-text rule, the private attempt record keeps a short
   diagnostic (the failing quote’s hash, length and first 80 characters after redaction).
+- A quotation that is exactly inside one side of one diff hunk now counts when it is copied without the
+  diff's line markers; a quote that mixes removed and added lines, or spans two hunks, is still refused.
 - In an image review, reviewers may cite what they saw by the attachment's hash and a pixel region.
 - Findings may carry a claim type (`DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`). Severity still decides
   what needs reproduction.
@@ -38,7 +42,8 @@ governor is the only writer; account logins only; automatic updates stay off.
 
 **A stricter completion check**
 - A decision marked "style" is checked against the actual bytes: commenting out code, editing a tool
-  directive or re-indenting Python is not style.
+  directive or re-indenting Python is not style. A gate review of 1.17 itself found and closed five
+  ways code could pass as style (see the gate record).
 - An optional mutation record shows a test fails when its fix is reverted.
 - The completion validator says when a review is stale because MOMM, its contract or your guidance
   changed since.
@@ -53,13 +58,22 @@ governor is the only writer; account logins only; automatic updates stay off.
 **Updates and recovery**
 - If an update is interrupted, the refusal message prints the exact command to release the stale claim
   (`update.mjs --release-claim <token>`) before `--rollback --yes`. The lifecycle drills now interrupt an
-  upgrade on every cell and recover it.
+  upgrade on every cell and recover it. Releasing a claim can never remove a newer claim that replaced
+  it meanwhile.
+- When an evidence folder cannot be verified, the printed repair command is quoted for the shell it
+  names (PowerShell or cmd.exe) and includes your evidence home when one is set.
 
 **Known limits.** Blind picture copies keep any provider metadata inside the image file. Model identity
 and attachment bytes are reported as unknown in the stale check. Grok video generation is refused while
 your Grok account has zero data retention on. Codex picture generation keeps its 1.16.1 command
 (`--sandbox workspace-write`, without the review's `--ignore-user-config --ignore-rules`), so it still loads
 your Codex configuration; the new isolation covers Codex reviews and the probes that certify them.
+A project at a drive or filesystem root cannot complete a review receipt (the check refuses, safely).
+If the privacy check fails after picture makers have answered, that generation must be started again.
+On a volume without hard links (FAT, exFAT) releasing a stale update claim uses an exclusive copy; that
+path is unit-tested but was not run on such a volume. A gate review should be a `--range` review: a
+review of a diff file given as `--input` cannot receive a completion receipt for findings that cite
+project files.
 
 Details: [plan](plan-1.17.md) · [gate record](gates-1.17.md) · [reviewer pack](third-party-test-plan-1.17.md) ·
 [long-form notes](release-1.17-draft-notes.md)

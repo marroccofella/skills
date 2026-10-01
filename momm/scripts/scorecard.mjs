@@ -259,7 +259,8 @@ export function renderMarkdown(card) {
   const cell = (s) => clean(s, 200).split("|").join("/");
   const head = "| " + COLUMNS.map((c) => c[0]).join(" | ") + " |", rule = "|" + COLUMNS.map(() => " --- ").join("|") + "|";
   const rows = card.reviewers.map((r) => "| " + COLUMNS.map((c) => cell(c[1](r))).join(" | ") + " |");
-  const roster = rosterOf(card), rosterRows = roster.rows.map((r) => "| " + ROSTER_COLUMNS.map((c) => cell(c[1](r))).join(" | ") + " |");
+  const roster = rosterOf(card), rosterRows = roster.rows.length ? roster.rows.map((r) => "| " + ROSTER_COLUMNS.map((c) => cell(c[1](r))).join(" | ") + " |")
+    : ["| No routes or roles recorded yet. |" + " |".repeat(ROSTER_COLUMNS.length - 1)]; // as the HTML says it
   const rosterTable = ["## Route and role roster", "", roster.label, "", "| " + ROSTER_COLUMNS.map((c) => c[0]).join(" | ") + " |", "|" + ROSTER_COLUMNS.map(() => " --- ").join("|") + "|", ...rosterRows];
   return ["# MOMM effectiveness scorecard", "", ...ensembleLines(card.ensemble).map((l) => "- " + l), "", head, rule, ...rows, "", ...rosterTable, "", "> " + card.caveat, "", "Score = " + JSON.stringify(card.score_formula.weights) + ", shown from " + card.score_formula.minimum_ruled_findings + " ruled findings."].join("\n") + "\n";
 }

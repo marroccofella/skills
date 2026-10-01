@@ -114,6 +114,22 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
   assert(!posix.includes(`"${home}"`)&&!windows.includes(`"${home}"`));
   checks++;
  }
+ // Final review of 1.17.0 (rev_20260930054910_0852b507489e): cmd.exe does not read single quotes, so a home with a
+ // space split into several arguments there and a home with & ran the rest as a command. Each Windows form now names
+ // its shell: PowerShell single quotes (typographic single quotes doubled too), cmd.exe double quotes, and no cmd.exe
+ // form for a home with a percent sign, which cmd.exe expands even inside double quotes.
+ {
+  const form=(text,shell)=>{const m=[...text.matchAll(/(node "<installed-momm>\/scripts\/multi-review\.mjs" evidence --evidence-home (?:'(?:[^']|'')*'|"[^"]*") --protect) in (PowerShell|cmd\.exe)/g)].find(x=>x[2]===shell);return m?m[1]:null;};
+  const at=(home)=>evidenceRemediation(path.join(home,'0123456789abcdef0123456789abcdef'),'win32',{MOMM_EVIDENCE_HOME:home});
+  const home=path.resolve('A B & c $x \u2019q\' (1)'),text=at(home);
+  assert.equal(form(text,'PowerShell'),`node "<installed-momm>/scripts/multi-review.mjs" evidence --evidence-home '${home.replace(/['\u2019]/g,'$&$&')}' --protect`,text);
+  assert.equal(form(text,'cmd.exe'),`node "<installed-momm>/scripts/multi-review.mjs" evidence --evidence-home "${home}" --protect`,text);
+  const percent=at(path.resolve('x %PATH% y'));
+  assert(form(percent,'PowerShell')&&!/ in cmd\.exe/.test(percent),percent);
+  if(process.platform==='win32')assert(at('D:\\').includes('--evidence-home "D:\\\\" --protect in cmd.exe'),'a drive root keeps its backslash inside the quotes');
+  assert(!/ in (PowerShell|cmd\.exe)/.test(evidenceRemediation(path.join(home,'0123456789abcdef0123456789abcdef'),'linux',{MOMM_EVIDENCE_HOME:home})),'POSIX keeps one form');
+  checks++;
+ }
  // The protect action only ever targets a directory named .ensemble_reviews, and spawns nothing otherwise.
  const noSpawn=()=>{throw Error('Must not spawn');};
  assert.throws(()=>protectEvidence(path.resolve('Documents'),{...winBase,run:noSpawn,fsx}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/only ever changes a directory named \.ensemble_reviews/.test(e.message));checks++;

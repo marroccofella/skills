@@ -306,7 +306,10 @@ try {
     const para = (doc.split("\n\n").find((p) => p.startsWith("Optional `role` (1.17)")) ?? "").replace(/\s+/g, " ");
     assert.match(para, /Only a finding's `role` reaches the scorecard/);
     assert.match(para, /its one covered role \(none when it covered more than one\)/);
-    assert.match(para, /a cover's suggestion without one is never credited to the route's native role/);
+    // Final review rev_20260930054910_0852b507489e: "The role feeds only the roster" read as the suggestion's role.
+    assert.match(para, /its one covered role \(none when it covered more than one\); a finding's role feeds only the scorecard's per-route, per-role roster/);
+    assert.doesNotMatch(para, / The role feeds only /);
+    assert.match(para, /no suggestion row, a cover's included, with or without `role`, is credited to any role, native or covered, or to cover success\./);
     const section = doc.slice(doc.indexOf("### Role cover (1.17, `--cover`)"), doc.indexOf("An observation file has this shape")).replace(/\s+/g, " ");
     assert.match(section, /a row on the suggestion `cover:0:0` may carry `"role": "surgeon"` and is refused with `"role": "innovator"`; a row on a finding `grok` raised may carry either\./);
   });

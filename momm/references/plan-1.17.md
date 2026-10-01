@@ -672,6 +672,6 @@ remains is the release gates.
 - **Owner decisions D1 to D10:** delegated to the recommended options on 29 September 2026 ("complete
   any and all outstanding items").
 
-Release gates still open: gate 1 on the sealed commit, gate 2 on its signed checkpoint, gate 3 (the
-self-review of this delta), gate 5 (one live image review), and gate 6 (the owner's go-ahead). The
-A4.2 diagnostic range run is part of gate 3.
+Gates 3 and 5 are closed with receipts and the A4.2 diagnostic run is done; the [gate record](gates-1.17.md)
+has the review chain, the defects it found and the one-side diff quotation rule that followed. Still
+open: gate 1 on the sealed commit, gate 2 on its signed checkpoint, and gate 6 (the owner's go-ahead).

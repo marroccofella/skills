@@ -203,6 +203,14 @@ export function normalizeTarget(value, files, root) {
 const INSTALL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export function reviewStaleness(report, root, { installRoot = INSTALL_ROOT, home } = {}) {
   const changed = [], unknown = [], matched = [];
+  // A comparison that cannot finish (a malformed report field) keeps every difference it already found and
+  // names the unfinished part `installation` in `unknown`. `stale` keeps its documented meaning, true only
+  // when something recorded differs, so an unfinished comparison reads as unknown, never as a match.
+  try { compareInstallation(report, root, { installRoot, home }, { changed, unknown, matched }); }
+  catch { unknown.push("installation"); }
+  return { stale: changed.length > 0, changed, unknown, matched };
+}
+function compareInstallation(report, root, { installRoot, home }, { changed, unknown, matched }) {
   const compare = (name, recorded, current) => {
     if (!hash(recorded)) unknown.push(name);
     else if (recorded === current) matched.push(name);
@@ -250,7 +258,6 @@ export function reviewStaleness(report, root, { installRoot = INSTALL_ROOT, home
     if (c && typeof c.agent === "string" && c.status === "success") compareBrief(`covers.${c.agent}.${c.covering_for}${c.piece ? `.${c.piece}` : ""}`, c.role, c.role_brief);
   }
   for (const a of Array.isArray(report?.attachments) ? report.attachments : []) unknown.push(`attachments.${a?.name ?? "unnamed"}.sha256`);
-  return { stale: changed.length > 0, changed, unknown, matched };
 }
 
 export function inspectCompletion(root, runId, options = {}) {

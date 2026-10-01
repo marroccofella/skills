@@ -148,6 +148,26 @@ try {
     untouched(); fs.unlinkSync(claim);
   });
 
+  // Final review rev_20260930054910_0852b507489e (s:c97535ab): on a volume without hard links (FAT, exFAT) link()
+  // failed, so a replacement claim that was moved aside stayed aside and update.active was left empty for anyone.
+  // It is now put back by an exclusive copy, which never replaces a claim made meanwhile.
+  await test('without hard links, a claim replaced during the release is put back, never removed', async () => {
+    stale();
+    const replacement = JSON.stringify({ pid: process.pid, token: randomUUID(), started: '2026-09-30T00:00:02.000Z' });
+    const original = { renameSync: fs.renameSync, linkSync: fs.linkSync };
+    let fired = false;
+    const isClaim = (p) => [path.resolve(claim), printed(claim)].includes(path.resolve(String(p)));
+    const listing = fs.readdirSync(dir).sort();
+    fs.renameSync = function (from, to, ...rest) { if (!fired && isClaim(from)) { fired = true; fs.unlinkSync(claim); fs.writeFileSync(claim, replacement, { flag: 'wx' }); } return original.renameSync.call(this, from, to, ...rest); };
+    fs.linkSync = () => { throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' }); };
+    try { await assert.rejects(release(TOKEN), /changed while it was inspected/); }
+    finally { fs.renameSync = original.renameSync; fs.linkSync = original.linkSync; }
+    assert(fired, 'the race was not forced');
+    assert.equal(fs.readFileSync(claim, 'utf8'), replacement, 'the replacement claim must stand');
+    assert.deepEqual(fs.readdirSync(dir).sort(), listing, 'nothing may be left beside it');
+    untouched(); fs.unlinkSync(claim);
+  });
+
   // Final review of 1.17.0 (unhandled-unsafe-journal-in-release-claim): after the release, an unsafe
   // transaction.json threw, so the release was never reported and the recovery command never printed.
   await test('an unsafe transaction.json after the release still reports the release and the recovery command', async () => {

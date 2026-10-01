@@ -192,7 +192,10 @@ try {
       assert(!region(html).includes('No reviews recorded yet'), 'the roster must not say no reviews were recorded');
       assert(region(html).includes('No routes or roles recorded yet.'));
       assert.match(mod.renderMarkdown(shape), /## Route and role roster/);
+      // Final review of 1.17.0 (two suggestions): the markdown table said nothing, a header with no rows.
+      assert(mod.renderMarkdown(shape).includes('\n| No routes or roles recorded yet. | | | | | | |\n'), 'the markdown roster says it is empty');
     }
+    assert(!mod.renderMarkdown(card).includes('No routes or roles recorded yet.'), 'a roster with rows has no placeholder');
     assert(mod.renderHtml({ ...card, roster: { rows: [] } }, '').includes(mod.ROSTER_LABEL.slice(0, 40)), 'a roster without a label gets the standard one');
     const bare = { ...row('codex', 'surgeon') }; delete bare.median_review_seconds;
     const shown = { ...card, roster: { ...card.roster, rows: [bare] } };
