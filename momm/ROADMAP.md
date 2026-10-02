@@ -8,6 +8,14 @@ in this file gets to say "current". Website notes live in
 
 ## Website and public feedback (separate repository maintenance)
 
+2 October reviewer-diagnostics follow-up (not sealed or released): the suite runner
+prints a start line before each suite. Opt-in `--save-report --commit <full SHA>`
+saves original-run JSON and complete captured failure streams in newly allocated
+private evidence storage. The commit is explicitly caller-supplied, not verified
+by this runner; reviewers must still prove HEAD and a clean tree. Reruns never
+rewrite the original report. Permission inspection failures refuse storage and
+do not repair ACLs. No automatic failure classification or release approval.
+
 The September 2026 website proposal simplifies the homepage, groups approved films
 in a media gallery and adds a bounded public release-metadata observer. It is not
 an installed-skill update or a 1.16.1/1.17 release claim. Exact audit identities,

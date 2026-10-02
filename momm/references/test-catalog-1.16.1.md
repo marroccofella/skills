@@ -119,6 +119,7 @@ attempt record only.
 - `momm/scripts/update-safety.test.mjs`
 - `momm/scripts/update.test.mjs`
 - `momm/scripts/usage.test.mjs`
+- `scripts/ci-runner-report.test.mjs`
 - `scripts/doc-consistency.test.mjs`
 - `scripts/evidence-permissions-native.test.mjs`
 - `scripts/evidence-permissions.test.mjs`

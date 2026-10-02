@@ -137,6 +137,7 @@ jobs:
           node scripts/momm-site-videos.test.mjs
           node scripts/momm-site-visuals.test.mjs
           node scripts/preview-module.test.mjs
+          node scripts/ci-runner-report.test.mjs
           node momm/scripts/review-refutations.test.mjs
           node momm/scripts/review-followup.test.mjs
           node momm/scripts/copilot-transport.test.mjs
