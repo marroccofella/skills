@@ -72,6 +72,12 @@ for (const [index, command] of selected.entries()) {
   const entry = { command, status: code === 0 ? 'passed' : 'failed', exit_code: r.status,
     signal: r.signal ?? null, spawn_error: r.error?.code ?? null,
     duration_ms: Date.now() - t0, rerun: `node ${command}` };
+  // Console results must survive a later evidence-write failure. Saving still
+  // fails closed: do not continue while the requested original record is lost.
+  process.stdout.write(`${code === 0 ? 'PASS' : 'FAIL'} ${String(code).padStart(3)} ${Math.round((Date.now() - t0) / 1000)}s ${command}\n`);
+  const tail = (text, label) => { const lines = String(text ?? '').trimEnd().split('\n').filter((l) => l.trim()).slice(-8); if (lines.length) process.stdout.write(`      ${label}:\n` + lines.map((l) => '      ' + l).join('\n') + '\n'); };
+  if (code !== 0 && r.error) process.stdout.write(`      spawn error: ${r.error.code ?? 'unknown'} (${String(r.error.message).split('\n')[0]})\n`);
+  if (code !== 0) { tail(r.stdout, 'stdout (last lines)'); tail(r.stderr, 'stderr (last lines)'); }
   if (reportDir && code !== 0) {
     entry.stdout_file = `${index + 1}.stdout.txt`; entry.stderr_file = `${index + 1}.stderr.txt`;
     fs.writeFileSync(path.join(reportDir, entry.stdout_file), r.stdout ?? '', { mode: 0o600 });
@@ -82,11 +88,6 @@ for (const [index, command] of selected.entries()) {
     process.stdout.write(`      captured failure output saved${entry.capture_incomplete ? ' (suite stopped; capture may be incomplete)' : ''}: ${path.relative(root, path.join(reportDir, entry.stdout_file))} and ${path.relative(root, path.join(reportDir, entry.stderr_file))} (private; inspect before sharing)\n`);
   }
   report.results.push(entry); persist();
-  process.stdout.write(`${code === 0 ? 'PASS' : 'FAIL'} ${String(code).padStart(3)} ${Math.round((Date.now() - t0) / 1000)}s ${command}\n`);
-  const tail = (text, label) => { const lines = String(text ?? '').trimEnd().split('\n').filter((l) => l.trim()).slice(-8); if (lines.length) process.stdout.write(`      ${label}:\n` + lines.map((l) => '      ' + l).join('\n') + '\n'); };
-  // A suite the runner itself stopped (its timer, the output buffer, a failed spawn) says which.
-  if (code !== 0 && r.error) process.stdout.write(`      spawn error: ${r.error.code ?? 'unknown'} (${String(r.error.message).split('\n')[0]})\n`);
-  if (code !== 0) { tail(r.stdout, 'stdout (last lines)'); tail(r.stderr, 'stderr (last lines)'); }
 }
 process.stdout.write(`${selected.length - failed} of ${selected.length} suites passed on ${process.platform} ${process.arch}, Node ${process.version}\n`);
 report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed; persist();

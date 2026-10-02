@@ -51,6 +51,12 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(path.join(externalProject,'project.json'),'utf8')).schema,'momm-evidence-home/1');
   assert.equal(fs.readdirSync(externalProject).filter(n=>n.startsWith('ci-')).length,1);
   assert.equal(fs.readdirSync(path.join(root,'.ensemble_reviews')).filter(n=>n.startsWith('ci-')).length,2,'external saving must not allocate in the checkout');
+  put('scripts/remove-sink.mjs', "import fs from 'node:fs'; import path from 'node:path'; const home=path.join(process.cwd(),'.ensemble_reviews'); for(const n of fs.readdirSync(home)) if(n.startsWith('ci-')) fs.rmSync(path.join(home,n),{recursive:true,force:true}); console.log('SINK-REMOVAL-FAILURE'); process.exitCode=1;");
+  put('.github/workflows/self-test.yml','run: node scripts/remove-sink.mjs\n');
+  const lostSink=run('--save-report','--commit',sha);
+  assert.notEqual(lostSink.status,0); assert.match(lostSink.stdout,/FAIL\s+1 .*scripts\/remove-sink/);
+  assert.match(lostSink.stdout,/SINK-REMOVAL-FAILURE/);
+  put('.github/workflows/self-test.yml', 'run: node scripts/ok.mjs\nrun: node scripts/bad.mjs\n');
   put('momm/scripts/evidence-permissions.mjs', "export function preparePrivateEvidence(){throw new Error('permission inspection refused');}");
   const refused=run('--save-report','--commit',sha); assert.notEqual(refused.status,0);
   assert.doesNotMatch(refused.stdout,/RUN|PASS/);
