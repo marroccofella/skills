@@ -42,5 +42,22 @@ try {
   put('momm/scripts/evidence-permissions.mjs', "export function preparePrivateEvidence(){throw new Error('permission inspection refused');}");
   const refused=run('--save-report','--commit',sha); assert.notEqual(refused.status,0);
   assert.doesNotMatch(refused.stdout,/RUN|PASS/);
+  put('momm/scripts/evidence-permissions.mjs', "import path from 'node:path'; import fs from 'node:fs'; export function preparePrivateEvidence(p){if(path.basename(p).startsWith('ci-')) throw new Error('per-run refusal'); fs.mkdirSync(p,{recursive:true,mode:0o700});}");
+  assert.doesNotMatch(run('--save-report','--commit',sha).stdout,/RUN|PASS/);
+  // Real native seam, not a stub: both creation and existing-directory inspection.
+  for(const name of ['evidence-permissions.mjs','evidence-location.mjs']) {
+    put('momm/scripts/'+name, fs.readFileSync(new URL('../momm/scripts/'+name,import.meta.url)));
+  }
+  // The stub-created home has inherited Windows ACLs, so remove only this test's
+  // validated temporary evidence directory before real native creation.
+  fs.rmSync(path.join(root,'.ensemble_reviews'),{recursive:true,force:true,maxRetries:5,retryDelay:100});
+  const native=run('--save-report','--commit',sha,'--grep','ok');
+  assert.equal(native.status,0,native.stderr);
+  assert.equal(run('--save-report','--commit',sha,'--grep','ok').status,0);
+  if(process.platform !== 'win32') {
+    fs.chmodSync(path.join(root,'.ensemble_reviews'),0o755);
+    const broad=run('--save-report','--commit',sha,'--grep','ok');
+    assert.notEqual(broad.status,0); assert.doesNotMatch(broad.stdout,/RUN|PASS/);
+  }
   console.log('PASS: progress, argument validation, full captured failures, original-result retention, and permission refusal');
 } finally { fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
