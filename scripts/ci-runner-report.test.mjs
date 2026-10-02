@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-runner-report-'));
+const externalHome = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-runner-home-'));
 try {
   const put = (name, content) => {
     const target = path.join(root, name);
@@ -16,7 +17,8 @@ try {
   put('scripts/bad.mjs', "console.log('EARLY-FAILED-ASSERTION'); for(let i=0;i<20;i++) console.log('later passing scenario '+i); console.error('stderr detail'); process.exitCode=1;");
   // Fixture only: actual native permission enforcement is tested in evidence-permissions-native.
   put('momm/scripts/evidence-permissions.mjs', "import fs from 'node:fs'; export function preparePrivateEvidence(p){ fs.mkdirSync(p,{mode:0o700,recursive:true}); }");
-  const run = (...args) => spawnSync(process.execPath, [path.join(root,'scripts/run-ci-suites.mjs'), ...args], { encoding:'utf8', timeout:30000, windowsHide:true });
+  put('momm/scripts/evidence-location.mjs', fs.readFileSync(new URL('../momm/scripts/evidence-location.mjs',import.meta.url)));
+  const run = (...args) => spawnSync(process.execPath, [path.join(root,'scripts/run-ci-suites.mjs'), ...args], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:''} });
   const sha = '1'.repeat(40);
   const invalid = run('--save-report'); assert.equal(invalid.status,2);
   assert.match(invalid.stderr,/requires --commit/);
@@ -39,11 +41,23 @@ try {
   const second = run('--save-report','--commit',sha,'--grep','ok'); assert.equal(second.status,0);
   assert.equal(fs.readdirSync(path.join(root,'.ensemble_reviews')).filter(n=>n.startsWith('ci-')).length,2);
   assert.equal(fs.readFileSync(path.join(folder,'report.json'),'utf8'),original);
+  const external = spawnSync(process.execPath,[path.join(root,'scripts/run-ci-suites.mjs'),'--save-report','--commit',sha,'--grep','ok'],{
+    encoding:'utf8',timeout:30000,windowsHide:true,env:{...process.env,MOMM_EVIDENCE_HOME:externalHome}
+  });
+  assert.equal(external.status,0,external.stderr);
+  const externalProjects=fs.readdirSync(externalHome);
+  assert.equal(externalProjects.length,1,'configured evidence home must receive one project folder');
+  const externalProject=path.join(externalHome,externalProjects[0]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(externalProject,'project.json'),'utf8')).schema,'momm-evidence-home/1');
+  assert.equal(fs.readdirSync(externalProject).filter(n=>n.startsWith('ci-')).length,1);
+  assert.equal(fs.readdirSync(path.join(root,'.ensemble_reviews')).filter(n=>n.startsWith('ci-')).length,2,'external saving must not allocate in the checkout');
   put('momm/scripts/evidence-permissions.mjs', "export function preparePrivateEvidence(){throw new Error('permission inspection refused');}");
   const refused=run('--save-report','--commit',sha); assert.notEqual(refused.status,0);
   assert.doesNotMatch(refused.stdout,/RUN|PASS/);
   put('momm/scripts/evidence-permissions.mjs', "import path from 'node:path'; import fs from 'node:fs'; export function preparePrivateEvidence(p){if(path.basename(p).startsWith('ci-')) throw new Error('per-run refusal'); fs.mkdirSync(p,{recursive:true,mode:0o700});}");
-  assert.doesNotMatch(run('--save-report','--commit',sha).stdout,/RUN|PASS/);
+  const runRefused=run('--save-report','--commit',sha);
+  assert.notEqual(runRefused.status,0); assert.match(runRefused.stderr,/per-run refusal/);
+  assert.doesNotMatch(runRefused.stdout,/RUN|PASS/);
   // Real native seam, not a stub: both creation and existing-directory inspection.
   for(const name of ['evidence-permissions.mjs','evidence-location.mjs']) {
     put('momm/scripts/'+name, fs.readFileSync(new URL('../momm/scripts/'+name,import.meta.url)));
@@ -53,11 +67,15 @@ try {
   fs.rmSync(path.join(root,'.ensemble_reviews'),{recursive:true,force:true,maxRetries:5,retryDelay:100});
   const native=run('--save-report','--commit',sha,'--grep','ok');
   assert.equal(native.status,0,native.stderr);
-  assert.equal(run('--save-report','--commit',sha,'--grep','ok').status,0);
+  const nativeAgain=run('--save-report','--commit',sha,'--grep','ok');
+  assert.equal(nativeAgain.status,0,nativeAgain.stderr);
   if(process.platform !== 'win32') {
     fs.chmodSync(path.join(root,'.ensemble_reviews'),0o755);
     const broad=run('--save-report','--commit',sha,'--grep','ok');
     assert.notEqual(broad.status,0); assert.doesNotMatch(broad.stdout,/RUN|PASS/);
+    assert.equal(fs.statSync(path.join(root,'.ensemble_reviews')).mode & 0o777,0o755,'refusal must not repair permissions');
   }
   console.log('PASS: progress, argument validation, full captured failures, original-result retention, and permission refusal');
-} finally { fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
+} finally {
+  for(const owned of [root,externalHome]) fs.rmSync(owned,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+}

@@ -54,6 +54,21 @@ It runs every suite the CI workflow runs, prints `PASS` or `FAIL` for each with 
 "N of N suites passed". Report the last line and any `FAIL` lines with their output. To re-run a subset:
 `node scripts/run-ci-suites.mjs --grep split`.
 
+For a private original-run report and captured failed-suite output, use:
+
+```text
+node scripts/run-ci-suites.mjs --save-report --commit <PINNED_SHA>
+```
+
+The runner prints `RUN i/N` before each suite. The SHA label is caller-supplied,
+not automatically verified: record HEAD and clean status before and after the run.
+Reports use private `.ensemble_reviews/` by default, or the project-specific folder
+under `MOMM_EVIDENCE_HOME` when configured. Existing permissions are inspected, never
+repaired; refusal stops before suites launch. Each invocation preserves its own
+original results; report focused reruns separately. Captures from stopped suites
+may be incomplete. Inspect and redact local paths or sensitive data before sharing;
+do not upload whole private JSON reports or logs.
+
 Also run the dispatcher's own self-test and the Setup Center self-test:
 
 ```text

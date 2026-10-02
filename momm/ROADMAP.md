@@ -8,11 +8,13 @@ in this file gets to say "current". Website notes live in
 
 ## Website and public feedback (separate repository maintenance)
 
-2 October reviewer-diagnostics follow-up (not sealed or released): the suite runner
+2 October reviewer-diagnostics addition (publication depends on the signed release gates): the suite runner
 prints a start line before each suite. Opt-in `--save-report --commit <full SHA>`
 saves original-run JSON and complete captured failure streams in newly allocated
-private evidence storage. The commit is explicitly caller-supplied, not verified
-by this runner; reviewers must still prove HEAD and a clean tree. Reruns never
+private evidence storage. `MOMM_EVIDENCE_HOME` uses the same project-specific external
+storage and privacy checks as MOMM's review evidence. The commit is explicitly
+caller-supplied, not verified by this runner; reviewers must still prove HEAD and
+a clean tree. Reruns never
 rewrite the original report. Permission inspection failures refuse storage and
 do not repair ACLs. No automatic failure classification or release approval.
 

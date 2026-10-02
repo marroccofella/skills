@@ -34,8 +34,11 @@ let reportDir = null;
 const runId = randomUUID();
 if (save) {
   const { preparePrivateEvidence } = await import('../momm/scripts/evidence-permissions.mjs');
-  const home = path.join(root, '.ensemble_reviews');
+  const { evidenceLocation, recordEvidenceProject } = await import('../momm/scripts/evidence-location.mjs');
+  const location = evidenceLocation({ cwd: root });
+  const home = location.dir;
   preparePrivateEvidence(home);
+  recordEvidenceProject(location);
   reportDir = path.join(home, `ci-${runId}`);
   fs.mkdirSync(reportDir, { mode: 0o700 });
   preparePrivateEvidence(reportDir);

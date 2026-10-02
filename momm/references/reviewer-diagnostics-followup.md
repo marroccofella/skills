@@ -1,14 +1,16 @@
-# Reviewer diagnostics follow-up — not a release candidate
+# Reviewer diagnostics — scope and testing
 
-This follow-up branch changes the offline suite runner, its regressions and CI
-registration. It does not replace the sealed `511b68b` candidate, authorize a
-release, or change reviewer isolation, installed skills or account settings.
+This addition changes the offline suite runner, its regressions and CI
+registration. Its inclusion in a candidate requires a new seal and exact-commit
+verification. It does not authorize a release or change reviewer isolation,
+installed skills or account settings.
 
 ## Changes
 
 - `RUN i/N` is printed before each suite, so long suites are identifiable.
 - `--save-report --commit <full SHA>` preserves a per-run JSON report and both
-  captured streams for failed suites in private `.ensemble_reviews/`. A suite
+  captured streams for failed suites in private `.ensemble_reviews/`, or the
+  project-specific external folder selected by `MOMM_EVIDENCE_HOME`. A suite
   stopped by a signal or spawn error is labelled potentially incomplete; no
   output can prove what a killed suite would have printed later.
 - Reports keep original failures. A later invocation cannot rewrite an earlier
@@ -20,9 +22,10 @@ release, or change reviewer isolation, installed skills or account settings.
 
 ## Testing and reporting
 
-Use a fresh detached clone at the full SHA supplied with the follow-up PR. This
-tree is not sealed: do not expect the old release seal to verify. Do not install
-it over your working MOMM or tag/merge/publish it.
+Use a fresh detached clone at the full SHA supplied in the candidate invitation.
+Follow the independent reviewer pack for seal verification; an unsealed follow-up
+cannot reuse an earlier candidate's seal. Do not install it over your working
+MOMM or tag/merge/publish it.
 
 Run `node scripts/ci-runner-report.test.mjs`,
 `node scripts/reviewer-ux-regressions.test.mjs`,
