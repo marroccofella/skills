@@ -151,6 +151,34 @@ commit and harness.
 
 ## Owner decisions
 
+## 2 October 2026: consolidated diagnostics candidate
+
+The owner authorised consolidation of PR31 and PR33 into one candidate, not
+signing or publication. The diagnostics addition is included on top of the
+original sealed tree. The new candidate's exact SHA and seal are pinned in PR31
+and Discussion32; results for `511b68b` or `03ddacc` remain historical and are not
+silently relabelled as results for the new candidate.
+
+- Governor reproduced the ignored `MOMM_EVIDENCE_HOME` setting with a failing
+  fixture, then fixed it using existing evidence-location and privacy checks.
+- Reviewer instructions now describe saved original reports, separate reruns,
+  caller-supplied commit labels, and private external storage. Roadmap wording
+  no longer incorrectly declares the addition permanently unsealed.
+- Review `rev_20261002114832_fd5c1def0507` lacked quorum (one invalid response);
+  its evidence is retained, not counted as a completed gate.
+- Review `rev_20261002115241_439ff819f9de` covered the entire diagnostics delta
+  with two valid external reviews (Claude MODIFY, Antigravity ACCEPT). Its local
+  completion receipt validates all decisions and final reviewed file hashes.
+  A reproduced lost-console-output defect was fixed with a failing-first test.
+  Non-blocking suggestions were explicitly rejected with reasons/probes.
+- The validator proves local record/hash consistency, not independent execution
+  or universal safety. Windows forced termination is reported as an exit rather
+  than a POSIX signal; real Unix signal coverage is not claimed locally.
+- Exact sealed-candidate CI and independent review are required afresh. Earlier
+  green CI and the lifecycle rehearsal do not substitute for those gates.
+- Signed main checkpoint, all six lifecycle cells including interrupted recovery,
+  and stable signed publication remain pending owner authorisation.
+
 D1 to D10 in the plan were delegated to the recommended options on 29 September 2026, with the instruction
 to complete all outstanding items. Quota-spending runs (the Codex isolation probe, the Codex quotation
 diagnostic, the self-review and the live image review) are covered by that instruction and disclosed
