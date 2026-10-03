@@ -168,10 +168,13 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 
 ### Quick start
 
+Use the signed installation guide above first. Run these commands only from the verified
+permanent clone; review the preview and explicitly approve installation before continuing.
+
 ```bash
-# 1. Link the skill into your harness so you can invoke $momm afterwards
-#    (once per machine; --target is required — name the harness).
-node install.mjs --target claude
+# 1. Preview MOMM alone for the harness you name. Apply only after approval,
+#    using the signed guide; this preview does not install anything.
+node momm/scripts/install.mjs --target claude --dry-run
 
 # 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.

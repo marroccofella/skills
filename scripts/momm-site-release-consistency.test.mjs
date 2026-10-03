@@ -36,12 +36,18 @@ check('safe front doors', () => {
     const development = text.indexOf('Development checkout — unsigned');
     const clone = text.indexOf('git clone https://github.com/marroccofella/skills');
     assert(signed >= 0, name + ': missing signed-install prompt');
+    assert(development >= 0, name + ': missing development heading');
+    assert(clone >= 0, name + ': missing clone command');
     assert(development > signed, name + ': development route must follow signed-install guidance');
     assert(clone > development, name + ': clone command must be under the development heading');
     const section = text.slice(development).split(name.endsWith('.md') ? /\n## / : /<\/div>/)[0];
-    const commands = section.match(/node install\.mjs --target [^\n<`]+/g) || [];
+    assert(section.includes('git clone https://github.com/marroccofella/skills'), name + ': clone command must be inside development section');
+    const invocations = content => content.match(/node\s+(?:\.\/)?install\.mjs\b[^\n<`&;]*/g) || [];
+    const commands = invocations(section);
     assert(commands.length > 0, name + ': missing development preview');
-    assert(commands.every(command => /(?:^|\s)--dry-run(?:\s|$)/.test(command)), name + ': development command must be preview-only');
+    for (const command of invocations(text)) {
+      assert(/(?:^|\s)--dry-run(?:\s|$)/.test(command), name + ': installer command must be preview-only: ' + command);
+    }
   }
 });
 check('immutable 1.17 evidence links', () => {
