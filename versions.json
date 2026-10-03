@@ -15,7 +15,7 @@
         "A stricter completion check: style rulings are checked against the bytes, optional mutation records, a stale-review notice, and a scorecard roster per route and role.",
         "Guided picture rounds with consent and cost before each round, blind governor critique and a private gallery; update.mjs --release-claim recovers an interrupted upgrade."
       ],
-      "sha256": "249870e520d668ae7bb54601c07a7a2c75b0f8c913b2a64718e2518b9dd033fe",
+      "sha256": "9efd2c52e7aabd27dbdb18aecfbebfa9343bd6bb4289a200125fbd6baaa4a735",
       "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
