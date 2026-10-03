@@ -1,0 +1,8 @@
+state/
+node_modules/
+.ensemble_reviews/
+assets/settings.json
+*.zip
+*.exe
+*.wav
+*.mp3
