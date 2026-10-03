@@ -33,7 +33,7 @@ and IPC but do not certify say/espeak-ng binaries, sound devices or acoustic lat
 
 0.4 base historical CI passed all 17 jobs. The 0.5 workflow runs portable tests,
 committed-manifest verification, installation, real worker containment and Windows
-native directory probes. 0.5 hosted results are pending.
+native directory probes. All 17 jobs passed at implementation commit 62aa8121d99533fd26447057e0fda785f50b44fd in [run 37158327770](https://github.com/marroccofella/skills/actions/runs/37158327770). This later report/README receipt commit must obtain its own exact-head checks; see PR #40 for current results.
 
 MOMM preflight found the four configured OAuth routes present. The first 0.5 dispatch
 was rejected by automatic approval review: prior sharing approval explicitly covered

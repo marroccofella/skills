@@ -102,15 +102,15 @@ a newly installed skill.
 
 ## Privacy and recovery
 
-State defaults to LOCALAPPDATA/42uk/DomTTS/0.4 on Windows and
+State defaults to LOCALAPPDATA/42uk/DomTTS/0.5 on Windows and
 XDG_STATE_HOME/dom-tts (or ~/.local/state/dom-tts) on POSIX.
 DOM_TTS_STATE_DIR selects an isolated test directory. Existing state directories
 must already be private. New Windows state directories allow only the user,
 SYSTEM and Administrators; POSIX directories use owner-only permissions.
-On Windows the permission check runs once per state folder (up to 60 seconds,
-for slow first PowerShell starts). It leaves a `.private-verified` marker bound
-to that folder's identity, so later playbacks skip the PowerShell launch; a new
-or replaced folder is checked again. A failed check names its cause (timeout,
+On Windows the permission check runs once per process and folder (up to 60 seconds,
+for slow PowerShell starts). A `.private-verified` marker binds the folder identity
+for reuse within that process; a new process always checks the ACL again. POSIX
+permissions are checked on every call. A failed check names its cause (timeout,
 could not start, folder open to other accounts, or exit code) without paths.
 
 Persistent status holds enums and counters, not speech text, transcript paths
