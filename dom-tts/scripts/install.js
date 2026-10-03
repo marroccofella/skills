@@ -26,5 +26,5 @@ function install(args){
  }finally{if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});}
  return {...plan,backup:exists?backup:undefined};
 }
-if(require.main===module){try{const args=parseCli(process.argv.slice(2),{},['target','dir','action','dryRun']);console.log(JSON.stringify(install(args),null,2));}catch(error){console.error(error.message);process.exitCode=1;}}
+if(require.main===module){try{const args=parseCli(process.argv.slice(2),{},['target','dir','action','dryRun']);console.log(JSON.stringify(install(args),null,2));}catch(error){console.error(['EPERM','EACCES','EBUSY'].includes(error.code)?'Install destination is unavailable ('+error.code+'). Close processes using the skill and check the destination permissions; no fallback install was attempted.':error.message);process.exitCode=1;}}
 module.exports={destination,install};

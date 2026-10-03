@@ -1,4 +1,6 @@
 const MODES=['full','informative','summary','action-items','errors-only','warnings-only','terminal-summary','diff-summary'];
+const ERROR_PATTERN=/\b(error|fail|failed|failure|exception|fatal|traceback|cannot|denied|not found|exit code [1-9])\b|\w(?:Error|Exception)\b/i;
+const WARNING_PATTERN=/\b(warn|warning|deprecated|caution|risk|skipped|unstable)\b/i;
 // Tables are spoken row by row as "Header: value" pairs; the separator row is never spoken.
 const TABLE_SEPARATOR=/^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 function tableCells(line){return line.trim().replace(/^\|/,'').replace(/(?<!\\)\|$/,'').split(/(?<!\\)\|/).map(cell=>inline(cell.trim().replace(/\\\|/g,'|')));}
@@ -36,9 +38,19 @@ function applyMode(text,mode='informative',profile='conversational',options={}){
  const clean=markdown(text,{...options,includeCodeBlocks:mode==='full'||logMode||options.includeCodeBlocks,includeCommandBlocks:mode==='full'||options.includeCommandBlocks}),lines=clean.split('\n').map(x=>x.trim()).filter(Boolean);
  if(mode==='summary')return sentences(clean,profile==='concise'?2:3);
  if(mode==='action-items'){const hits=lines.filter(x=>/\b(todo|next|action|follow up|fix|implement|verify|ship|decide|needs?|must|should)\b/i.test(x));return hits.length?hits.join('\n'):sentences(clean,2);}
- if(mode==='errors-only'||mode==='warnings-only'){const pattern=mode==='errors-only'?/\b(error|failed|failure|exception|fatal|traceback|cannot|denied|not found|exit code [1-9])\b|\w(?:Error|Exception)\b/i:/\b(warn|warning|deprecated|caution|risk|skipped|unstable)\b/i;const hits=lines.filter(x=>pattern.test(x));return hits.length?hits.join('\n'):(mode==='errors-only'?'No clear errors found.':'No clear warnings found.');}
- if(mode==='terminal-summary')return sentences(lines.filter(x=>/\b(error|fail|warning)\b|\w(?:Error|Exception)\b/i.test(x)).join(' ')||lines.slice(-5).join(' '),3);
- if(mode==='diff-summary'){const raw=String(text).split(/\r?\n/),files=[...new Set(raw.map(x=>x.match(/^diff --git a\/(.+?) b\//)?.[1]).filter(Boolean))];const added=raw.filter(x=>x.startsWith('+')&&!x.startsWith('+++')).length,removed=raw.filter(x=>x.startsWith('-')&&!x.startsWith('---')).length;if(!files.length&&!raw.some(line=>/^(?:@@|--- |\+\+\+ )/.test(line)))return sentences(clean,3);return 'Diff summary. '+(files.length?'Files touched: '+files.slice(0,6).join(', ')+'. ':'')+added+' added lines and '+removed+' removed lines.';}
+ if(mode==='errors-only'||mode==='warnings-only'){const pattern=mode==='errors-only'?ERROR_PATTERN:WARNING_PATTERN;const hits=lines.filter(x=>pattern.test(x));return hits.length?hits.join('\n'):(mode==='errors-only'?'No clear errors found.':'No clear warnings found.');}
+ if(mode==='terminal-summary'){
+  const errors=lines.filter(x=>ERROR_PATTERN.test(x));
+  const warnings=lines.filter(x=>WARNING_PATTERN.test(x)&&!ERROR_PATTERN.test(x));
+  return sentences((errors.length||warnings.length?[...errors,...warnings]:lines.slice(-5)).join(' '),3);
+ }
+ if(mode==='diff-summary'){
+  const raw=String(text).split(/\r?\n/);
+  const files=[...new Set(raw.map(x=>x.match(/^diff --git a\/(.+?) b\//)?.[1]||x.match(/^(?:[ MADRCU?!]{2}|[MADRCU?!])\s+((?:\S*[\\/]\S*|\S+\.[A-Za-z0-9]+)(?: -> \S+)?)\s*$/)?.[1]).filter(Boolean))];
+  const added=raw.filter(x=>x.startsWith('+')&&!x.startsWith('+++')).length,removed=raw.filter(x=>x.startsWith('-')&&!x.startsWith('---')).length;
+  if(!files.length&&!raw.some(line=>/^(?:@@|--- |\+\+\+ )/.test(line)))return sentences(clean,3);
+  return 'Diff summary. '+(files.length?'Files touched: '+files.slice(0,6).join(', ')+'. ':'')+added+' added lines and '+removed+' removed lines.';
+ }
  return clean;
 }
 function chunkText(text,maxChars=420,speed=1){
@@ -49,5 +61,3 @@ function chunkText(text,maxChars=420,speed=1){
  while(rest.length>limit){let end=limit;const whitespace=rest.slice(0,limit+1).search(/\s+\S*$/);if(whitespace>0)end=whitespace;if(/[\uD800-\uDBFF]/.test(rest[end-1])&&/[\uDC00-\uDFFF]/.test(rest[end]))end--;chunks.push(rest.slice(0,end).trim());rest=rest.slice(end).trimStart();}if(rest)chunks.push(rest);return chunks;
 }
 module.exports={MODES,applyMode,chunkText,markdown,sentences};
-
-

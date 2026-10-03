@@ -19,7 +19,7 @@ async function permissionChecks(check,fixture){
   [{error:Object.assign(new Error('x'),{code:'ETIMEDOUT'}),status:null},/timed out after 60 s/],
   [{error:Object.assign(new Error('x'),{code:'ENOENT'}),status:null},/could not start \(ENOENT\)/],
   [{status:3,stderr:'DOM_TTS_NOT_PRIVATE\r\n'},/grants access to other accounts/],
-  [{status:1,stderr:'Set-Acl : secret detail C:\\Users\\private'},/exited with code 1/],
+  [{status:1,stderr:'Set-Acl : secret detail C:\\Users\\fixture-user'},/exited with code 1/],
  ];
  for(const [result,pattern] of failures){
   const dir=path.join(fixture,'perm-'+Math.random().toString(16).slice(2));fs.mkdirSync(dir);reset();
@@ -39,9 +39,9 @@ async function permissionChecks(check,fixture){
  const good=path.join(fixture,'perm-good');fs.mkdirSync(good);reset();let calls=0;const ok=()=>{calls++;return {status:0};};
  ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));check(()=>assert(fs.existsSync(path.join(good,'.private-verified'))));
  ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));
- reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));
- fs.writeFileSync(path.join(good,'.private-verified'),'{"schema":"dom-tts-private/1","ino":"0","birthtimeMs":0}');reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,2));
- const copied=path.join(fixture,'perm-copied');fs.mkdirSync(copied);fs.copyFileSync(path.join(good,'.private-verified'),path.join(copied,'.private-verified'));reset();ensurePrivate(copied,{...win,run:ok});check(()=>assert.equal(calls,3));
+ reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,2));
+ fs.writeFileSync(path.join(good,'.private-verified'),'{"schema":"dom-tts-private/1","ino":"0","birthtimeMs":0}');reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,3));
+ const copied=path.join(fixture,'perm-copied');fs.mkdirSync(copied);fs.copyFileSync(path.join(good,'.private-verified'),path.join(copied,'.private-verified'));reset();ensurePrivate(copied,{...win,run:ok});check(()=>assert.equal(calls,4));
  // A new folder is created by the check itself; a "success" that leaves no folder is refused.
  const fresh=path.join(fixture,'perm-fresh');reset();ensurePrivate(fresh,{...win,run:()=>{fs.mkdirSync(fresh);return {status:0};}});check(()=>assert(fs.existsSync(path.join(fresh,'.private-verified'))));
  const missing=path.join(fixture,'perm-missing');reset();check(()=>assert.throws(()=>ensurePrivate(missing,{...win,run:()=>({status:0})}),/folder missing/));

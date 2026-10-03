@@ -11,14 +11,24 @@ function boundedInput(args){
  else if(args.stdin||args.text==='-'){const buffers=[];let total=0;const buffer=Buffer.alloc(65536);let count;while((count=fs.readSync(0,buffer,0,buffer.length,null))>0){total+=count;if(total>1048576)throw new Error('Input exceeds 1 MB');buffers.push(Buffer.from(buffer.subarray(0,count)));}text=Buffer.concat(buffers).toString('utf8');}
  else text=args.text||'';if(Buffer.byteLength(text,'utf8')>1048576)throw new Error('Input exceeds 1 MB');return text;
 }
-function prepare(args){
- const settings=readObject(path.join(ROOT,'assets','settings.json')),profile=args.profile||settings.profile||'conversational';
+function savedSettings(){
+ const file=path.join(ROOT,'assets','settings.json');
+ if(!fs.existsSync(file))return {};
+ const settings=readObject(file,null);
+ if(!settings)throw new Error('Saved settings are invalid or unavailable; inspect the private settings file');
+ return settings;
+}
+function prepare(args,{settings=savedSettings()}={}){
+ const profile=args.profile||settings.profile||'conversational';
  if(!Object.hasOwn(PROFILES,profile))throw new Error('Unknown narration profile: '+profile);
  const mode=args.mode||settings.mode||'informative';if(!MODES.includes(mode))throw new Error('Unknown narration mode: '+mode);
  const provider=args.provider||settings.provider||'auto';if(!['auto','sapi','say','espeak-ng'].includes(provider))throw new Error('Unknown speech provider');
  const speed=Number(args.speed??settings.speed??PROFILES[profile].speed),maxChunkChars=Number(args.maxChunkChars??settings.maxChunkChars??PROFILES[profile].maxChunkChars),waitMs=Number(args.waitMs??0);
  if(!Number.isFinite(waitMs)||waitMs<0||waitMs>60000)throw new Error('waitMs must be between 0 and 60000');
- const text=applyMode(boundedInput(args),mode,profile,{includeCodeBlocks:args.includeCodeBlocks??false,includeCommandBlocks:args.includeCommandBlocks??false});
+ const includeCodeBlocks=args.includeCodeBlocks??settings.includeCodeBlocks??false;
+ const includeCommandBlocks=args.includeCommandBlocks??settings.includeCommandBlocks??false;
+ if(typeof includeCodeBlocks!=='boolean'||typeof includeCommandBlocks!=='boolean')throw new Error('Code and command inclusion settings must be booleans');
+ const text=applyMode(boundedInput(args),mode,profile,{includeCodeBlocks,includeCommandBlocks});
  return {profile,mode,provider,speed,voice:args.voice??settings.voice??'',chunks:chunkText(text,maxChunkChars,speed),waitMs};
 }
 function stopValue(dir){try{return fs.readFileSync(path.join(dir,'stop.flag'),'utf8');}catch{return '';}}
@@ -47,4 +57,3 @@ async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePri
 async function main(){const args=parseArgs(process.argv.slice(2)),options=prepare(args);if(args.dryRun){process.stdout.write(options.chunks.join('\n---\n'));return;}options.provider=native.selectProvider(options.provider);await playback(options);}
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
 module.exports={parseArgs,prepare,chunkText,playback,PROFILES};
-

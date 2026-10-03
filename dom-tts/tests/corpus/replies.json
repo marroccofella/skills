@@ -113,7 +113,7 @@
    "action-items": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string.",
    "errors-only": "The build failed. Here's the relevant part of the log:\nsrc/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'.\nFound 1 error in src/api/client.ts:41",
    "warnings-only": "No clear warnings found.",
-   "terminal-summary": "src/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'. Found 1 error in src/api/client.ts:41",
+   "terminal-summary": "The build failed. Here's the relevant part of the log: src/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'. Found 1 error in src/api/client.ts:41",
    "diff-summary": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string. Changing the config value to 30 fixes it."
   }
  },
@@ -143,7 +143,7 @@
    "action-items": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
    "errors-only": "Running the script gives this error:\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'",
    "warnings-only": "No clear warnings found.",
-   "terminal-summary": "Running the script gives this error: FileNotFoundError: [Errno 2] No such file or directory: 'config.yml'",
+   "terminal-summary": "Running the script gives this error: Traceback (most recent call last): FileNotFoundError: [Errno 2] No such file or directory: 'config.yml'",
    "diff-summary": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path."
   }
  },
@@ -356,20 +356,20 @@
  },
  {
   "name": "windows-paths",
-  "input": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+  "input": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
   "mustInclude": [
    "Delete the stale lock only after checking that no playback is running."
   ],
   "mustExclude": [],
   "expected": {
-   "full": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
-   "informative": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
-   "summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
-   "action-items": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "full": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+   "informative": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+   "summary": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "action-items": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
    "errors-only": "No clear errors found.",
    "warnings-only": "No clear warnings found.",
-   "terminal-summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
-   "diff-summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running."
+   "terminal-summary": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "diff-summary": "The log file is at C:\\Users\\fixture-user\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running."
   }
  },
  {
@@ -434,7 +434,7 @@
    "action-items": "Neither affects the build, but the request package should be replaced soon.",
    "errors-only": "No clear errors found.",
    "warnings-only": "npm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher",
-   "terminal-summary": "The install finished with two warnings: npm WARN deprecated request@2.88.2: request has been deprecated npm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher Neither affects the build, but the request package should be replaced soon.",
+   "terminal-summary": "npm WARN deprecated request@2.88.2: request has been deprecated npm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher",
    "diff-summary": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon."
   }
  },
@@ -457,7 +457,7 @@
    "action-items": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
    "errors-only": "The deploy failed with exit code 1 because the health check timed out.",
    "warnings-only": "No clear warnings found.",
-   "terminal-summary": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "terminal-summary": "The deploy failed with exit code 1 because the health check timed out.",
    "diff-summary": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds."
   }
  },
@@ -671,7 +671,7 @@
    "informative": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
    "summary": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
    "action-items": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
-   "errors-only": "AssertionError: expected '$5.00' but got '5.00'",
+   "errors-only": "AssertionError: expected '$5.00' but got '5.00'\nℹ fail 1",
    "warnings-only": "No clear warnings found.",
    "terminal-summary": "AssertionError: expected '$5.00' but got '5.00' ℹ fail 1",
    "diff-summary": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing."

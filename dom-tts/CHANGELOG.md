@@ -1,3 +1,14 @@
+# 0.5.0-dev.1 — bug-fix evolution
+
+Based on reviewed 0.4.0-dev.2 (75ba1ce, PR #39). Failure-first terminal summaries,
+saved inclusion settings and watcher precedence, filename/path status summaries,
+fresh-process Windows ACL checks, POSIX mode revalidation, recovery cleanup ownership,
+relative/project-local Linux engine rejection, sanitized blocked-policy/install errors,
+meaningful settings preservation, native privacy/latency verdicts and checked-in native
+boundary tests. No new providers, global watcher, microphone, tray or Duplex features.
+The previous golden/reply corpus stays; five expectations changed after output review.
+See EVOLUTION.md for migration and open release gates.
+
 # Changes
 
 ## 0.4.0-dev.2
