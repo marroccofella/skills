@@ -1,51 +1,46 @@
 ---
 name: dom-tts
-description: Dom TTS by Prof Dom Marrocco / 42.uk speaks selected text and assistant replies through Windows audio. Use for read aloud, speak this, narration, conversation mode, stop speaking, speech status, and privacy-safe diagnostic bundles.
+description: Speak selected text or assistant replies locally, stop speech, check speech status, or narrate one consented transcript with Dom TTS. Use for read aloud and spoken replies; excludes transcription and voice cloning.
 ---
 
-# Dom TTS
+# Dom TTS 0.4
 
-Development baseline 0.3.2-dev.1. Windows Standard Mode only; not a signed
-installer release. Use Node 18+ and built-in Windows PowerShell/System.Speech.
-Run commands from this skill directory. No npm installation is required.
+Use Node 18+ and the scripts in this skill's directory. Prefer a maintained Node
+LTS. Run doctor before first playback: `node scripts/doctor.js --voices true`.
+Windows uses built-in SAPI; macOS Intel and Apple Silicon use /usr/bin/say;
+Linux needs an already installed espeak-ng. Missing engines produce an error.
+Do not install a package or download a voice without the user's request.
 
-```text
-node scripts/speak.js --provider sapi --mode informative --profile conversational --text "Text to speak"
-node scripts/stop.js
-node scripts/status.js
-node scripts/self-test.js --self-test
-node scripts/support-bundle.js
-```
+Read selected text with `node scripts/speak.js --text "Text to speak"`.
+For long text or text containing shell symbols, pass stdin or a UTF-8 file:
+`node scripts/speak.js --stdin true` or `--text-file <file>`.
+Use `--dry-run` to preview without audio or state changes. All models and harnesses
+can use this interface; native skill discovery depends on the host.
 
-When asked to stop, pause, or interrupt, run stop.js immediately. Conversation
-mode is turn-based: compose the answer, then speak it. Do not claim automatic
-barge-in, wake-word listening, microphone access, or full-duplex voice.
+When asked to stop, pause or interrupt, run `node scripts/stop.js` immediately.
+Status: `node scripts/status.js`. Never kill a PID copied from a state file.
+A stale lock can be inspected and recovered with `status.js --recover`; a live
+owner is never removed by recovery.
 
-Profiles: conversational for prose, engineering for technical content, concise
-for short reports. Modes: full, informative, summary, action-items, errors-only,
-warnings-only, terminal-summary, diff-summary. Summary is deterministic sentence
-selection, not a model-generated summary. Prefer informative for ordinary replies.
-Long code should be summarized before speaking unless full narration is requested.
+Modes: informative (default), full, summary, action-items, errors-only,
+warnings-only, terminal-summary, diff-summary. Prefer diff-summary for a diff
+and errors-only for build errors. Summary selects sentences; for a meaningful
+spoken summary of complex code, compose it yourself and send that text.
+Profiles: conversational, engineering, concise. Speed: 0.5–2. Voice names must
+come from doctor. A missing voice fails visibly. Full mode includes code.
 
-For explicitly consented automatic narration of one transcript:
+For explicitly requested continuous narration, confirm which single transcript
+the user wants, then use `watch-codex.js --file <file> --format codex`.
+Formats: codex; claude (only assistant messages explicitly marked end_turn);
+generic (JSONL with role assistant, phase final_answer, text and optional id).
+Watch begins at file end and skips existing history after truncation/rotation.
+Commentary additionally requires `--phase all --include-commentary true`.
+No global session scan. Ctrl+C ends watching. Stop suppresses new watcher batches
+until an explicit watcher restart. Do not claim microphone, barge-in or Duplex.
 
-```text
-node scripts/watch-codex.js --file <transcript.jsonl> --provider sapi --phase final_answer --speakStartup false
-```
+Speech uses local engines; no cloud TTS or model calls. macOS/Linux playback has
+not yet been audibly certified on native machines. Inspect COMPATIBILITY.md.
+Runtime state is private and separate from the skill; do not share it.
+`node scripts/support-bundle.js` exports a sanitized diagnostics.json, never
+speech, raw errors, settings or transcript paths. Review it before sharing.
 
-Watching begins at the current file end. Stop the foreground watcher with Ctrl+C;
-stop.js interrupts speech and suppresses pending/new watcher batches until an
-explicit watcher restart or speech request resumes narration, but does not
-terminate the watcher. Ask before watching
-private transcripts or enabling progress-message narration. This baseline does
-not scan other applications, peer mailboxes, or global agent directories.
-
-Speech is local and offline. Edge/Piper adapters are intentionally not shipped
-in this baseline; do not silently install packages or send text to a cloud TTS
-service. Runtime state contains speech text and local paths: never publish state,
-settings, logs, review evidence, or support archives. Support bundles export only
-typed allowlisted counters/enums, in a Windows ACL-protected directory; review
-the archive before sharing. Do not patch Codex Desktop or signed app files.
-
-See README.md for verified scope and remaining work. This public baseline does
-not establish equality of existing installations or approval by a second reviewer.

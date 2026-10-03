@@ -1,0 +1,126 @@
+{
+  "schema": "dom-tts-source/1",
+  "version": "0.4.0-dev.1",
+  "files": [
+    {
+      "path": ".github/workflows/test.yml",
+      "sha256": "74da03bfb62eb0dcdd2a3fe3eecdf455919baa2bcd27ffebb49dc2123b44bf55"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "51d534007119287c02fde9871d6d1ab19c88376ceae722c10357cbb8cd202f7b"
+    },
+    {
+      "path": "COMPATIBILITY.md",
+      "sha256": "0b40ad1c90cb065e5b236ef073288dc4b07f8301dd7f80aff58255acddf54f8e"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "ddeefd47392f011cc54b1618a95272a69f53902b08e597ef4c166571b25addbc"
+    },
+    {
+      "path": "README.md",
+      "sha256": "a0aa52726d7fa7fd6993b85c90824e87d899e4710720098252d5075e2d3e4b78"
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "a706459413088d2414c1d6ad0300117437793dbb9b64eaa8a12878015ddcd229"
+    },
+    {
+      "path": "assets/voices.json",
+      "sha256": "5e4682bbafb1f9d002c3a65017b3c892d435334c2138a86f0950477762b8596e"
+    },
+    {
+      "path": "package.json",
+      "sha256": "1303361ce49c4c6db70eccee3557d5e5a462bb5f0dcadb9a117e966e42430100"
+    },
+    {
+      "path": "scripts/avatar-state.js",
+      "sha256": "91cf17096b93c886d38f5f12b7d322a2d3b8b63a373463723ee55956e086b6ea"
+    },
+    {
+      "path": "scripts/doctor.js",
+      "sha256": "2b7f2f75329c97aa5eae35be90c4b3fd0ed7fdecfaee9188fe6e644b2e3dda03"
+    },
+    {
+      "path": "scripts/install.js",
+      "sha256": "8c9823acdd5196af60f3176f797b0779d4720ba9d5290ebb07b568d649caae88"
+    },
+    {
+      "path": "scripts/package.js",
+      "sha256": "b1ef48517ac7c0d1c90d4b8f523f48d8ec308246be9899a1bd6b9ecedcd1de96"
+    },
+    {
+      "path": "scripts/providers/native-worker.js",
+      "sha256": "f036a0c60c77b1fc0cf51b56e59a08bc99d93d0b6ecfbf627f9c23e282f837fc"
+    },
+    {
+      "path": "scripts/providers/native.js",
+      "sha256": "7b100aac7241b87dc2183007a97d67d7633c74963b460accebfbd8b220ae3a52"
+    },
+    {
+      "path": "scripts/providers/sapi.js",
+      "sha256": "ffeb620d6209aee36cf04f6cedbbff2680bfc80db2532fce6ffa03714c4fca76"
+    },
+    {
+      "path": "scripts/providers/sapi.ps1",
+      "sha256": "6f94d037774b2b78dd16c9a22beb476891aaee8e52b6f2dbfa0cc7dbf365b870"
+    },
+    {
+      "path": "scripts/runtime.js",
+      "sha256": "7ec7a8449de3517c4b7a653b7d5bd79aac63176474d383f1f4108c02b175f04f"
+    },
+    {
+      "path": "scripts/self-test.js",
+      "sha256": "20859993eeef1d77d8055ae9dcf6401f9938fc0f28e84df359252d371d3b1a40"
+    },
+    {
+      "path": "scripts/speak.js",
+      "sha256": "b28254d4bb5fc22bf703074a3a2562bc8ff7e72a95b3bf446aa0c0f5f66f11cd"
+    },
+    {
+      "path": "scripts/status.js",
+      "sha256": "914cf3b8ee6109c3a52c40d3565843adc458808a3703a98dea1329a6acc1ccfe"
+    },
+    {
+      "path": "scripts/stop.js",
+      "sha256": "85e2863fe350cfb4009b8ff23574dd4e68eb4fa6a22c90d3eec3d2f9c67a3c16"
+    },
+    {
+      "path": "scripts/summarize.js",
+      "sha256": "750588f0a93a9a8c7db45fedba66e9713c229caf06dc6db19cde7736b7c16888"
+    },
+    {
+      "path": "scripts/support-bundle.js",
+      "sha256": "5a282d73537f816cbb5059f57381fd8a0b48750b388172da74036013c2aecdb1"
+    },
+    {
+      "path": "scripts/support-safety.js",
+      "sha256": "daafd4a8a27761c5f11cd0e6fbbee8ad7f8be4c4b9b1048b9a0941b0fcd12f23"
+    },
+    {
+      "path": "scripts/support-safety.test.js",
+      "sha256": "791cc4dd2ea769e34cef6bcb61e15a06f553bbb4b76b6d6378d5b81d24141e4f"
+    },
+    {
+      "path": "scripts/telemetry.js",
+      "sha256": "81e3eeb3f8732dbed96ace4c2e0eb65d1b10362b025ced80c4b7fe670392e52e"
+    },
+    {
+      "path": "scripts/watch-codex.js",
+      "sha256": "80accf5957bf1adc0647c64fc293a3acd044c027c29d4746ba35d93957ba33da"
+    },
+    {
+      "path": "tests/corpus/golden.json",
+      "sha256": "83166a26e4d885d00ba9d17fa3b38f94b4996b2e2233f4cc5e9091d4e1a67d8b"
+    },
+    {
+      "path": "tests/install-check.cjs",
+      "sha256": "c618e6e2d865b2ef5d17184a6fda6ee06209586074a748144d95ab3c76f24076"
+    },
+    {
+      "path": "tests/windows-check.cjs",
+      "sha256": "5ddb55a3607b432e548eebdeb56fd4ee522c17fe7ab8a47462d4e1ab66679c3c"
+    }
+  ]
+}

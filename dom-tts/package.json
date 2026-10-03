@@ -1,8 +1,10 @@
 {
-  "name": "dom-tts-standard",
-  "version": "0.3.2-dev.1",
-  "private": true,
-  "description": "Windows Standard Mode speech by Prof Dom Marrocco / 42.uk",
-  "type": "commonjs",
-  "scripts": { "test": "node scripts/self-test.js --self-test" }
+ "name":"dom-tts",
+ "version":"0.4.0-dev.1",
+ "private":true,
+ "description":"Portable offline speech for coding assistants by Prof Dom Marrocco / 42.uk",
+ "type":"commonjs",
+ "engines":{"node":">=18"},
+ "scripts":{"test":"node scripts/self-test.js","doctor":"node scripts/doctor.js --voices true","test:windows":"node tests/windows-check.cjs"}
 }
+

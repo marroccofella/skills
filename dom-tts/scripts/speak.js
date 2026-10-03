@@ -1,339 +1,49 @@
-const fs = require("fs");
-const path = require("path");
-const { applyMode } = require("./summarize");
-const { appendTelemetry } = require("./telemetry");
-const { writeAvatarStatus } = require("./avatar-state");
-const { readObject, parseCli } = require("./runtime");
-
-const ROOT = path.resolve(__dirname, "..");
-const STATE = path.join(ROOT, "state");
-const CONFIG = path.join(ROOT, "assets", "voices.json");
-const SETTINGS = path.join(ROOT, "assets", "settings.json");
-const STATUS = path.join(STATE, "status.json");
-const QUEUE = path.join(STATE, "queue.json");
-const LOCK = path.join(STATE, "playback.lock");
-const PID = path.join(STATE, "current.pid");
-const STOP = path.join(STATE, "stop.flag");
-
-const PROVIDERS = {
-  sapi: () => require("./providers/sapi"),
-};
-let ownsLock = false;
-
-function parseArgs(argv) {
-  return parseCli(argv, { dryRun: false });
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),net=require('node:net');
+const {ROOT,stateDir,ensurePrivate,readObject,writeObject,parseCli,endpoint,alive}=require('./runtime');
+const {applyMode,chunkText,MODES}=require('./summarize');
+const native=require('./providers/native');
+const PROFILES={conversational:{speed:1,maxChunkChars:420},engineering:{speed:0.95,maxChunkChars:520},concise:{speed:1.15,maxChunkChars:650}};
+const OPTIONS=['text','textFile','stdin','provider','mode','profile','voice','speed','maxChunkChars','includeCodeBlocks','includeCommandBlocks','dryRun','waitMs'];
+function parseArgs(argv){return parseCli(argv,{},OPTIONS);}
+function boundedInput(args){
+ let text;if(args.textFile){const stat=fs.statSync(args.textFile);if(stat.size>1048576)throw new Error('Input exceeds 1 MB');text=fs.readFileSync(args.textFile,'utf8');}
+ else if(args.stdin||args.text==='-'){const buffers=[];let total=0;const buffer=Buffer.alloc(65536);let count;while((count=fs.readSync(0,buffer,0,buffer.length,null))>0){total+=count;if(total>1048576)throw new Error('Input exceeds 1 MB');buffers.push(Buffer.from(buffer.subarray(0,count)));}text=Buffer.concat(buffers).toString('utf8');}
+ else text=args.text||'';if(Buffer.byteLength(text,'utf8')>1048576)throw new Error('Input exceeds 1 MB');return text;
 }
-
-function ensureState() {
-  fs.mkdirSync(STATE, { recursive: true });
+function prepare(args){
+ const settings=readObject(path.join(ROOT,'assets','settings.json')),profile=args.profile||settings.profile||'conversational';
+ if(!Object.hasOwn(PROFILES,profile))throw new Error('Unknown narration profile: '+profile);
+ const mode=args.mode||settings.mode||'informative';if(!MODES.includes(mode))throw new Error('Unknown narration mode: '+mode);
+ const provider=args.provider||settings.provider||'auto';if(!['auto','sapi','say','espeak-ng'].includes(provider))throw new Error('Unknown speech provider');
+ const speed=Number(args.speed??settings.speed??PROFILES[profile].speed),maxChunkChars=Number(args.maxChunkChars??settings.maxChunkChars??PROFILES[profile].maxChunkChars),waitMs=Number(args.waitMs??0);
+ if(!Number.isFinite(waitMs)||waitMs<0||waitMs>60000)throw new Error('waitMs must be between 0 and 60000');
+ const text=applyMode(boundedInput(args),mode,profile,{includeCodeBlocks:args.includeCodeBlocks??false,includeCommandBlocks:args.includeCommandBlocks??false});
+ return {profile,mode,provider,speed,voice:args.voice??settings.voice??'',chunks:chunkText(text,maxChunkChars,speed),waitMs};
 }
-
-function readJson(file, fallback) {
-  return readObject(file, fallback);
+function stopValue(dir){try{return fs.readFileSync(path.join(dir,'stop.flag'),'utf8');}catch{return '';}}
+async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePrivate}={}){
+ privacy(dir);const lock=path.join(dir,'playback.lock'),status=path.join(dir,'status.json'),token=crypto.randomBytes(16).toString('hex');
+ const previousStop=stopValue(dir),start=Date.now();let acquired=false,child=null,stopped=false,server;
+ const setStatus=patch=>writeObject(status,{...patch,updatedAt:new Date().toISOString()});
+ while(!acquired){try{const fd=fs.openSync(lock,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{fs.closeSync(fd);}acquired=true;}catch(error){if(error.code!=='EEXIST')throw error;const owner=readObject(lock);if(!alive(owner.pid))throw new Error('Stale playback lock; run status.js --recover after checking the reported state');if(Date.now()-start>=options.waitMs)throw new Error('Another playback owns the lock; retry or use --wait-ms');if(stopValue(dir)!==previousStop)throw new Error('Playback stopped while waiting');await new Promise(r=>setTimeout(r,100));}}
+ const requestStop=()=>{stopped=true;if(child)child.kill();};
+ const signal=()=>requestStop();process.on('SIGINT',signal);process.on('SIGTERM',signal);
+ try{
+  server=net.createServer(socket=>{socket.setTimeout(1000,()=>socket.destroy());let input='';socket.on('error',()=>{});socket.on('data',data=>{input+=data;if(input.length>1024)return socket.destroy();if(!input.includes('\n'))return;try{const message=JSON.parse(input.split('\n')[0]);if(message.token===token&&message.action==='stop'){requestStop();socket.end('stopped\n');}else socket.end('denied\n');}catch{socket.destroy();}});});
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(endpoint(token,dir),resolve);});
+  if(process.platform!=='win32')fs.chmodSync(endpoint(token,dir),0o600);
+  if(stopValue(dir)!==previousStop)requestStop();
+  setStatus({state:'queued',mode:options.mode,profile:options.profile,provider:options.provider,chunks:options.chunks.length});
+  if(!stopped&&options.chunks.length)await play(options.chunks,options,{stateDir:dir,stopped:()=>stopped,setChild:value=>{child=value;if(stopped&&child)child.kill();},progress:i=>setStatus({state:'speaking',mode:options.mode,profile:options.profile,provider:options.provider,chunks:options.chunks.length,chunkIndex:i+1})});
+  setStatus({state:stopped?'stopped':'idle',mode:options.mode,profile:options.profile,provider:options.provider,chunks:options.chunks.length});
+ }catch(error){setStatus({state:stopped?'stopped':'error',error:stopped?undefined:'playback-failed'});if(!stopped)throw error;}
+ finally{
+  if(child)child.kill();if(server)await new Promise(r=>server.close(r));
+  process.off('SIGINT',signal);process.off('SIGTERM',signal);
+  if(readObject(lock).token===token){try{fs.unlinkSync(lock);}catch{}}
+ }
 }
+async function main(){const args=parseArgs(process.argv.slice(2)),options=prepare(args);if(args.dryRun){process.stdout.write(options.chunks.join('\n---\n'));return;}options.provider=native.selectProvider(options.provider);await playback(options);}
+if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+module.exports={parseArgs,prepare,chunkText,playback,PROFILES};
 
-function writeJson(file, value) {
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function setStatus(patch) {
-  const current = readJson(STATUS, {});
-  const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  if (patch.state && patch.state !== "stopped") {
-    delete next.stoppedAt;
-    delete next.stoppedAtChunk;
-  }
-  if (patch.state && patch.state !== "idle") {
-    delete next.completedAt;
-  }
-  if (patch.state === "idle" || patch.state === "stopped" || patch.state === "error") {
-    delete next.currentChunk;
-  }
-  for (const [key, value] of Object.entries(next)) {
-    if (value === null) delete next[key];
-  }
-  writeJson(STATUS, next);
-}
-
-function getInputText(args) {
-  if (args.textFile) return fs.readFileSync(args.textFile, "utf8");
-  if (args.stdin === "true" || args.text === "-") return fs.readFileSync(0, "utf8");
-  return args.text || "";
-}
-
-function chunkText(text, maxChars) {
-  if (!Number.isInteger(maxChars) || maxChars < 40 || maxChars > 4000) throw new Error("maxChunkChars must be an integer from 40 to 4000");
-  const clean = String(text || "").replace(/\r\n/g, "\n").trim();
-  if (!clean) return [];
-  const paragraphs = clean.split(/\n{2,}/).map(part => part.trim()).filter(Boolean);
-  const chunks = [];
-  for (const paragraph of paragraphs) {
-    if (paragraph.length <= maxChars) {
-      chunks.push(paragraph);
-      continue;
-    }
-    const sentences = paragraph.match(/[^.!?\n]+[.!?]?/g) || [paragraph];
-    let current = "";
-    for (const sentence of sentences) {
-      const next = current ? `${current} ${sentence.trim()}` : sentence.trim();
-      if (next.length > maxChars && current) {
-        chunks.push(current);
-        current = sentence.trim();
-      } else {
-        current = next;
-      }
-    }
-    if (current) chunks.push(current);
-  }
-  return chunks.flatMap(chunk => {
-    if (chunk.length <= maxChars * 1.5) return [chunk];
-    const parts = [];
-    for (let i = 0; i < chunk.length; i += maxChars) parts.push(chunk.slice(i, i + maxChars));
-    return parts;
-  });
-}
-
-function toBool(value) {
-  return value === true || value === "true" || value === "1" || value === "yes";
-}
-
-function edgeRateFromSpeed(speed) {
-  const numeric = Number(speed || 1);
-  const percent = Math.max(-50, Math.min(50, Math.round((numeric - 1) * 100)));
-  if (percent === 0) return "+0%";
-  return `${percent > 0 ? "+" : ""}${percent}%`;
-}
-
-function providerOptions(providerName, config, profileConfig, runtimeOptions) {
-  const providerConfig = config.providers?.[providerName] || {};
-  const speed = Number(runtimeOptions.speed || profileConfig.speed || 1);
-  const options = {
-    ...providerConfig,
-    speed,
-  };
-  if (runtimeOptions.voice) options.voice = runtimeOptions.voice;
-  if (providerName === "edge") {
-    options.rate = runtimeOptions.rate || edgeRateFromSpeed(speed);
-    if (runtimeOptions.pitch) options.pitch = runtimeOptions.pitch;
-  }
-  return options;
-}
-
-function stopRequested() {
-  return fs.existsSync(STOP);
-}
-
-function setCurrentPid(pid) {
-  if (pid) fs.writeFileSync(PID, String(pid), "utf8");
-}
-
-function clearCurrentPid() {
-  try { fs.unlinkSync(PID); } catch {}
-}
-
-async function speakWithProvider(providerName, chunk, config, profileConfig, runtimeOptions) {
-  const providerFactory = PROVIDERS[providerName];
-  if (!providerFactory) throw new Error(`Unknown provider: ${providerName}`);
-  const provider = providerFactory();
-  const context = {
-    rootDir: ROOT,
-    stateDir: STATE,
-    setCurrentPid,
-    clearCurrentPid,
-  };
-  await provider.speakChunk(chunk, providerOptions(providerName, config, profileConfig, runtimeOptions), context);
-}
-
-async function speakChunk(providerName, chunk, config, profileConfig, runtimeOptions) {
-  const fallback = config.fallbackProvider || "sapi";
-  const order = providerName === "auto" ? [config.defaultProvider || "edge", fallback] : [providerName];
-  let lastError;
-  for (const candidate of [...new Set(order)]) {
-    if (stopRequested()) return;
-    try {
-      appendTelemetry({
-        event: "tts_provider_start",
-        provider: candidate,
-        chunkChars: chunk.length,
-        agent: runtimeOptions.agent || undefined,
-      });
-      setStatus({ state: "speaking", provider: candidate, agent: runtimeOptions.agent || null, currentChunk: chunk.slice(0, 120) });
-      writeAvatarStatus({
-        activeAgent: runtimeOptions.agent || undefined,
-        phase: "speaking",
-        provider: candidate,
-        speakingText: chunk.slice(0, 240),
-        currentChunk: chunk.slice(0, 120),
-        error: null,
-      });
-      await speakWithProvider(candidate, chunk, config, profileConfig, runtimeOptions);
-      appendTelemetry({
-        event: "tts_provider_done",
-        provider: candidate,
-        chunkChars: chunk.length,
-        agent: runtimeOptions.agent || undefined,
-      });
-      return;
-    } catch (error) {
-      if (stopRequested()) {
-        setStatus({ state: "stopped", provider: candidate, message: "Playback interrupted by stop request", error: null });
-        writeAvatarStatus({ activeAgent: runtimeOptions.agent || undefined, phase: "idle", message: "Playback interrupted by stop request", speakingText: null, error: null });
-        return;
-      }
-      lastError = error;
-      appendTelemetry({
-        event: "tts_provider_failed",
-        provider: candidate,
-        error: error.message,
-        agent: runtimeOptions.agent || undefined,
-      });
-      setStatus({ state: "provider-failed", provider: candidate, error: error.message });
-      writeAvatarStatus({ activeAgent: runtimeOptions.agent || undefined, phase: "thinking", error: error.message });
-      if (candidate === fallback) break;
-    }
-  }
-  throw lastError || new Error("No provider could speak the chunk");
-}
-
-async function main() {
-  const settings = readJson(SETTINGS, {});
-  const args = parseArgs(process.argv.slice(2));
-  const config = readJson(CONFIG, {});
-  const runtime = {
-    provider: args.provider || settings.provider || "sapi",
-    profile: args.profile || settings.profile || "conversational",
-    mode: args.mode || settings.mode || "informative",
-    voice: args.voice || settings.voice || config.providers?.edge?.voice,
-    speed: args.speed || settings.speed || 1,
-    pitch: args.pitch || settings.pitch || config.providers?.edge?.pitch || "",
-    includeCodeBlocks: args.includeCodeBlocks ?? String(Boolean(settings.includeCodeBlocks)),
-    includeCommandBlocks: args.includeCommandBlocks ?? String(Boolean(settings.includeCommandBlocks)),
-    maxChunkChars: args.maxChunkChars || settings.maxChunkChars,
-    agent: args.agent || settings.agent || "",
-    priority: args.priority || "normal",
-    detectedAt: args.detectedAt || "",
-    sourceFile: args.sourceFile || "",
-    text: args.text || "",
-  };
-  const profile = config.profiles?.[runtime.profile] ? runtime.profile : "conversational";
-  const profileConfig = config.profiles?.[profile] || { speed: 1, maxChunkChars: 420 };
-  const mode = runtime.mode || profileConfig.mode || "full";
-  const rawText = getInputText(args);
-  const spokenText = applyMode(rawText, mode, profile, {
-    includeCodeBlocks: toBool(runtime.includeCodeBlocks),
-    includeCommandBlocks: toBool(runtime.includeCommandBlocks),
-  });
-  const chunks = chunkText(spokenText, Number(runtime.maxChunkChars || profileConfig.maxChunkChars || 420));
-  if (!["sapi", "auto"].includes(runtime.provider)) throw new Error("This development baseline supports local Windows SAPI only.");
-  if (!Number.isFinite(Number(runtime.speed)) || Number(runtime.speed) < 0.5 || Number(runtime.speed) > 2) throw new Error("speed must be between 0.5 and 2");
-  if (args.dryRun) {
-    process.stdout.write(chunks.join("\n---\n"));
-    return;
-  }
-  if (process.platform !== "win32") throw new Error("Playback requires Windows; use --dry-run on other platforms.");
-  ensureState();
-  try {
-    const fd = fs.openSync(LOCK, "wx", 0o600);
-    fs.writeFileSync(fd, String(process.pid));
-    fs.closeSync(fd);
-    ownsLock = true;
-  } catch (error) {
-    if (error.code === "EEXIST") throw new Error("Another playback owns the lock; stop it before retrying.");
-    throw error;
-  }
-
-  writeJson(QUEUE, {
-    mode,
-    profile,
-    provider: runtime.provider,
-    agent: runtime.agent,
-    priority: runtime.priority,
-    voice: runtime.voice,
-    speed: Number(runtime.speed || 1),
-    pitch: runtime.pitch,
-    includeCodeBlocks: toBool(runtime.includeCodeBlocks),
-    includeCommandBlocks: toBool(runtime.includeCommandBlocks),
-    chunks,
-    createdAt: new Date().toISOString(),
-  });
-
-  try { fs.unlinkSync(STOP); } catch {}
-  const queuedAtMs = Date.now();
-  appendTelemetry({
-    event: "tts_queued",
-    mode,
-    profile,
-    provider: runtime.provider,
-    agent: runtime.agent || undefined,
-    voice: runtime.voice,
-    speed: Number(runtime.speed || 1),
-    pitch: runtime.pitch || undefined,
-    chunks: chunks.length,
-    chars: rawText.length,
-    detectedAt: runtime.detectedAt || undefined,
-    sourceFile: runtime.sourceFile || undefined,
-  });
-  setStatus({ state: "queued", mode, profile, provider: runtime.provider, agent: runtime.agent || null, voice: runtime.voice, speed: Number(runtime.speed || 1), pitch: runtime.pitch, chunks: chunks.length, detectedAt: runtime.detectedAt || null, error: null, message: null });
-  writeAvatarStatus({ activeAgent: runtime.agent || undefined, phase: "thinking", chunks: chunks.length, speakingText: chunks[0] || "", error: null });
-
-  if (!chunks.length) {
-    setStatus({ state: "idle", message: "No speakable text found" });
-    writeAvatarStatus({ activeAgent: runtime.agent || undefined, phase: "idle", message: "No speakable text found", speakingText: null });
-    return;
-  }
-
-  for (let i = 0; i < chunks.length; i += 1) {
-    if (stopRequested()) {
-      setStatus({ state: "stopped", stoppedAtChunk: i, error: null });
-      writeAvatarStatus({ activeAgent: runtime.agent || undefined, phase: "idle", stoppedAtChunk: i, speakingText: null, error: null });
-      return;
-    }
-    const chunkStartedAtMs = Date.now();
-    const detectionLatencyMs = runtime.detectedAt ? Math.max(0, chunkStartedAtMs - Date.parse(runtime.detectedAt)) : null;
-    appendTelemetry({
-      event: "tts_chunk_started",
-      chunkIndex: i + 1,
-      chunks: chunks.length,
-      detectionLatencyMs,
-      queueLatencyMs: chunkStartedAtMs - queuedAtMs,
-    });
-    setStatus({ state: "speaking", agent: runtime.agent || null, chunkIndex: i + 1, chunks: chunks.length, lastLatencyMs: detectionLatencyMs });
-    await speakChunk(runtime.provider || "auto", chunks[i], config, profileConfig, runtime);
-    if (stopRequested()) {
-      setStatus({ state: "stopped", stoppedAtChunk: i + 1, error: null });
-      writeAvatarStatus({ activeAgent: runtime.agent || undefined, phase: "idle", stoppedAtChunk: i + 1, speakingText: null, error: null });
-      return;
-    }
-    appendTelemetry({
-      event: "tts_chunk_completed",
-      chunkIndex: i + 1,
-      chunks: chunks.length,
-      chunkDurationMs: Date.now() - chunkStartedAtMs,
-    });
-  }
-
-  appendTelemetry({
-    event: "tts_completed",
-    chunks: chunks.length,
-    totalDurationMs: Date.now() - queuedAtMs,
-  });
-  const completedAt = new Date().toISOString();
-  setStatus({ state: "idle", agent: runtime.agent || null, completedAt });
-  writeAvatarStatus({ activeAgent: runtime.agent || undefined, phase: "idle", completedAt, speakingText: null, currentChunk: null });
-}
-
-if (require.main === module) main()
-  .catch(error => {
-    if (ownsLock) setStatus({ state: "error", error: error.message });
-    writeAvatarStatus({ phase: "error", error: error.message });
-    console.error(error.message);
-    process.exitCode = 1;
-  })
-  .finally(() => {
-    if (ownsLock) {
-      clearCurrentPid();
-      try { fs.unlinkSync(LOCK); } catch {}
-    }
-  });
-
-module.exports = { chunkText, parseArgs };

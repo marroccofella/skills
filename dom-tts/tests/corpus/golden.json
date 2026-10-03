@@ -1,0 +1,834 @@
+[
+  {
+    "input": "Git is useful.",
+    "expected": {
+      "full": "Git is useful.",
+      "informative": "Git is useful.",
+      "summary": "Git is useful.",
+      "action-items": "Git is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Git is useful.",
+      "diff-summary": "Git is useful."
+    }
+  },
+  {
+    "input": "Node is useful.",
+    "expected": {
+      "full": "Node is useful.",
+      "informative": "Node is useful.",
+      "summary": "Node is useful.",
+      "action-items": "Node is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Node is useful.",
+      "diff-summary": "Node is useful."
+    }
+  },
+  {
+    "input": "npm is useful.",
+    "expected": {
+      "full": "npm is useful.",
+      "informative": "npm is useful.",
+      "summary": "npm is useful.",
+      "action-items": "npm is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "npm is useful.",
+      "diff-summary": "npm is useful."
+    }
+  },
+  {
+    "input": "Python is useful.",
+    "expected": {
+      "full": "Python is useful.",
+      "informative": "Python is useful.",
+      "summary": "Python is useful.",
+      "action-items": "Python is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Python is useful.",
+      "diff-summary": "Python is useful."
+    }
+  },
+  {
+    "input": "cd is useful.",
+    "expected": {
+      "full": "cd is useful.",
+      "informative": "cd is useful.",
+      "summary": "cd is useful.",
+      "action-items": "cd is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "cd is useful.",
+      "diff-summary": "cd is useful."
+    }
+  },
+  {
+    "input": "PowerShell is useful.",
+    "expected": {
+      "full": "PowerShell is useful.",
+      "informative": "PowerShell is useful.",
+      "summary": "PowerShell is useful.",
+      "action-items": "PowerShell is useful.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "PowerShell is useful.",
+      "diff-summary": "PowerShell is useful."
+    }
+  },
+  {
+    "input": "snake_case.",
+    "expected": {
+      "full": "snake case.",
+      "informative": "snake case.",
+      "summary": "snake case.",
+      "action-items": "snake case.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "snake case.",
+      "diff-summary": "snake case."
+    }
+  },
+  {
+    "input": "camelCase.",
+    "expected": {
+      "full": "camel Case.",
+      "informative": "camel Case.",
+      "summary": "camel Case.",
+      "action-items": "camel Case.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "camel Case.",
+      "diff-summary": "camel Case."
+    }
+  },
+  {
+    "input": "PascalCase.",
+    "expected": {
+      "full": "PascalCase.",
+      "informative": "PascalCase.",
+      "summary": "PascalCase.",
+      "action-items": "PascalCase.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "PascalCase.",
+      "diff-summary": "PascalCase."
+    }
+  },
+  {
+    "input": "iPhone.",
+    "expected": {
+      "full": "iPhone.",
+      "informative": "iPhone.",
+      "summary": "iPhone.",
+      "action-items": "iPhone.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "iPhone.",
+      "diff-summary": "iPhone."
+    }
+  },
+  {
+    "input": "macOS.",
+    "expected": {
+      "full": "macOS.",
+      "informative": "macOS.",
+      "summary": "macOS.",
+      "action-items": "macOS.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "macOS.",
+      "diff-summary": "macOS."
+    }
+  },
+  {
+    "input": "Wait -- continue.",
+    "expected": {
+      "full": "Wait -- continue.",
+      "informative": "Wait -- continue.",
+      "summary": "Wait -- continue.",
+      "action-items": "Wait -- continue.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Wait -- continue.",
+      "diff-summary": "Wait -- continue."
+    }
+  },
+  {
+    "input": "An em—dash.",
+    "expected": {
+      "full": "An em—dash.",
+      "informative": "An em—dash.",
+      "summary": "An em—dash.",
+      "action-items": "An em—dash.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "An em—dash.",
+      "diff-summary": "An em—dash."
+    }
+  },
+  {
+    "input": "Use e.g. apples.",
+    "expected": {
+      "full": "Use e.g. apples.",
+      "informative": "Use e.g. apples.",
+      "summary": "Use e.g. apples.",
+      "action-items": "Use e.g. apples.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Use e.g. apples.",
+      "diff-summary": "Use e.g. apples."
+    }
+  },
+  {
+    "input": "Dr. Smith speaks.",
+    "expected": {
+      "full": "Dr. Smith speaks.",
+      "informative": "Dr. Smith speaks.",
+      "summary": "Dr. Smith speaks.",
+      "action-items": "Dr. Smith speaks.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Dr. Smith speaks.",
+      "diff-summary": "Dr. Smith speaks."
+    }
+  },
+  {
+    "input": "Version 0.3.2-dev.1.",
+    "expected": {
+      "full": "Version 0.3.2-dev.1.",
+      "informative": "Version 0.3.2-dev.1.",
+      "summary": "Version 0.3.2-dev.1.",
+      "action-items": "Version 0.3.2-dev.1.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Version 0.3.2-dev.1.",
+      "diff-summary": "Version 0.3.2-dev.1."
+    }
+  },
+  {
+    "input": "Read v1.2 carefully.",
+    "expected": {
+      "full": "Read v1.2 carefully.",
+      "informative": "Read v1.2 carefully.",
+      "summary": "Read v1.2 carefully.",
+      "action-items": "Read v1.2 carefully.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Read v1.2 carefully.",
+      "diff-summary": "Read v1.2 carefully."
+    }
+  },
+  {
+    "input": "# A heading.",
+    "expected": {
+      "full": "A heading.",
+      "informative": "A heading.",
+      "summary": "A heading.",
+      "action-items": "A heading.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A heading.",
+      "diff-summary": "A heading."
+    }
+  },
+  {
+    "input": "## Another heading.",
+    "expected": {
+      "full": "Another heading.",
+      "informative": "Another heading.",
+      "summary": "Another heading.",
+      "action-items": "Another heading.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Another heading.",
+      "diff-summary": "Another heading."
+    }
+  },
+  {
+    "input": "**Strong words.**",
+    "expected": {
+      "full": "Strong words.",
+      "informative": "Strong words.",
+      "summary": "Strong words.",
+      "action-items": "Strong words.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Strong words.",
+      "diff-summary": "Strong words."
+    }
+  },
+  {
+    "input": "*Emphasis.*",
+    "expected": {
+      "full": "Emphasis.",
+      "informative": "Emphasis.",
+      "summary": "Emphasis.",
+      "action-items": "Emphasis.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Emphasis.",
+      "diff-summary": "Emphasis."
+    }
+  },
+  {
+    "input": "__Strong emphasis.__",
+    "expected": {
+      "full": "Strong emphasis.",
+      "informative": "Strong emphasis.",
+      "summary": "Strong emphasis.",
+      "action-items": "Strong emphasis.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Strong emphasis.",
+      "diff-summary": "Strong emphasis."
+    }
+  },
+  {
+    "input": "_An emphasis._",
+    "expected": {
+      "full": "An emphasis.",
+      "informative": "An emphasis.",
+      "summary": "An emphasis.",
+      "action-items": "An emphasis.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "An emphasis.",
+      "diff-summary": "An emphasis."
+    }
+  },
+  {
+    "input": "~~Removed formatting.~~",
+    "expected": {
+      "full": "Removed formatting.",
+      "informative": "Removed formatting.",
+      "summary": "Removed formatting.",
+      "action-items": "Removed formatting.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Removed formatting.",
+      "diff-summary": "Removed formatting."
+    }
+  },
+  {
+    "input": "`snake_case`.",
+    "expected": {
+      "full": "snake case.",
+      "informative": "snake case.",
+      "summary": "snake case.",
+      "action-items": "snake case.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "snake case.",
+      "diff-summary": "snake case."
+    }
+  },
+  {
+    "input": "[Read this.](https://example.com)",
+    "expected": {
+      "full": "Read this.",
+      "informative": "Read this.",
+      "summary": "Read this.",
+      "action-items": "Read this.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Read this.",
+      "diff-summary": "Read this."
+    }
+  },
+  {
+    "input": "![A chart.](chart.png)",
+    "expected": {
+      "full": "A chart.",
+      "informative": "A chart.",
+      "summary": "A chart.",
+      "action-items": "A chart.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A chart.",
+      "diff-summary": "A chart."
+    }
+  },
+  {
+    "input": "- A bullet.",
+    "expected": {
+      "full": "A bullet.",
+      "informative": "A bullet.",
+      "summary": "A bullet.",
+      "action-items": "A bullet.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A bullet.",
+      "diff-summary": "A bullet."
+    }
+  },
+  {
+    "input": "* Another bullet.",
+    "expected": {
+      "full": "Another bullet.",
+      "informative": "Another bullet.",
+      "summary": "Another bullet.",
+      "action-items": "Another bullet.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Another bullet.",
+      "diff-summary": "Another bullet."
+    }
+  },
+  {
+    "input": "+ A third bullet.",
+    "expected": {
+      "full": "A third bullet.",
+      "informative": "A third bullet.",
+      "summary": "A third bullet.",
+      "action-items": "A third bullet.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A third bullet.",
+      "diff-summary": "A third bullet."
+    }
+  },
+  {
+    "input": "1. An ordered item.",
+    "expected": {
+      "full": "An ordered item.",
+      "informative": "An ordered item.",
+      "summary": "An ordered item.",
+      "action-items": "An ordered item.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "An ordered item.",
+      "diff-summary": "An ordered item."
+    }
+  },
+  {
+    "input": "- [x] A checked item.",
+    "expected": {
+      "full": "A checked item.",
+      "informative": "A checked item.",
+      "summary": "A checked item.",
+      "action-items": "A checked item.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A checked item.",
+      "diff-summary": "A checked item."
+    }
+  },
+  {
+    "input": "- [ ] An unchecked item.",
+    "expected": {
+      "full": "An unchecked item.",
+      "informative": "An unchecked item.",
+      "summary": "An unchecked item.",
+      "action-items": "An unchecked item.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "An unchecked item.",
+      "diff-summary": "An unchecked item."
+    }
+  },
+  {
+    "input": "Résumé français.",
+    "expected": {
+      "full": "Résumé français.",
+      "informative": "Résumé français.",
+      "summary": "Résumé français.",
+      "action-items": "Résumé français.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Résumé français.",
+      "diff-summary": "Résumé français."
+    }
+  },
+  {
+    "input": "中文文本。",
+    "expected": {
+      "full": "中文文本。",
+      "informative": "中文文本。",
+      "summary": "中文文本。",
+      "action-items": "中文文本。",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "中文文本。",
+      "diff-summary": "中文文本。"
+    }
+  },
+  {
+    "input": "العربية.",
+    "expected": {
+      "full": "العربية.",
+      "informative": "العربية.",
+      "summary": "العربية.",
+      "action-items": "العربية.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "العربية.",
+      "diff-summary": "العربية."
+    }
+  },
+  {
+    "input": "שלום.",
+    "expected": {
+      "full": "שלום.",
+      "informative": "שלום.",
+      "summary": "שלום.",
+      "action-items": "שלום.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "שלום.",
+      "diff-summary": "שלום."
+    }
+  },
+  {
+    "input": "Привет.",
+    "expected": {
+      "full": "Привет.",
+      "informative": "Привет.",
+      "summary": "Привет.",
+      "action-items": "Привет.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Привет.",
+      "diff-summary": "Привет."
+    }
+  },
+  {
+    "input": "こんにちは。",
+    "expected": {
+      "full": "こんにちは。",
+      "informative": "こんにちは。",
+      "summary": "こんにちは。",
+      "action-items": "こんにちは。",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "こんにちは。",
+      "diff-summary": "こんにちは。"
+    }
+  },
+  {
+    "input": "안녕하세요.",
+    "expected": {
+      "full": "안녕하세요.",
+      "informative": "안녕하세요.",
+      "summary": "안녕하세요.",
+      "action-items": "안녕하세요.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "안녕하세요.",
+      "diff-summary": "안녕하세요."
+    }
+  },
+  {
+    "input": "😀 Smile.",
+    "expected": {
+      "full": "😀 Smile.",
+      "informative": "😀 Smile.",
+      "summary": "😀 Smile.",
+      "action-items": "😀 Smile.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "😀 Smile.",
+      "diff-summary": "😀 Smile."
+    }
+  },
+  {
+    "input": "A 'quoted' sentence.",
+    "expected": {
+      "full": "A 'quoted' sentence.",
+      "informative": "A 'quoted' sentence.",
+      "summary": "A 'quoted' sentence.",
+      "action-items": "A 'quoted' sentence.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A 'quoted' sentence.",
+      "diff-summary": "A 'quoted' sentence."
+    }
+  },
+  {
+    "input": "Dollar $42.",
+    "expected": {
+      "full": "Dollar $42.",
+      "informative": "Dollar $42.",
+      "summary": "Dollar $42.",
+      "action-items": "Dollar $42.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Dollar $42.",
+      "diff-summary": "Dollar $42."
+    }
+  },
+  {
+    "input": "A backtick `value`.",
+    "expected": {
+      "full": "A backtick value.",
+      "informative": "A backtick value.",
+      "summary": "A backtick value.",
+      "action-items": "A backtick value.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A backtick value.",
+      "diff-summary": "A backtick value."
+    }
+  },
+  {
+    "input": "A Windows path C:\\work\\file.js.",
+    "expected": {
+      "full": "A Windows path C:\\work\\file.js.",
+      "informative": "A Windows path C:\\work\\file.js.",
+      "summary": "A Windows path C:\\work\\file.js.",
+      "action-items": "A Windows path C:\\work\\file.js.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A Windows path C:\\work\\file.js.",
+      "diff-summary": "A Windows path C:\\work\\file.js."
+    }
+  },
+  {
+    "input": "A Unix path /tmp/example.txt.",
+    "expected": {
+      "full": "A Unix path /tmp/example.txt.",
+      "informative": "A Unix path /tmp/example.txt.",
+      "summary": "A Unix path /tmp/example.txt.",
+      "action-items": "A Unix path /tmp/example.txt.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A Unix path /tmp/example.txt.",
+      "diff-summary": "A Unix path /tmp/example.txt."
+    }
+  },
+  {
+    "input": "Visit https://example.com/a.",
+    "expected": {
+      "full": "Visit https://example.com/a.",
+      "informative": "Visit https://example.com/a.",
+      "summary": "Visit https://example.com/a.",
+      "action-items": "Visit https://example.com/a.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Visit https://example.com/a.",
+      "diff-summary": "Visit https://example.com/a."
+    }
+  },
+  {
+    "input": "One equals two == three.",
+    "expected": {
+      "full": "One equals two == three.",
+      "informative": "One equals two == three.",
+      "summary": "One equals two == three.",
+      "action-items": "One equals two == three.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "One equals two == three.",
+      "diff-summary": "One equals two == three."
+    }
+  },
+  {
+    "input": "A pointer -> target.",
+    "expected": {
+      "full": "A pointer -> target.",
+      "informative": "A pointer -> target.",
+      "summary": "A pointer -> target.",
+      "action-items": "A pointer -> target.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A pointer -> target.",
+      "diff-summary": "A pointer -> target."
+    }
+  },
+  {
+    "input": "C++ remains C++.",
+    "expected": {
+      "full": "C++ remains C++.",
+      "informative": "C++ remains C++.",
+      "summary": "C++ remains C++.",
+      "action-items": "C++ remains C++.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "C++ remains C++.",
+      "diff-summary": "C++ remains C++."
+    }
+  },
+  {
+    "input": "UTF-8 stays intact.",
+    "expected": {
+      "full": "UTF-8 stays intact.",
+      "informative": "UTF-8 stays intact.",
+      "summary": "UTF-8 stays intact.",
+      "action-items": "UTF-8 stays intact.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "UTF-8 stays intact.",
+      "diff-summary": "UTF-8 stays intact."
+    }
+  },
+  {
+    "input": "  Leading and trailing space.  ",
+    "expected": {
+      "full": "Leading and trailing space.",
+      "informative": "Leading and trailing space.",
+      "summary": "Leading and trailing space.",
+      "action-items": "Leading and trailing space.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Leading and trailing space.",
+      "diff-summary": "Leading and trailing space."
+    }
+  },
+  {
+    "input": "Multiple   spaces.",
+    "expected": {
+      "full": "Multiple spaces.",
+      "informative": "Multiple spaces.",
+      "summary": "Multiple spaces.",
+      "action-items": "Multiple spaces.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Multiple spaces.",
+      "diff-summary": "Multiple spaces."
+    }
+  },
+  {
+    "input": "\r\nA CRLF paragraph.\r\n",
+    "expected": {
+      "full": "A CRLF paragraph.",
+      "informative": "A CRLF paragraph.",
+      "summary": "A CRLF paragraph.",
+      "action-items": "A CRLF paragraph.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A CRLF paragraph.",
+      "diff-summary": "A CRLF paragraph."
+    }
+  },
+  {
+    "input": "Next we verify the result.",
+    "expected": {
+      "full": "Next we verify the result.",
+      "informative": "Next we verify the result.",
+      "summary": "Next we verify the result.",
+      "action-items": "Next we verify the result.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Next we verify the result.",
+      "diff-summary": "Next we verify the result."
+    }
+  },
+  {
+    "input": "We should finish now.",
+    "expected": {
+      "full": "We should finish now.",
+      "informative": "We should finish now.",
+      "summary": "We should finish now.",
+      "action-items": "We should finish now.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "We should finish now.",
+      "diff-summary": "We should finish now."
+    }
+  },
+  {
+    "input": "TODO: inspect the result.",
+    "expected": {
+      "full": "TODO: inspect the result.",
+      "informative": "TODO: inspect the result.",
+      "summary": "TODO: inspect the result.",
+      "action-items": "TODO: inspect the result.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "TODO: inspect the result.",
+      "diff-summary": "TODO: inspect the result."
+    }
+  },
+  {
+    "input": "Use i.e. this example.",
+    "expected": {
+      "full": "Use i.e. this example.",
+      "informative": "Use i.e. this example.",
+      "summary": "Use i.e. this example.",
+      "action-items": "Use i.e. this example.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Use i.e. this example.",
+      "diff-summary": "Use i.e. this example."
+    }
+  },
+  {
+    "input": "The file is ready.",
+    "expected": {
+      "full": "The file is ready.",
+      "informative": "The file is ready.",
+      "summary": "The file is ready.",
+      "action-items": "The file is ready.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "The file is ready.",
+      "diff-summary": "The file is ready."
+    }
+  },
+  {
+    "input": "No changes are needed.",
+    "expected": {
+      "full": "No changes are needed.",
+      "informative": "No changes are needed.",
+      "summary": "No changes are needed.",
+      "action-items": "No changes are needed.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "No changes are needed.",
+      "diff-summary": "No changes are needed."
+    }
+  },
+  {
+    "input": "A code identifier parse_args.",
+    "expected": {
+      "full": "A code identifier parse args.",
+      "informative": "A code identifier parse args.",
+      "summary": "A code identifier parse args.",
+      "action-items": "A code identifier parse args.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A code identifier parse args.",
+      "diff-summary": "A code identifier parse args."
+    }
+  },
+  {
+    "input": "A technical identifier readJson.",
+    "expected": {
+      "full": "A technical identifier read Json.",
+      "informative": "A technical identifier read Json.",
+      "summary": "A technical identifier read Json.",
+      "action-items": "A technical identifier read Json.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "A technical identifier read Json.",
+      "diff-summary": "A technical identifier read Json."
+    }
+  },
+  {
+    "input": "Read Unicode café.",
+    "expected": {
+      "full": "Read Unicode café.",
+      "informative": "Read Unicode café.",
+      "summary": "Read Unicode café.",
+      "action-items": "Read Unicode café.",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Read Unicode café.",
+      "diff-summary": "Read Unicode café."
+    }
+  },
+  {
+    "input": "Hello world!",
+    "expected": {
+      "full": "Hello world!",
+      "informative": "Hello world!",
+      "summary": "Hello world!",
+      "action-items": "Hello world!",
+      "errors-only": "No clear errors found.",
+      "warnings-only": "No clear warnings found.",
+      "terminal-summary": "Hello world!",
+      "diff-summary": "Hello world!"
+    }
+  }
+]

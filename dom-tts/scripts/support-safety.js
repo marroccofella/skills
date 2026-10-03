@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
+const { stateDir } = require('./runtime');
 const STATES = new Set(["idle", "queued", "speaking", "watching", "stopped", "error", "dry-run"]);
-const PROVIDERS = new Set(["auto", "edge", "sapi", "piper"]);
+const PROVIDERS = new Set(["auto", "sapi", "say", "espeak-ng"]);
 const MODES = new Set(["full", "informative", "summary", "action-items", "errors-only", "warnings-only", "terminal-summary", "diff-summary"]);
 const PROFILES = new Set(["concise", "engineering", "conversational"]);
 
@@ -28,12 +29,12 @@ function sanitizeStatus(input) {
   return output;
 }
 
-function collectDiagnostics(root) {
+function collectDiagnostics(root, dir = stateDir) {
   const pkg = readDiagnostic(path.join(root, "package.json"));
   const version = typeof pkg.version === "string" && /^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/i.test(pkg.version) ? pkg.version : "unknown";
   const statuses = {};
   for (const name of ["status", "watcher-status", "duplex-status"]) {
-    statuses[name] = sanitizeStatus(readDiagnostic(path.join(root, "state", `${name}.json`)));
+    statuses[name] = sanitizeStatus(readDiagnostic(path.join(dir, `${name}.json`)));
   }
   return { schema: "dom-tts-support/1", product: "Dom TTS", version, platform: process.platform, arch: process.arch, node: process.version, statuses };
 }

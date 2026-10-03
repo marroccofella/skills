@@ -1,8 +1,9 @@
 state/
-node_modules/
-.ensemble_reviews/
 assets/settings.json
+.ensemble_reviews/
+.local-test/
 *.zip
-*.exe
 *.wav
-*.mp3
+*.tgz
+*.tmp
+

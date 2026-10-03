@@ -1,46 +1,18 @@
-const fs = require("fs");
-const path = require("path");
-const { spawnSync } = require("child_process");
-const { writeAvatarStatus } = require("./avatar-state");
-const { taskkill, safeEnv, playbackProcessLooksOwned, readObject } = require("./runtime");
-
-const ROOT = path.resolve(__dirname, "..");
-const STATE = path.join(ROOT, "state");
-const STOP = path.join(STATE, "stop.flag");
-const PID = path.join(STATE, "current.pid");
-const LOCK = path.join(STATE, "playback.lock");
-const STATUS = path.join(STATE, "status.json");
-
-function readJson(file, fallback) {
-  return readObject(file, fallback);
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),net=require('node:net');
+const {stateDir,readObject,writeObject,endpoint}=require('./runtime');
+async function stop(dir=stateDir){
+ // Never kill a recorded PID. Only the authenticated live owner interrupts its own child.
+ if(!fs.existsSync(dir))return {state:'idle'};
+ const lock=readObject(path.join(dir,'playback.lock'));writeObject(path.join(dir,'stop.flag'),{request:crypto.randomBytes(16).toString('hex')});
+ if(!lock.token)return {state:'stopped'};
+ return new Promise(resolve=>{
+  let settled=false;const socket=net.createConnection(endpoint(lock.token,dir));const finish=state=>{if(settled)return;settled=true;socket.destroy();resolve({state});};
+  socket.setTimeout(1500,()=>finish('unreachable'));
+  socket.on('connect',()=>socket.write(JSON.stringify({action:'stop',token:lock.token})+'\n'));
+  let response='';socket.on('data',data=>{response+=data;if(response.includes('\n'))finish(response.trim()==='stopped'?'stopped':'denied');});
+  socket.on('error',()=>finish('unreachable'));socket.on('end',()=>finish('unreachable'));
+ });
 }
+if(require.main===module)stop().then(result=>{console.log(result.state);if(['unreachable','denied'].includes(result.state))process.exitCode=1;}).catch(error=>{console.error(error.message);process.exitCode=1;});
+module.exports={stop};
 
-function writeJson(file, value) {
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-fs.mkdirSync(STATE, { recursive: true });
-fs.writeFileSync(STOP, new Date().toISOString(), "utf8");
-
-const pid = fs.existsSync(PID) ? fs.readFileSync(PID, "utf8").trim() : "";
-if (/^\d+$/.test(pid)) {
-  if (process.platform === "win32") {
-    if (playbackProcessLooksOwned(pid)) {
-      spawnSync(taskkill, ["/PID", pid, "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: 5000, env: safeEnv() });
-    }
-  } else {
-    // Playback is Windows-only; never signal a PID on another platform.
-  }
-}
-
-// The playback owner clears its own PID and lock after observing the stop.
-
-writeJson(STATUS, {
-  ...readJson(STATUS, {}),
-  state: "stopped",
-  error: null,
-  stoppedAt: new Date().toISOString(),
-});
-writeAvatarStatus({ phase: "idle", speakingText: null, error: null });
-
-console.log("stopped");

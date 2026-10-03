@@ -1,174 +1,35 @@
-const MODES = new Set([
-  "full",
-  "informative",
-  "summary",
-  "action-items",
-  "errors-only",
-  "warnings-only",
-  "terminal-summary",
-  "diff-summary",
-]);
-
-function removeCodeBlocks(text, options = {}) {
-  if (options.includeCodeBlocks === true || options.includeCodeBlocks === "true") return String(text || "");
-  return String(text || "")
-    .replace(/```[\s\S]*?```/g, "\n[code block skipped]\n")
-    .replace(/~~~[\s\S]*?~~~/g, "\n[code block skipped]\n");
+const MODES=['full','informative','summary','action-items','errors-only','warnings-only','terminal-summary','diff-summary'];
+function markdown(text,{includeCodeBlocks=false,includeCommandBlocks=false}={}){
+ let fence=null,skipped=false;const output=[];
+ for(const line of String(text||'').replace(/\r\n/g,'\n').split('\n')){
+ const match=line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+ if(match){if(!fence){fence={char:match[1][0],length:match[1].length};if(!includeCodeBlocks)skipped=true;continue;}if(match[1][0]===fence.char&&match[1].length>=fence.length&&!match[2].trim()){fence=null;continue;}}
+ if(fence&&!includeCodeBlocks)continue;
+ if(/^\s*(?:[-*_]\s*){3,}$/.test(line))continue;
+ if(!includeCommandBlocks&&/^\s*(?:\$\s+|PS [^>]*>\s*|>\s*)?(?:git\s+(?:push|pull|status|diff|commit|add|clone|checkout|switch|fetch|log|reset|restore)\b|npm\s+(?:test|install|run|ci|start|build)\b|node\s+\S+\.(?:[cm]?js)\b|python\s+(?:-\w|\S+\.py\b)|powershell\s+-\w|cd\s+(?:[./~]|[A-Za-z]:\\))/i.test(line))continue;
+ output.push(line.replace(/^\s{0,3}#{1,6}\s+/,'').replace(/^\s*(?:[-*+] |\d+[.)] )/,'').replace(/^\[[ xX]\]\s*/,'').replace(/!\[([^\]]*)\]\([^)]+\)/g,'$1').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/__([^_]+)__/g,'$1').replace(/\*([^*\n]+)\*/g,'$1').replace(/(?<!\w)_([^_\n]+)_(?!\w)/g,'$1').replace(/~~([^~]+)~~/g,'$1'));
+ }
+ if(skipped)output.push('I skipped a code block.');
+ return output.join('\n').replace(/\b([A-Za-z][A-Za-z0-9]*)_([A-Za-z0-9_]+)\b/g,m=>m.replace(/_/g,' ')).replace(/\b[a-z]{2,}[A-Z][a-z]+(?:[A-Z][a-z]+)*\b/g,m=>m.replace(/([a-z])([A-Z])/g,'$1 $2')).replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
-
-function stripMarkdown(text) {
-  return String(text || "")
-    .replace(/```[\s\S]*?```/g, block => block.replace(/```[a-zA-Z0-9_-]*\n?/g, "").replace(/```/g, ""))
-    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
-    .replace(/\[([^\]]+)]\(([^)]+)\)/g, "$1")
-    .replace(/^[ \t]*#{1,6}[ \t]*/gm, "")
-    .replace(/[*_~`]+/g, "")
-    .replace(/\r\n/g, "\n");
+function sentences(text,limit){const chunks=[];let start=0;for(let i=0;i<text.length;i++)if(/[.!?]/.test(text[i])&&(i===text.length-1||/\s/.test(text[i+1]))){const prefix=text.slice(0,i+1);if(/\b(?:e\.g\.|i\.e\.|etc\.|Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|vs\.)$/i.test(prefix))continue;chunks.push(text.slice(start,i+1).trim());start=i+1;if(chunks.length>=limit)return chunks.join(' ');}if(text.slice(start).trim())chunks.push(text.slice(start).trim());return chunks.slice(0,limit).join(' ');}
+function applyMode(text,mode='informative',profile='conversational',options={}){
+ if(!MODES.includes(mode))throw new Error('Unknown narration mode: '+mode);
+ const clean=markdown(text,{...options,includeCodeBlocks:mode==='full'||options.includeCodeBlocks,includeCommandBlocks:mode==='full'||options.includeCommandBlocks}),lines=clean.split('\n').map(x=>x.trim()).filter(Boolean);
+ if(mode==='summary')return sentences(clean,profile==='concise'?2:3);
+ if(mode==='action-items'){const hits=lines.filter(x=>/\b(todo|next|action|follow up|fix|implement|verify|ship|decide|needs?|must|should)\b/i.test(x));return hits.length?hits.join('\n'):sentences(clean,2);}
+ if(mode==='errors-only'||mode==='warnings-only'){const pattern=mode==='errors-only'?/\b(error|failed|failure|exception|fatal|traceback|cannot|denied|not found|exit code [1-9])\b/i:/\b(warn|warning|deprecated|caution|risk|skipped|unstable)\b/i;const hits=lines.filter(x=>pattern.test(x));return hits.length?hits.join('\n'):(mode==='errors-only'?'No clear errors found.':'No clear warnings found.');}
+ if(mode==='terminal-summary')return sentences(lines.filter(x=>/\b(error|fail|warning)\b/i.test(x)).join(' ')||lines.slice(-5).join(' '),3);
+ if(mode==='diff-summary'){const raw=String(text).split(/\r?\n/),files=[...new Set(raw.map(x=>x.match(/^diff --git a\/(.+?) b\//)?.[1]).filter(Boolean))];const added=raw.filter(x=>x.startsWith('+')&&!x.startsWith('+++')).length,removed=raw.filter(x=>x.startsWith('-')&&!x.startsWith('---')).length;if(!files.length&&!raw.some(line=>/^(?:@@|--- |\+\+\+ )/.test(line)))return sentences(clean,3);return 'Diff summary. '+(files.length?'Files touched: '+files.slice(0,6).join(', ')+'. ':'')+added+' added lines and '+removed+' removed lines.';}
+ return clean;
 }
-
-function informativeText(text, options = {}) {
-  const withoutCode = removeCodeBlocks(text, options);
-  const cleaned = stripMarkdown(withoutCode)
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .filter(line => !/^(powershell|bash|cmd|json|yaml|javascript|typescript|python)$/i.test(line))
-    .filter(line => !/^[-+]{3,}|^diff --git\b|^@@\b/.test(line))
-    .filter(line => {
-      if (options.includeCommandBlocks === true || options.includeCommandBlocks === "true") return true;
-      return !/^(node|npm|python|powershell|cd|git)\s+/i.test(line);
-    })
-    .map(line => {
-      if (/^\[code block skipped\]$/i.test(line)) return "I skipped a code block.";
-      return line
-        .replace(/^[-*]\s+/, "")
-        .replace(/^\d+\.\s+/, "")
-        .replace(/^#{1,6}\s*/, "");
-    })
-    .join("\n");
-
-  const paragraphs = cleaned
-    .split(/\n{1,}/)
-    .map(part => part.trim())
-    .filter(Boolean);
-
-  const compressed = [];
-  let skippedCode = false;
-  for (const paragraph of paragraphs) {
-    if (paragraph === "I skipped a code block.") {
-      skippedCode = true;
-      continue;
-    }
-    compressed.push(paragraph);
-  }
-  if (skippedCode) compressed.push("I skipped extensive code and command blocks.");
-  return codeAwareText(compressed.join("\n\n"));
+function chunkText(text,maxChars=420,speed=1){
+ if(!Number.isInteger(maxChars)||maxChars<40||maxChars>4000)throw new Error('maxChunkChars must be an integer from 40 to 4000');
+ if(!Number.isFinite(speed)||speed<0.5||speed>2)throw new Error('speed must be between 0.5 and 2');
+ // Conservative budget: eight characters/second, ninety seconds, adjusted for speed.
+ const limit=Math.min(maxChars,Math.floor(8*speed*90));let rest=String(text||'').trim();const chunks=[];
+ while(rest.length>limit){let end=limit;const whitespace=rest.slice(0,limit+1).search(/\s+\S*$/);if(whitespace>0)end=whitespace;if(/[\uD800-\uDBFF]/.test(rest[end-1])&&/[\uDC00-\uDFFF]/.test(rest[end]))end--;chunks.push(rest.slice(0,end).trim());rest=rest.slice(end).trimStart();}if(rest)chunks.push(rest);return chunks;
 }
+module.exports={MODES,applyMode,chunkText,markdown,sentences};
 
-function codeAwareText(text) {
-  return stripMarkdown(text)
-    .replace(/^\s*\d+\s*[|:]\s*/gm, "")
-    .replace(/\b([a-z]+)_([a-z0-9_]+)\b/gi, value => value.replace(/_/g, " "))
-    .replace(/\b([a-z][a-z0-9]*)([A-Z][a-z0-9]+)+\b/g, value => value.replace(/([a-z0-9])([A-Z])/g, "$1 $2"))
-    .replace(/===/g, " triple equals ")
-    .replace(/!==/g, " not double equals ")
-    .replace(/==/g, " double equals ")
-    .replace(/!=/g, " not equals ")
-    .replace(/=>/g, " arrow ")
-    .replace(/->/g, " arrow ")
-    .replace(/\+\+/g, " increment ")
-    .replace(/--/g, " decrement ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
 
-function lines(text) {
-  return stripMarkdown(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-}
-
-function firstSentences(text, limit = 3) {
-  const clean = codeAwareText(text);
-  const sentences = clean.match(/[^.!?\n]+[.!?]?/g) || [clean];
-  return sentences.slice(0, limit).join(" ").trim();
-}
-
-function actionItems(text) {
-  const hits = lines(text).filter(line =>
-    /(^[-*]\s*\[[ x]\])|(\b(todo|next|action|follow up|fix|implement|verify|ship|decide|needs?|must|should)\b)/i.test(line)
-  );
-  return hits.length ? hits.join("\n") : firstSentences(text, 2);
-}
-
-function errorsOnly(text) {
-  const hits = lines(text).filter(line =>
-    /\b(error|failed|failure|exception|fatal|traceback|cannot|denied|not found|exit code [1-9])\b/i.test(line)
-  );
-  return hits.length ? hits.join("\n") : "No clear errors found.";
-}
-
-function warningsOnly(text) {
-  const hits = lines(text).filter(line =>
-    /\b(warn|warning|deprecated|caution|risk|skipped|unstable)\b/i.test(line)
-  );
-  return hits.length ? hits.join("\n") : "No clear warnings found.";
-}
-
-function terminalSummary(text) {
-  const errorText = errorsOnly(text);
-  if (errorText !== "No clear errors found.") return `Terminal reported errors. ${firstSentences(errorText, 4)}`;
-  const warningText = warningsOnly(text);
-  if (warningText !== "No clear warnings found.") return `Terminal completed with warnings. ${firstSentences(warningText, 3)}`;
-  const cleanLines = lines(text);
-  const tail = cleanLines.slice(-5).join(" ");
-  return firstSentences(tail || text, 3) || "Terminal output is empty.";
-}
-
-function diffSummary(text) {
-  const diffLines = lines(text);
-  const added = diffLines.filter(line => line.startsWith("+") && !line.startsWith("+++")).length;
-  const removed = diffLines.filter(line => line.startsWith("-") && !line.startsWith("---")).length;
-  const files = diffLines
-    .map(line => {
-      const match = line.match(/^(?:diff --git a\/|[AMDR]\s+|[-+]{3}\s+(?:a\/|b\/)?)(\S+)/);
-      return match ? match[1] : null;
-    })
-    .filter(Boolean);
-  const uniqueFiles = [...new Set(files)].slice(0, 6);
-  if (uniqueFiles.length || added || removed) {
-    return `Diff summary. ${uniqueFiles.length ? `Files touched: ${uniqueFiles.join(", ")}. ` : ""}${added} added lines and ${removed} removed lines.`;
-  }
-  return firstSentences(text, 3);
-}
-
-function applyMode(text, mode = "full", profile = "conversational", options = {}) {
-  const selectedMode = MODES.has(mode) ? mode : "full";
-  if (selectedMode === "informative") return informativeText(text, options);
-  if (selectedMode === "summary") return firstSentences(text, profile === "concise" ? 2 : 3);
-  if (selectedMode === "action-items") return codeAwareText(actionItems(text));
-  if (selectedMode === "errors-only") return codeAwareText(errorsOnly(text));
-  if (selectedMode === "warnings-only") return codeAwareText(warningsOnly(text));
-  if (selectedMode === "terminal-summary") return codeAwareText(terminalSummary(text));
-  if (selectedMode === "diff-summary") return codeAwareText(diffSummary(text));
-  return codeAwareText(text);
-}
-
-function cli() {
-  const args = process.argv.slice(2);
-  const textIndex = args.indexOf("--text");
-  const modeIndex = args.indexOf("--mode");
-  const profileIndex = args.indexOf("--profile");
-  const text = textIndex >= 0 ? args[textIndex + 1] : "";
-  const mode = modeIndex >= 0 ? args[modeIndex + 1] : "summary";
-  const profile = profileIndex >= 0 ? args[profileIndex + 1] : "conversational";
-  process.stdout.write(applyMode(text, mode, profile));
-}
-
-if (require.main === module) cli();
-
-module.exports = {
-  applyMode,
-  codeAwareText,
-  informativeText,
-  stripMarkdown,
-};

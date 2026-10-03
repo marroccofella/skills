@@ -1,57 +1,121 @@
-# Dom TTS
+# Dom TTS 0.4
 
-Windows read-aloud by **Prof Dom Marrocco / 42.uk**.
+Local speech for coding assistants by **Prof Dom Marrocco / 42.uk**.
 
-## Development Baseline
+Version **0.4.0-dev.1** is a working development build. The common interface is
+model-independent: any harness that can run a command can pass text through
+stdin, a UTF-8 file, or --text. Agent Skills hosts can discover SKILL.md.
 
-`0.3.2-dev.1` is a deliberately scoped source baseline recovered from the
-0.3.1 Standard Mode implementation, with privacy and playback safety fixes.
-It is not a production release, signed installer, or proof that two existing
-installations match. A prior independent review covered the diagnostic changes;
-full-product review and a second successful independent review remain open.
+## Run
 
-Requires Windows, Node 18+, and built-in Windows PowerShell/System.Speech.
-No npm dependencies, API keys, microphone access, or network service are required.
+Use Node 18 or newer (a maintained LTS is recommended). No npm install is needed.
 
 ```text
-node scripts/speak.js --provider sapi --mode informative --text "Dom TTS is ready."
-node scripts/speak.js --dry-run --text "Preview without audio or state changes."
+node scripts/doctor.js --voices true
+node scripts/speak.js --text "Dom TTS version zero point four is ready."
+node scripts/speak.js --text-file answer.txt --mode informative
+node scripts/speak.js --dry-run --text=--verbose
 node scripts/stop.js
 node scripts/status.js
-node scripts/self-test.js --self-test
+npm test
 ```
 
-`watch-codex.js --file <transcript.jsonl>` reads newly appended assistant records
-after its initial end-of-file cursor. It runs in the foreground; Ctrl+C stops the
-watcher. `stop.js` stops active speech and discards pending/new transcript batches
-until an explicit watcher restart or speech request; it does not kill the watcher.
-No background startup
-tasks, browser automation, or application injection are installed.
+The speech provider is selected from the operating system:
+Windows SAPI, macOS /usr/bin/say (Intel or Apple Silicon), Linux espeak-ng.
+Linux requires the native engine to be installed separately. No hidden downloads,
+cloud providers or API keys. Use --voice with an installed voice from doctor.
+An invalid voice fails visibly. WSL is treated as Linux; it needs a working Linux
+audio route. Other operating systems receive an unsupported-platform error.
 
-## Privacy And Safety
+Options accept kebab-case or camelCase, including --text-file/--textFile,
+--max-chunk-chars/--maxChunkChars, --include-code-blocks and --wait-ms.
+Boolean options accept true/false; --dry-run alone means true.
+Values beginning with -- use equals syntax, such as --text=--verbose.
+Speed 0.5–2; chunk limit 40–4000, further bounded by a conservative speech budget.
+Modes: informative, full, summary, action-items, errors-only, warnings-only,
+terminal-summary, diff-summary. Profiles: conversational, engineering, concise.
+Summary is deterministic sentence selection, not semantic summarization.
 
-The default SAPI provider speaks locally. This baseline intentionally excludes
-Edge/Piper, automatic multi-app watching, private agent integrations, avatars,
-Duplex Mode, distribution exporters and the unrecovered installer EXE.
-Existing installations are not replaced. Runtime `state/` includes speech text
-and local paths and must remain private. Diagnostics export only a typed
-allowlist, never logs, settings, transcripts, raw errors, speech or recordings.
-Support archive creation fails closed if directory protection fails.
+## Narrate one selected transcript
 
-Playback is single-owner: a second request fails while the first owns its lock.
-Stop requests are checked between chunks and kill only a verified Dom TTS SAPI
-child. After an abnormal process termination, a stale lock may require manual
-inspection; do not delete a lock without checking the recorded process first.
+```text
+node scripts/watch-codex.js --file <consented-transcript.jsonl> --format codex
+node scripts/watch-codex.js --file <consented-transcript.jsonl> --format claude
+node scripts/watch-codex.js --file <consented-transcript.jsonl> --format generic
+```
 
-## Verification And Remaining Work
+The watcher starts at file end. Rotation or truncation skips existing history;
+only later appended records are processed. Failed speech stays pending for retry
+and is not marked spoken or deduplicated. Contention waits up to 30 seconds,
+then reports failure and retries. Stop discards current/new batches until a
+watcher restart. Ctrl+C exits the watcher. Commentary requires the explicit
+--phase all --include-commentary true flags.
 
-Offline tests cover mode selection, partial transcript records, user/tool record
-rejection, duplicate suppression, invalid settings, bounded chunking, no-write
-dry runs, lock ownership, and diagnostic privacy/archive failure fixtures.
-Configured cross-platform CI is not proof of audible playback on every machine.
-Windows audio, interruption and archive lifecycle checks are tracked separately.
+Codex accepts assistant final_answer/final response-item records. Claude accepts
+only assistant records whose message.stop_reason is end_turn; transcripts omitting
+that marker need a generic producer or direct invocation. Generic JSONL records:
 
-Next: complete independent review, reconcile legacy installations against one
-canonical manifest, restore optional providers with explicit consent, validate
-the installer lifecycle, and integrate product pages through the repository's
-existing renderer/theme. No signed EXE or live product Pages are promised here.
+```json
+{"id":"reply-1","role":"assistant","phase":"final_answer","text":"Text to speak."}
+```
+
+This interface works with any model; it does not imply every harness exports
+the same transcript format. No application injection, global transcript scan,
+microphone, avatar or Duplex mode.
+
+## Install, upgrade, rollback and uninstall
+
+```text
+node scripts/package.js
+node scripts/install.js --target codex --dry-run
+node scripts/install.js --target codex
+node scripts/install.js --target claude
+node scripts/install.js --dir <absolute-documented-skill-parent>
+node scripts/install.js --target codex --action rollback
+node scripts/install.js --target codex --action uninstall
+```
+
+The source manifest contains SHA-256 hashes and excludes runtime state, settings,
+reviews and recordings. The installer validates it, stages source in a private
+directory and replaces only its own managed dom-tts directory. An existing
+unmanaged directory is refused. Upgrades retain a previous snapshot and preserve
+valid per-machine settings. Uninstall moves the installed snapshot to the private
+backup directory; it leaves runtime state and other skills alone.
+
+Codex uses ~/.agents/skills, Claude Code uses ~/.claude/skills. For other Agent
+Skills hosts use their documented skill parent explicitly. For hosts without
+skills support invoke the command interface. Installation is local; it does not
+modify model accounts or harness binaries. Some hosts need a restart to discover
+a newly installed skill.
+
+## Privacy and recovery
+
+State defaults to LOCALAPPDATA/42uk/DomTTS/0.4 on Windows and
+XDG_STATE_HOME/dom-tts (or ~/.local/state/dom-tts) on POSIX.
+DOM_TTS_STATE_DIR selects an isolated test directory. Existing state directories
+must already be private. New Windows state directories allow only the user,
+SYSTEM and Administrators; POSIX directories use owner-only permissions.
+
+Persistent status holds enums and counters, not speech text, transcript paths
+or raw errors. Speech exists briefly in a protected JSON file on Windows and is
+deleted after playback; macOS/Linux receive it on stdin. A machine crash can leave
+that temporary file; inspect status and use --recover after the owner is dead.
+No raw speech is stored in queue or telemetry files. Native child environments
+use an allowlist rather than forwarding credentials.
+
+Stop uses a local named pipe/Unix socket and a random token from private state.
+It interrupts only the child handle held by the authenticated playback owner;
+it never kills a recorded PID. A live playback owns an exclusive lock.
+--wait-ms can wait up to 60 seconds. Abnormally terminated owners can leave a
+stale lock; status.js --recover refuses a live owner and removes a verified dead
+owner's lock and speech files.
+
+support-bundle.js creates a protected diagnostics.json containing only typed,
+allowlisted operational fields. This is a portable JSON bundle, not a ZIP.
+Review before sharing. OS-native engines are invoked without a shell; speech and
+voice text are data, never executable PowerShell fragments.
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for tested scope and remaining gates.
+Derived from skills PR #35, commit fd2811ef640b4e6cf29a0d2dc281a55022e1e164;
+original source retains its MIT license.
+

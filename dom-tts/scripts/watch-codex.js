@@ -1,247 +1,50 @@
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const { spawn } = require("child_process");
-const { appendTelemetry } = require("./telemetry");
-const { safeEnv, readObject, parseCli } = require("./runtime");
-
-const ROOT = path.resolve(__dirname, "..");
-const STATE = path.join(ROOT, "state");
-const WATCH_STATUS = path.join(STATE, "watcher-status.json");
-const SETTINGS = path.join(ROOT, "assets", "settings.json");
-const STOP = path.join(STATE, "stop.flag");
-
-function readJson(file, fallback) {
-  return readObject(file, fallback);
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
+const {ROOT,stateDir,ensurePrivate,writeObject,parseCli,safeEnv}=require('./runtime');
+function parseArgs(argv){const args=parseCli(argv,{format:'codex',phase:'final_answer',pollMs:750,speakStartup:'false',mode:'informative',profile:'conversational',provider:'auto',dryRun:false},['file','format','phase','includeCommentary','pollMs','mode','profile','provider','voice','speed','maxChunkChars','dryRun','once','speakStartup']);if(!['codex','claude','generic'].includes(args.format))throw new Error('format must be codex, claude or generic');if(!['final','final_answer','all'].includes(args.phase))throw new Error('phase must be final_answer or all');if(args.phase==='all'&&!args.includeCommentary)throw new Error('Commentary requires --include-commentary true');if(args.speakStartup!=='false')throw new Error('Startup speech is disabled in 0.4');return args;}
+function outputTextFromRecord(record,phase='final_answer',includeCommentary=false,format='codex'){
+ if(!record||typeof record!=='object'||Array.isArray(record))return '';
+ let role,actualPhase,text='';
+ if(format==='codex'){const p=record.payload||{};if(record.type!=='response_item'||p.type!=='message')return '';role=p.role;actualPhase=p.phase;text=(Array.isArray(p.content)?p.content:[]).filter(x=>x&&x.type==='output_text'&&typeof x.text==='string').map(x=>x.text).join('\n');}
+ if(format==='claude'){if(record.type!=='assistant')return '';role=record.message?.role;actualPhase='final_answer';const msg=record.message;if(msg?.stop_reason!=='end_turn')return '';text=(Array.isArray(msg?.content)?msg.content:[]).filter(x=>x&&x.type==='text'&&typeof x.text==='string').map(x=>x.text).join('\n');}
+ if(format==='generic'){role=record.role;actualPhase=record.phase;text=typeof record.text==='string'?record.text:'';}
+ if(role!=='assistant')return '';
+ if(!['final','final_answer'].includes(actualPhase)&&!(phase==='all'&&includeCommentary===true&&actualPhase==='commentary'))return '';
+ return text.trim();
 }
-
-function parseArgs(argv) {
-  const settings = readJson(SETTINGS, {});
-  const args = {
-    provider: settings.provider || "auto",
-    profile: settings.profile || "conversational",
-    mode: settings.mode || "informative",
-    phase: settings.streamMessages ? "all" : (settings.phase || "final_answer"),
-    includeEventMessages: "false",
-    dedupe: String(settings.dedupe !== false),
-    pollMs: String(settings.pollMs || 750),
-    thread: "latest",
-    speakStartup: String(settings.speakStartup !== false),
-    voice: settings.voice || "",
-    speed: String(settings.speed || 1),
-    pitch: settings.pitch || "",
-    includeCodeBlocks: String(Boolean(settings.includeCodeBlocks)),
-    includeCommandBlocks: String(Boolean(settings.includeCommandBlocks)),
-    maxChunkChars: String(settings.maxChunkChars || 420),
-  };
-  return parseCli(argv, args);
+function textKey(text){return crypto.createHash('sha256').update(String(text)).digest('hex');}
+function completeLines(buffer){const end=buffer.lastIndexOf(10);if(end<0){if(buffer.length>=1048576)throw new Error('Transcript record exceeds 1 MB');return {bytes:0,lines:[]};}return {bytes:end+1,lines:buffer.subarray(0,end+1).toString('utf8').split(/\r?\n/).filter(Boolean)};}
+function speaker(text,args){return new Promise(resolve=>{const options=['--provider',args.provider||'auto','--profile',args.profile||'conversational','--mode',args.mode||'informative','--wait-ms','30000','--stdin','true'];for(const key of ['voice','speed','maxChunkChars'])if(args[key]!==undefined)options.push('--'+key,String(args[key]));const env={...safeEnv(),DOM_TTS_STATE_DIR:stateDir};const child=spawn(process.execPath,[path.join(ROOT,'scripts','speak.js'),...options],{windowsHide:true,stdio:['pipe','ignore','pipe'],env});child.stdin.on('error',()=>{});child.stdin.end(text);child.stderr.resume();child.on('error',()=>resolve(false));child.on('exit',code=>resolve(code===0));});}
+async function processNewLines(file,cursor,args,keys,{speak=speaker,dir=stateDir}={}){
+ let stat;try{stat=fs.statSync(file);}catch(e){if(e.code==='ENOENT')return {cursor,spoken:0};throw e;}
+ const size=stat.size;if(size<cursor)return {cursor:size,spoken:0};if(size===cursor)return {cursor,spoken:0};
+ const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(Math.min(size-cursor,1048576));let count;try{count=fs.readSync(fd,buffer,0,buffer.length,cursor);}finally{fs.closeSync(fd);}
+ const complete=completeLines(buffer.subarray(0,count));let offset=0,spoken=0;
+ // Track byte offsets before each line: failed speech remains pending, never deduplicated.
+ for(const raw of buffer.subarray(0,complete.bytes).toString('utf8').split('\n').slice(0,-1)){
+ const bytes=Buffer.byteLength(raw+'\n','utf8');if(fs.existsSync(path.join(dir,'stop.flag')))return {cursor:size,spoken};
+ let record;try{record=JSON.parse(raw.replace(/\r$/,''));}catch{offset+=bytes;continue;}
+ const text=outputTextFromRecord(record,args.phase,args.includeCommentary,args.format||'codex');
+ if(!text){offset+=bytes;continue;}const key=record.uuid||record.id||textKey(text);if(keys.has(key)){offset+=bytes;continue;}
+ const ok=args.dryRun===true||await speak(text,args);
+ if(!ok){if(fs.existsSync(path.join(dir,'stop.flag')))return {cursor:size,spoken};return {cursor:cursor+offset,spoken,failed:true};}
+ keys.add(key);if(keys.size>1200)keys.delete(keys.values().next().value);spoken++;offset+=bytes;
+ }
+ return {cursor:cursor+complete.bytes,spoken};
 }
-
-function routeForFile(file) {
-  const settings = readJson(SETTINGS, {});
-  const routes = settings.voiceRoutes || settings.chatVoiceRoutes || settings.sessionVoiceRoutes || {};
-  const normalized = String(file || "").replace(/\//g, "\\").toLowerCase();
-  const base = path.basename(normalized);
-  const threadMatch = base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
-  const threadId = threadMatch ? threadMatch[1].toLowerCase() : "";
-  for (const [key, route] of Object.entries(routes)) {
-    const routeKey = String(key || "").replace(/\//g, "\\").toLowerCase();
-    if (!routeKey || !route || route.enabled === false) continue;
-    if (routeKey === normalized || routeKey === base || routeKey === threadId || normalized.includes(routeKey) || base.includes(routeKey)) {
-      return route;
-    }
-  }
-  return null;
+async function main(){
+ const args=parseArgs(process.argv.slice(2));if(!args.file)throw new Error('Specify one consented transcript with --file');
+ if(!Number.isFinite(Number(args.pollMs))||Number(args.pollMs)<250||Number(args.pollMs)>60000)throw new Error('pollMs must be between 250 and 60000');
+ ensurePrivate();try{fs.unlinkSync(path.join(stateDir,'stop.flag'));}catch{}
+ let cursor=fs.existsSync(args.file)?fs.statSync(args.file).size:0,identity=fs.existsSync(args.file)?String(fs.statSync(args.file).ino):null;const keys=new Set();let stopped=false;
+ const signal=()=>{stopped=true;};process.on('SIGINT',signal);process.on('SIGTERM',signal);
+ try{do{
+  if(fs.existsSync(args.file)){const stat=fs.statSync(args.file),next=String(stat.ino);if(identity!==null&&(next!==identity||stat.size<cursor)){cursor=stat.size;keys.clear();}identity=next;}
+  const result=await processNewLines(args.file,cursor,args,keys);cursor=result.cursor;
+  writeObject(path.join(stateDir,'watcher-status.json'),{state:result.failed?'error':'watching',spoken:result.spoken,error:result.failed?'playback-failed':undefined,updatedAt:new Date().toISOString()});
+  if(result.failed)console.error('Watcher playback failed; message retained for retry');
+  if(!args.once&&!stopped)await new Promise(r=>setTimeout(r,result.failed?Math.max(1000,Number(args.pollMs)):Number(args.pollMs)));
+ }while(!args.once&&!stopped);}finally{process.off('SIGINT',signal);process.off('SIGTERM',signal);}
 }
+if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+module.exports={parseArgs,outputTextFromRecord,textKey,completeLines,processNewLines};
 
-function speechArgsForFile(args, file) {
-  const route = routeForFile(file);
-  if (!route) return args;
-  return {
-    ...args,
-    provider: route.provider || args.provider,
-    profile: route.profile || args.profile,
-    mode: route.mode || args.mode,
-    phase: route.phase || args.phase,
-    includeEventMessages: route.includeEventMessages == null ? args.includeEventMessages : String(route.includeEventMessages),
-    voice: route.voice || args.voice,
-    speed: route.speed == null || route.speed === "" ? args.speed : String(route.speed),
-    pitch: route.pitch || args.pitch || "",
-    agent: route.agent || args.agent || "",
-  };
-}
-
-function writeStatus(patch) {
-  fs.mkdirSync(STATE, { recursive: true });
-  let current = {};
-  try { current = JSON.parse(fs.readFileSync(WATCH_STATUS, "utf8")); } catch {}
-  const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  if (patch.state && patch.state !== "stopped") {
-    delete next.stoppedAt;
-  }
-  fs.writeFileSync(WATCH_STATUS, `${JSON.stringify(next, null, 2)}\n`);
-}
-
-function outputTextFromRecord(record, phaseFilter, includeEventMessages) {
-  if (!record || typeof record !== "object" || Array.isArray(record)) return "";
-  const payload = record.payload || {};
-  const phaseMatches = (phase) => {
-    if (phaseFilter === "all") return true;
-    if (phaseFilter === "final" || phaseFilter === "final_answer") return phase === "final_answer" || phase === "final";
-    return phase === phaseFilter;
-  };
-  if (payload.type === "agent_message") {
-    if (includeEventMessages !== "true") return "";
-    if (!phaseMatches(payload.phase)) return "";
-    return typeof payload.message === "string" ? payload.message : "";
-  }
-  if (record.type !== "response_item" || payload.type !== "message" || payload.role !== "assistant") return "";
-  if (!phaseMatches(payload.phase)) return "";
-  const parts = Array.isArray(payload.content) ? payload.content : [];
-  return parts
-    .filter(part => part && part.type === "output_text" && typeof part.text === "string")
-    .map(part => part.text)
-    .join("\n")
-    .trim();
-}
-
-function textKey(text) {
-  const normalized = String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
-  return crypto.createHash("sha1").update(normalized).digest("hex");
-}
-
-function speak(text, args, meta = {}) {
-  return new Promise(resolve => {
-    const speechArgs = speechArgsForFile(args, meta.file || "");
-    const command = [
-      path.join(__dirname, "speak.js"),
-      "--provider", speechArgs.provider,
-      "--profile", speechArgs.profile,
-      "--mode", speechArgs.mode,
-      "--voice", speechArgs.voice,
-      "--speed", speechArgs.speed,
-      "--includeCodeBlocks", speechArgs.includeCodeBlocks,
-      "--includeCommandBlocks", speechArgs.includeCommandBlocks,
-      "--maxChunkChars", speechArgs.maxChunkChars,
-      "--detectedAt", meta.detectedAt || "",
-      "--sourceFile", meta.file || "",
-      "--stdin", "true",
-    ];
-    if (speechArgs.pitch) command.push("--pitch", String(speechArgs.pitch));
-    if (speechArgs.agent) command.push("--agent", String(speechArgs.agent));
-    const child = spawn(process.execPath, command, {
-      cwd: ROOT,
-      windowsHide: true,
-      stdio: ["pipe", "ignore", "ignore"],
-      env: safeEnv(),
-    });
-    child.stdin.on("error", () => {});
-    child.stdin.end(text);
-    child.on("exit", () => resolve());
-    child.on("error", () => resolve());
-  });
-}
-
-async function processNewLines(file, cursor, args, spokenKeys) {
-  const size = fs.statSync(file).size;
-  if (size < cursor) cursor = 0;
-  if (size === cursor) return { cursor, spoken: 0 };
-
-  const fd = fs.openSync(file, "r");
-  const buffer = Buffer.alloc(Math.min(size - cursor, 1024 * 1024));
-  let count;
-  try { count = fs.readSync(fd, buffer, 0, buffer.length, cursor); }
-  finally { fs.closeSync(fd); }
-  const complete = completeLines(buffer.subarray(0, count));
-  const lines = complete.lines;
-  let spoken = 0;
-  const fileArgs = speechArgsForFile(args, file);
-  for (const line of lines) {
-    if (fs.existsSync(STOP)) return { cursor: size, spoken };
-    let record;
-    try { record = JSON.parse(line); } catch { continue; }
-    const text = outputTextFromRecord(record, fileArgs.phase, fileArgs.includeEventMessages).trim();
-    if (!text) continue;
-    const key = textKey(text);
-    if (args.dedupe !== "false" && spokenKeys.has(key)) {
-      writeStatus({ state: "watching", file, skippedDuplicate: text.slice(0, 120) });
-      continue;
-    }
-    spokenKeys.add(key);
-    if (spokenKeys.size > 1200) spokenKeys.delete(spokenKeys.values().next().value);
-    spoken += 1;
-    const detectedAt = new Date().toISOString();
-    appendTelemetry({
-      event: "watcher_detected",
-      scope: "thread",
-      file,
-      chars: text.length,
-      phase: args.phase,
-    });
-    writeStatus({ state: "speaking", file, lastDetectedAt: detectedAt, lastText: text.slice(0, 180), spoken });
-    if (args.dryRun !== true && args.dryRun !== "true") await speak(text, fileArgs, { detectedAt, file });
-  }
-  return { cursor: cursor + complete.bytes, spoken };
-}
-
-function completeLines(buffer) {
-  const end = buffer.lastIndexOf(10);
-  if (end < 0) {
-    if (buffer.length >= 1024 * 1024) throw new Error("Transcript record exceeds the one-megabyte limit");
-    return { bytes: 0, lines: [] };
-  }
-  return { bytes: end + 1, lines: buffer.subarray(0, end + 1).toString("utf8").split(/\r?\n/).filter(Boolean) };
-}
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  fs.mkdirSync(STATE, { recursive: true });
-
-  let file = args.file;
-  if (!file) {
-    writeStatus({ state: "error", error: "Specify --file for a consented Codex transcript" });
-    process.exitCode = 1;
-    return;
-  }
-  // An explicit watcher start resumes narration; stop discards subsequent batches.
-  try { fs.unlinkSync(STOP); } catch {}
-  let cursor = fs.existsSync(file) ? fs.statSync(file).size : 0;
-  const spokenKeys = new Set();
-  writeStatus({
-    state: "watching",
-    file,
-    cursor,
-    provider: args.provider,
-    mode: args.mode,
-    profile: args.profile,
-    phase: args.phase,
-    voice: args.voice,
-    speed: Number(args.speed || 1),
-    includeCodeBlocks: args.includeCodeBlocks,
-    includeCommandBlocks: args.includeCommandBlocks,
-    maxChunkChars: Number(args.maxChunkChars || 420),
-    includeEventMessages: args.includeEventMessages,
-    dedupe: args.dedupe,
-  });
-
-  if (args.speakStartup === "true") {
-    await speak("Dom TTS Read-Aloud is now watching Codex responses.", args);
-  }
-
-  const pollMs = Math.max(250, Number(args.pollMs) || 1000);
-  while (true) {
-    if (file && fs.existsSync(file)) {
-      const result = await processNewLines(file, cursor, args, spokenKeys);
-      cursor = result.cursor;
-      if (result.spoken > 0) writeStatus({ state: "watching", file, cursor });
-    }
-    await new Promise(resolve => setTimeout(resolve, pollMs));
-  }
-}
-
-if (require.main === module) main().catch(error => {
-  writeStatus({ state: "error", error: error.message });
-  console.error(error);
-  process.exitCode = 1;
-});
-module.exports = { outputTextFromRecord, textKey, completeLines, processNewLines, parseArgs };
