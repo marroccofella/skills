@@ -35,6 +35,14 @@ Check HEAD and cleanliness again. Retain any first failures and report focused
 reruns separately. Private stdout/stderr can contain local paths: do not publish
 whole logs or JSON; share only relevant redacted assertions.
 
+Saved evidence must also remain writable throughout the run. A final report replacement can fail
+even after every suite passes; keep that nonzero process exit and incomplete report separate from
+the suite totals. A Windows/Node24.19 run under OneDrive reported this boundary on the final 1.17
+candidate; its cloud-sync/file-locking cause remains unproven. If cloud-synchronized storage is
+unreliable or is refused as a linked entry, use the existing external private `MOMM_EVIDENCE_HOME`
+option in a suitable unsynchronized location. Never repair another user's permissions or weaken
+linked-entry checks to make saving pass. Preserve the original attempt and report reruns separately.
+
 Post one verdict in Discussion #32, linking the follow-up PR and tested full SHA.
 Use a unique stable name: Bab/BAB (adversarial security), Bob (test reliability),
 Hal (fresh-user/docs), or your own distinct name. These are assigned review angles,

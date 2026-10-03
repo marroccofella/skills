@@ -1,7 +1,16 @@
 # MOMM 1.17.0 — release notes
 
-**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.17.0` is published, the current signed release
-remains 1.16.1. Do not install an unsigned branch as a signed release.
+**Released 3 October 2026.** The signed tag [momm-1.17.0](https://github.com/marroccofella/skills/releases/tag/momm-1.17.0)
+names commit `5a3385468011bafabcddc719264783f23d71602e`, the exact sealed candidate tree
+squash-merged from PR31. Do not install an unsigned branch as a signed release.
+
+Release evidence: [exact-main CI, 15/15](https://github.com/marroccofella/skills/actions/runs/37139688330),
+[signed checkpoint](https://github.com/marroccofella/skills/actions/runs/37140432197),
+[six hosted lifecycle cells, 13/13 steps each](https://github.com/marroccofella/skills/actions/runs/37140742192),
+and [stable signing and update smoke](https://github.com/marroccofella/skills/actions/runs/37141781211).
+Every lifecycle cell exercised recovery from interrupted upgrades from both 1.16.1 and 1.16.0.
+Fresh-clone verification validated the Git signature, Rekor entry, expected certificate claims
+and sealed payload; an intentionally wrong signing identity was refused.
 
 1.17 keeps one writer and makes everything around it harder to fool. Reviewers stay read-only; the
 governor is the only writer; account logins only; automatic updates stay off.
@@ -74,6 +83,18 @@ On a volume without hard links (FAT, exFAT) releasing a stale update claim uses 
 path is unit-tested but was not run on such a volume. A gate review should be a `--range` review: a
 review of a diff file given as `--input` cannot receive a completion receipt for findings that cite
 project files.
+
+**Testing and saved-evidence limits.** Independent final-candidate retesting was native Windows;
+macOS/Linux suite and lifecycle evidence comes from GitHub-hosted runners, not an outside Unix reviewer
+or a long-used personal Unix machine. No independent Unix review is claimed.
+[A separate Windows/Node24.19 original run](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18732177)
+passed all 93 suites but exited 1 at final saved-report replacement in a OneDrive-synchronized workspace.
+That invocation remains a failed process-level run; it is not relabelled as exit 0. Its sync/file-locking
+cause is unproven. Report saving fails closed, and linked/non-private evidence storage remains refused.
+Use the existing external private `MOMM_EVIDENCE_HOME` option rather than weakening privacy checks;
+keep incomplete persistence separate from suite totals. Better persistence diagnostics remain follow-up
+work, not a fix in this signed tag. Copilot CLI 1.0.91 can emit an event outside the adapter's closed
+vocabulary and be refused as `invalid_output`; it was not counted toward the final 3 October reviews.
 
 Details: [plan](plan-1.17.md) · [gate record](gates-1.17.md) · [reviewer pack](third-party-test-plan-1.17.md) ·
 [long-form notes](release-1.17-draft-notes.md)

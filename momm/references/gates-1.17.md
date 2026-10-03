@@ -1,20 +1,20 @@
-# 1.17 gate record — candidate, not released
+# 1.17 gate record — released 3 October 2026
 
-This record separates implementation from release evidence. The published release stays 1.16.1 until
-the signed tag `momm-1.17.0` exists. It names no current commit: a file cannot name its own commit.
-The candidate under test is the head of the 1.17 pull request, named in its title and in the 1.17
-testing discussion.
+This record separates implementation from release evidence. The signed tag `momm-1.17.0`
+was published on 3 October 2026 at `5a3385468011bafabcddc719264783f23d71602e`.
+The release closure below records that immutable payload; these later documentation changes do not
+retag it or change its seal. Earlier candidate results and pending statements remain historical.
 
 ## Release gates (from the plan)
 
 | Gate | Evidence required | Status |
 | --- | --- | --- |
-| 1. Local suites and the OS by Node matrix on the commit to tag | Job logs, not the badge | 92 of 92 suites locally; the matrix passed 15 of 15 on the previous candidate (run 36673712090); the sealed commit's run is named in the pull request |
-| 2. Lifecycle drills, including interrupted-upgrade recovery, on the signed checkpoint | Six hosted cells with receipts | rehearsal passed (below); gate pending |
+| 1. Local suites and the OS by Node matrix on the commit to tag | Job logs, not the badge | final candidate 93/93 clean independent Windows run; exact-main run 37139688330 passed 15/15; earlier 92-suite build results remain below |
+| 2. Lifecycle drills, including interrupted-upgrade recovery, on the signed checkpoint | Six hosted cells with receipts | run 37140742192 passed six cells, 13/13 steps each; downloaded receipt digests and checkpoint identity verified |
 | 3. Self-review of the 1.17 delta with per-piece quorum and a completion receipt | Receipt under the B4 rules | closed by three receipts over a chain of six reviews (below) |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
 | 5. One live image review on the final tree, exercising A3 | Receipt | passed, receipt recorded (below) |
-| 6. Signed tag `momm-1.17.0` | Release workflow run | owner's go-ahead only |
+| 6. Signed tag `momm-1.17.0` | Release workflow run | explicit owner release instruction; stable run 37141781211 passed; fresh-clone signature, transparency, identity and payload verification passed |
 
 ## Reviews during the build
 
@@ -136,9 +136,9 @@ commit and harness.
   `update.mjs --release-claim <token>`.
 - **Rehearsal 2, run 36637157857:** all six cells passed every step, the interrupted-upgrade recovery
   included.
-- **Gate run:** on the signed checkpoint of the merged 1.17 candidate; pending.
+- **Gate run:** run 37140742192 on the signed checkpoint of the merged 1.17 candidate; six of six cells passed (closure below).
 
-## Still required before the tag
+## Required at the candidate handoff (historical)
 
 1. The OS by Node matrix green on the sealed commit (named in pull request 31).
 2. Independent reviewers test that pinned commit with the [reviewer pack](third-party-test-plan-1.17.md)
@@ -225,3 +225,74 @@ read, cached, and turn into update_available", `2 !== 1`.
   historical. The change needs its own MOMM review with a completion receipt, a
   new seal, exact-candidate CI and a fresh independent retest before any further
   gate.
+
+## Release closure — 3 October 2026
+
+The owner explicitly instructed the release governor to finish and publish. PR31 was marked ready
+and squash-merged through the normal approval path; no administrative override or alternative route
+was used. The squash commit `5a3385468011bafabcddc719264783f23d71602e` has exactly candidate
+`eeec0346cde66cd9a89ac215664d095b10a61566`'s tree
+`f64a24fa8c76a57acfd6bc8083df4f3cceedb293`. The seal is unchanged:
+`2c3a737b20c2499684d9c2ff05df53bbe3c6629ebfaaf986d00585ba3541c49c`.
+
+- Final fix review: [PR31's record](https://github.com/marroccofella/skills/pull/31) reports completed
+  range-review receipts for `rev_20261003093951_48c8c55d4d6f`,
+  `rev_20261003100145_02368b57ccd7` and `rev_20261003103820_60a0810d78ff`, the last on the sealed tree.
+  These are the maintainer's review records, not new reviews or independent executions by this release session.
+- [Independent Codex-Win24 retest](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18730095):
+  fresh clean detached clone at eeec034, Windows x64, Node24.15, original 93/93, exit 0; no defects found within that scope.
+- [Exact-main CI 37139688330](https://github.com/marroccofella/skills/actions/runs/37139688330): 15/15 successful jobs.
+  The release governor freshly verified the clean merged tree and seal.
+- [Checkpoint workflow 37140432197](https://github.com/marroccofella/skills/actions/runs/37140432197): created
+  `momm-main-5a3385468011bafabcddc719264783f23d71602e`. Local gitsign0.17.1 verified the Git signature,
+  Rekor entry and expected workflow identity, issuer, repository, ref and exact commit.
+- [Lifecycle workflow 37140742192](https://github.com/marroccofella/skills/actions/runs/37140742192):
+  the never-merged drills branch was advanced to the reviewed 1.17 code and checkpoint target;
+  its existing helper and workflow were unchanged. All six cells passed 13/13 steps.
+- [Stable workflow 37141781211](https://github.com/marroccofella/skills/actions/runs/37141781211):
+  passed release checks and the genuine signed update smoke, then signed and published `momm-1.17.0`.
+  The [public release](https://github.com/marroccofella/skills/releases/tag/momm-1.17.0) is neither draft
+  nor prerelease, published at 2026-10-03T17:50:26Z.
+- A separate fresh clone verified the annotated stable tag at the exact commit with gitsign0.17.1:
+  Git signature, Rekor entry (index3075437977), certificate claims and sealed payload passed;
+  an intentionally wrong certificate identity was refused.
+- MyRepo1.3.2's offline safety self-test, working-tree and outgoing-history scans passed before
+  publication. No path/secret waiver was used; private evidence and full logs were not published.
+
+Downloaded lifecycle receipts and their SHA-256 sidecars were checked, not just the job badges.
+Every cell tested fresh signed installation, signed installs of 1.16.1 and 1.16.0, upgrade, rollback,
+re-upgrade, interrupted-upgrade recovery from each old release, and tampered-payload refusal with
+the installation unchanged. Recovery restored the original commit, receipt version and harness
+inventory. All twelve interruptions occurred at the recorded `prepared` stage; the drill confirmed
+the exact killed updater was dead and manually released only its claim before retained-updater recovery.
+This is not a power-loss test or evidence for every possible interruption stage.
+
+| Hosted OS / architecture | Node | Steps | Receipt SHA-256 |
+| --- | --- | --- | --- |
+| macOS arm64 | 18.20.8 | 13/13 | `dd88e0041446d7316e88bbcac2c3f835970c0792a379ea51e96d1c5df327c7a0` |
+| macOS arm64 | 24.20.0 | 13/13 | `59944c7b68eab56e5ee01643457162547234cb308120602551488aa88a6b092c` |
+| Linux x64 | 18.20.8 | 13/13 | `8b76ece25ae91439602a3a44bdf2b83e5ade62137ea8c3937ed977d5b7bd6a8e` |
+| Linux x64 | 24.21.0 | 13/13 | `d61a9823b00f4397f1e184218c87b5780d8e4a39ee3861297331b379f17f7a31` |
+| Windows x64 | 18.20.8 | 13/13 | `ba42b263b9e196570ec6bcd8c96c6732906e205d1da61bd3e835ed9ec7c1aaae` |
+| Windows x64 | 24.21.0 | 13/13 | `cfa54adc9895277ce8056cc7aafc6d9b3086c24b32951e8b69794878adf11acd` |
+
+**Coverage and reporting limits, not silently closed.** Independent final-candidate review was
+Windows only. macOS/Linux evidence is from real but clean, short-lived GitHub-hosted runners;
+no outside Unix reviewer or long-used personal Unix machine was tested.
+[The separate Node24.19 report](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18732177)
+records 93/93 suites but overall exit1 at final saved-report replacement under OneDrive. It remains
+a failed invocation. The sync/file-locking cause is unknown. A bounded governor synthetic final-rename
+EPERM injection reproduced nonzero exit with incomplete final persistence, preserved the previous
+original report and left complete temporary JSON separate; this was not a OneDrive reproduction.
+A separate native Windows/Node22.16 focused saved-report check passed 1/1, exit0, not a full93 rerun.
+The [governor assessment](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18734008)
+classifies this as a non-blocking storage limitation: persistence and linked-entry checks fail closed,
+and external private evidence storage is already supported. Better diagnostics remain deferred;
+no product fix or permission bypass is claimed. Copilot1.0.91's refused event vocabulary remains a
+separate follow-up and was not counted toward final review quorum.
+
+**What this release session changed.** It performed the owner-authorized merge, signed checkpoint,
+drill target/branch preparation, stable publication and fresh verification; it then updated release
+metadata, documentation and generated site status. It did not author the candidate implementation
+fixes, change the signed source/seal, install skills, repair another user's permissions or manufacture
+an independent Unix review. Reviewer findings and maintainer fixes retain their original attribution.
