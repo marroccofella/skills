@@ -131,7 +131,8 @@ function replyChecks(check){
 }
 
 module.exports=async function(check){
- const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'dom-tts-recovery-'));
+ // realpath: macOS temp folders sit under /var, a link to /private/var, which state paths refuse.
+ const fixture=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dom-tts-recovery-')));
  try{await permissionChecks(check,fixture);await lockChecks(check,fixture);tableChecks(check);return {replies:replyChecks(check)};}
  finally{fs.rmSync(fixture,{recursive:true,force:true});}
 };

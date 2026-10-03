@@ -124,7 +124,7 @@
     },
     {
       "path": "tests/recovery-checks.cjs",
-      "sha256": "6698152fd885c6c734ce819083bb6f8bea20797d84e0813fb08b23e4365c322a"
+      "sha256": "67da65a863d37b5f3f315f1b6b85f96388a6bbb3962f38b4e7e12d47d108bc04"
     },
     {
       "path": "tests/windows-check.cjs",
