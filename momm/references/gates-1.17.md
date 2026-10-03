@@ -226,6 +226,12 @@ read, cached, and turn into update_available", `2 !== 1`.
   new seal, exact-candidate CI and a fresh independent retest before any further
   gate.
 
+Historical requirement satisfied by the final re-pin: `eeec034` carries the new seal
+`2c3a737b20c2499684d9c2ff05df53bbe3c6629ebfaaf986d00585ba3541c49c`,
+exact-candidate CI 37118795270 and the fresh independent retest linked below.
+The maintainer's completion receipts are also listed in the closure. "Unchanged" below
+means unchanged between this final candidate, squash merge and stable tag, not unchanged from `59f18f9`.
+
 ## Release closure — 3 October 2026
 
 The owner explicitly instructed the release governor to finish and publish. PR31 was marked ready
@@ -240,11 +246,11 @@ was used. The squash commit `5a3385468011bafabcddc719264783f23d71602e` has exact
   `rev_20261003100145_02368b57ccd7` and `rev_20261003103820_60a0810d78ff`, the last on the sealed tree.
   These are the maintainer's review records, not new reviews or independent executions by this release session.
 - [Independent Codex-Win24 retest](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18730095):
-  fresh clean detached clone at eeec034, Windows x64, Node24.15, original 93/93, exit 0; no defects found within that scope.
+  fresh clean detached clone at eeec034, Windows x64, Node 24.15, original 93/93, exit 0; no defects found within that scope.
 - [Exact-main CI 37139688330](https://github.com/marroccofella/skills/actions/runs/37139688330): 15/15 successful jobs.
   The release governor freshly verified the clean merged tree and seal.
 - [Checkpoint workflow 37140432197](https://github.com/marroccofella/skills/actions/runs/37140432197): created
-  `momm-main-5a3385468011bafabcddc719264783f23d71602e`. Local gitsign0.17.1 verified the Git signature,
+  `momm-main-5a3385468011bafabcddc719264783f23d71602e`. Local gitsign 0.17.1 verified the Git signature,
   Rekor entry and expected workflow identity, issuer, repository, ref and exact commit.
 - [Lifecycle workflow 37140742192](https://github.com/marroccofella/skills/actions/runs/37140742192):
   the never-merged drills branch was advanced to the reviewed 1.17 code and checkpoint target;
@@ -253,10 +259,10 @@ was used. The squash commit `5a3385468011bafabcddc719264783f23d71602e` has exact
   passed release checks and the genuine signed update smoke, then signed and published `momm-1.17.0`.
   The [public release](https://github.com/marroccofella/skills/releases/tag/momm-1.17.0) is neither draft
   nor prerelease, published at 2026-10-03T17:50:26Z.
-- A separate fresh clone verified the annotated stable tag at the exact commit with gitsign0.17.1:
-  Git signature, Rekor entry (index3075437977), certificate claims and sealed payload passed;
+- A separate fresh clone verified the annotated stable tag at the exact commit with gitsign 0.17.1:
+  Git signature, Rekor entry (index 3075437977), certificate claims and sealed payload passed;
   an intentionally wrong certificate identity was refused.
-- MyRepo1.3.2's offline safety self-test, working-tree and outgoing-history scans passed before
+- MyRepo 1.3.2's offline safety self-test, working-tree and outgoing-history scans passed before
   publication. No path/secret waiver was used; private evidence and full logs were not published.
 
 Downloaded lifecycle receipts and their SHA-256 sidecars were checked, not just the job badges.
@@ -279,16 +285,16 @@ This is not a power-loss test or evidence for every possible interruption stage.
 **Coverage and reporting limits, not silently closed.** Independent final-candidate review was
 Windows only. macOS/Linux evidence is from real but clean, short-lived GitHub-hosted runners;
 no outside Unix reviewer or long-used personal Unix machine was tested.
-[The separate Node24.19 report](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18732177)
-records 93/93 suites but overall exit1 at final saved-report replacement under OneDrive. It remains
+[The separate Node 24.19 report](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18732177)
+records 93/93 suites but overall exit 1 at final saved-report replacement under OneDrive. It remains
 a failed invocation. The sync/file-locking cause is unknown. A bounded governor synthetic final-rename
 EPERM injection reproduced nonzero exit with incomplete final persistence, preserved the previous
 original report and left complete temporary JSON separate; this was not a OneDrive reproduction.
-A separate native Windows/Node22.16 focused saved-report check passed 1/1, exit0, not a full93 rerun.
+A separate native Windows/Node 22.16 focused saved-report check passed 1/1, exit 0, not a full 93 rerun.
 The [governor assessment](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18734008)
 classifies this as a non-blocking storage limitation: persistence and linked-entry checks fail closed,
 and external private evidence storage is already supported. Better diagnostics remain deferred;
-no product fix or permission bypass is claimed. Copilot1.0.91's refused event vocabulary remains a
+no product fix or permission bypass is claimed. Copilot CLI 1.0.91's refused event vocabulary remains a
 separate follow-up and was not counted toward final review quorum.
 
 **What this release session changed.** It performed the owner-authorized merge, signed checkpoint,
@@ -296,3 +302,8 @@ drill target/branch preparation, stable publication and fresh verification; it t
 metadata, documentation and generated site status. It did not author the candidate implementation
 fixes, change the signed source/seal, install skills, repair another user's permissions or manufacture
 an independent Unix review. Reviewer findings and maintainer fixes retain their original attribution.
+
+The generated pages are in this repository's `docs/momm/`, including
+`docs/momm/releases/1.17.0.html`. They accompany this documentation-only record;
+the peer-review input covers the authored files, while deterministic renderer and site checks
+cover the generated HTML. This record does not claim a separate website feature change.

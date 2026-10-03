@@ -4,6 +4,11 @@
 names commit `5a3385468011bafabcddc719264783f23d71602e`, the exact sealed candidate tree
 squash-merged from PR31. Do not install an unsigned branch as a signed release.
 
+The immutable signed tag retains the pre-publication notes (publication pending) and
+the `version-notes` history entry that were sealed before release. This post-release
+document and the live release page are the publication record; the signed payload is
+not retagged or resealed merely to change its historical notes.
+
 Release evidence: [exact-main CI, 15/15](https://github.com/marroccofella/skills/actions/runs/37139688330),
 [signed checkpoint](https://github.com/marroccofella/skills/actions/runs/37140432197),
 [six hosted lifecycle cells, 13/13 steps each](https://github.com/marroccofella/skills/actions/runs/37140742192),

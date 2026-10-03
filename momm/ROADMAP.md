@@ -36,7 +36,7 @@ or an independent benchmark; publication state belongs in the site changelog.
   [references/plan-1.17.md](references/plan-1.17.md); its leading theme is role-preserving review.
   Exact-main CI, signed checkpoint, six hosted lifecycle cells including interrupted recovery,
   and signed stable publication passed. Scope and known limits remain in the
-  [release record](references/gates-1.17.md), including hosted-only Unix evidence and saved-report storage refusals.
+  [gate evidence record](references/gates-1.17.md), including hosted-only Unix evidence and saved-report storage refusals.
 - **1.16.1 (released).** Closed the holes 1.16.0 documented, proved the lifecycle 1.16.0 claimed and
   made reruns auditable. Charter, scope, non-goals and gates:
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
@@ -88,9 +88,10 @@ to the actual gate, bounds stdin, aligns range-check limits (committed-range che
 2,000 source files, `MAX_RANGE_SOURCE_FILES`; working-tree snapshots keep 200), exports only the
 latest identifiable ruling, withholds scores when severity calibration is unknown,
 and refuses existing companion files or broad POSIX outputs before writing.
-Unreadable tracked source now fails the hygiene check. These are candidate fixes;
-their new tests, final-source peer coverage and native lifecycle gates still have
-to pass. No tag, installed-skill update or public release follows from local tests.
+Unreadable tracked source now fails the hygiene check. Historical pre-release status:
+these candidate fixes still required new tests, final-source peer coverage and native
+lifecycle gates. Those release gates are now closed in the linked 1.17 gate evidence
+record. Local tests alone never authorize a tag, installed-skill update or public release.
 
 ## 1.17 (released; built from its reviewed plan)
 
