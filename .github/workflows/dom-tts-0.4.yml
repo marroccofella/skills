@@ -1,5 +1,10 @@
 name: Dom TTS portable core
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-0.4.yml']
+  pull_request:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-0.4.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -23,5 +28,5 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
-      - run: node scripts/package.js
+      - run: node -e "require('./scripts/package').verify()"
       - run: node tests/install-check.cjs

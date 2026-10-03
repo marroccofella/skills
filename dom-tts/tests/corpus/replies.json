@@ -1,0 +1,680 @@
+[
+ {
+  "name": "bugfix-summary",
+  "input": "I fixed the crash in the upload handler.\n\nThe problem was in `parseHeaders()`: it assumed every header had a value, so an empty `Content-Type` threw a `TypeError`.\n\n**What changed**\n- `src/upload.js`: guard against empty header values.\n- `test/upload.test.js`: added a regression test for the empty header case.\n\nAll 142 tests pass.",
+  "mustInclude": [
+   "I fixed the crash in the upload handler.",
+   "All 142 tests pass.",
+   "guard against empty header values"
+  ],
+  "mustExclude": [
+   "**",
+   "`"
+  ],
+  "expected": {
+   "full": "I fixed the crash in the upload handler.\n\nThe problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError.\n\nWhat changed\nsrc/upload.js: guard against empty header values.\ntest/upload.test.js: added a regression test for the empty header case.\n\nAll 142 tests pass.",
+   "informative": "I fixed the crash in the upload handler.\n\nThe problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError.\n\nWhat changed\nsrc/upload.js: guard against empty header values.\ntest/upload.test.js: added a regression test for the empty header case.\n\nAll 142 tests pass.",
+   "summary": "I fixed the crash in the upload handler. The problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError. What changed\nsrc/upload.js: guard against empty header values.",
+   "action-items": "I fixed the crash in the upload handler. The problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError.",
+   "errors-only": "The problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError.",
+   "diff-summary": "I fixed the crash in the upload handler. The problem was in parse Headers(): it assumed every header had a value, so an empty Content-Type threw a TypeError. What changed\nsrc/upload.js: guard against empty header values."
+  }
+ },
+ {
+  "name": "code-fence-explanation",
+  "input": "Here's the corrected function:\n\n```python\ndef total(items):\n    return sum(i.price * i.qty for i in items)\n```\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice.",
+  "mustInclude": [
+   "Here's the corrected function:",
+   "refunds were counted twice",
+   "I skipped a code block."
+  ],
+  "mustExclude": [
+   "def total",
+   "sum(i.price"
+  ],
+  "expected": {
+   "full": "Here's the corrected function:\n\ndef total(items):\n return sum(i.price * i.qty for i in items)\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice.",
+   "informative": "Here's the corrected function:\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice.\nI skipped a code block.",
+   "summary": "Here's the corrected function:\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice. I skipped a code block.",
+   "action-items": "Here's the corrected function:\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice. I skipped a code block.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Here's the corrected function: def total(items): return sum(i.price * i.qty for i in items) The old version multiplied before filtering out cancelled items, so refunds were counted twice.",
+   "diff-summary": "Here's the corrected function:\n\nThe old version multiplied before filtering out cancelled items, so refunds were counted twice. I skipped a code block."
+  }
+ },
+ {
+  "name": "comparison-table",
+  "input": "Here's how the three options compare:\n\n| Option | Monthly cost | Setup time | Notes |\n|---|---|---|---|\n| Hosted | $49 | 1 hour | Easiest to maintain |\n| Self-managed | $12 | 1 day | You handle upgrades |\n| Serverless | Usage-based | 2 hours | Cold starts on idle |\n\nI'd pick **Hosted** unless cost is the main constraint.",
+  "mustInclude": [
+   "Option: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain.",
+   "I'd pick Hosted unless cost is the main constraint."
+  ],
+  "mustExclude": [
+   "|---",
+   "| Option",
+   "**"
+  ],
+  "expected": {
+   "full": "Here's how the three options compare:\n\nOption: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain.\nOption: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades.\nOption: Serverless, Monthly cost: Usage-based, Setup time: 2 hours, Notes: Cold starts on idle.\n\nI'd pick Hosted unless cost is the main constraint.",
+   "informative": "Here's how the three options compare:\n\nOption: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain.\nOption: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades.\nOption: Serverless, Monthly cost: Usage-based, Setup time: 2 hours, Notes: Cold starts on idle.\n\nI'd pick Hosted unless cost is the main constraint.",
+   "summary": "Here's how the three options compare:\n\nOption: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain. Option: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades. Option: Serverless, Monthly cost: Usage-based, Setup time: 2 hours, Notes: Cold starts on idle.",
+   "action-items": "Here's how the three options compare:\n\nOption: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain. Option: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Here's how the three options compare: Option: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain. Option: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades. Option: Serverless, Monthly cost: Usage-based, Setup time: 2 hours, Notes: Cold starts on idle.",
+   "diff-summary": "Here's how the three options compare:\n\nOption: Hosted, Monthly cost: $49, Setup time: 1 hour, Notes: Easiest to maintain. Option: Self-managed, Monthly cost: $12, Setup time: 1 day, Notes: You handle upgrades. Option: Serverless, Monthly cost: Usage-based, Setup time: 2 hours, Notes: Cold starts on idle."
+  }
+ },
+ {
+  "name": "status-table-alignment",
+  "input": "Release checklist:\n\n| Check | Status |\n|:------|:------:|\n| Unit tests | ✅ |\n| Lint | ✅ |\n| Windows CI | ❌ failing |\n\nWindows CI is the only blocker.",
+  "mustInclude": [
+   "Check: Windows CI, Status: ❌ failing.",
+   "Windows CI is the only blocker."
+  ],
+  "mustExclude": [
+   "|:-",
+   "| Check"
+  ],
+  "expected": {
+   "full": "Release checklist:\n\nCheck: Unit tests, Status: ✅.\nCheck: Lint, Status: ✅.\nCheck: Windows CI, Status: ❌ failing.\n\nWindows CI is the only blocker.",
+   "informative": "Release checklist:\n\nCheck: Unit tests, Status: ✅.\nCheck: Lint, Status: ✅.\nCheck: Windows CI, Status: ❌ failing.\n\nWindows CI is the only blocker.",
+   "summary": "Release checklist:\n\nCheck: Unit tests, Status: ✅. Check: Lint, Status: ✅. Check: Windows CI, Status: ❌ failing.",
+   "action-items": "Release checklist:\n\nCheck: Unit tests, Status: ✅. Check: Lint, Status: ✅.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Release checklist: Check: Unit tests, Status: ✅. Check: Lint, Status: ✅. Check: Windows CI, Status: ❌ failing.",
+   "diff-summary": "Release checklist:\n\nCheck: Unit tests, Status: ✅. Check: Lint, Status: ✅. Check: Windows CI, Status: ❌ failing."
+  }
+ },
+ {
+  "name": "build-failure-log",
+  "input": "The build failed. Here's the relevant part of the log:\n\n```\nsrc/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'.\nFound 1 error in src/api/client.ts:41\nnpm ERR! code 2\n```\n\nThe `timeout` option is typed as a number but the config passes `\"30\"` as a string. Changing the config value to `30` fixes it.",
+  "mustInclude": [
+   "The build failed.",
+   "Changing the config value to 30 fixes it."
+  ],
+  "mustExclude": [
+   "TS2322",
+   "npm ERR!"
+  ],
+  "modeInclude": {
+   "errors-only": [
+    "error TS2322"
+   ]
+  },
+  "expected": {
+   "full": "The build failed. Here's the relevant part of the log:\n\nsrc/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'.\nFound 1 error in src/api/client.ts:41\nnpm ERR! code 2\n\nThe timeout option is typed as a number but the config passes \"30\" as a string. Changing the config value to 30 fixes it.",
+   "informative": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string. Changing the config value to 30 fixes it.\nI skipped a code block.",
+   "summary": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string. Changing the config value to 30 fixes it.",
+   "action-items": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string.",
+   "errors-only": "The build failed. Here's the relevant part of the log:\nsrc/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'.\nFound 1 error in src/api/client.ts:41",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "src/api/client.ts:41:7 - error TS2322: Type 'string' is not assignable to type 'number'. Found 1 error in src/api/client.ts:41",
+   "diff-summary": "The build failed. Here's the relevant part of the log:\n\nThe timeout option is typed as a number but the config passes \"30\" as a string. Changing the config value to 30 fixes it."
+  }
+ },
+ {
+  "name": "python-traceback",
+  "input": "Running the script gives this error:\n\nTraceback (most recent call last):\n  File \"main.py\", line 12, in <module>\n    data = load(\"config.yml\")\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
+  "mustInclude": [
+   "The script is being run from the wrong directory.",
+   "FileNotFoundError"
+  ],
+  "mustExclude": [
+   "File \"main.py\"",
+   "most recent call last"
+  ],
+  "modeInclude": {
+   "errors-only": [
+    "FileNotFoundError"
+   ],
+   "terminal-summary": [
+    "FileNotFoundError"
+   ]
+  },
+  "expected": {
+   "full": "Running the script gives this error:\n\nTraceback (most recent call last):\n File \"main.py\", line 12, in <module>\n data = load(\"config.yml\")\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
+   "informative": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
+   "summary": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
+   "action-items": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path.",
+   "errors-only": "Running the script gives this error:\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Running the script gives this error: FileNotFoundError: [Errno 2] No such file or directory: 'config.yml'",
+   "diff-summary": "Running the script gives this error:\n\nFileNotFoundError: [Errno 2] No such file or directory: 'config.yml'\n\nThe script is being run from the wrong directory. Run it from the project root, or pass an absolute path."
+  }
+ },
+ {
+  "name": "git-diff",
+  "input": "Here's the diff:\n\ndiff --git a/src/config.js b/src/config.js\n--- a/src/config.js\n+++ b/src/config.js\n@@ -1,3 +1,3 @@\n-const retries = 3;\n+const retries = 5;\n module.exports = { retries };\n\nThis raises the retry count from 3 to 5.",
+  "mustInclude": [
+   "This raises the retry count from 3 to 5.",
+   "I skipped a diff."
+  ],
+  "mustExclude": [
+   "diff --git",
+   "+const retries",
+   "@@"
+  ],
+  "modeInclude": {
+   "diff-summary": [
+    "Files touched: src/config.js. 1 added lines and 1 removed lines."
+   ]
+  },
+  "expected": {
+   "full": "Here's the diff:\n\ndiff --git a/src/config.js b/src/config.js\n--- a/src/config.js\n+++ b/src/config.js\n@@ -1,3 +1,3 @@\n-const retries = 3;\n+const retries = 5;\n module.exports = { retries };\n\nThis raises the retry count from 3 to 5.",
+   "informative": "Here's the diff:\n\nThis raises the retry count from 3 to 5.\nI skipped a diff.",
+   "summary": "Here's the diff:\n\nThis raises the retry count from 3 to 5. I skipped a diff.",
+   "action-items": "Here's the diff:\n\nThis raises the retry count from 3 to 5. I skipped a diff.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "@@ -1,3 +1,3 @@ -const retries = 3; +const retries = 5; module.exports = { retries }; This raises the retry count from 3 to 5.",
+   "diff-summary": "Diff summary. Files touched: src/config.js. 1 added lines and 1 removed lines."
+  }
+ },
+ {
+  "name": "numbered-steps",
+  "input": "To set it up:\n\n1. Install Node 22 LTS.\n2. Run `npm install` in the project folder.\n3. Copy `.env.example` to `.env` and fill in your API key.\n4. Start the server with `npm start`.\n\nYou should see \"Listening on port 3000\" in the terminal.",
+  "mustInclude": [
+   "Install Node 22 LTS.",
+   "Copy .env.example to .env and fill in your API key.",
+   "You should see \"Listening on port 3000\" in the terminal."
+  ],
+  "mustExclude": [
+   "1.",
+   "`"
+  ],
+  "expected": {
+   "full": "To set it up:\n\nInstall Node 22 LTS.\nRun npm install in the project folder.\nCopy .env.example to .env and fill in your API key.\nStart the server with npm start.\n\nYou should see \"Listening on port 3000\" in the terminal.",
+   "informative": "To set it up:\n\nInstall Node 22 LTS.\nRun npm install in the project folder.\nCopy .env.example to .env and fill in your API key.\nStart the server with npm start.\n\nYou should see \"Listening on port 3000\" in the terminal.",
+   "summary": "To set it up:\n\nInstall Node 22 LTS. Run npm install in the project folder. Copy .env.example to .env and fill in your API key.",
+   "action-items": "You should see \"Listening on port 3000\" in the terminal.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Install Node 22 LTS. Run npm install in the project folder. Copy .env.example to .env and fill in your API key.",
+   "diff-summary": "To set it up:\n\nInstall Node 22 LTS. Run npm install in the project folder. Copy .env.example to .env and fill in your API key."
+  }
+ },
+ {
+  "name": "command-block-instructions",
+  "input": "Run these commands to update:\n\n```bash\ngit pull origin main\nnpm ci\nnpm run build\n```\n\nThen restart the service.",
+  "mustInclude": [
+   "Run these commands to update:",
+   "Then restart the service."
+  ],
+  "mustExclude": [
+   "git pull origin main",
+   "npm ci"
+  ],
+  "expected": {
+   "full": "Run these commands to update:\n\ngit pull origin main\nnpm ci\nnpm run build\n\nThen restart the service.",
+   "informative": "Run these commands to update:\n\nThen restart the service.\nI skipped a code block.",
+   "summary": "Run these commands to update:\n\nThen restart the service. I skipped a code block.",
+   "action-items": "Run these commands to update:\n\nThen restart the service. I skipped a code block.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Run these commands to update: Then restart the service.",
+   "diff-summary": "Run these commands to update:\n\nThen restart the service. I skipped a code block."
+  }
+ },
+ {
+  "name": "bare-commands-inline",
+  "input": "Pull the latest changes and rebuild:\n\ngit pull origin main\nnpm run build\n\nAfter that, the new dashboard should load.",
+  "mustInclude": [
+   "Pull the latest changes and rebuild:",
+   "After that, the new dashboard should load."
+  ],
+  "mustExclude": [
+   "git pull origin main",
+   "npm run build"
+  ],
+  "expected": {
+   "full": "Pull the latest changes and rebuild:\n\ngit pull origin main\nnpm run build\n\nAfter that, the new dashboard should load.",
+   "informative": "Pull the latest changes and rebuild:\n\nAfter that, the new dashboard should load.",
+   "summary": "Pull the latest changes and rebuild:\n\nAfter that, the new dashboard should load.",
+   "action-items": "After that, the new dashboard should load.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Pull the latest changes and rebuild: After that, the new dashboard should load.",
+   "diff-summary": "Pull the latest changes and rebuild:\n\nAfter that, the new dashboard should load."
+  }
+ },
+ {
+  "name": "prose-starting-with-tool-names",
+  "input": "Git keeps every version, so nothing is lost.\nNode 18 is the oldest supported runtime.\nPython is only needed for the optional exporter.\nPowerShell 5.1 ships with Windows, so no install is required.",
+  "mustInclude": [
+   "Git keeps every version, so nothing is lost.",
+   "Node 18 is the oldest supported runtime.",
+   "Python is only needed for the optional exporter.",
+   "PowerShell 5.1 ships with Windows, so no install is required."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "Git keeps every version, so nothing is lost.\nNode 18 is the oldest supported runtime.\nPython is only needed for the optional exporter.\nPowerShell 5.1 ships with Windows, so no install is required.",
+   "informative": "Git keeps every version, so nothing is lost.\nNode 18 is the oldest supported runtime.\nPython is only needed for the optional exporter.\nPowerShell 5.1 ships with Windows, so no install is required.",
+   "summary": "Git keeps every version, so nothing is lost. Node 18 is the oldest supported runtime. Python is only needed for the optional exporter.",
+   "action-items": "Git keeps every version, so nothing is lost. Node 18 is the oldest supported runtime.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Git keeps every version, so nothing is lost. Node 18 is the oldest supported runtime. Python is only needed for the optional exporter.",
+   "diff-summary": "Git keeps every version, so nothing is lost. Node 18 is the oldest supported runtime. Python is only needed for the optional exporter."
+  }
+ },
+ {
+  "name": "links-and-urls",
+  "input": "The fix is described in the [release notes](https://example.com/releases/4.2) and the [migration guide](https://example.com/migrate).\n\nIf you hit problems, open an issue.",
+  "mustInclude": [
+   "The fix is described in the release notes and the migration guide.",
+   "If you hit problems, open an issue."
+  ],
+  "mustExclude": [
+   "https://example.com/releases/4.2",
+   "]("
+  ],
+  "expected": {
+   "full": "The fix is described in the release notes and the migration guide.\n\nIf you hit problems, open an issue.",
+   "informative": "The fix is described in the release notes and the migration guide.\n\nIf you hit problems, open an issue.",
+   "summary": "The fix is described in the release notes and the migration guide. If you hit problems, open an issue.",
+   "action-items": "The fix is described in the release notes and the migration guide.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The fix is described in the release notes and the migration guide. If you hit problems, open an issue.",
+   "diff-summary": "The fix is described in the release notes and the migration guide. If you hit problems, open an issue."
+  }
+ },
+ {
+  "name": "headings-and-sections",
+  "input": "## Summary\n\nThe migration is complete.\n\n## Risks\n\n- The old API keeps working until March.\n- Two dashboards still read from the legacy table.\n\n## Next steps\n\n- [ ] Update the dashboards\n- [x] Notify the data team",
+  "mustInclude": [
+   "Summary",
+   "The migration is complete.",
+   "The old API keeps working until March.",
+   "Update the dashboards",
+   "Notify the data team"
+  ],
+  "mustExclude": [
+   "##",
+   "[ ]",
+   "[x]"
+  ],
+  "expected": {
+   "full": "Summary\n\nThe migration is complete.\n\nRisks\n\nThe old API keeps working until March.\nTwo dashboards still read from the legacy table.\n\nNext steps\n\nUpdate the dashboards\nNotify the data team",
+   "informative": "Summary\n\nThe migration is complete.\n\nRisks\n\nThe old API keeps working until March.\nTwo dashboards still read from the legacy table.\n\nNext steps\n\nUpdate the dashboards\nNotify the data team",
+   "summary": "Summary\n\nThe migration is complete. Risks\n\nThe old API keeps working until March. Two dashboards still read from the legacy table.",
+   "action-items": "Next steps",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The old API keeps working until March. Two dashboards still read from the legacy table. Next steps Update the dashboards Notify the data team",
+   "diff-summary": "Summary\n\nThe migration is complete. Risks\n\nThe old API keeps working until March. Two dashboards still read from the legacy table."
+  }
+ },
+ {
+  "name": "nested-list",
+  "input": "The config has three sections:\n\n- `server`\n  - `port`: defaults to 3000\n  - `host`: defaults to localhost\n- `database`\n  - `url`: required\n- `logging`: optional",
+  "mustInclude": [
+   "port: defaults to 3000",
+   "url: required",
+   "logging: optional"
+  ],
+  "mustExclude": [
+   "- `"
+  ],
+  "expected": {
+   "full": "The config has three sections:\n\nserver\nport: defaults to 3000\nhost: defaults to localhost\ndatabase\nurl: required\nlogging: optional",
+   "informative": "The config has three sections:\n\nserver\nport: defaults to 3000\nhost: defaults to localhost\ndatabase\nurl: required\nlogging: optional",
+   "summary": "The config has three sections:\n\nserver\nport: defaults to 3000\nhost: defaults to localhost\ndatabase\nurl: required\nlogging: optional",
+   "action-items": "The config has three sections:\n\nserver\nport: defaults to 3000\nhost: defaults to localhost\ndatabase\nurl: required\nlogging: optional",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "port: defaults to 3000 host: defaults to localhost database url: required logging: optional",
+   "diff-summary": "The config has three sections:\n\nserver\nport: defaults to 3000\nhost: defaults to localhost\ndatabase\nurl: required\nlogging: optional"
+  }
+ },
+ {
+  "name": "blockquote-advice",
+  "input": "The docs put it this way:\n\n> Never run migrations against production without a backup.\n> Test them on a copy first.\n\nSo I've added a backup step to the deploy script.",
+  "mustInclude": [
+   "Never run migrations against production without a backup.",
+   "So I've added a backup step to the deploy script."
+  ],
+  "mustExclude": [
+   "> "
+  ],
+  "expected": {
+   "full": "The docs put it this way:\n\nNever run migrations against production without a backup.\nTest them on a copy first.\n\nSo I've added a backup step to the deploy script.",
+   "informative": "The docs put it this way:\n\nNever run migrations against production without a backup.\nTest them on a copy first.\n\nSo I've added a backup step to the deploy script.",
+   "summary": "The docs put it this way:\n\nNever run migrations against production without a backup. Test them on a copy first. So I've added a backup step to the deploy script.",
+   "action-items": "The docs put it this way:\n\nNever run migrations against production without a backup. Test them on a copy first.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The docs put it this way: Never run migrations against production without a backup. Test them on a copy first. So I've added a backup step to the deploy script.",
+   "diff-summary": "The docs put it this way:\n\nNever run migrations against production without a backup. Test them on a copy first. So I've added a backup step to the deploy script."
+  }
+ },
+ {
+  "name": "windows-paths",
+  "input": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+  "mustInclude": [
+   "Delete the stale lock only after checking that no playback is running."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+   "informative": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder.\n\nDelete the stale lock only after checking that no playback is running.",
+   "summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "action-items": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running.",
+   "diff-summary": "The log file is at C:\\Users\\dom\\AppData\\Local\\42uk\\DomTTS\\0.4\\status.json and the skill is installed in the .claude folder. Delete the stale lock only after checking that no playback is running."
+  }
+ },
+ {
+  "name": "identifiers-heavy",
+  "input": "The `user_id` field is copied into `sessionToken` by `createSession()`. I renamed `get_user_name` to `getUserName` for consistency, and `HTTPServer` now reads `max_connections` from the config.",
+  "mustInclude": [
+   "user id",
+   "session Token",
+   "get User Name",
+   "HTTPServer",
+   "max connections"
+  ],
+  "mustExclude": [
+   "`",
+   "_id"
+  ],
+  "expected": {
+   "full": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config.",
+   "informative": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config.",
+   "summary": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config.",
+   "action-items": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config.",
+   "diff-summary": "The user id field is copied into session Token by create Session(). I renamed get user name to get User Name for consistency, and HTTPServer now reads max connections from the config."
+  }
+ },
+ {
+  "name": "abbreviations",
+  "input": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results. See the report for details.",
+  "mustInclude": [
+   "We tested several inputs, e.g. empty files, huge files, and binary data."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results. See the report for details.",
+   "informative": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results. See the report for details.",
+   "summary": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results.",
+   "action-items": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results.",
+   "diff-summary": "We tested several inputs, e.g. empty files, huge files, and binary data. All passed, i.e. no crashes or hangs. Dr. Patel signed off on the results."
+  }
+ },
+ {
+  "name": "warnings-in-output",
+  "input": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon.",
+  "mustInclude": [
+   "Neither affects the build"
+  ],
+  "mustExclude": [],
+  "modeInclude": {
+   "warnings-only": [
+    "npm WARN deprecated request@2.88.2"
+   ]
+  },
+  "expected": {
+   "full": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon.",
+   "informative": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon.",
+   "summary": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon.",
+   "action-items": "Neither affects the build, but the request package should be replaced soon.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "npm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher",
+   "terminal-summary": "The install finished with two warnings: npm WARN deprecated request@2.88.2: request has been deprecated npm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher Neither affects the build, but the request package should be replaced soon.",
+   "diff-summary": "The install finished with two warnings:\n\nnpm WARN deprecated request@2.88.2: request has been deprecated\nnpm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher\n\nNeither affects the build, but the request package should be replaced soon."
+  }
+ },
+ {
+  "name": "error-and-fix",
+  "input": "The deploy failed with exit code 1 because the health check timed out.\n\nI increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+  "mustInclude": [
+   "The deploy failed with exit code 1 because the health check timed out."
+  ],
+  "mustExclude": [],
+  "modeInclude": {
+   "errors-only": [
+    "exit code 1"
+   ]
+  },
+  "expected": {
+   "full": "The deploy failed with exit code 1 because the health check timed out.\n\nI increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "informative": "The deploy failed with exit code 1 because the health check timed out.\n\nI increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "summary": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "action-items": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "errors-only": "The deploy failed with exit code 1 because the health check timed out.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds.",
+   "diff-summary": "The deploy failed with exit code 1 because the health check timed out. I increased the health check timeout from 10 to 30 seconds and the deploy now succeeds."
+  }
+ },
+ {
+  "name": "action-items-reply",
+  "input": "Review done. A few things before merging:\n\n- You should add a test for the empty input case.\n- The retry loop needs a maximum attempt count.\n- Fix the typo in the README heading.\n\nOtherwise it looks good.",
+  "mustInclude": [
+   "You should add a test for the empty input case.",
+   "The retry loop needs a maximum attempt count.",
+   "Fix the typo in the README heading."
+  ],
+  "mustExclude": [],
+  "modeInclude": {
+   "action-items": [
+    "You should add a test for the empty input case.",
+    "The retry loop needs a maximum attempt count.",
+    "Fix the typo in the README heading."
+   ]
+  },
+  "expected": {
+   "full": "Review done. A few things before merging:\n\nYou should add a test for the empty input case.\nThe retry loop needs a maximum attempt count.\nFix the typo in the README heading.\n\nOtherwise it looks good.",
+   "informative": "Review done. A few things before merging:\n\nYou should add a test for the empty input case.\nThe retry loop needs a maximum attempt count.\nFix the typo in the README heading.\n\nOtherwise it looks good.",
+   "summary": "Review done. A few things before merging:\n\nYou should add a test for the empty input case. The retry loop needs a maximum attempt count.",
+   "action-items": "You should add a test for the empty input case.\nThe retry loop needs a maximum attempt count.\nFix the typo in the README heading.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Review done. A few things before merging: You should add a test for the empty input case. The retry loop needs a maximum attempt count.",
+   "diff-summary": "Review done. A few things before merging:\n\nYou should add a test for the empty input case. The retry loop needs a maximum attempt count."
+  }
+ },
+ {
+  "name": "emoji-and-unicode",
+  "input": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+  "mustInclude": [
+   "Done ✅",
+   "準備完了",
+   "Café, naïve and résumé keep their accents."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+   "informative": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+   "summary": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+   "action-items": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents.",
+   "diff-summary": "Done ✅ The French and Japanese translations are in place — « Prêt » and 準備完了 both render correctly. Café, naïve and résumé keep their accents."
+  }
+ },
+ {
+  "name": "mixed-code-and-table",
+  "input": "I benchmarked both parsers:\n\n| Parser | Time (ms) | Memory (MB) |\n|---|---:|---:|\n| regex | 120 | 18 |\n| streaming | 45 | 6 |\n\nThe streaming parser is faster and lighter. Usage:\n\n```js\nconst parser = createStreamingParser();\nparser.write(chunk);\n```\n\nI recommend switching.",
+  "mustInclude": [
+   "Parser: streaming, Time (ms): 45, Memory (MB): 6.",
+   "The streaming parser is faster and lighter.",
+   "I recommend switching.",
+   "I skipped a code block."
+  ],
+  "mustExclude": [
+   "createStreamingParser",
+   "|---"
+  ],
+  "expected": {
+   "full": "I benchmarked both parsers:\n\nParser: regex, Time (ms): 120, Memory (MB): 18.\nParser: streaming, Time (ms): 45, Memory (MB): 6.\n\nThe streaming parser is faster and lighter. Usage:\n\nconst parser = create Streaming Parser();\nparser.write(chunk);\n\nI recommend switching.",
+   "informative": "I benchmarked both parsers:\n\nParser: regex, Time (ms): 120, Memory (MB): 18.\nParser: streaming, Time (ms): 45, Memory (MB): 6.\n\nThe streaming parser is faster and lighter. Usage:\n\nI recommend switching.\nI skipped a code block.",
+   "summary": "I benchmarked both parsers:\n\nParser: regex, Time (ms): 120, Memory (MB): 18. Parser: streaming, Time (ms): 45, Memory (MB): 6. The streaming parser is faster and lighter.",
+   "action-items": "I benchmarked both parsers:\n\nParser: regex, Time (ms): 120, Memory (MB): 18. Parser: streaming, Time (ms): 45, Memory (MB): 6.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Parser: streaming, Time (ms): 45, Memory (MB): 6. The streaming parser is faster and lighter. Usage: const parser = create Streaming Parser(); parser.write(chunk); I recommend switching.",
+   "diff-summary": "I benchmarked both parsers:\n\nParser: regex, Time (ms): 120, Memory (MB): 18. Parser: streaming, Time (ms): 45, Memory (MB): 6. The streaming parser is faster and lighter."
+  }
+ },
+ {
+  "name": "tilde-fence-and-unclosed",
+  "input": "Here is the config:\n\n~~~yaml\nport: 8080\ndebug: true\n~~~\n\nAnd the start script, which I haven't finished:\n\n```sh\n./start.sh --port 8080",
+  "mustInclude": [
+   "Here is the config:",
+   "And the start script, which I haven't finished:"
+  ],
+  "mustExclude": [
+   "port: 8080",
+   "./start.sh"
+  ],
+  "expected": {
+   "full": "Here is the config:\n\nport: 8080\ndebug: true\n\nAnd the start script, which I haven't finished:\n\n./start.sh --port 8080",
+   "informative": "Here is the config:\n\nAnd the start script, which I haven't finished:\n\nI skipped a code block.",
+   "summary": "Here is the config:\n\nAnd the start script, which I haven't finished:\n\nI skipped a code block.",
+   "action-items": "Here is the config:\n\nAnd the start script, which I haven't finished:\n\nI skipped a code block.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Here is the config: port: 8080 debug: true And the start script, which I haven't finished: ./start.sh --port 8080",
+   "diff-summary": "Here is the config:\n\nAnd the start script, which I haven't finished:\n\nI skipped a code block."
+  }
+ },
+ {
+  "name": "long-paragraph",
+  "input": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and httpOnly flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended. The only gap I found is that failed login attempts are not rate limited, so someone could try many passwords quickly. I'd add a limit of five attempts per minute per account before launch.",
+  "mustInclude": [
+   "The only gap I found is that failed login attempts are not rate limited",
+   "I'd add a limit of five attempts per minute per account before launch."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended. The only gap I found is that failed login attempts are not rate limited, so someone could try many passwords quickly. I'd add a limit of five attempts per minute per account before launch.",
+   "informative": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended. The only gap I found is that failed login attempts are not rate limited, so someone could try many passwords quickly. I'd add a limit of five attempts per minute per account before launch.",
+   "summary": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended.",
+   "action-items": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser.",
+   "errors-only": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended. The only gap I found is that failed login attempts are not rate limited, so someone could try many passwords quickly. I'd add a limit of five attempts per minute per account before launch.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended.",
+   "diff-summary": "I went through the whole authentication flow end to end. Login works with both passwords and passkeys, the session cookie is set with the secure and http Only flags, and logout clears it on the server as well as in the browser. Password reset emails arrive within a few seconds and the links expire after one hour as intended."
+  }
+ },
+ {
+  "name": "question-back",
+  "input": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+  "mustInclude": [
+   "Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?"
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+   "informative": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+   "summary": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+   "action-items": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?",
+   "diff-summary": "Before I change the schema, can you confirm one thing? Should deleted accounts be removed immediately, or kept for 30 days so they can be restored?"
+  }
+ },
+ {
+  "name": "short-ack",
+  "input": "Done. The branch is pushed.",
+  "mustInclude": [
+   "Done. The branch is pushed."
+  ],
+  "mustExclude": [],
+  "expected": {
+   "full": "Done. The branch is pushed.",
+   "informative": "Done. The branch is pushed.",
+   "summary": "Done. The branch is pushed.",
+   "action-items": "Done. The branch is pushed.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Done. The branch is pushed.",
+   "diff-summary": "Done. The branch is pushed."
+  }
+ },
+ {
+  "name": "horizontal-rules-and-dashes",
+  "input": "Phase one is finished -- the data is migrated.\n\n---\n\nPhase two starts Monday. It covers the reports — all twelve of them.",
+  "mustInclude": [
+   "Phase one is finished -- the data is migrated.",
+   "Phase two starts Monday. It covers the reports — all twelve of them."
+  ],
+  "mustExclude": [
+   "decrement"
+  ],
+  "expected": {
+   "full": "Phase one is finished -- the data is migrated.\n\nPhase two starts Monday. It covers the reports — all twelve of them.",
+   "informative": "Phase one is finished -- the data is migrated.\n\nPhase two starts Monday. It covers the reports — all twelve of them.",
+   "summary": "Phase one is finished -- the data is migrated. Phase two starts Monday. It covers the reports — all twelve of them.",
+   "action-items": "Phase one is finished -- the data is migrated. Phase two starts Monday.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "Phase one is finished -- the data is migrated. Phase two starts Monday. It covers the reports — all twelve of them.",
+   "diff-summary": "Phase one is finished -- the data is migrated. Phase two starts Monday. It covers the reports — all twelve of them."
+  }
+ },
+ {
+  "name": "table-with-inline-markup",
+  "input": "| File | Change |\n|---|---|\n| `src/app.js` | **Removed** the unused import |\n| `README.md` | Fixed the [install link](https://example.com/install) |\n| `.env.example` | Added `API_URL` |",
+  "mustInclude": [
+   "File: src/app.js, Change: Removed the unused import.",
+   "File: README.md, Change: Fixed the install link.",
+   "File: .env.example, Change: Added API URL."
+  ],
+  "mustExclude": [
+   "`",
+   "**",
+   "]("
+  ],
+  "expected": {
+   "full": "File: src/app.js, Change: Removed the unused import.\nFile: README.md, Change: Fixed the install link.\nFile: .env.example, Change: Added API URL.",
+   "informative": "File: src/app.js, Change: Removed the unused import.\nFile: README.md, Change: Fixed the install link.\nFile: .env.example, Change: Added API URL.",
+   "summary": "File: src/app.js, Change: Removed the unused import. File: README.md, Change: Fixed the install link. File: .env.example, Change: Added API URL.",
+   "action-items": "File: src/app.js, Change: Removed the unused import. File: README.md, Change: Fixed the install link.",
+   "errors-only": "No clear errors found.",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "File: src/app.js, Change: Removed the unused import. File: README.md, Change: Fixed the install link. File: .env.example, Change: Added API URL.",
+   "diff-summary": "File: src/app.js, Change: Removed the unused import. File: README.md, Change: Fixed the install link. File: .env.example, Change: Added API URL."
+  }
+ },
+ {
+  "name": "terminal-session",
+  "input": "PS C:\\work\\app> npm test\n\n> app@1.0.0 test\n> node --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n  AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
+  "mustInclude": [
+   "One test fails because the currency symbol is missing."
+  ],
+  "mustExclude": [],
+  "modeInclude": {
+   "errors-only": [
+    "AssertionError"
+   ]
+  },
+  "expected": {
+   "full": "PS C:\\work\\app> npm test\n\napp@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
+   "informative": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
+   "summary": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
+   "action-items": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing.",
+   "errors-only": "AssertionError: expected '$5.00' but got '5.00'",
+   "warnings-only": "No clear warnings found.",
+   "terminal-summary": "AssertionError: expected '$5.00' but got '5.00' ℹ fail 1",
+   "diff-summary": "app@1.0.0 test\nnode --test\n\n✔ parses dates (2.1ms)\n✖ formats currency (1.4ms)\n AssertionError: expected '$5.00' but got '5.00'\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\nOne test fails because the currency symbol is missing."
+  }
+ }
+]

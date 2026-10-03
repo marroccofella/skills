@@ -1,6 +1,6 @@
 {
  "name":"dom-tts",
- "version":"0.4.0-dev.1",
+ "version":"0.4.0-dev.2",
  "private":true,
  "description":"Portable offline speech for coding assistants by Prof Dom Marrocco / 42.uk",
  "type":"commonjs",

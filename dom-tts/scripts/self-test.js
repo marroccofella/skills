@@ -50,7 +50,8 @@ async function main(){
  const support=spawnSync(process.execPath,[path.join(__dirname,'support-safety.test.js')],{encoding:'utf8',timeout:10000});check(()=>assert.equal(support.status,0,support.stderr));
  const skill=fs.readFileSync(path.join(__dirname,'../SKILL.md'),'utf8');check(()=>assert(/^---\r?\nname: dom-tts\r?\ndescription: [^\n]{1,1024}\r?\n---/.test(skill)));
  for(const file of fs.readdirSync(__dirname).filter(x=>x.endsWith('.js')))check(()=>assert.equal(spawnSync(process.execPath,['--check',path.join(__dirname,file)],{encoding:'utf8'}).status,0));
- console.log('PASS: '+checks+' assertions; '+corpus.length+' golden inputs × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; diagnostics and CLI.');
+ const extra=await require('../tests/recovery-checks.cjs')(check);
+ console.log('PASS: '+checks+' assertions; '+corpus.length+' golden inputs and '+extra.replies+' realistic replies × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; permission-check failures; stale-lock recovery and live-owner preservation; tables; diagnostics and CLI.');
  }finally{fs.rmSync(fixture,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error.stack);process.exitCode=1;});
