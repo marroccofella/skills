@@ -8,11 +8,15 @@ function publicTextFiles(relative) {
     const file = relative + '/' + entry.name;
     assert.ok(!entry.isSymbolicLink(), `${relative}: public documentation symlinks require explicit review`);
     return entry.isDirectory() ? publicTextFiles(file)
-      : entry.isFile() && /\.(?:md|txt|html|json|csv|xml|vtt)$/i.test(entry.name) ? [file] : [];
+      : entry.isFile() && /\.(?:md|txt|html|jsonl?|csv|xml|vtt)$/i.test(entry.name) ? [file] : [];
   });
 }
 // The root and skill READMEs are version surfaces of the release flow, so they are public text too.
-const files = [...publicTextFiles('docs'), ...publicTextFiles('momm/references'), 'README.md', 'momm/README.md', 'momm/scripts/capabilities.test.mjs', 'momm/scripts/modality.test.mjs'];
+// Provider captures used as test fixtures are copied from live runs, so they are scanned as public text too.
+const fixtures = fs.existsSync(new URL('momm/scripts/fixtures/', root)) ? publicTextFiles('momm/scripts/fixtures') : [];
+// Role briefs (1.17 B1) ship as public text too; a partial tree without them has nothing to scan there.
+const roleBriefs = fs.existsSync(new URL('momm/roles/', root)) ? publicTextFiles('momm/roles') : [];
+const files = [...publicTextFiles('docs'), ...publicTextFiles('momm/references'), ...roleBriefs, ...fixtures, 'README.md', 'momm/README.md', 'momm/scripts/capabilities.test.mjs', 'momm/scripts/modality.test.mjs'];
 // Web URLs are blanked first: their path segments are not directories on anyone's machine.
 const withoutWebUrls = source => source.replace(/\bhttps?:\/\/[^\s"'`<>)\]]+/gi, ' ');
 const homeNames = source => [...withoutWebUrls(source).matchAll(/(?:[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss][\\/]+|\/(?:home|Users)\/)([^\\/\s"'`<>]+)/g)].map(m => m[1]);

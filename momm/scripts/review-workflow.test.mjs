@@ -24,4 +24,11 @@ assert.match(gates,/Node 18 and Node 24 lifecycle drills remain required/,'prima
 for(const directory of ['momm/scripts','scripts']) for(const name of fs.readdirSync(path.join(root,directory))) {
   if(name.endsWith('.test.mjs'))assert(catalog.includes('`'+directory+'/'+name+'`'),`missing catalog entry: ${directory}/${name}`);
 }
+// The suite list stays in sorted order, so a new entry has one place to go (gate-3 triage of
+// rev_20260930003709_e5847282134d: invariants and roles had been appended out of order).
+{
+  const list=catalog.replace(/\r\n/g,'\n').slice(catalog.replace(/\r\n/g,'\n').indexOf('- `momm/scripts/adapter-cleanup.test.mjs`')).split('\n\n')[0].split('\n').filter(l=>l.startsWith('- `'));
+  assert(list.length>40,'catalog suite list not found');
+  assert.deepEqual(list,[...list].sort(),'the catalog suite list must be sorted');
+}
 console.log('PASS: short new CI step limits, bounded whole job, and every repository/MOMM suite is catalogued');

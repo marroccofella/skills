@@ -65,7 +65,7 @@ try {
   const input=digest('same synthetic input');
   const seal=(id,change=()=>{})=>{
     const row=attemptRecord({agent:'claude',status:'success'},{runId:id,inputHash:input,pieceHash:input,ordinal:1,durationMs:1,startedAt:new Date().toISOString()});
-    const report={run_id:id,input_sha256:input,governor:'codex',findings:[],source_snapshot:{complete:true,files:[{path:'source.mjs',sha256:digest(fs.readFileSync(path.join(root,'source.mjs')))}]},gate_policy:{quorum_required:1,strict:false,requested_routes:['claude']},reviewers:[{agent:'claude',status:'success',review_contract:'momm-peer-review/2',reviewed_scope:[{quote:'same',assessment:'fixture'}]}],attempt_evidence:[row]};
+    const report={run_id:id,input_sha256:input,governor:'codex',findings:[],source_snapshot:{complete:true,files:[{path:'source.mjs',sha256:digest(fs.readFileSync(path.join(root,'source.mjs')))}]},gate_policy:{quorum_required:1,strict:false,requested_routes:['claude']},reviewers:[{agent:'claude',status:'success',review_contract:'momm-peer-review/3',reviewed_scope:[{quote:'same',assessment:'fixture'}]}],attempt_evidence:[row]};
     change(report,row);row.evidence=persistAttempt(root,row);
     const name=`.ensemble_reviews/reports/${id}.json`;write(name,report);
     fs.appendFileSync(path.join(root,'.ensemble_reviews/review-log.jsonl'),JSON.stringify({run_id:id,input_sha256:input,report_path:name,report_sha256:digest(fs.readFileSync(path.join(root,name)))})+'\n');

@@ -30,6 +30,8 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { readMedia } from "./media-bytes.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { evidenceLocation, recordEvidenceProject, EVIDENCE_FOLDER } from "./evidence-location.mjs";
+import { grokIsolationEnv, GROK_ISOLATION_ARGS, mediaGrants } from "./route-isolation.mjs";
 import { loadBaseline, effective as effectiveMatrix, routable, clearingAction, levelAction, bindingProblem, sha256, GENERATIVE_OUTPUTS, INPUT_MODALITIES, OUTPUT_MODALITIES } from "./capabilities.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
@@ -190,6 +192,8 @@ export function stepPrompt(prompt, { index, total, to, how, refs = [], attached 
 // antigravity and copilot read prompt.txt in the work directory, grok takes --prompt-file.
 // Generative steps get the write permission the tool needs; text steps stay read-only.
 // `label` is what the report records: no prompt, no paths.
+// Grok media grants come from route-isolation.mjs, the same source the probe uses (1.17 A9).
+function grokMediaAllows(outputs) { return [...new Set(outputs.flatMap((o) => mediaGrants("grok", o)).filter((a) => a !== "--allow"))].flatMap((t) => ["--allow", t]); }
 export function commandFor(route, { prompt, promptFile, workDir, generative, bound = { args: [], flags: [] }, outputs = [], timeout = 600_000 }) {
   const seconds = `${Math.max(1, Math.ceil(timeout / 1000))}s`;
   const base = (() => {
@@ -199,7 +203,7 @@ export function commandFor(route, { prompt, promptFile, workDir, generative, bou
       case "antigravity": return { command: BINARY.antigravity, head: ["-p", FILE_INSTRUCTION, "--new-project", "--add-dir", workDir, "--output-format", "json", "--print-timeout", seconds, ...(generative ? [] : ["--mode=plan"])], tail: [], input: "", label: `agy -p --new-project --add-dir <work> --output-format json --print-timeout ${seconds}${generative ? "" : " --mode=plan"} (prompt in prompt.txt)` };
       case "gemini": { const mode = generative ? "yolo" : "plan"; return { command: BINARY.gemini, head: ["--prompt", STDIN_INSTRUCTION, "--output-format", "json", "--skip-trust", "--approval-mode", mode], tail: [], input: prompt, label: `gemini --prompt --output-format json --approval-mode ${mode} (prompt on stdin)` }; }
       case "copilot": return { command: BINARY.copilot, head: ["-p", FILE_INSTRUCTION, "-s", "--stream", "off", "--no-color", "--no-custom-instructions", "--disable-builtin-mcps", "--no-remote-export", "--log-level", "none"], tail: ["--add-dir", workDir, ...(generative ? ["--allow-all-tools"] : ["--available-tools=view", "--allow-tool=view"])], input: "", label: `copilot -p -s --add-dir <work> ${generative ? "--allow-all-tools" : "--available-tools=view"} (prompt in prompt.txt)` };
-      case "grok": { const mode = generative ? "acceptEdits" : "plan"; return { command: BINARY.grok, head: ["--cwd", workDir, "--prompt-file", promptFile, "--output-format", "json", "--permission-mode", mode, "--no-subagents"], tail: [], input: "", label: `grok --cwd <work> --prompt-file <prompt> --output-format json --permission-mode ${mode} --no-subagents` }; }
+      case "grok": { const mode = generative ? "acceptEdits" : "plan"; return { command: BINARY.grok, head: ["--cwd", workDir, "--prompt-file", promptFile, "--output-format", "json", "--permission-mode", mode, ...(generative ? grokMediaAllows(outputs) : []), "--no-subagents", ...GROK_ISOLATION_ARGS], env: grokIsolationEnv(), tail: [], input: "", label: `grok --cwd <work> --prompt-file <prompt> --output-format json --permission-mode ${mode} --no-subagents` }; }
       default: throw fail(`no non-interactive command for route ${route}`, "MOMM_NO_COMMAND");
     }
   })();
@@ -221,7 +225,7 @@ export function commandFor(route, { prompt, promptFile, workDir, generative, bou
   // Only fixed tool identifiers, never prompt/file values, enter the audit label.
   const toolIndex = route === "claude" ? argv.indexOf("--tools") : -1;
   const toolLabel = toolIndex >= 0 ? ` [tools=${argv[toolIndex + 1]}]` : "";
-  return { command: base.command, args: argv, input: base.input, label: `${base.label}${bound.flags.length ? ` [bound ${bound.flags.join(" ")}]` : ""}${toolLabel}` };
+  return { command: base.command, args: argv, input: base.input, ...(base.env ? { env: base.env } : {}), label: `${base.label}${bound.flags.length ? ` [bound ${bound.flags.join(" ")}]` : ""}${toolLabel}` };
 }
 
 // ---- runner: glob, snapshot, harvest, locks --------------------------------------------------------------
@@ -407,7 +411,10 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
   });
   // The first step's media inputs must be supplied up front; later steps take the previous step's files.
   const firstMedia = resolved[0].step.from.filter((m) => m !== "text");
-  preparePrivateEvidence(path.join(cwd, '.ensemble_reviews'));
+  // The resolved evidence folder (1.17 A7); media paths keep their logical .ensemble_reviews/media spelling.
+  const evidenceAt = evidenceLocation({ cwd, env: process.env }); // this process's setting, never a provider's env
+  preparePrivateEvidence(evidenceAt.dir); recordEvidenceProject(evidenceAt);
+  const mediaRoot = path.join(evidenceAt.dir, "media"), logical = (file) => posix(path.join(EVIDENCE_FOLDER, path.relative(evidenceAt.dir, file)));
   if (firstMedia.length && !inputs.length) throw fail(`Refused: the first step takes ${firstMedia.join("+")} input; pass the artefact(s) with --input <file> (inputs option)`, "MOMM_INPUT_MISSING", { modalities: firstMedia });
   for (const f of inputs) if (!statOrNull(f)?.isFile()) throw fail(`Refused: initial input ${f} is not a regular file`, "MOMM_INPUT_MISSING");
   const inputTypes = inputs.map(artefactModality);
@@ -419,11 +426,11 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
   if (unexpected.length) throw fail(`Refused: initial input ${unexpected.map((f) => path.basename(f)).join(", ")} is not a modality the first step takes (${resolved[0].step.from.join("+")}); nothing was staged or sent`, "MOMM_INPUT_UNEXPECTED", { modalities: resolved[0].step.from });
   if (!exec) ({ defaultExec: exec } = await import("./probes.mjs"));
   const at = typeof now === "function" ? now() : new Date(now);
-  fs.mkdirSync(path.join(cwd, MEDIA_DIR), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(mediaRoot, { recursive: true, mode: 0o700 });
   let run_id, dir;
   for (;;) {
     run_id = `media_${at.toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}_${randomBytes(4).toString("hex")}`;
-    dir = path.join(cwd, MEDIA_DIR, run_id);
+    dir = path.join(mediaRoot, run_id);
     try { fs.mkdirSync(dir, { mode: 0o700 }); break; } catch (e) { if (e?.code !== "EEXIST") throw e; }
   }
   const report = { schema: MEDIA_SCHEMA, run_id, at: at.toISOString(), prompt_sha256: sha256(prompt), need: planObj.need, chain: planObj.chain ?? planObj.steps.map(({ from, to }) => ({ from, to })), consent: true, status: "running", steps: [] };
@@ -469,7 +476,7 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
         // the provider. No cached permission result crosses a provider call or await.
         if (i === 0) persist();
         else requirePrivateEvidence(dir);
-        result = await exec(resolveCommand(route, cmd.command), cmd.args, { input: cmd.input, cwd: stepDir, timeout });
+        result = await exec(resolveCommand(route, cmd.command), cmd.args, { input: cmd.input, cwd: stepDir, timeout, ...(cmd.env ? { env: { ...env, ...cmd.env } } : {}) });
         const timedOut = !!result.timedOut || result.error?.code === "ETIMEDOUT";
         if (timedOut) failure = "timeout";
         else if (result.code !== 0) failure = "exit_code";
@@ -492,7 +499,7 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
               if (!found.length) { if (!failure) { failure = "no_new_output"; failureDetail = `${h.modality}: no new file under ${h.cell.harvest} after the step`; } continue; }
               found.forEach((f) => {
                 const copy = stageCopy(f, outDir, files.length);
-                files.push({ path: posix(path.relative(cwd, copy.target)), sha256: copy.sha256, bytes: copy.bytes, mime: h.cell.mime ?? MIME_BY_EXT[path.extname(f).slice(1).toLowerCase()] ?? "application/octet-stream", modality: h.modality, harvested_from: displayPath(f, h.cell.harvest, home, env), absolute: copy.target });
+                files.push({ path: logical(copy.target), sha256: copy.sha256, bytes: copy.bytes, mime: h.cell.mime ?? MIME_BY_EXT[path.extname(f).slice(1).toLowerCase()] ?? "application/octet-stream", modality: h.modality, harvested_from: displayPath(f, h.cell.harvest, home, env), absolute: copy.target });
               });
             }
           } else {
@@ -506,7 +513,7 @@ export async function run(planObj, { prompt: promptOverride, inputs = [], consen
             } else {
               const target = path.join(outDir, "01-response.txt"), reply = answer.reply;
               writePrivate(target, reply);
-              files.push({ path: posix(path.relative(cwd, target)), sha256: sha256(reply), bytes: Buffer.byteLength(reply), mime: "text/plain", modality: "text", harvested_from: "stdout", absolute: target });
+              files.push({ path: logical(target), sha256: sha256(reply), bytes: Buffer.byteLength(reply), mime: "text/plain", modality: "text", harvested_from: "stdout", absolute: target });
             }
           }
         }

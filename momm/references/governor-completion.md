@@ -33,7 +33,8 @@ coverage records, never automatic completion receipts.
 4. Append one decision per item to `.ensemble_reviews/dispositions.jsonl`. Every
    finding (including a nit) and every suggestion needs a ruling. Applied material
    findings and behavioral suggestions need failing-before/passing-after records;
-   style-only suggestions need passing final verification. Rejected findings need
+   style-only changes need a passing after record, and since 1.17 the bytes must show
+   they are style (see "Mechanical `style`" below). Rejected findings need
    an investigation record. Rejected suggestions need a reason. Deferred items,
    missing rows and conflicting duplicates remain open; do not add fabricated rows.
 5. Write run-level final verification covering every file in `source_snapshot.files`.
@@ -87,6 +88,112 @@ Each decision includes:
 regardless of this field. For a combined finding, `reviewer` must name one of its
 recorded sources. Add `finding_id` for existing ledger severity attribution.
 
+Optional `role` (1.17): copy the role that reviewer held from the report, `reviewers[].role`, or
+`reviewers[].persona` for a report sealed before roles were recorded. The validator refuses a
+`role` that is empty or is not a role the report gives the row's `reviewer` for that item: its
+`reviewers[]` value for its own suggestions; for a cover's suggestion, the role that cover performed
+(the covered role, see Role cover below); for a finding, either of those. Only a finding's `role`
+reaches the scorecard: when a finding's row has no `role`, the scorecard takes the reviewer's
+`reviewers[].role`, else `reviewers[].persona`,
+else, for a route that only covered, its one covered role (none when it covered more than one);
+a finding's role feeds only the scorecard's per-route, per-role roster (valid reviews, reproduced
+claims, false `CRITICAL`, median time, cover success), which is this project's governor decisions,
+not a benchmark; nothing routes on it. A suggestion's `role` is checked but counted in no roster
+column: no suggestion row, a cover's included, with or without `role`, is credited to any role,
+native or covered, or to cover success.
+
+Re-typing a claim (peer contract `momm-peer-review/3`). A finding may carry a `claim_type`
+(`DEFECT`, `RISK`, `QUESTION`, `IDEA` or `NOISE`; `null` when untyped). The report's merged
+type is the most blocking type of its sources. The governor may re-type a finding only in its
+decision row, with three fields:
+
+- `claim_type`: the new type, one of the five above;
+- `retyped_from`: exactly the report's merged type (`null` for an untyped claim);
+- `retype_reason`: a non-empty reason.
+
+A row whose `claim_type` differs from the report's type without both of the other two fields is
+refused. So is a `retyped_from` that does not name the report's type. Changing severity follows
+the same rule with `severity`, `severity_from` and `severity_reason`. A recorded change is the
+governor's judgement on record. It never waives a gate: whether a finding is material, and so
+whether it needs failing-before/passing-after evidence, is decided by the report's severity,
+whatever its type. These fields apply to findings only; they are refused on suggestion and
+`governor_direct` rows. Reports sealed under `momm-peer-review/2` (1.16.x) still validate; their
+findings are untyped.
+
+### Mechanical `style` (1.17)
+
+`style` is decided from the bytes, never from the label (`scripts/style-classifier.mjs`,
+version `momm-style/1`). For every file the decision's after check binds that differs from
+the reviewed bytes, every changed line must be whitespace, or a comment line that is added, removed or
+reworded (never code in its old or its new form). Otherwise the item stays unresolved with a reason such as
+`change_kind style refused: src/a.js:12 changes code`, `... carries a directive` or
+`... file type unclassifiable (...)`; record it as `behavior` with failing-before and
+passing-after evidence instead.
+
+- Comment syntax is known for js, mjs, cjs, jsx, ts, tsx (`//`, single-line `/* */`),
+  java, c, cpp, cs, go, rs, swift, kt (the same), py, sh, bash, rb, yaml, yml, toml, ps1
+  (`#`) and css (single-line `/* */`). Anything else is unclassifiable and needs
+  `behavior`: Markdown (owner decision D4), JSON, HTML, unknown or no extension, binary or
+  non-UTF-8 bytes, generated files, renamed files, JSX markup, a block comment spanning
+  lines, and string forms the classifier does not model.
+- A code line turned into a comment, or a comment into code, is behavior. So is a trailing
+  comment added to a code line, a comment inside a multi-line string, template or heredoc
+  (that is string content), and a comment that carries a tool directive from the versioned
+  list (`eslint-disable`, `@ts-expect-error`, `@ts-ignore`, `prettier-ignore`,
+  `istanbul ignore`, `c8 ignore`, `noqa`, `type: ignore`, `pragma`, `#!`, `-*- coding`,
+  `nolint`, `NOSONAR` and more of the same kind; `STYLE_DIRECTIVES`).
+- A code line whose only change is whitespace outside strings is style, except in the
+  whitespace-significant py, yaml and yml files, which fail closed. Makefiles and Haskell
+  have no listed comment syntax and are unclassifiable.
+- The reviewed bytes come from the decision's own `reproduction` before record (for a style
+  decision it may pass; it is a baseline copy, not a failing test) or from `input_text` the
+  report stored with `--store-input`. Without either, `style` is refused.
+- The comparison is cumulative against the reviewed bytes: a style decision cannot cover a
+  file that another decision changed in code.
+
+### Recorded mutation (1.17, optional)
+
+An applied decision may add `"mutation": { "path": ..., "sha256": ... }`, a
+`checks.mjs --phase mutation` record (see [verification-checks.md](verification-checks.md)):
+the same test as the after check, run with only this decision's change reverted, binding the
+same files, whose reverted bytes differ from the after check's. It counts only when that run
+failed (`exit_code > 0`). The validator reports
+`mutation: { applied_decisions, with_mutation_record, mutation_survived, invalid }`.
+A record that passed is listed in `mutation_survived` (a warning: the test did not notice
+the revert); a malformed one, a different test, or one that reverted nothing is listed in
+`invalid` with the reason. None of these refuses completion, and a count is never proof: a
+revert that does not build also fails.
+
+### Stale reviews (1.17)
+
+The validator compares the review with what is installed now and reports
+`stale: { stale, changed, unknown, matched }` (field names only). Compared: the report's
+`dispatcher_sha256`, `peer_contract_sha256`, `process_scope_sha256` and `governor_sha256`
+against the files beside this governor; each guidance route's layers that come from files
+(user and trusted project guidance, `.reviewrules`), re-resolved now; and each successful
+route's `command_shape_sha256` where the report records one. A route's CLI version and model
+cannot be confirmed without running the CLI, and attachments are not kept, so those are
+always `unknown`; a field the report does not record is `unknown`, never a match. `stale`
+is true only when something recorded differs. A stale review can still be completed, and
+the receipt carries the block.
+
+### Role cover (1.17, `--cover`)
+
+A report may carry `covers[]`: another route answering a failed route's
+role on one piece. The validator recounts covers and never trusts their flags: a cover must name a
+coverable failure (`timeout`, `invalid_output`, `provider_unavailable` or `error`) that the report
+records for that route and piece, must be a single invocation within the budget of two per piece and
+role (the native attempts and every earlier cover of that role on that piece count), must come from a
+route that covers no other role on that piece, and counts toward quorum only if its model family (the
+report's `model_families`) is known and new to that piece. A cover claiming a vote the family rule does not give is an error. A successful
+cover's suggestions are items like any reviewer's (`reviewer` is the cover route; the `index` is
+`cover:<row>:<n>`), and its findings are already merged into `findings` under that route's name.
+An optional decision `role` (B6) on a cover's suggestion must be the cover's role (the role it covered);
+on a finding it may be the route's own role or a role that route covered successfully. For example, when
+`grok` holds `innovator` natively and its cover of `codex` performed `surgeon`, a row on the suggestion
+`cover:0:0` may carry `"role": "surgeon"` and is refused with `"role": "innovator"`; a row on a finding
+`grok` raised may carry either.
+
 An observation file has this shape (record actual outputs, not these placeholders):
 
 ```json
@@ -131,6 +238,8 @@ unique item decisions, required observation relationships and actual local byte
 hashes. It never treats a matching row count as completion. Original reports are
 immutable; receipt writes are atomic and all read hashes are rechecked.
 
+A mutation count narrows, but does not settle, whether a test is adequate; a stale block says
+what changed since the review, not whether the review is still right.
 It cannot prove that an arbitrary chosen test is adequate, that an observation was
 honestly recorded, or that a same-user actor did not rewrite the whole local chain.
 Reviewed-scope quotations and `review_status: complete` are peer declarations,

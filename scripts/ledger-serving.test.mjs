@@ -5,13 +5,52 @@ import vm from 'node:vm';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { evidenceDir } from '../momm/scripts/evidence-location.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'momm/scripts/setup-ui.mjs'), 'utf8');
 const start = source.indexOf('async function serveLedger(');
 const end = source.indexOf('// Ledger -> Setup Center:', start);
 assert(start >= 0 && end > start);
-const serve = vm.runInNewContext(source.slice(start, end) + ';serveLedger', { fs, path, process, LEDGER_FILES: ['review-log.jsonl'], securityHeaders: () => ({}), ledgerHeaders: () => ({}), safeDetail: String, escapeHtml: String, ledgerMissingPage: () => 'No ledger' });
+// 1.17 A7: serveLedger reads the resolved evidence folder; the real evidenceFolder from setup-ui.mjs
+// over the real resolver (default mode here).
+const folderStart = source.indexOf('function evidenceFolder('), folderEnd = source.indexOf('\nfunction usageReport(', folderStart);
+assert(folderStart >= 0 && folderEnd > folderStart);
+const evidenceFolder = vm.runInNewContext(source.slice(folderStart, folderEnd) + ';evidenceFolder', { evidenceDir, process });
+const serve = vm.runInNewContext(source.slice(start, end) + ';serveLedger', { fs, path, process, evidenceFolder, LEDGER_FILES: ['review-log.jsonl'], securityHeaders: () => ({}), ledgerHeaders: () => ({}), safeDetail: String, escapeHtml: String, ledgerMissingPage: () => 'No ledger' });
 const results = [];
+// Fail fast, never hang: a scenario waiting on a promise that never settles (for example a sliced
+// context missing an identifier, so serveLedger throws before any rebuild starts while a test server
+// keeps the process alive) fails within seconds. Found in 1.17 when a missing evidenceFolder held this
+// suite open for 17 minutes.
+const SCENARIO_LIMIT_MS = 5000, SUITE_LIMIT_MS = 60_000;
+const bounded = (promise, label, ms = SCENARIO_LIMIT_MS) => {
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms / 1000} s`)), ms); });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+};
+const watchdog = setTimeout(() => {
+  console.log(JSON.stringify({ passed: false, error: `ledger-serving did not finish within ${SUITE_LIMIT_MS / 1000} s`, results }, null, 2));
+  process.exit(1);
+}, SUITE_LIMIT_MS);
+// Preflight: the sliced serveLedger must run in its context at all, on both its no-ledger and its
+// rebuild paths. A missing identifier stops the suite here with the reason, before any scenario waits.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-ledger-preflight-'));
+  try {
+    const response = () => ({ writeHead(status) { this.status = status; }, end(body) { this.body = body; } });
+    const none = response();
+    await bounded(serve(none, { cwd: dir, rebuild: async () => ({ code: 0 }) }), 'serveLedger preflight (no ledger)');
+    assert.equal(none.status, 404);
+    fs.mkdirSync(path.join(dir, '.ensemble_reviews'));
+    const built = response();
+    await bounded(serve(built, { cwd: dir, rebuild: async () => { fs.writeFileSync(path.join(dir, '.ensemble_reviews', 'ledger.html'), '<p>preflight</p>'); return { code: 0 }; } }), 'serveLedger preflight (rebuild)');
+    assert.equal(built.status, 200);
+    results.push({ scenario: 'context-preflight', passed: true });
+  } catch (error) {
+    console.log(JSON.stringify({ passed: false, error: `serveLedger cannot run in its sliced context: ${error.message}`, results }, null, 2));
+    process.exit(1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
 const unhandled = [];
 const onUnhandled = reason => unhandled.push(String(reason));
 process.on('unhandledRejection', onUnhandled);
@@ -35,7 +74,7 @@ for (const scenario of ['source-only-change', 'thrown-rebuild', 'failed-child', 
       return { code: 0 };
     };
     const res = { writeHead(status) { this.status = status; }, end(body) { this.body = body; } };
-    await serve(res, { cwd: dir, rebuild });
+    await bounded(serve(res, { cwd: dir, rebuild }), scenario);
     assert.equal(called, 1, 'Every refresh must revalidate source, not merely telemetry mtimes');
     if (scenario === 'source-only-change') { assert.equal(res.status, 200); assert.match(res.body, /Current source is stale/); }
     else { assert.equal(res.status, 503); assert.doesNotMatch(res.body, /Old validated result/); }
@@ -56,7 +95,7 @@ for (const scenario of ['source-only-change', 'thrown-rebuild', 'failed-child', 
     const requests = [serve(a, { cwd: dir, rebuild }), serve(b, { cwd: dir, rebuild })];
     await Promise.resolve();
     release();
-    await Promise.all(requests);
+    await bounded(Promise.all(requests), 'concurrent-rebuilds');
     assert.equal(calls, 1, 'Concurrent requests must share one rebuild without a watcher');
     assert.equal(a.status, 200); assert.equal(b.status, 200);
     await serve(response(), { cwd: dir, rebuild });
@@ -181,9 +220,9 @@ for (const [oldCode, newCode] of [[0, 1], [1, 0], [0, 0]]) {
       });
       req.on('error', reject); req.setTimeout(5000, () => req.destroy(new Error('Synthetic HTTP test deadline')));
     });
-    first = get(); first.catch(() => {}); await started;
+    first = get(); first.catch(() => {}); await bounded(started, `${scenario}: first rebuild`);
     revision = 'new'; watcher.notify('dispositions.jsonl');
-    second = get(); second.catch(() => {}); await arrived;
+    second = get(); second.catch(() => {}); await bounded(arrived, `${scenario}: second request`);
     release();
     const [, result] = await Promise.all([first, second]);
     assert.equal(result.status, newCode === 0 ? 200 : 503);
@@ -203,5 +242,6 @@ await new Promise(resolve => setImmediate(resolve));
 process.removeListener('unhandledRejection', onUnhandled);
 assert.deepEqual(unhandled, [], 'Rebuild rejection must have its handler attached before a turn elapses');
 results.push({scenario:'no-unhandled-rebuild-rejection',passed:true});
+clearTimeout(watchdog);
 console.log(JSON.stringify({ passed: results.every(r => r.passed), results }, null, 2));
 if (results.some(r => !r.passed)) process.exitCode = 1;

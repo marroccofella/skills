@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { evidenceDir, EVIDENCE_FOLDER, EVIDENCE_HOME_ENV, PROJECT_MARKER } from './evidence-location.mjs';
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -140,12 +141,28 @@ const REASON_WORDS = {
 };
 // What the owner can do about a refusal. MOMM never changes permissions on its own; the protect
 // action below runs only when the owner types it.
-export function evidenceRemediation(directory, platform = process.platform) {
+export function evidenceRemediation(directory, platform = process.platform, env = process.env) {
   const target = path.resolve(directory);
-  const action = 'node "<installed-momm>/scripts/multi-review.mjs" evidence --protect';
-  return platform === 'win32'
-    ? `Run ${action} from the project (it restricts ${target} to your account and makes everything inside inherit that), or move the project's evidence to a location only you can access.`
-    : `Run ${action} from the project (equivalent to: chmod -R go-rwx "${target}"), or move the project's evidence to a location only you can access.`;
+  // With an evidence home (1.17 A7) the folder is <home>/<32 hex>; the printed command names the same home,
+  // since --evidence-home given to one command does not carry to the next (gate-3 review of 1.17.0).
+  const chosen = env?.[EVIDENCE_HOME_ENV];
+  const home = typeof chosen === 'string' && path.isAbsolute(chosen) ? path.resolve(chosen) : null;
+  const inHome = home !== null && /^[0-9a-f]{32}$/.test(path.relative(home, target).split(path.sep)[0]);
+  // Each path is one literal argument, quoted for the shell that reads it (final review of 1.17.0), so a quote, a
+  // dollar sign or an apostrophe in the path cannot break the printed command or expand. POSIX shells: single
+  // quotes, '\'' for an apostrophe. Windows has two shells that no one quoting satisfies, so each form names its
+  // shell: PowerShell single quotes ('' for an apostrophe; PowerShell also closes on a typographic single quote),
+  // and cmd.exe double quotes, which keep & | < > ^ literal (a Windows path cannot hold "). cmd.exe expands
+  // %NAME% even inside them, so no cmd.exe form is printed for a path with a percent sign.
+  const action = (home) => `node "<installed-momm>/scripts/multi-review.mjs" evidence${home ? ` --evidence-home ${home}` : ''} --protect`;
+  const posix = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  if (platform !== 'win32') return `Run ${action(inHome && posix(home))} from the project (equivalent to: chmod -R go-rwx ${posix(target)}), or move the project's evidence to a location only you can access.`;
+  const effect = `from the project (it restricts ${target} to your account and makes everything inside inherit that), or move the project's evidence to a location only you can access.`;
+  if (!inHome) return `Run ${action(null)} ${effect}`;
+  const powershell = action(`'${home.replace(/['‘’‚‛]/g, '$&$&')}'`);
+  // A trailing backslash (a drive root) is doubled so it does not escape the closing quote for the argument parser.
+  const cmd = /[%"]/.test(home) ? null : action(`"${home.replace(/(\\+)$/, '$1$1')}"`);
+  return `Run ${powershell} in PowerShell${cmd ? `, or ${cmd} in cmd.exe,` : ''} ${effect}`;
 }
 export function requirePrivateEvidence(directory, options) {
   const result = inspectEvidencePermissions(directory, options);
@@ -254,7 +271,8 @@ export function createPrivateDirectory(target, { run = spawnSync, systemRoot = p
 }
 
 // Explicit, owner-invoked protection of an EXISTING evidence folder ("evidence --protect").
-// Never called by a review. Only ever touches a directory named .ensemble_reviews: the root gets
+// Never called by a review. Only ever touches a directory named .ensemble_reviews (or a marked
+// evidence-home folder, see protectEvidence): the root gets
 // a protected DACL for the current account alone, every entry inside is reset to inherit from it.
 const WINDOWS_PROTECT = String.raw`
 $ErrorActionPreference='Stop'
@@ -373,7 +391,12 @@ function surveyProtectTarget(target, fsx, fail) {
 export function protectEvidence(directory, { platform = process.platform, run = spawnSync, systemRoot = process.env.SystemRoot, fsx = fs, uid = process.getuid?.() } = {}) {
   const target = path.resolve(directory);
   const fail = (message) => { const error = new Error(message); error.code = 'MOMM_EVIDENCE_PERMISSIONS'; return error; };
-  if (path.basename(target) !== '.ensemble_reviews') throw fail('evidence --protect only ever changes a directory named .ensemble_reviews; nothing was changed.');
+  // 1.17 A7: an opt-in evidence home folder (32 hex characters, holding MOMM's project.json marker)
+  // is the same evidence folder in another place; nothing else is ever a target.
+  const homeFolder = /^[0-9a-f]{32}$/.test(path.basename(target)) && (() => {
+    try { const marker = fsx.lstatSync(path.join(target, PROJECT_MARKER)); return marker.isFile() && !marker.isSymbolicLink(); } catch { return false; }
+  })();
+  if (path.basename(target) !== EVIDENCE_FOLDER && !homeFolder) throw fail('evidence --protect only ever changes a directory named .ensemble_reviews, or a MOMM evidence-home folder holding its project.json marker; nothing was changed.');
   let st; try { st = fsx.lstatSync(target); } catch { throw fail('There is no evidence folder here yet; MOMM creates it privately on the first review. Nothing was changed.'); }
   if (st.isSymbolicLink() || !st.isDirectory()) throw fail('The evidence path is not a plain directory; nothing was changed.');
   const before = inspectEvidencePermissions(target, { platform, run, systemRoot, fsx, uid });
@@ -416,7 +439,7 @@ export function protectEvidence(directory, { platform = process.platform, run = 
 // Durable evidence and provider scratch have independent permission trees.
 // Allocate a fresh, privately protected temp directory before writing input;
 // never use an unverified fallback or change any existing directory's ACL.
-export function createEvidenceWorkspace(prefix, directory = path.resolve('.ensemble_reviews')) {
+export function createEvidenceWorkspace(prefix, directory = evidenceDir({ cwd: process.cwd(), env: process.env })) {
   if (!/^momm-[a-z]+-$/.test(prefix)) throw new Error('Invalid review workspace prefix');
   requirePrivateEvidence(directory);
   let parent, evidence;

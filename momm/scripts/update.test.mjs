@@ -7,7 +7,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { update, parse, git, run, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
+import { update, parse, git, run, resolveTool, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, cliBinary, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // The synthetic home is installed BEFORE the imported suites run. Neither of them reads HOME today,
@@ -452,6 +452,30 @@ try {
     const r = captureExec(probe, ["--version"]);
     assert.equal(r.code, 0, `literal percent path must launch: ${r.stderr}`); assert.match(r.stdout, /^v\d+\./);
   });
+  // Gate-3 review of 1.17.0: cliBinary named the installer's location without checking it, and an
+  // absolute command was started as given. Both now take only a real path outside the working directory
+  // (a reviewed project, for --check-all) and the clone.
+  await test("cli_binary_and_capture_exec_take_an_absolute_path_only_outside_the_project", () => {
+    // The canonical spelling: on hosted Windows runners the temp folder is an 8.3 short path (CI run 36667179658),
+    // which fs.realpathSync keeps and the native call, like cliBinary, expands.
+    const canonical = (p) => (process.platform === "win32" ? fs.realpathSync.native(p) : fs.realpathSync(p));
+    const base = canonical(fs.mkdtempSync(path.join(checkFixture, "abs-"))), project = path.join(base, "project"), store = path.join(base, "store");
+    const exe = process.platform === "win32" ? "grok.exe" : "grok";
+    fs.mkdirSync(path.join(project, "bin"), { recursive: true }); fs.mkdirSync(store);
+    fs.copyFileSync(process.execPath, path.join(project, "bin", exe)); fs.copyFileSync(process.execPath, path.join(store, exe));
+    for (const f of [path.join(project, "bin", exe), path.join(store, exe)]) fs.chmodSync(f, 0o755);
+    const home = (name, target) => { const h = path.join(base, name); fs.mkdirSync(path.join(h, ".grok"), { recursive: true }); fs.symlinkSync(target, path.join(h, ".grok", "bin"), "junction"); return h; };
+    const outsideHome = home("home-out", store), linkedHome = home("home-in", path.join(project, "bin"));
+    assert.equal(cliBinary("grok", { home: outsideHome, cwd: project }), canonical(path.join(store, exe)), "the checked real path, not the link");
+    assert.equal(cliBinary("grok", { home: linkedHome, cwd: project }), "grok", "a link into the project falls back to the resolver");
+    assert.equal(cliBinary("grok", { home: outsideHome, cwd: base, project: store }), "grok", "the clone counts as well as the working directory");
+    const inside = captureExec(path.join(project, "bin", exe), ["--version"], { cwd: project });
+    assert.equal(inside.code, -1); assert.equal(inside.error?.code, "ENOENT"); assert.equal(inside.stdout, "", "nothing inside the project was started");
+    const viaLink = captureExec(path.join(linkedHome, ".grok", "bin", exe), ["--version"], { cwd: project });
+    assert.equal(viaLink.error?.code, "ENOENT", "an outside link whose real file is inside the project is refused");
+    const outside = captureExec(path.join(outsideHome, ".grok", "bin", exe), ["--version"], { cwd: project });
+    assert.equal(outside.code, 0, outside.stderr); assert.match(outside.stdout, /^v\d+\./);
+  });
   await test("prerelease_installed_version_is_kept_and_compares_below_its_stable", async () => {
     assert.equal(newer("1.2.3", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.1", "1.2.3"), false); assert.equal(newer("1.2.3-beta.1", "1.2.3-beta.1"), false);
     assert.equal(newer("1.2.3-beta.2", "1.2.3-beta.1"), true); assert.equal(newer("1.2.3-beta.11", "1.2.3-beta.2"), true); assert.equal(newer("1.2.3-rc.1", "1.2.3-beta.11"), true);
@@ -494,6 +518,43 @@ try {
     try { await assert.rejects(update(["--repo", installed, "--check-all", "--json"], checkDeps({ exec: fakeExec(), fetcher: fakeFetcher(), log() {} })), /Unsafe local state file/); }
     finally { fs.rmdirSync(journal); }
   });
+  // 1.17 A1 follow-up (29 September 2026): off Windows resolveTool handed back the bare name, so
+  // spawnSync searched the child's PATH and an entry inside the skills clone (or the working directory,
+  // which --check-all is run from: a reviewed project) could supply git, gitsign or a CLI. The updater
+  // keeps its own copy of the rule (it imports nothing from MOMM); the clone root counts as the project.
+  {
+    const posixDouble = (files, links = {}) => {
+      const real = p => { let s = String(p); for (const [from, to] of Object.entries(links)) if (s === from || s.startsWith(from + "/")) s = to + s.slice(from.length); return s; };
+      return { statSync: p => { const m = files[real(p)]; if (m === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return { isFile: () => m !== "dir", mode: m === "dir" ? 0o40755 : m }; }, realpathSync: Object.assign(real, { native: real }) };
+    };
+    const base = { "/clone": "dir", "/clone/bin": "dir", "/work": "dir", "/work/bin": "dir", "/usr/bin": "dir", "/noexec": "dir", "/clone/bin/git": 0o100755, "/work/bin/git": 0o100755, "/clone/planted": 0o100755, "/noexec/git": 0o100644, "/usr/bin/git": 0o100755, "/outside": "dir" };
+    const at = (PATH, files = base, links = {}, command = "git") => resolveTool(command, "/work", { env: { PATH }, platform: "linux", fs: posixDouble(files, links), project: "/clone" });
+    await test("posix_resolve_tool_refuses_the_clone_and_the_working_directory", () => {
+      assert.equal(at("/clone/bin:/work/bin:/usr/bin"), "/usr/bin/git");
+      assert.throws(() => at("/clone/bin:/work/bin"), e => e.code === "ENOENT" && /git was not found on an absolute PATH entry outside/.test(e.message));
+    });
+    await test("posix_resolve_tool_skips_relative_empty_non_executable_and_linked_entries", () => {
+      const links = { "/alias": "/clone/bin", "/outside/git": "/clone/planted" };
+      assert.equal(at("::.:bin:/alias:/outside:/noexec:/usr/bin", base, links), "/usr/bin/git");
+      assert.throws(() => at("::.:bin:/alias:/outside:/noexec", base, links), e => e.code === "ENOENT");
+    });
+    await test("posix_resolve_tool_refuses_a_relative_path_with_a_separator", () => {
+      for (const name of ["./git", "bin/git"]) assert.throws(() => at("/usr/bin", base, {}, name), e => e.code === "ENOENT" && /relative path/.test(e.message), name);
+      assert.equal(at("/usr/bin", base, {}, "/opt/tools/gitsign"), "/opt/tools/gitsign", "an absolute path the updater named itself is used as given");
+    });
+    if (process.platform !== "win32") {
+      await test("posix_capture_exec_never_runs_a_launcher_from_an_in_project_path_entry", () => {
+        const dir = path.join(checkFixture, "posix-planted"), project = path.join(dir, "project"), trusted = path.join(dir, "trusted"), sentinel = path.join(dir, "SENTINEL");
+        fs.mkdirSync(path.join(project, "bin"), { recursive: true }); fs.mkdirSync(trusted, { recursive: true });
+        fs.writeFileSync(path.join(project, "bin", "mommprobe"), `#!/bin/sh\necho planted > ${JSON.stringify(sentinel)}\necho planted 6.6.6\n`, { mode: 0o755 });
+        fs.writeFileSync(path.join(trusted, "mommprobe"), "#!/bin/sh\necho trusted 1.2.3\n", { mode: 0o755 });
+        const ok = captureExec("mommprobe", ["--version"], { cwd: project, env: { PATH: `${path.join(project, "bin")}:${trusted}` } });
+        assert.equal(ok.code, 0, ok.stderr); assert.match(ok.stdout, /trusted 1\.2\.3/);
+        const refused = captureExec("mommprobe", ["--version"], { cwd: project, env: { PATH: path.join(project, "bin") } });
+        assert.equal(refused.error?.code, "ENOENT"); assert.equal(fs.existsSync(sentinel), false, "the planted launcher ran");
+      });
+    }
+  }
   if (failures) process.exitCode = 1;
   process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
 } finally {

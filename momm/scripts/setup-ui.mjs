@@ -7,11 +7,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProcessScope, windowsTool } from "./process-scope.mjs";
+import { createProcessScope, windowsTool, desktopTool } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
 import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
+import { evidenceDir } from "./evidence-location.mjs";
 
 // Windows: a bare command name (git.exe, powershell.exe, cmd.exe, a CLI version
 // probe) is looked up in the WORKING DIRECTORY before PATH, by cmd.exe and by
@@ -328,13 +329,18 @@ function runNode(script, args, { input = "", timeoutMs = 45_000 } = {}) {
 
 function runCommand(command, args = [], { timeoutMs = 15_000 } = {}) {
   return new Promise((resolve) => {
-    const child = processScope.spawn(process.platform === 'win32' && command === 'git' ? 'git.exe' : command, args, {
-      cwd: process.cwd(),
-      env: { ...process.env, NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // processScope.spawn refuses a CLI it cannot resolve outside the project by throwing, on every
+    // platform since 1.17 A1; that is a result (not installed), not a crash of the Setup Center.
+    let child;
+    try {
+      child = processScope.spawn(process.platform === 'win32' && command === 'git' ? 'git.exe' : command, args, {
+        cwd: process.cwd(),
+        env: { ...process.env, NO_UPDATE_CHECK: "1", NO_COLOR: "1" },
+        shell: false,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) { resolve({ code: null, error, stdout: "", stderr: "" }); return; }
     supervise(child, { timeoutMs, stdoutLimit: 250_000, stderrLimit: 50_000, resolve });
   });
 }
@@ -542,9 +548,9 @@ function launchTerminal(command) {
       child = spawn(windowsTool("powershell.exe"), ["-NoExit", "-NoProfile", "-Command", command], { detached: true, shell: false, stdio: "ignore", windowsHide: false });
     } else if (process.platform === "darwin") {
       const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-      child = spawn("osascript", ["-e", `tell application "Terminal" to do script "${escaped}"`], { detached: true, shell: false, stdio: "ignore" });
+      child = spawn(systemHelper("osascript"), ["-e", `tell application "Terminal" to do script "${escaped}"`], { detached: true, shell: false, stdio: "ignore" });
     } else {
-      child = spawn("x-terminal-emulator", ["-e", "bash", "-lc", `${command}; exec bash`], { detached: true, shell: false, stdio: "ignore" });
+      child = spawn(systemHelper("x-terminal-emulator"), ["-e", "bash", "-lc", `${command}; exec bash`], { detached: true, shell: false, stdio: "ignore" });
     }
     child.on("error", () => {});
     child.unref();
@@ -553,15 +559,22 @@ function launchTerminal(command) {
 }
 
 function openBrowser(url) {
-  const invocation = process.platform === "win32"
-    ? [windowsTool("cmd.exe"), ["/d", "/s", "/c", "start", "", url]]
-    : process.platform === "darwin"
-      ? ["open", [url]]
-      : ["xdg-open", [url]];
-  const child = spawn(invocation[0], invocation[1], { detached: true, stdio: "ignore", shell: false, windowsHide: true });
+  let child;
+  try {
+    const invocation = process.platform === "win32"
+      ? [windowsTool("cmd.exe"), ["/d", "/s", "/c", "start", "", url]]
+      : process.platform === "darwin"
+        ? [systemHelper("open"), [url]]
+        : [systemHelper("xdg-open"), [url]];
+    child = spawn(invocation[0], invocation[1], { detached: true, stdio: "ignore", shell: false, windowsHide: true });
+  } catch { return; } // no trusted opener: the address is printed for the user to open
   child.on("error", () => {});
   child.unref();
 }
+// macOS and Linux helpers are named by a resolved absolute path (1.17 A1 follow-up): /usr/bin and /bin
+// first, never a copy found only inside the project the Setup Center was started from. A tool that
+// cannot be resolved throws like one that is not installed, and nothing is launched.
+function systemHelper(name) { return desktopTool(name, { platform: process.platform, env: process.env, cwd: process.cwd(), fs }); }
 
 function safeDetail(value) {
   return String(value || "").replaceAll(/\u001b\[[0-9;]*m/g, "").trim().slice(0, 600);
@@ -613,7 +626,7 @@ function startConnectivityJob(provider, governor) {
 // API names it guidance_preview and carries the note the page shows beside it.
 const GUIDANCE_ROUTES = Object.freeze(["codex", "claude", "gemini", "antigravity", "copilot", "grok"]);
 const GUIDANCE_BODY_LIMIT = 64 * 1024;
-const GUIDANCE_PREVIEW_STUB = "[guidance preview: the built-in momm-peer-review/2 contract and the route persona are not rendered here; the dispatcher supplies both at review time]";
+const GUIDANCE_PREVIEW_STUB = "[guidance preview: the built-in momm-peer-review/3 contract and the route persona are not rendered here; the dispatcher supplies both at review time]";
 const GUIDANCE_PREVIEW_NOTE = "shows the resolved guidance layers in position; the built-in contract and persona text are not rendered here";
 
 // The on-disk hash, with the read failure carried alongside instead of thrown:
@@ -782,15 +795,24 @@ function acceptedFindingsIndex(file) {
   finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } } }
 }
 
+// The project's resolved evidence folder (1.17 A7): <cwd>/.ensemble_reviews unless MOMM_EVIDENCE_HOME
+// names a home, then the project's folder there. A setting that cannot be honoured (a home inside the
+// project, a relative path) gives null: the Setup Center then shows no evidence, and never falls back
+// to the in-project folder.
+function evidenceFolder(cwd = process.cwd()) {
+  try { return evidenceDir({ cwd, env: process.env }); } catch { return null; }
+}
+
 function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
-  const dir = path.join(cwd, ".ensemble_reviews", "reports");
+  const evidence = evidenceFolder(cwd);
+  const dir = evidence ? path.join(evidence, "reports") : null;
   let files = [];
   try {
     files = fs.readdirSync(dir).filter((name) => /^rev_[A-Za-z0-9_]+\.json$/.test(name))
       .map((name) => { try { const stat = fs.statSync(path.join(dir, name)); return { name, mtime: stat.mtimeMs, size: stat.size }; } catch { return null; } })
       .filter(Boolean).sort((a, b) => b.mtime - a.mtime);
   } catch {}
-  const ledger = acceptedFindingsIndex(path.join(cwd, ".ensemble_reviews", "dispositions.jsonl"));
+  const ledger = evidence ? acceptedFindingsIndex(path.join(evidence, "dispositions.jsonl")) : { index: new Map(), error: null };
   const rows = [];
   let scanned = 0, withUsage = 0, skipped = 0;
   for (const { name, size } of files.slice(0, limit)) {
@@ -871,13 +893,16 @@ function childEnvironment(source = process.env) {
 }
 function clockExec(command, args = [], { timeout = 60_000, shell = false } = {}) {
   return new Promise((resolve) => {
-    const child = processScope.spawn(command, args, {
-      cwd: process.cwd(),
-      env: childEnvironment(),
-      shell: shell || process.platform === "win32",
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child;
+    try {
+      child = processScope.spawn(command, args, {
+        cwd: process.cwd(),
+        env: childEnvironment(),
+        shell: shell || process.platform === "win32",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) { resolve({ code: null, error, stdout: "", stderr: "" }); return; } // not installed (1.17 A1)
     supervise(child, { timeoutMs: timeout, stdoutLimit: 1_000_000, stderrLimit: 100_000, resolve });
   });
 }
@@ -1445,7 +1470,9 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"]/g, (c) => ({ "
 
 // file:// URL of this project's ledger for /api/status, or null until one exists.
 function ledgerFileUrl(cwd = process.cwd()) {
-  const file = path.join(cwd, ".ensemble_reviews", "ledger.html");
+  const evidence = evidenceFolder(cwd);
+  if (!evidence) return null;
+  const file = path.join(evidence, "ledger.html");
   try { return fs.existsSync(file) ? pathToFileURL(file).href : null; } catch { return null; }
 }
 
@@ -1464,7 +1491,16 @@ function ledgerHeaders(html) {
     "Content-Security-Policy": `default-src 'none'; img-src data:; style-src ${styles.join(" ") || "'none'"}; script-src ${scripts.join(" ") || "'none'"}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   };
 }
-const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>. Run a momm review from that directory first; the ledger is built from its telemetry.</p><p><a href="/">Back to the Setup Center</a></p>`;
+// `dir` is the resolved evidence folder, or null when it cannot be resolved. A valid MOMM_EVIDENCE_HOME whose
+// project folder does not exist before the first review is not an unusable setting (final review of 1.17.0).
+const ledgerMissingPage = (cwd, dir) => {
+  const where = !dir && process.env.MOMM_EVIDENCE_HOME
+    ? `<code>MOMM_EVIDENCE_HOME</code> cannot be used for <code>${escapeHtml(cwd)}</code>: it must be an absolute folder outside the project. No evidence is shown, and the folder inside the project is not used instead.`
+    : dir && process.env.MOMM_EVIDENCE_HOME
+      ? `There is no evidence folder for <code>${escapeHtml(cwd)}</code> under <code>MOMM_EVIDENCE_HOME</code> yet (<code>${escapeHtml(dir)}</code>). Run a momm review from that directory first; the ledger is built from its telemetry.`
+      : `There is no <code>.ensemble_reviews</code> in <code>${escapeHtml(cwd)}</code>. Run a momm review from that directory first; the ledger is built from its telemetry.`;
+  return `<!doctype html><meta charset="utf-8"><title>No ledger yet</title><h1>No ledger yet</h1><p>${where}</p><p><a href="/">Back to the Setup Center</a></p>`;
+};
 
 // GET /ledger — the private ledger on this origin, so the dashboard's pill needs
 // no file:// hop. Revalidate on every request: source bytes can change without
@@ -1472,9 +1508,9 @@ const ledgerMissingPage = (cwd) => `<!doctype html><meta charset="utf-8"><title>
 // the same minimum gap); 404 with a short page when the project has no
 // .ensemble_reviews at all. Returns what it did, for the self-test.
 async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (ledgerWatcher ? ledgerWatcher.rebuild() : runNode(ledgerScript, [], { timeoutMs: 60_000 })), fsx = fs } = {}) {
-  const dir = path.join(cwd, ".ensemble_reviews"), file = path.join(dir, "ledger.html");
+  const dir = evidenceFolder(cwd), file = dir ? path.join(dir, "ledger.html") : null;
   const send = (status, headers, body) => { response.writeHead(status, headers); response.end(body); };
-  if (!fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd)); return { status: 404, rebuilt: false }; }
+  if (!dir || !fsx.existsSync(dir)) { send(404, securityHeaders("text/html; charset=utf-8"), ledgerMissingPage(cwd, dir)); return { status: 404, rebuilt: false }; }
   const stale = true;
   let rebuildError = null;
   try {
@@ -1519,7 +1555,7 @@ async function serveLedger(response, { cwd = process.cwd(), rebuild = () => (led
 // removed on server close, process exit and the terminating signals. remove()
 // deletes only a file that names this pid, never another Setup Center's.
 function createSetupCenterPointer({ cwd = process.cwd(), pid = process.pid, proc = process, fsx = fs } = {}) {
-  const dir = path.join(cwd, ".ensemble_reviews"), file = path.join(dir, "setup-center.json");
+  const dir = evidenceFolder(cwd), file = dir ? path.join(dir, "setup-center.json") : null;
   let written = false;
   const remove = () => {
     if (!written) return false;
@@ -1528,7 +1564,7 @@ function createSetupCenterPointer({ cwd = process.cwd(), pid = process.pid, proc
     try { fsx.rmSync(file, { force: true }); return true; } catch { return false; }
   };
   const write = (url) => {
-    if (!fsx.existsSync(dir)) return false;
+    if (!dir || !fsx.existsSync(dir)) return false;
     try {
       fsx.rmSync(file, { force: true }); // create fresh so the 0600 mode applies (ignored when overwriting)
       fsx.writeFileSync(file, `${JSON.stringify({ url, pid, started_at: new Date().toISOString() })}\n`, { mode: 0o600 });
@@ -2177,6 +2213,47 @@ async function dashboardRegression() {
     fakeProc.handlers.SIGINT.at(-1)();
     const removedOnSignal = !fs.existsSync(again.file) && fakeProc.exited === true;
     checks.setup_center_pointer_written_0600_and_removed = notWrittenWithoutDir && wrote && shape && ownerOnly && hooked && keepsOthers && removedOnSignal;
+    // 1.17 A7: with MOMM_EVIDENCE_HOME the ledger view, the status link, the setup-center pointer, the
+    // usage panel and the watched folder all use the project's folder under that home. A refused
+    // setting (a home inside the project) reads nothing, and never falls back to the in-project folder.
+    {
+      const eh = fixture("evidence-home"), evidenceHome = path.join(root, "evidence-home", "evidence");
+      const previous = process.env.MOMM_EVIDENCE_HOME;
+      try {
+        process.env.MOMM_EVIDENCE_HOME = evidenceHome;
+        const projectReal = process.platform === "win32" ? fs.realpathSync.native(eh.cwd) : fs.realpathSync(eh.cwd);
+        const expected = path.join(evidenceHome, crypto.createHash("sha256").update(projectReal).digest("hex").slice(0, 32));
+        const decoy = path.join(eh.cwd, ".ensemble_reviews"); fs.mkdirSync(decoy, { recursive: true }); fs.writeFileSync(path.join(decoy, "ledger.html"), "<p>in-project decoy</p>");
+        const folder = typeof evidenceFolder === "function" ? evidenceFolder(eh.cwd) : null;
+        const noLinkYet = ledgerFileUrl(eh.cwd) === null;
+        // First run with a valid home: its project folder does not exist yet. The page says so without
+        // calling the setting unusable, and the watcher is given that folder and waits for it.
+        const firstRun = fakeResponse(); const firstRunResult = await serveLedger(firstRun, { cwd: eh.cwd, rebuild: async () => { throw new Error("must not rebuild a missing folder"); } });
+        const firstRunPage = firstRunResult.status === 404 && firstRun.body.includes(escapeHtml(expected)) && !/cannot be used|usable/.test(firstRun.body);
+        let watchedDir = null;
+        const watcherBound = ledgerWatcherFor(eh.cwd, ({ dir }) => { watchedDir = dir; return { dir }; }) !== null && watchedDir === expected;
+        const absentWatcher = createLedgerWatcher({ dir: expected, run: async () => ({ code: 0 }) });
+        absentWatcher.start(); const waitsForFolder = absentWatcher.status().watching === false; absentWatcher.stop();
+        writeJson(path.join(expected, "reports", "rev_7_h.json"), { run_id: "rev_7_h", reviewers: [{ agent: "codex", status: "success", usage: { reported: { total_tokens: 7 }, coverage: { tokens: true, cost: false } } }] });
+        fs.writeFileSync(path.join(expected, "ledger.html"), "<!doctype html><p>home ledger</p>");
+        const statusLink = ledgerFileUrl(eh.cwd);
+        const served = fakeResponse(); const servedResult = await serveLedger(served, { cwd: eh.cwd, rebuild: async () => ({ code: 0 }) });
+        const homePointer = createSetupCenterPointer({ cwd: eh.cwd, pid: 4343, proc: { once() {} } });
+        const pointerWritten = homePointer.write("http://127.0.0.1:4322/") === true && homePointer.file === path.join(expected, "setup-center.json") && fs.existsSync(homePointer.file) && !fs.existsSync(path.join(decoy, "setup-center.json"));
+        const usageRows = usageReport({ cwd: eh.cwd });
+        const followed = folder === expected && noLinkYet && statusLink !== null && fileURLToPath(statusLink) === path.join(expected, "ledger.html")
+          && servedResult.status === 200 && served.body.includes("home ledger") && pointerWritten && usageRows.coverage.reports_available === 1
+          && firstRunPage && watcherBound && waitsForFolder;
+        process.env.MOMM_EVIDENCE_HOME = path.join(eh.cwd, "inside");
+        const refusedServe = fakeResponse(); const refusedResult = await serveLedger(refusedServe, { cwd: eh.cwd, rebuild: async () => { throw new Error("must not rebuild a refused location"); } });
+        const refused = evidenceFolder(eh.cwd) === null && ledgerFileUrl(eh.cwd) === null && refusedResult.status === 404 && !refusedServe.body.includes("decoy")
+          && createSetupCenterPointer({ cwd: eh.cwd, pid: 4344, proc: { once() {} } }).write("http://127.0.0.1:1/") === false && usageReport({ cwd: eh.cwd }).coverage.reports_available === 0
+          && !fs.existsSync(path.join(eh.cwd, "inside")) && /cannot be used/.test(refusedServe.body)
+          && ledgerWatcherFor(eh.cwd, () => { throw new Error("must not watch a refused location"); }) === null;
+        checks.evidence_home_followed_by_ledger_view_status_pointer_usage_and_watcher = followed && refused;
+      } catch { checks.evidence_home_followed_by_ledger_view_status_pointer_usage_and_watcher = false; }
+      finally { if (previous === undefined) delete process.env.MOMM_EVIDENCE_HOME; else process.env.MOMM_EVIDENCE_HOME = previous; }
+    }
 
     // Modalities panel (1.16 E7), against the real registry with a temp home and an injected
     // exec: the matrix is served with blockers, clearing actions and per-route disclosures;
@@ -2387,6 +2464,14 @@ async function selfTest() {
   process.exitCode = passed ? 0 : 1;
 }
 
+// The ledger watcher follows the resolved evidence folder (1.17 A7); a setting that cannot be honoured watches
+// nothing (the ledger route then reports no ledger) rather than the in-project folder. `make` is the
+// self-test's seam, so the check binds the same folder the server watches (final review of 1.17.0).
+function ledgerWatcherFor(cwd = process.cwd(), make = createLedgerWatcher) {
+  const dir = evidenceFolder(cwd);
+  return dir ? make({ dir, run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) }) : null;
+}
+
 // Bind before anything with side effects: the ledger watcher starts only once
 // the socket is listening, and a failed bind stops it again so no watcher
 // outlives a server that never came up.
@@ -2421,7 +2506,11 @@ if (options.selfTest) { await selfTest(); }
 else {
   activeServer = createServer();
   updateClock = createServerClock();
-  ledgerWatcher = createLedgerWatcher({ dir: path.join(process.cwd(), ".ensemble_reviews"), run: () => runNode(ledgerScript, [], { timeoutMs: 60_000 }) });
+  // The watched folder is the resolved evidence folder (1.17 A7); a setting that cannot be honoured
+  // watches nothing (the ledger route then reports no ledger) rather than the in-project folder.
+  const watchedEvidence = evidenceFolder();
+  if (!watchedEvidence && process.env.MOMM_EVIDENCE_HOME) process.stderr.write("momm setup: MOMM_EVIDENCE_HOME cannot be used for this project (it must be an absolute folder outside the project); no evidence is shown.\n");
+  ledgerWatcher = ledgerWatcherFor();
   setupPointer = createSetupCenterPointer();
   startSetupCenter({ server: activeServer, watcher: ledgerWatcher, clock: updateClock, port: options.port, browser: options.browser, pointer: setupPointer });
 }

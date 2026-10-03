@@ -21,6 +21,7 @@
 // blocker `reprobe` ("probe before routing"); an expired successful probe also blocks routing.
 // Zero dependencies. Nothing here runs a CLI except the module CLI's version detection.
 import fs from "node:fs";
+import { commandShapeSha256, legacyCommandShapeSha256 } from "./route-isolation.mjs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -42,6 +43,11 @@ export const PROBE_BLOCKERS = Object.freeze(BLOCKERS.filter((b) => b !== "reprob
 export const MACHINE_BLOCKERS = Object.freeze(["auth_tier", "zdr", "missing_flag", "quota", "probe_failed", "reprobe"]);
 // Overlay expiry by blocker class; null = until the next probe replaces the entry.
 const HOUR = 3_600_000, DAY = 24 * HOUR;
+// Gates named in one route's own phrasing (Antigravity's settings-file allowlist and its --add-dir /
+// --new-project flags). Recorded against any other route they are a misclassification (29 September
+// 2026, Grok image_gen), so they read as `reprobe` rather than as a gate no probe may clear.
+export const ROUTE_SCOPED_BLOCKERS = Object.freeze({ allowlist: Object.freeze(["antigravity"]), missing_flag: Object.freeze(["antigravity"]) });
+const ACCOUNT_GATES = new Set(["zdr", "quota", "auth_tier"]);
 export const OVERLAY_EXPIRY_MS = Object.freeze({ quota: DAY, zdr: 7 * DAY, allowlist: 7 * DAY, auth_tier: 7 * DAY, missing_flag: 7 * DAY, probe_failed: null });
 export const SUCCESS_EXPIRY_MS = 7 * DAY;
 export const DIRECTIONS = Object.freeze(["input", "output"]);
@@ -231,7 +237,10 @@ function withOverlayLock(file, timeoutMs, fn) {
 // Some persistent refusal classes remain until an explicit new probe.
 // The read-modify-write runs under the overlay lock so concurrent probes never drop each other.
 export function writeOverlayEntry(home, entry, { now = new Date(), machine = machineId(), baseline = null, lockTimeoutMs = OVERLAY_LOCK_TIMEOUT_MS } = {}) {
-  const { route, direction, modality, level, blocker, reason, cli_version, login_identity_sha256 } = entry ?? {};
+  const { route, direction, modality, level, blocker, reason, cli_version, login_identity_sha256, verified_command_shape_sha256 } = entry ?? {};
+  const hex64 = (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+  if (entry?.command_shape_sha256 !== undefined && !hex64(entry.command_shape_sha256)) throw new Error("overlay entry command_shape_sha256 must be a SHA-256 hex digest");
+  if (verified_command_shape_sha256 !== undefined && !hex64(verified_command_shape_sha256)) throw new Error("overlay entry verified_command_shape_sha256 must be a SHA-256 hex digest");
   if (typeof route !== "string" || !route) throw new Error("overlay entry needs a route");
   if (!DIRECTIONS.includes(direction)) throw new Error(`overlay entry direction must be ${DIRECTIONS.join("|")}`);
   const modalities = direction === "input" ? INPUT_MODALITIES : OUTPUT_MODALITIES;
@@ -247,9 +256,14 @@ export function writeOverlayEntry(home, entry, { now = new Date(), machine = mac
     if (cell.level === "no") throw new Error(`${route}.${direction}.${modality} is a no cell in the baseline: it carries no invocation, harvest or mime, so a probe can neither promote nor block it`);
   }
   const nowMs = toMs(now);
-  const ttl = blocker ? OVERLAY_EXPIRY_MS[blocker] ?? null : SUCCESS_EXPIRY_MS;
+  // A success recorded for one command shape (see verified_command_shape_sha256) expires like any success.
+  const ttl = verified_command_shape_sha256 ? SUCCESS_EXPIRY_MS : blocker ? OVERLAY_EXPIRY_MS[blocker] ?? null : SUCCESS_EXPIRY_MS;
   const written = {
     route, direction, modality,
+    // Always stamped (the caller's, else this MOMM's own shape), so an entry on disk without a fingerprint
+    // can only come from an older MOMM and the legacy reading of it is unambiguous.
+    command_shape_sha256: entry.command_shape_sha256 ?? commandShapeSha256(route, direction, modality),
+    ...(verified_command_shape_sha256 ? { verified_command_shape_sha256 } : {}),
     ...(level !== undefined ? { level } : {}),
     ...(blocker !== undefined ? { blocker } : {}),
     ...(reason ? { reason: String(reason).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").slice(0, 400) } : {}),
@@ -326,6 +340,31 @@ export function effective({ home = os.homedir(), installedVersions, loginIdentit
     // Levels only ever go up: a probe can prove more than the documentation, never less.
     if (entry.level && LEVEL_RANK[entry.level] > LEVEL_RANK[cell.level]) { cell.level = entry.level; applied = true; }
     // A blocker applies to ANY non-no cell, baseline `verified` included; the level stands.
+    const scoped = Object.hasOwn(ROUTE_SCOPED_BLOCKERS, entry.blocker ?? "") ? ROUTE_SCOPED_BLOCKERS[entry.blocker] : null;
+    if (scoped && !scoped.includes(entry.route)) {
+      cell.blocker = "reprobe"; stamp(cell, entry);
+      cell.reason = `${entry.blocker} recorded ${entry.at} is a gate named in ${scoped.join(", ")}'s own phrasing, so it was misread from this route's reply; probe before routing${entry.reason ? ` (${entry.reason})` : ""}`;
+      result.overlay.reprobe++; continue;
+    }
+    // A success earned with a command older MOMM versions do not send is stored as probe_failed (which they
+    // refuse to route) plus verified_command_shape_sha256; this MOMM treats it as verified only for that shape.
+    if (entry.verified_command_shape_sha256) {
+      if (entry.verified_command_shape_sha256 === commandShapeSha256(entry.route, entry.direction, entry.modality)) {
+        if (entry.level && LEVEL_RANK[entry.level] > LEVEL_RANK[cell.level]) cell.level = entry.level;
+        cell.blocker = null; stamp(cell, entry); cell.reason = null; result.overlay.applied++; continue;
+      }
+      cell.blocker = "reprobe"; stamp(cell, entry);
+      cell.reason = `success recorded ${entry.at} was verified for a different MOMM command for this cell; probe before routing`;
+      result.overlay.reprobe++; continue;
+    }
+    // 1.17 A9: evidence earned by a different command shape does not vouch for this MOMM's command.
+    // Account gates (ZDR, quota, tier) do not depend on the command and stand.
+    const recordedShape = entry.command_shape_sha256 ?? legacyCommandShapeSha256(entry.route, entry.direction, entry.modality);
+    if (!ACCOUNT_GATES.has(entry.blocker) && recordedShape !== commandShapeSha256(entry.route, entry.direction, entry.modality)) {
+      cell.blocker = "reprobe"; stamp(cell, entry);
+      cell.reason = `${entry.blocker ?? "successful probe"} recorded ${entry.at} was earned by a different MOMM command for this cell; probe before routing${entry.reason ? ` (${entry.reason})` : ""}`;
+      result.overlay.reprobe++; continue;
+    }
     if ("blocker" in entry) { cell.blocker = entry.blocker ?? null; applied = true; }
     if (applied) { stamp(cell, entry); cell.reason = entry.reason ?? null; result.overlay.applied++; }
   }

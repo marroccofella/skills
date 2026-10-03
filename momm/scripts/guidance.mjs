@@ -14,13 +14,13 @@
 // user did not approve. Trust is per file: approving one hash never trusts the
 // companion file.
 //
-// .reviewrules grace (1.16 only). MOMM 1.15 applied a project's .reviewrules
-// unconditionally, so projects that already ship one would silently lose their
-// rules the day trust gating arrived. 1.16 therefore still applies an untrusted
-// .reviewrules by default (`reviewrulesGrace: true`) but says so loudly: the
-// notice names the risk (clone-supplied text entering every reviewer prompt)
-// and the exact trust command. The grace ends in 1.17, where the default flips
-// to skip-until-trusted; `reviewrulesGrace: false` is that behaviour today.
+// .reviewrules trust (1.17 A8). MOMM 1.15 applied a project's .reviewrules
+// unconditionally; 1.16 kept applying an untrusted one by default for one release
+// (the grace) with a loud notice. The grace ended in 1.17: an untrusted
+// .reviewrules is skipped until the owner trusts its exact hash, so a cloned
+// repository cannot inject reviewer instructions by default. The notice names the
+// hash and the exact trust command. `reviewrulesGrace: true` remains only as an
+// explicit caller opt-in for tests and migration tooling; no command-line flag sets it.
 //
 // Guidance text is returned to the caller (who sanitises it with the same
 // scanner as the artifact) and persisted ONLY in the local 0600 sidecar; the
@@ -248,7 +248,7 @@ function stack(layers, scope) {
   return { layers: meta, text, sha256: hashOrNull(text) };
 }
 
-export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = {}, cli = {}, reviewrulesGrace = true } = {}) {
+export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = {}, cli = {}, reviewrulesGrace = false } = {}) {
   const dir = path.resolve(cwd);
   const key = trustKey(dir);
   const routeList = routes ?? Object.keys(personas);
@@ -267,7 +267,7 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
     if (trusted || reviewrulesGrace) {
       try {
         rules = assertBlock(rulesRead.bytes.toString("utf8").replace(/\r\n/g, "\n").trim().slice(0, REVIEWRULES_CLIP), ".reviewrules", files.reviewrules, REVIEWRULES_CLIP);
-        if (!trusted) notices.push(`.reviewrules applied WITHOUT trust (1.16 grace period): text that arrived with this clone is being injected into every reviewer prompt unreviewed (sha256 ${sha}). MOMM 1.17 will skip it until trusted. Read the file, then run: ${trustCommand(sha)}`);
+        if (!trusted) notices.push(`.reviewrules applied WITHOUT trust (explicit grace requested by the caller): text that arrived with this clone is being injected into every reviewer prompt unreviewed (sha256 ${sha}). Without the explicit grace it is skipped until trusted. Read the file, then run: ${trustCommand(sha)}`);
       } catch (e) { rules = null; notices.push(`.reviewrules skipped: ${e.message}`); }
     } else {
       notices.push(`.reviewrules skipped: not trusted (sha256 ${sha}). To apply it run: ${trustCommand(sha)}`);
@@ -319,6 +319,11 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
     }
     const persona = personas[route];
     if (typeof persona === "string" && persona) resolved.layers.unshift({ name: "persona", sha256: sha256(persona), chars: persona.length });
+    // 1.17 B1: a role brief from momm/roles is hashed from its file bytes (the caller passes that
+    // digest), and the adversary's included checklist is recorded beside it.
+    else if (persona && typeof persona === "object" && typeof persona.text === "string" && persona.text && /^[0-9a-f]{64}$/.test(persona.sha256 ?? "")) {
+      resolved.layers.unshift({ name: "persona", sha256: persona.sha256, chars: persona.text.length, ...(/^[0-9a-f]{64}$/.test(persona.checklist_sha256 ?? "") ? { checklist_sha256: persona.checklist_sha256 } : {}) });
+    }
     resolvedRoutes[route] = resolved;
   }
 
@@ -331,9 +336,10 @@ export function resolveGuidance({ cwd = process.cwd(), home, routes, personas = 
 
 // --- Persistence and reporting ------------------------------------------------
 // The sidecar is the ONLY place resolved guidance text is written.
-export function writeGuidanceSidecar(cwd, runId, resolved) {
+// evidence: the resolved evidence folder (1.17 A7); the in-project folder when omitted.
+export function writeGuidanceSidecar(cwd, runId, resolved, evidence = path.join(path.resolve(cwd), ".ensemble_reviews")) {
   if (typeof runId !== "string" || !RUN_ID.test(runId)) throw new Error(`Refusing guidance sidecar for run id ${JSON.stringify(runId)}: expected /^rev_[A-Za-z0-9_]+$/`);
-  const file = path.join(path.resolve(cwd), ".ensemble_reviews", "guidance", `${runId}.json`);
+  const file = path.join(evidence, "guidance", `${runId}.json`);
   const body = { run_id: runId, written_at: new Date().toISOString(), budget: resolved.budget, notices: resolved.notices, routes: resolved.routes, governor: resolved.governor };
   // Owner-only, like the trust store: the evidence folder is inspected again after this write, and
   // on POSIX a directory created with the default mode would fail that inspection.
@@ -345,7 +351,7 @@ export function writeGuidanceSidecar(cwd, runId, resolved) {
 export function guidanceReportFields(resolved) {
   const routes = {};
   for (const [route, r] of Object.entries(resolved.routes)) {
-    routes[route] = { sha256: r.sha256, layers: r.layers.map((l) => ({ name: l.name, sha256: l.sha256 })) };
+    routes[route] = { sha256: r.sha256, layers: r.layers.map((l) => ({ name: l.name, sha256: l.sha256, ...(l.checklist_sha256 ? { checklist_sha256: l.checklist_sha256 } : {}) })) };
   }
   return { guidance: { routes, governor_sha256: resolved.governor?.sha256 ?? null } };
 }

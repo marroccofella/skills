@@ -8,11 +8,15 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest } from "./governor.mjs";
+import { inspectCompletion, recordCompletion, captureSourceSnapshot, normalizeTarget, digest, reviewStaleness } from "./governor.mjs";
 import { resolveGit as resolveGitForTest } from './governor.mjs';
+import { pathEntryOutside, executableOutside } from './process-scope.mjs';
+import { classifyStyleChange, STYLE_DIRECTIVES, STYLE_CLASSIFIER_VERSION } from "./style-classifier.mjs";
+import { commandShapeSha256 } from "./route-isolation.mjs";
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
+import { evidenceLocation } from "./evidence-location.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");
@@ -20,7 +24,7 @@ const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");
 const core = vm.runInNewContext(source.slice(source.indexOf("function extractJsonObjects("), source.indexOf("function classifyFailure("))
   + source.slice(source.indexOf("function fingerprint("), source.indexOf("function buildInsights("))
   + "\n({unwrapReviewPayload,normalizeReview,rationalize,buildOutstanding})", {
-    PEER_CONTRACT, VALID_VERDICTS: new Set(["ACCEPT", "MODIFY", "REJECT"]), VALID_SEVERITIES: new Set(["CRITICAL", "WARNING", "NITPICK"]), fs, os, path,
+    PEER_CONTRACT, VALID_VERDICTS: new Set(["ACCEPT", "MODIFY", "REJECT"]), VALID_SEVERITIES: new Set(["CRITICAL", "WARNING", "NITPICK"]), fs, os, path, evidenceLocation, process,
   });
 const passed = [];
 const test = (name, fn) => { fn(); passed.push(name); };
@@ -89,6 +93,222 @@ try {
   test("finding ids cannot collide after normalization", () => { const f = { id: "same", severity: "WARNING", target_file: null, line_range: null, issue: "Issue", rationale: "Reason", test_suggestion: null }; assert(reviewProblem(peer({ findings: [f, { ...f, id: " same " }] }), good)); });
   test("nonfinal/error terminal cannot rescue earlier output", () => assert.equal(core.unwrapReviewPayload(JSON.stringify(peer()) + '\n{"stopReason":"tool_use"}'), null));
   test("final review follows intermediate envelope", () => assert(core.unwrapReviewPayload('{"stopReason":"tool_use"}\n' + JSON.stringify(peer()))));
+  // 1.17 B2 typed claims (plan-1.17.md). The type is additive and separate from severity.
+  const typed = (claim_type, extra = {}) => ({ id: "typed-claim", severity: "WARNING", target_file: null, line_range: null, issue: "The typed claim issue.", rationale: "The typed claim reason.", test_suggestion: null, ...(claim_type === undefined ? {} : { claim_type }), ...extra });
+  test("B2: a typed claim survives validation and normalisation; an untyped claim stays valid", () => {
+    for (const t of ["DEFECT", "RISK", "QUESTION", "IDEA", "NOISE"]) {
+      assert.equal(reviewProblem(peer({ findings: [typed(t)] }), good), null, t);
+      assert.equal(core.normalizeReview("claude", peer({ findings: [typed(t)] })).findings[0].claim_type, t);
+    }
+    assert.equal(reviewProblem(peer({ findings: [typed(undefined)] }), good), null);
+    assert.equal(reviewProblem(peer({ findings: [typed(null)] }), good), null);
+    assert.equal(core.normalizeReview("claude", peer({ findings: [typed(undefined)] })).findings[0].claim_type, null, "an untyped claim is recorded as null");
+  });
+  test("B2: an unknown claim_type is refused, never coerced", () => {
+    for (const bad of ["BUG", "defect", "", 1, ["DEFECT"], {}]) assert.match(reviewProblem(peer({ findings: [typed(bad)] }), good) ?? "accepted", /claim_type/, JSON.stringify(bad));
+  });
+  test("B2: a merged claim takes the most blocking type of its sources and a merge never lowers it", () => {
+    const merge = (...types) => core.rationalize(types.map((t, i) => ({ agent: `route${i}`, status: "success", review: core.normalizeReview(`route${i}`, peer({ findings: [typed(t)] })) })), { artifact: good });
+    const one = (...types) => { const merged = merge(...types); assert.equal(merged.length, 1, "same-id claims must merge"); assert.equal(merged[0].sources.length, types.length); return merged[0].claim_type; };
+    assert.equal(one("NOISE", "RISK"), "RISK");
+    assert.equal(one("RISK", "NOISE"), "RISK");
+    assert.equal(one("QUESTION", "DEFECT", "IDEA"), "DEFECT");
+    assert.equal(one("IDEA", "QUESTION"), "QUESTION");
+    assert.equal(one(undefined, "IDEA"), "IDEA");
+    assert.equal(one("NOISE", undefined), "NOISE");
+    assert.equal(one(undefined, undefined), null);
+  });
+  test("B2: severity gates independently of type: a CRITICAL IDEA and a WARNING NOISE are still material", () => {
+    for (const [type, severity] of [["IDEA", "CRITICAL"], ["NOISE", "WARNING"]]) {
+      const review = core.normalizeReview("claude", peer({ findings: [typed(type, { severity })] }));
+      assert.equal(review.findings[0].claim_type, type);
+      const results = [{ agent: "claude", status: "success", review }];
+      const merged = core.rationalize(results, { artifact: good });
+      assert.equal(core.buildOutstanding(merged, results, "rev_typed_material", fixture, 1).material_findings_awaiting_reproduction, 1);
+    }
+  });
+  // 1.17 A3 image observations: kept as unverifiable observations, never as quotes.
+  test("A3: observation entries are recorded as unverifiable observations; unknown bounds are recorded as unchecked", () => {
+    const sha = "a".repeat(64);
+    const payload = peer({ reviewed_scope: [peer().reviewed_scope[0], { attachment_sha256: sha, observation: "A red square fills the frame.", assessment: "Matches the brief.", region: [0, 0, 8, 8] }] });
+    const checked = core.normalizeReview("claude", payload, { attachments: [{ sha256: sha, width: 64, height: 64 }] }).reviewed_scope;
+    assert.equal(checked[0].quote, "a.length"); assert.equal(checked[0].kind, undefined, "quote entries are unchanged");
+    assert.equal(checked[1].kind, "observation"); assert.equal(checked[1].quote, undefined); assert.equal(checked[1].attachment_sha256, sha);
+    assert.equal(checked[1].unverifiable, true); assert.equal(checked[1].region.join(","), "0,0,8,8"); assert.equal(checked[1].region_unchecked, undefined);
+    const unchecked = core.normalizeReview("claude", payload, { attachments: [{ sha256: sha }] }).reviewed_scope[1];
+    assert.equal(unchecked.kind, "observation"); assert.equal(unchecked.region_unchecked, true);
+  });
+
+  // 1.17 B4.1: `style` is decided mechanically from the bytes, never from the governor's label.
+  const S = (file, before, after) => classifyStyleChange(file, Buffer.isBuffer(before) ? before : Buffer.from(before), Buffer.isBuffer(after) ? after : Buffer.from(after));
+  test('mechanical style: whitespace and comment-only edits classify as style', () => {
+    for (const [file, before, after] of [
+      ['a.js', 'x();\n', 'x();\n'],
+      ['README.md', 'unchanged\n', 'unchanged\n'],
+      ['a.js', 'x();\n', '// explain x\nx();\n'],
+      ['a.mjs', '// old words\nx();\n', '// new words\nx();\n'],
+      ['a.cjs', 'x();\n', '    x();   \n'],
+      ['a.cjs', 'x();\r\n', 'x();\n'],
+      ['a.ts', 'x();\ny();\n', 'x();\n\ny();\n'],
+      ['a.tsx', 'const a = 1;\n', '/* note */\nconst a = 1;\n'],
+      ['a.js', 'if (a) {\n  b();\n}\n', 'if (a) {\n\tb();\n}\n'],
+      ['a.js', 'const r = /\\/\\//;\n', '// matches two slashes\nconst r = /\\/\\//;\n'],
+      ['a.java', 'int x = 1;\n', '// why\nint x = 1;\n'],
+      ['a.go', 'x := 1\n', '// why\nx := 1\n'],
+      ['a.rs', 'let x = 1;\n', '// why\nlet x = 1;\n'],
+      ['a.c', 'int x;\n', '/* why */\nint x;\n'],
+      ['a.css', 'a { color: red; }\n', '/* brand */\na { color: red; }\n'],
+      ['a.py', '# old\nx = 1\n', '# new\nx = 1\n'],
+      ['a.py', 'x = 1\ny = 2\n', 'x = 1\n\ny = 2\n'],
+      ['a.sh', 'echo hi\n', '# greet\necho hi\n'],
+      ['a.bash', 'echo "${#arr[@]}"\n', 'echo "${#arr[@]}"\n# count\n'],
+      ['a.yaml', 'a: 1\n', '# setting\na: 1\n'],
+      ['a.yml', 'a: 1 # old\n', 'a: 1 # old\n# new line\n'],
+      ['a.toml', 'a = 1\n', '# setting\na = 1\n'],
+      ['a.rb', 'puts 1\n', '# say\nputs 1\n'],
+      ['a.ps1', 'Write-Host 1\n', '# say\nWrite-Host 1\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, true, `${file}: ${JSON.stringify(r)}`); assert.equal(r.reason, null); }
+  });
+  test('mechanical style: a commented-out code line is behavior (the change_kind loophole)', () => {
+    const r = S('src/a.js', 'a();\nb();\n', 'a();\n// b();\n');
+    assert.equal(r.style, false); assert.equal(r.reason, 'src/a.js:2 changes code');
+    assert.match(S('a.js', 'a();\n// b();\n', 'a();\nb();\n').reason, /a\.js:2 changes code/, 'a comment turned into code is behavior too');
+    assert.match(S('a.py', 'x = 1\n', '# x = 1\n').reason, /a\.py:1 changes code/);
+    assert.match(S('a.sh', 'rm -rf build\n', '# rm -rf build\n').reason, /a\.sh:1 changes code/);
+    assert.match(S('a.css', 'a { color: red; }\n', '/* a { color: red; } */\n').reason, /changes code/);
+  });
+  test('mechanical style: code, string content, trailing comments and hidden strings count as code', () => {
+    for (const [file, before, after] of [
+      ['a.js', 'x = a + 1;\n', 'x = a + 2;\n'],
+      ['a.js', 's = "a b";\n', 's = "a  b";\n'],
+      ['a.js', 'return x;\n', 'returnx;\n'],
+      ['a.js', 'x();\n', 'x(); // why\n'],
+      ['a.js', 'a = b + c;\n', 'a = b +\n  c;\n'],
+      ['a.js', 'const t = `\n// inside\n`;\n', 'const t = `\n// changed\n`;\n'],
+      ['a.js', 'const t = `\nx\n`;\n', 'const t = `\n  x\n`;\n'],
+      ['a.js', 'const t = `${a}\n// inside\n`;\n', 'const t = `${a}\n// changed\n`;\n'],
+      ['a.js', '/*\n * old\n */\nx();\n', '/*\n * new\n */\nx();\n'],
+      ['a.py', 's = """\n# inside\n"""\n', 's = """\n# changed\n"""\n'],
+      ['a.py', "s = '''\n# inside\n'''\n", "s = '''\n# changed\n'''\n"],
+      ['a.yaml', 'run: |\n  # inside\n  echo\n', 'run: |\n  # changed\n  echo\n'],
+      ['a.sh', 'cat <<EOF\n# inside\nEOF\n', 'cat <<EOF\n# changed\nEOF\n'],
+      ['a.sh', 'echo "a\n# inside\n"\n', 'echo "a\n# changed\n"\n'],
+      ['a.rb', 'x = <<~TXT\n  # inside\nTXT\n', 'x = <<~TXT\n  # changed\nTXT\n'],
+      ['a.toml', 's = """\n# inside\n"""\n', 's = """\n# changed\n"""\n'],
+      ['a.ps1', "$s = @'\n# inside\n'@\n", "$s = @'\n# changed\n'@\n"],
+      ['a.rs', 'let s = r#"\n// inside\n"#;\n', 'let s = r#"\n// changed\n"#;\n'],
+      ['a.rs', 'let s = "\n// inside\n";\n', 'let s = "\n// changed\n";\n'],
+      // Gate-3 review of 1.17.0: an escaped char literal ('\\' here) swallowed its closing quote, so the
+      // string that follows was misread and a line inside it looked like a comment.
+      ['a.rs', "let s = ('\\\\', \"x');\n// inside string\n\"); let t = '\"';\n", "let s = ('\\\\', \"x');\n// changed string\n\"); let t = '\"';\n"],
+      ['a.rs', "let q = '\\'';\nlet s = \"a\n// in\n\";\n", "let q = '\\'';\nlet s = \"a\n// out\n\";\n"],
+      ['a.cs', 'var s = @"\n// inside\n";\n', 'var s = @"\n// changed\n";\n'],
+      ['a.go', 's := `\n// inside\n`\n', 's := `\n// changed\n`\n'],
+      ['a.java', 'String s = """\n// inside\n""";\n', 'String s = """\n// changed\n""";\n'],
+      ['a.c', '// note\nint x;\n', '// note \\\nint x;\n'],
+      ['a.c', '#define X a \\\n  b\n', '#define X a \\\n\n  b\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file} ${JSON.stringify(after)} must not be style`); assert.match(r.reason, /changes code|unclassifiable/, r.reason); }
+  });
+  test('mechanical style: a comment carrying a tool directive is behavior', () => {
+    for (const id of ['eslint-disable', 'eslint-enable', '@ts-ignore', '@ts-expect-error', '@ts-nocheck', 'prettier-ignore', 'istanbul ignore', 'c8 ignore', 'noqa', 'type: ignore', 'pragma', '#!', '-*- coding', 'nolint', 'NOSONAR'])
+      assert(STYLE_DIRECTIVES.some(d => d.id === id), `directive list must carry ${id}`);
+    assert.match(STYLE_CLASSIFIER_VERSION, /^momm-style\/\d+$/);
+    for (const [file, before, after] of [
+      ['a.js', 'x();\n', '// eslint-disable-next-line\nx();\n'],
+      ['a.js', '// eslint-disable-next-line no-console\nx();\n', 'x();\n'],
+      ['a.js', '/* eslint-enable */\nx();\n', 'x();\n'],
+      ['a.ts', '// @ts-ignore\nx();\n', '// @ts-expect-error\nx();\n'],
+      ['a.ts', 'x();\n', '// @ts-nocheck\nx();\n'],
+      ['a.js', 'x();\n', '/* istanbul ignore next */\nx();\n'],
+      ['a.js', 'x();\n', '// c8 ignore next\nx();\n'],
+      ['a.js', 'x();\n', '// prettier-ignore\nx();\n'],
+      ['a.py', 'x = 1\n', '# noqa: E501\nx = 1\n'],
+      ['a.py', 'x = 1\n', '# type: ignore\nx = 1\n'],
+      ['a.py', 'x = 1\n', '# pragma: no cover\nx = 1\n'],
+      ['a.py', 'x = 1\n', '# -*- coding: latin-1 -*-\nx = 1\n'],
+      ['a.sh', '#!/bin/bash\necho\n', '#!/bin/sh\necho\n'],
+      ['a.go', 'x()\n', '//nolint:errcheck\nx()\n'],
+      ['a.java', 'x();\n', '// NOSONAR\nx();\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file}: ${after}`); assert.match(r.reason, new RegExp(`^${file.replace('.', '\\.')}:\\d+ carries a directive$`), r.reason); }
+  });
+  test('mechanical style: whitespace-significant files fail closed on whitespace changes to code', () => {
+    assert.match(S('a.py', 'if a:\n    b()\n', 'if a:\n  b()\n').reason, /a\.py:2 changes whitespace in a whitespace-significant file/);
+    assert.match(S('a.yml', 'a:\n  b: 1\n', 'a:\n    b: 1\n').reason, /whitespace-significant/);
+    assert.match(S('a.py', 'x = 1\n', 'x = 1   \n').reason, /whitespace-significant/);
+    for (const file of ['Makefile', 'makefile', 'rules.mk', 'Main.hs']) assert.match(S(file, 'all:\n\techo\n', 'all:\n\techo\n# note\n').reason, /unclassifiable/, file);
+  });
+  test('mechanical style: files without a known comment syntax are unclassifiable', () => {
+    for (const [file, before, after] of [
+      ['README.md', 'a\n', 'b\n'], ['a.json', '{"a":1}\n', '{"a": 1}\n'], ['a.html', '<p>a</p>\n', '<!-- n -->\n<p>a</p>\n'],
+      ['a.unknown', 'a\n', ' a\n'], ['LICENSE', 'a\n', 'a \n'],
+      ['a.js', Buffer.from([0x78, 0x00, 0x0a]), Buffer.from([0x78, 0x00, 0x0a, 0x0a])],
+      ['a.js', Buffer.from([0x78, 0xff, 0x0a]), Buffer.from([0x78, 0xff, 0x0a, 0x0a])],
+      ['a.js', '// @generated by protoc\nx();\n', '// @generated by protoc\n// hi\nx();\n'],
+      ['a.go', '// Code generated by stringer. DO NOT EDIT.\nx()\n', '// Code generated by stringer. DO NOT EDIT.\n\nx()\n'],
+      ['vendor.min.js', 'x();\n', '// hi\nx();\n'],
+      ['a.jsx', 'const a = (\n  <div>\n    // hello\n  </div>\n);\n', 'const a = (\n  <div>\n    // goodbye\n  </div>\n);\n'],
+      ['a.swift', 'let s = #"\n// inside\n"#\n', 'let s = #"\n// changed\n"#\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, file); assert.match(r.reason, /unclassifiable/, `${file}: ${r.reason}`); }
+  });
+  test('mechanical style: a long minified line is classified in linear time', () => {
+    // A per-character slice made this quadratic: 400 KB took minutes. Linear, it is well under a second.
+    const line = 'x = a(b)/c; ' + 'q(r)/s; '.repeat(50_000) + '\n', started = Date.now();
+    assert.equal(S('a.js', line, '// minified\n' + line).style, true);
+    assert(Date.now() - started < 10_000, `took ${Date.now() - started} ms`);
+  });
+  test('mechanical style: a Rust escaped char literal never opens a phantom string (gate-3 rust-char-escape-scan-offset)', () => {
+    // '\\' was scanned from the escaped character, so the next '"' opened a string and real string content
+    // was compared as code with its whitespace collapsed: a string change passed as style.
+    const before = String.raw`let a = ('\\', '"'); let s = "a  b";` + '\n' + String.raw`let t = "c"; let u = '"';` + '\n';
+    const r = S('src/x.rs', before, before.replace('"a  b"', '"a b"'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'src/x.rs:1 changes code');
+    assert.equal(S('src/x.rs', String.raw`let q = ['\'', '"']; let s = "a  b";` + '\n', String.raw`let q = ['\'', '"']; let s = "a b";` + '\n').style, false);
+    assert.equal(S('src/x.rs', String.raw`let c = '\\';` + '\n', String.raw`let c = '\\';` + '\n// why\n').style, true, 'a comment beside it is still style');
+  });
+  test('mechanical style: the opening line of a multi-line block comment is part of the comparison (final review)', () => {
+    // Its text was never recorded, so a directive there (or any rewording) left the line key unchanged.
+    for (const [file, before, after] of [
+      ['a.js', '/* hello\n * world\n */\nfoo();\n', '/* eslint-disable\n * world\n */\nfoo();\n'],
+      ['a.js', 'const x = 1; /* note\n */\n', 'const x = 1; /* @ts-ignore\n */\n'],
+      ['a.c', 'int x; /* a\n */\n', 'int x; /* NOLINTBEGIN\n */\n'],
+      ['a.js', '/* old\n */\nx();\n', '/* new\n */\nx();\n'],
+      ['a.rs', '/* a /* b */\n */\nx();\n', '/* a /* c */\n */\nx();\n'],
+      ['a.ps1', '<# old\n#>\nx\n', '<# new\n#>\nx\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file} ${JSON.stringify(after)}: ${JSON.stringify(r)}`); assert.match(r.reason, /:1 (?:changes code|carries a directive)$/, r.reason); }
+    assert.equal(S('a.js', 'x(); /* a\n */\n', 'x();  /* a\n */\n').style, true, 'whitespace between code and the comment is still style');
+  });
+  test('mechanical style: a directive is seen through whitespace, and on a line whose key is unchanged (final review)', () => {
+    // Go honours '//export Foo' and '//line f:1' but not their tab forms, and '//  +build' (any spacing).
+    for (const [file, before, after] of [
+      ['a.go', 'package p\n//export\tFoo\nfunc Foo() {}\n', 'package p\n//export Foo\nfunc Foo() {}\n'],
+      ['a.go', 'package p\n//line\tx.go:10\nvar a = 1\n', 'package p\n//line x.go:10\nvar a = 1\n'],
+      ['a.go', 'package p\n', '//  +build ignore\n\npackage p\n'],
+      ['a.go', 'package p\n', '//\t+build ignore\n\npackage p\n'],
+      ['a.js', 'x(); // eslint-disable-line\n', 'x();  // eslint-disable-line\n'],
+      ['a.js', '// eslint-disable-next-line  no-console\nx();\n', '// eslint-disable-next-line no-console\nx();\n'],
+    ]) { const r = S(file, before, after); assert.equal(r.style, false, `${file} ${JSON.stringify(after)}`); assert.match(r.reason, /carries a directive$/, r.reason); }
+    assert.equal(S('a.go', 'package p\n// plain  words\n', 'package p\n// plain words\n').style, true, 'a whitespace change in a plain comment is still style');
+    assert.equal(S('a.js', '// eslint-disable-next-line\nx();\n', '// eslint-disable-next-line\nx();\n// why\n').style, true, 'an untouched directive beside a new comment is still style');
+  });
+  test('mechanical style: a non-BMP Rust char literal is a literal, never a lifetime (final review)', () => {
+    // '🦀' was taken for a lifetime; its closing quote then swallowed the next char literal '"', whose
+    // quote opened a phantom string, so a line inside a real string read as a comment.
+    const rs = x => `let v = ('\u{1F980}','"');\nlet s = "\n// ${x}\n";\nlet w = ('\u{1F980}','"');\n`;
+    const r = S('src/x.rs', rs('a'), rs('b'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'src/x.rs:3 changes code');
+    const arr = x => `const V: [char; 2] = ['\u{10348}','"'];\nconst S: &str = "\n// ${x}\n";\n`;
+    assert.equal(S('src/x.rs', arr('one'), arr('two')).reason, 'src/x.rs:3 changes code');
+    assert.equal(S('src/x.rs', "let c = '\u{1F980}';\n// a\n", "let c = '\u{1F980}';\n// b\n").style, true, 'a comment after it is still a comment');
+    assert.equal(S('src/x.rs', "fn f<'a>(x: &'a str) {}\n// a\n", "fn f<'a>(x: &'a str) {}\n// b\n").style, true, 'lifetimes are unchanged');
+  });
+  test("mechanical style: a Ruby embedded document ends only at '=end' and whitespace or the line end (final review)", () => {
+    // '=endx' does not end it in Ruby; closing there desynchronised the scan and string content read as comments.
+    const rb = (end, x) => `=begin\n${end}\n"\n=end\ns = "\n# ${x}\n"\nt = 1 # "\n`;
+    const r = S('a.rb', rb('=endx', 'a'), rb('=endx', 'b'));
+    assert.equal(r.style, false, JSON.stringify(r)); assert.equal(r.reason, 'a.rb:6 changes code');
+    assert.equal(S('a.rb', rb('=end x', 'a'), rb('=end x', 'b')).style, true, "'=end x' does end it, so line 6 is a real comment");
+    assert.equal(S('a.rb', '=begin\nold\n=end\n1\n', '=begin\nold\n=end\n1\n# c\n').style, true);
+  });
 
   write("mean.cjs", buggy);
   write("mean.test.cjs", 'const assert = require("node:assert/strict"); const mean = require("./mean.cjs"); assert.equal(mean([2,4]),3); assert.equal(mean([1,2]),1.5); console.log("mean checks passed");\n');
@@ -96,7 +316,8 @@ try {
   const base = JSON.parse(dispatch.stdout);
   test("real dispatcher self-excludes governor and refuses quorum", () => { assert.equal(dispatch.status, 3); assert.equal(base.reviewers[0].status, "self_excluded"); assert.equal(base.outstanding.complete, false); });
   test("real dispatcher captures reviewed source", () => assert.equal(base.source_snapshot.files[0].sha256, digest(buggy)));
-  const finding = { id: "wrong-divisor", severity: "WARNING", target_file: "mean.cjs", line_range: [1, 1], issue: "The extra divisor count produces an incorrect mean.", rationale: "[2,4] must average to 3.", test_suggestion: 'require("fs").writeFileSync("PEER_EXECUTED", "bad")' };
+  // Typed IDEA on purpose: a real defect mistyped as an idea must still gate on its severity (plan-1.17 gate self-audit).
+  const finding = { id: "wrong-divisor", severity: "WARNING", claim_type: "IDEA", target_file: "mean.cjs", line_range: [1, 1], issue: "The extra divisor count produces an incorrect mean.", rationale: "[2,4] must average to 3.", test_suggestion: 'require("fs").writeFileSync("PEER_EXECUTED", "bad")' };
   const responses = [
     { agent: "claude", status: "success", review: core.normalizeReview("claude", peer({ verdict: "MODIFY", findings: [finding], suggested_improvements: ["Round all results", "Change the public API"] })) },
     { agent: "grok", status: "success", review: core.normalizeReview("grok", peer({ verdict: "MODIFY", suggested_improvements: ["Keep fractional precision", "Change the public API"] })) },
@@ -104,7 +325,9 @@ try {
   const findings = core.rationalize(responses, { artifact: buggy, prose: false });
   const report = { ...base, attempt_evidence: undefined, attempt_accounting: undefined, test_fixture: "controlled reviewer transport; not real provider approval", run_id: "rev_fixture_lifecycle", source_snapshot: captureSourceSnapshot(fixture, buggy, "mean.cjs"),
     quorum: { required: 2, achieved: 2, met: true }, gate_policy: { strict: false, quorum_required: 2, requested_routes: ["claude", "grok"] },
-    reviewers: responses.map(r => ({ agent: r.agent, status: r.status, verdict: r.review.verdict, confidence: r.review.confidence, summary: r.review.summary, review_contract: PEER_CONTRACT, reviewed_scope: r.review.reviewed_scope, suggested_improvements: r.review.improvements })),
+    reviewers: responses.map(r => ({ agent: r.agent, status: r.status, verdict: r.review.verdict, confidence: r.review.confidence, summary: r.review.summary, review_contract: PEER_CONTRACT, reviewed_scope: r.review.reviewed_scope, suggested_improvements: r.review.improvements,
+      // B6: a 1.17 report records `role`; an older one only `persona`, which stands in for it.
+      ...(r.agent === "claude" ? { role: "adversary", persona: "adversary" } : { persona: "architect" }) })),
     findings, outstanding: core.buildOutstanding(findings, responses, "rev_fixture_lifecycle", fixture, 2) };
   const reportPath = `.ensemble_reviews/reports/${report.run_id}.json`;
   write(reportPath, report);
@@ -139,6 +362,57 @@ try {
   decisions(rows);
   const healthy = () => inspectCompletion(fixture, report.run_id);
   test("all actual lifecycle evidence closes the run", () => assert.equal(healthy().complete, true, JSON.stringify(healthy())));
+  // B2: the governor may re-type (or re-grade) a claim only in its decision row, recorded against the report's value.
+  const onFinding = change => rows.map(r => r.finding_id ? { ...r, ...change } : r);
+  const withRows = (value, fn) => { decisions(value); try { return fn(healthy()); } finally { decisions(rows); } };
+  test("B2: the report keeps the merged claim type and a WARNING IDEA still awaits reproduction", () => {
+    assert.equal(report.findings[0].claim_type, "IDEA");
+    assert.equal(report.outstanding.material_findings_awaiting_reproduction, 1);
+  });
+  test("B2: an unrecorded re-type in a decision row is refused", () => withRows(onFinding({ claim_type: "DEFECT" }), result => {
+    assert.equal(result.complete, false);
+    assert(result.unresolved.some(u => /re-typ/.test(u.reason)), JSON.stringify(result.unresolved));
+  }));
+  for (const [name, change] of [
+    ["a re-type naming the wrong original type", { claim_type: "DEFECT", retyped_from: "RISK", retype_reason: "Reproduced as a real defect." }],
+    ["a re-type without a reason", { claim_type: "DEFECT", retyped_from: "IDEA", retype_reason: "  " }],
+    ["a re-type to an unknown type", { claim_type: "BUG", retyped_from: "IDEA", retype_reason: "Reproduced." }],
+    ["a stray retyped_from that is not the report's type", { retyped_from: "NOISE", retype_reason: "Reproduced." }],
+    ["an unrecorded severity change", { severity: "NITPICK" }],
+    ["a severity change naming the wrong original", { severity: "NITPICK", severity_from: "CRITICAL", severity_reason: "Cosmetic only." }],
+    ["a severity change without a reason", { severity: "NITPICK", severity_from: "WARNING" }],
+  ]) test(`B2: ${name} is refused`, () => withRows(onFinding(change), result => assert.equal(result.complete, false, JSON.stringify(change))));
+  test("B2: a recorded re-type is accepted", () => withRows(onFinding({ claim_type: "DEFECT", retyped_from: "IDEA", retype_reason: "Reproduced by mean.test.cjs; a real defect, not an idea." }),
+    result => assert.equal(result.complete, true, JSON.stringify(result.unresolved))));
+  test("B2: a decision row repeating the report's type needs no re-type record", () => withRows(onFinding({ claim_type: "IDEA" }), result => assert.equal(result.complete, true, JSON.stringify(result.unresolved))));
+  test("B2: a recorded severity lowering is accepted but never waives reproduction", () => {
+    const lowered = { severity: "NITPICK", severity_from: "WARNING", severity_reason: "Governor judges the impact cosmetic." };
+    withRows(onFinding(lowered), result => assert.equal(result.complete, true, JSON.stringify(result.unresolved)));
+    withRows(onFinding({ ...lowered, change_kind: "style", reproduction: null }), result => assert.equal(result.complete, false, "the report's WARNING stays material"));
+  });
+  // B6: a decision row may carry `role`; when given it must be the report's role for that reviewer.
+  test("B6: a decision row may copy its reviewer's role from the report", () => withRows(onFinding({ role: "adversary" }),
+    result => assert.equal(result.complete, true, JSON.stringify(result.unresolved))));
+  test("B6: for an older report the reviewer's persona is its role", () => withRows(rows.map(r => r.reviewer === "grok" ? { ...r, role: "architect" } : r),
+    result => { assert(rows.some(r => r.reviewer === "grok")); assert.equal(result.complete, true, JSON.stringify(result.unresolved)); }));
+  for (const [name, role] of [["a role the report does not record for that reviewer", "surgeon"], ["another reviewer's role", "architect"], ["an empty role", ""], ["a non-string role", 7]])
+    test(`B6: ${name} is refused`, () => withRows(onFinding({ role }), result => {
+      assert.equal(result.complete, false, JSON.stringify(role));
+      assert(result.unresolved.some(u => /role/.test(u.reason)), JSON.stringify(result.unresolved));
+    }));
+  test("peer contract momm-peer-review/3 is current; a sealed 1.16.1 /2 report still validates; /1 stays legacy", () => {
+    assert.equal(PEER_CONTRACT, "momm-peer-review/3");
+    const originalLog = fs.readFileSync(path.join(fixture, ".ensemble_reviews/review-log.jsonl"), "utf8");
+    try {
+      for (const [contract, legacy] of [["momm-peer-review/3", false], ["momm-peer-review/2", false], ["momm-peer-review/1", true], [undefined, true]]) {
+        const variant = { ...report, run_id: `rev_fixture_contract_${String(contract).replace(/\W/g, "_")}`, reviewers: report.reviewers.map(r => ({ ...r, review_contract: contract })) };
+        const p = `.ensemble_reviews/reports/${variant.run_id}.json`; write(p, variant);
+        fs.appendFileSync(path.join(fixture, ".ensemble_reviews/review-log.jsonl"), JSON.stringify({ run_id: variant.run_id, report_path: p, report_sha256: ref(p).sha256, input_sha256: variant.input_sha256 }) + "\n");
+        const errors = inspectCompletion(fixture, variant.run_id).errors;
+        assert.equal(errors.some(e => /legacy\/unverified reply contract/.test(e)), legacy, `${contract}: ${JSON.stringify(errors)}`);
+      }
+    } finally { write(".ensemble_reviews/review-log.jsonl", originalLog); }
+  });
   test('growing append-only logs do not exhaust the per-evidence-file allowance',()=>{
     for(const name of ['review-log.jsonl','dispositions.jsonl']){
       const file=path.join(fixture,'.ensemble_reviews',name),original=fs.readFileSync(file);
@@ -170,10 +444,161 @@ try {
     try{const result=healthy();assert(changed);assert.equal(result.complete,false);assert(result.errors.includes('evidence changed during read'));}
     finally{fs.readSync=readSync;fs.writeFileSync(file,original);}
   });
+  // A separately sealed one-file run whose only obligation is one suggestion, closed as `style`.
+  // `original` is reviewed; `changed` is what the governor leaves. Returns the validator's result.
+  const styleCase = (id, file, original, changed, { baseline = true, storeInput = false, row: extra = {} } = {}) => {
+    write(file, original);
+    const styleReport = { ...report, run_id: id, input_sha256: digest(original), source_snapshot: captureSourceSnapshot(fixture, original, file), findings: [],
+      reviewers: report.reviewers.map((r, i) => ({ ...r, suggested_improvements: i ? [] : ['Tidy the explanation'] })), ...(storeInput ? { input_text: original } : {}) };
+    const p = `.ensemble_reviews/reports/${id}.json`; write(p, styleReport); const seal = ref(p);
+    const log = path.join(fixture, '.ensemble_reviews/review-log.jsonl'), originalLog = fs.readFileSync(log);
+    fs.appendFileSync(log, JSON.stringify({ run_id: id, governor: 'codex', report_path: p, report_sha256: seal.sha256, input_sha256: styleReport.input_sha256 }) + '\n');
+    try {
+      const item = inspectCompletion(fixture, id).items[0];
+      const obs = (phase, at) => ({ schema: 'momm-check/1', run_id: id, item_id: phase === 'final' ? 'run' : item.item_id, report_sha256: seal.sha256, input_sha256: styleReport.input_sha256,
+        phase, exit_code: 0, observed_at: at, command_label: 'node mean.test.cjs (governor-authored)', test: ref('mean.test.cjs'), output: ref('evidence/after.txt'), artifacts: [ref(file)] });
+      let reproduction = null;
+      if (baseline) {
+        write(`evidence/${id}.original`, original);
+        const b = obs('before', '2026-01-02T00:00:00Z'); b.artifacts[0].snapshot = ref(`evidence/${id}.original`);
+        write(`evidence/${id}.before.json`, b); reproduction = ref(`evidence/${id}.before.json`);
+      }
+      write(file, changed);
+      write(`evidence/${id}.after.json`, obs('after', '2026-01-02T00:00:01Z'));
+      write(`.ensemble_reviews/verification/${id}.json`, obs('final', '2026-01-02T00:00:02Z'));
+      const row = { run_id: id, governor: 'codex', reviewer: 'claude', item_id: item.item_id, report_sha256: seal.sha256, input_sha256: styleReport.input_sha256,
+        suggestion: 'Tidy the explanation', disposition: 'applied', change_kind: 'style', reason: 'Comment-only edit; the same checks pass before and after.',
+        verification: ref(`evidence/${id}.after.json`), ...(reproduction ? { reproduction } : {}), ...extra };
+      decisions([...rows, row]);
+      return { result: inspectCompletion(fixture, id), item };
+    } finally { decisions(rows); fs.writeFileSync(log, originalLog); }
+  };
   test('style-only suggestions need after evidence but not invented failing tests',()=>{
-    const item=pending.items.find(i=>i.kind==='suggestion'),afterStyle=observation(item.item_id,'after','evidence/after.txt',0,'2026-01-01T00:00:04Z');write('evidence/style.json',afterStyle);
-    decisions(rows.map(r=>r.item_id===item.item_id?{...r,disposition:'applied',change_kind:'style',verification:ref('evidence/style.json')}:r));
-    try{assert.equal(healthy().complete,true,JSON.stringify(healthy()));}finally{decisions(rows);}
+    // The baseline record may pass (exit 0): it supplies the reviewed bytes, not a failing test.
+    const withBaseline = styleCase('rev_fixture_style_ok', 'style-ok.cjs', 'module.exports = 1;\n', '// The answer.\nmodule.exports = 1;\n').result;
+    assert.equal(withBaseline.complete, true, JSON.stringify(withBaseline));
+    // A report that stored its input carries the reviewed bytes itself.
+    const stored = styleCase('rev_fixture_style_stored', 'style-stored.cjs', 'module.exports = 2;\n', '    module.exports = 2;\n', { baseline: false, storeInput: true }).result;
+    assert.equal(stored.complete, true, JSON.stringify(stored));
+  });
+  test('a commented-out line recorded as style is refused (B4.1)', () => {
+    const { result, item } = styleCase('rev_fixture_style_hidden', 'style-hidden.cjs', 'check();\nmodule.exports = 3;\n', '// check();\nmodule.exports = 3;\n');
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.unresolved, [{ item_id: item.item_id, reason: 'change_kind style refused: style-hidden.cjs:1 changes code' }]);
+  });
+  test('style refusals name directives, unclassifiable files and missing baselines', () => {
+    const reason = r => r.result.unresolved.map(u => u.reason).join('; ');
+    assert.match(reason(styleCase('rev_fixture_style_directive', 'style-directive.cjs', 'module.exports = 4;\n', '// eslint-disable-next-line\nmodule.exports = 4;\n')),
+      /^change_kind style refused: style-directive\.cjs:1 carries a directive$/);
+    assert.match(reason(styleCase('rev_fixture_style_markdown', 'style-notes.md', '# Notes\n', '# Notes\n\nMore.\n')),
+      /^change_kind style refused: style-notes\.md: file type unclassifiable/);
+    assert.match(reason(styleCase('rev_fixture_style_python', 'style_indent.py', 'if True:\n    x = 1\n', 'if True:\n  x = 1\n')),
+      /^change_kind style refused: style_indent\.py:2 changes whitespace in a whitespace-significant file$/);
+    assert.match(reason(styleCase('rev_fixture_style_nobase', 'style-nobase.cjs', 'module.exports = 5;\n', '// Five.\nmodule.exports = 5;\n', { baseline: false })),
+      /^change_kind style refused: style-nobase\.cjs: the reviewed bytes are not available/);
+  });
+  test('a style decision cannot cover a file whose code another fix changed', () => {
+    // Before 1.17 this closed: the suggestion's after check bound mean.cjs, whose divisor the finding's fix changed.
+    const item = pending.items.find(i => i.kind === 'suggestion'); write('evidence/style.json', observation(item.item_id, 'after', 'evidence/after.txt', 0, '2026-01-01T00:00:04Z'));
+    decisions(rows.map(r => r.item_id === item.item_id ? { ...r, disposition: 'applied', change_kind: 'style', verification: ref('evidence/style.json') } : r));
+    try {
+      const result = healthy(); assert.equal(result.complete, false);
+      assert.match(result.unresolved.find(u => u.item_id === item.item_id).reason, /^change_kind style refused: mean\.cjs: the reviewed bytes are not available/);
+      // With the reviewed bytes available, the divisor fix itself is what refuses the label.
+      const baseline = observation(item.item_id, 'before', 'evidence/after.txt', 0, '2026-01-01T00:00:00Z');
+      baseline.artifacts = [{ path: 'mean.cjs', sha256: digest(buggy), snapshot: ref('evidence/original.cjs') }]; write('evidence/style-baseline.json', baseline);
+      decisions(rows.map(r => r.item_id === item.item_id ? { ...r, disposition: 'applied', change_kind: 'style', verification: ref('evidence/style.json'), reproduction: ref('evidence/style-baseline.json') } : r));
+      assert.equal(healthy().unresolved.find(u => u.item_id === item.item_id).reason, 'change_kind style refused: mean.cjs:1 changes code');
+    } finally { decisions(rows); }
+  });
+  // 1.17 B4.2: a recorded mutation (the one decision's change reverted) is optional and only counted.
+  const fixRow = () => rows.find(r => r.disposition === 'applied');
+  const mutationRecord = (name, bytes, code, extra = {}) => {
+    write(`evidence/${name}.mutated`, bytes);
+    const m = observation(fixRow().item_id, 'mutation', 'evidence/before.txt', code, '2026-01-01T00:00:01.500Z');
+    m.artifacts = [{ path: 'mean.cjs', sha256: digest(bytes), snapshot: ref(`evidence/${name}.mutated`) }];
+    write(`evidence/${name}.json`, { ...m, ...extra }); return ref(`evidence/${name}.json`);
+  };
+  const withMutation = mutation => { decisions(rows.map(r => r === fixRow() ? { ...r, mutation } : r)); try { return healthy(); } finally { decisions(rows); } };
+  test('mutation records are optional and reported as a count (B4.2)', () => {
+    const plain = healthy();
+    assert.equal(plain.complete, true);
+    assert.deepEqual(plain.mutation, { applied_decisions: 1, with_mutation_record: 0, mutation_survived: [], invalid: [] });
+    const counted = withMutation(mutationRecord('mutation-fails', buggy, 1));
+    assert.equal(counted.complete, true, JSON.stringify(counted));
+    assert.deepEqual(counted.mutation, { applied_decisions: 1, with_mutation_record: 1, mutation_survived: [], invalid: [] });
+  });
+  test('a surviving mutation is a warning, not a refusal', () => {
+    const survived = withMutation(mutationRecord('mutation-survives', buggy, 0));
+    assert.equal(survived.complete, true);
+    assert.deepEqual(survived.mutation, { applied_decisions: 1, with_mutation_record: 0, mutation_survived: [fixRow().item_id], invalid: [] });
+  });
+  test('a mutation record that reverted nothing, or ran another test, never counts', () => {
+    const nothing = withMutation(mutationRecord('mutation-nothing', good, 1));
+    assert.equal(nothing.complete, true); assert.equal(nothing.mutation.with_mutation_record, 0);
+    assert.match(nothing.mutation.invalid[0].reason, /reverted nothing/);
+    write('other.test.cjs', 'process.exit(1)\n');
+    const other = withMutation(mutationRecord('mutation-other', buggy, 1, { test: ref('other.test.cjs') }));
+    assert.equal(other.mutation.with_mutation_record, 0); assert.match(other.mutation.invalid[0].reason, /same test/);
+    const wrongPhase = withMutation(ref('evidence/before.json'));
+    assert.equal(wrongPhase.mutation.with_mutation_record, 0); assert.match(wrongPhase.mutation.invalid[0].reason, /invalid check observation/);
+  });
+  // 1.17 B4.3: the review is compared with what is installed now; a stale review can still complete.
+  test('current installation is not stale; a changed peer contract is (B4.3)', () => {
+    const current = healthy();
+    assert.equal(current.complete, true);
+    assert.equal(current.stale.stale, false, JSON.stringify(current.stale));
+    assert.deepEqual(current.stale.changed, []);
+    for (const field of ['dispatcher_sha256', 'peer_contract_sha256', 'process_scope_sha256', 'governor_sha256']) assert(current.stale.matched.includes(field), field);
+    const install = path.join(fixture, 'install-copy'), here = path.join(install, 'momm/scripts');
+    fs.mkdirSync(here, { recursive: true });
+    for (const name of ['multi-review.mjs', 'review-contract.mjs', 'process-scope.mjs', 'governor.mjs']) fs.copyFileSync(path.join(scripts, name), path.join(here, name));
+    assert.deepEqual(inspectCompletion(fixture, report.run_id, { installRoot: install }).stale.changed, []);
+    fs.appendFileSync(path.join(here, 'review-contract.mjs'), '\n// a later contract\n');
+    const stale = inspectCompletion(fixture, report.run_id, { installRoot: install });
+    assert.equal(stale.complete, true, 'a stale review can still be completed');
+    // Per-route identity this older-shaped fixture does not record is unknown, never a match.
+    const routeUnknown = ['claude', 'grok'].flatMap(r => ['cli_version', 'model', 'command_shape_sha256'].map(f => `reviewers.${r}.${f}`));
+    // 1.17 B1: claude records a role (B6 fixture) but no role_brief, so its brief identity is unknown too.
+    routeUnknown.push('reviewers.claude.role_brief');
+    assert.deepEqual(stale.stale, { stale: true, changed: ['peer_contract_sha256'], unknown: routeUnknown, matched: ['dispatcher_sha256', 'process_scope_sha256', 'governor_sha256'] });
+    fs.rmSync(install, { recursive: true, force: true });
+  });
+  test('absent identity is unknown, never a match; route identity is compared where recorded', () => {
+    const older = { ...report }; delete older.dispatcher_sha256; delete older.guidance;
+    const a = reviewStaleness(older, fixture);
+    assert(a.unknown.includes('dispatcher_sha256') && a.unknown.includes('guidance') && !a.matched.includes('dispatcher_sha256') && !a.changed.includes('dispatcher_sha256'), JSON.stringify(a));
+    const routed = { ...report, attachments: [{ name: 'shot.png', modality: 'image', bytes: 3, sha256: 'a'.repeat(64) }],
+      reviewers: [{ ...report.reviewers[0], usage: { reported: { cli_version: '2.1.0', model: 'model-x' } }, command_shape_sha256: commandShapeSha256('claude', 'input', 'text') },
+        { ...report.reviewers[1], command_shape_sha256: 'b'.repeat(64) }] };
+    const b = reviewStaleness(routed, fixture);
+    assert(b.matched.includes('reviewers.claude.command_shape_sha256'), JSON.stringify(b));
+    assert(b.changed.includes('reviewers.grok.command_shape_sha256'), JSON.stringify(b));
+    for (const field of ['reviewers.claude.cli_version', 'reviewers.claude.model', 'attachments.shot.png.sha256']) assert(b.unknown.includes(field), field);
+    assert.equal(b.stale, true);
+    const guided = { ...report, guidance: { routes: { claude: { sha256: 'c'.repeat(64), layers: [{ name: 'project:.reviewrules', sha256: 'd'.repeat(64) }] } }, governor_sha256: null } };
+    const c = reviewStaleness(guided, fixture, { home: path.join(fixture, 'no-home') });
+    assert(c.changed.includes('guidance.routes.claude'), JSON.stringify(c));
+    const unguided = { ...report, guidance: { routes: { claude: { sha256: null, layers: [] } }, governor_sha256: null } };
+    assert(reviewStaleness(unguided, fixture, { home: path.join(fixture, 'no-home') }).matched.includes('guidance.routes.claude'));
+    // Receipts carry names and booleans only: no hashes, versions or text travel in this block.
+    assert(!JSON.stringify(b).includes('2.1.0') && !JSON.stringify(b).includes('b'.repeat(64)));
+  });
+  // Final review of 1.17.0 (staleness-catch-reports-fresh): a comparison that threw part-way (here an attachment
+  // name that cannot become a string) replaced the differences already found with stale:false, changed:[].
+  test('a comparison that cannot finish keeps the differences it found and names the rest unknown', () => {
+    const odd = { ...report, governor_sha256: '0'.repeat(64), attachments: [{ name: { toString: 1 }, modality: 'image', bytes: 3, sha256: 'a'.repeat(64) }] };
+    const direct = reviewStaleness(odd, fixture);
+    assert.equal(direct.stale, true, JSON.stringify(direct));
+    assert(direct.changed.includes('governor_sha256') && direct.unknown.includes('installation') && !direct.matched.includes('governor_sha256'), JSON.stringify(direct));
+    const id = 'rev_fixture_stale_unfinished', p = `.ensemble_reviews/reports/${id}.json`;
+    write(p, { ...odd, run_id: id });
+    const log = path.join(fixture, '.ensemble_reviews/review-log.jsonl'), original = fs.readFileSync(log);
+    fs.appendFileSync(log, JSON.stringify({ run_id: id, report_path: p, report_sha256: ref(p).sha256, input_sha256: odd.input_sha256 }) + '\n');
+    try {
+      const sealed = inspectCompletion(fixture, id).stale;
+      assert(sealed?.stale === true && sealed.changed.includes('governor_sha256') && sealed.unknown.includes('installation'), JSON.stringify(sealed));
+    } finally { fs.writeFileSync(log, original); fs.unlinkSync(path.join(fixture, p)); }
   });
   test('an updated final manifest alone cannot justify changed source',()=>{
     const file=path.join(fixture,`.ensemble_reviews/verification/${report.run_id}.json`),original=fs.readFileSync(file);
@@ -204,6 +629,12 @@ try {
   ]) test(name, () => { decisions(mutate(rows)); assert.equal(healthy().complete, false); decisions(rows); });
   test("malformed JSONL fails visibly", () => { write(".ensemble_reviews/dispositions.jsonl", "{bad\n"); assert.equal(healthy().complete, false); decisions(rows); });
   test("recorded completion does not mutate sealed report", () => { assert.equal(recordCompletion(fixture, report.run_id).complete, true); assert.equal(ref(reportPath).sha256, sealed.sha256); });
+  test('the recorded receipt carries the stale and mutation blocks', () => {
+    const receipt = JSON.parse(fs.readFileSync(path.join(fixture, '.ensemble_reviews/completions', report.run_id + '.json'), 'utf8'));
+    assert.deepEqual(Object.keys(receipt.stale), ['stale', 'changed', 'unknown', 'matched']);
+    assert.equal(receipt.stale.stale, false);
+    assert.deepEqual(receipt.mutation, { applied_decisions: 1, with_mutation_record: 0, mutation_survived: [], invalid: [] });
+  });
   test('re-recording preserves the previous receipt by content hash',()=>{
     const file=path.join(fixture,'.ensemble_reviews/completions',report.run_id+'.json'),before=fs.readFileSync(file);
     recordCompletion(fixture,report.run_id);
@@ -263,9 +694,27 @@ try {
     const artifact='diff --git a/x.txt b/x.txt\n';
     const fakeFs={realpathSync:legacy,statSync:()=>({isFile:()=>true,size:8}),readFileSync:()=>Buffer.from('fixture\n')};
     const capture=vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replaceAll('export function','function')+';captureSourceSnapshot',
-      {fs:fakeFs,path:path.win32,process:{platform:'win32',env:{Path:'Q:\\git\\cmd'}},digest,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>(assert.equal(_cmd,'Q:\\git\\cmd\\git.exe','Git is launched by its absolute PATH location, never by bare name'),{status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
+      {fs:fakeFs,path:path.win32,process:{platform:'win32',env:{Path:'Q:\\git\\cmd'}},digest,pathEntryOutside,executableOutside,demand:(ok,message)=>{if(!ok)throw Error(message);},spawnSync:(_cmd,args)=>(assert.equal(_cmd,'Q:\\git\\cmd\\git.exe','Git is launched by its absolute PATH location, never by bare name'),{status:0,stdout:args[0]==='rev-parse'?'Q:\\runner.long\\repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact})});
     const result=capture('Q:\\RUNNER~1\\repo',artifact);assert.equal(result.complete,true,result.reason);
     assert.match(capture('Q:\\RUNNER~1\\repo\\child',artifact).reason,/repository root/);
+  });
+  // 1.17 A1 (29 September 2026): off Windows the snapshot's Git was the bare name "git", so a PATH
+  // entry inside the reviewed project could supply the Git that verifies it. It is now resolved like the
+  // range snapshot's: an executable outside the project on an absolute PATH entry outside it, or refusal.
+  test('POSIX Git for the diff snapshot comes from an absolute PATH entry outside the project, never a bare name',()=>{
+    const gov=fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8');
+    const artifact='diff --git a/x.txt b/x.txt\n';
+    const present={'/usr/bin/git':0o100755,'/repo/bin/git':0o100755};
+    const fakeFs={realpathSync:Object.assign(p=>p,{native:p=>p}),statSync:p=>p in present?{isFile:()=>true,mode:present[p],size:8}:(p.startsWith('/repo/')&&!p.startsWith('/repo/bin'))?{isFile:()=>true,mode:0o100644,size:8}:(()=>{throw Object.assign(Error('ENOENT'),{code:'ENOENT'});})(),readFileSync:()=>Buffer.from('fixture\n')};
+    const launched=[];
+    const context={fs:fakeFs,path:path.posix,digest,demand:(ok,message)=>{if(!ok)throw Error(message);},pathEntryOutside,executableOutside,
+      spawnSync:(cmd,args)=>{launched.push(cmd);return {status:0,stdout:args[0]==='rev-parse'?'/repo\n':args.includes('--name-status')?'M\0x.txt\0':artifact};}};
+    const capture=env=>vm.runInNewContext(gov.slice(gov.indexOf('export function captureSourceSnapshot'),gov.indexOf('export function normalizeTarget')).replaceAll('export function','function')+';captureSourceSnapshot',
+      {...context,process:{platform:'linux',env}});
+    const result=capture({PATH:'/repo/bin:.::/usr/bin'})('/repo',artifact);assert.equal(result.complete,true,result.reason);
+    assert(launched.length>0&&launched.every(c=>c==='/usr/bin/git'),JSON.stringify(launched));
+    launched.length=0;const refused=capture({PATH:'/repo/bin'})('/repo',artifact);
+    assert.equal(refused.complete,false);assert.match(refused.reason,/git was not found on an absolute PATH entry outside the project/);assert.deepEqual(launched,[]);
   });
   test("fresh Git scope accepted; stale, deleted and binary scope refused", () => {
     const cwd = path.join(fixture, "scope"); fs.mkdirSync(cwd);
@@ -289,7 +738,7 @@ try {
     } });
     const gov = fs.readFileSync(path.join(scripts, "governor.mjs"), "utf8");
     const capture = vm.runInNewContext(gov.slice(gov.indexOf("export function captureSourceSnapshot"), gov.indexOf("export function normalizeTarget")).replaceAll("export function", "function") + ";captureSourceSnapshot", {
-      fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); },
+      fs: racedFs, path, process, spawnSync, digest, demand: (ok, message) => { if (!ok) throw Error(message); }, pathEntryOutside, executableOutside,
     });
     const raced=capture(raceCwd,diff);
     assert.equal(changed,true,'race fixture did not mutate the aliased source');
@@ -307,8 +756,10 @@ try {
   test("real completion CLI and ledger rebuild", () => { const result = run([path.join(scripts, "governor.mjs"), "--run", report.run_id, "--record"]); assert.equal(result.status, 0, result.stdout + result.stderr); assert.equal(JSON.parse(result.stdout).ledger_rebuilt, true); assert.match(fs.readFileSync(path.join(fixture, ".ensemble_reviews/ledger.html"), "utf8"), /Local completion evidence validated/); });
   test('receipt success cannot hide dashboard rebuild failure',()=>{
     const copy=write('isolated/governor.mjs',fs.readFileSync(path.join(scripts,'governor.mjs'),'utf8'));
-    write('isolated/evidence-permissions.mjs',fs.readFileSync(path.join(scripts,'evidence-permissions.mjs'),'utf8'));
-    write('isolated/process-scope.mjs',fs.readFileSync(path.join(scripts,'process-scope.mjs'),'utf8'));
+    // The governor's own sibling modules, followed transitively; ledger.mjs is deliberately absent.
+    const pending=['governor.mjs'],copied=new Set(pending);
+    while(pending.length){for(const [,name] of fs.readFileSync(path.join(scripts,pending.pop()),'utf8').matchAll(/^import [^;]*? from ["']\.\/([\w.-]+\.mjs)["']/gm))if(!copied.has(name)){copied.add(name);pending.push(name);write('isolated/'+name,fs.readFileSync(path.join(scripts,name),'utf8'));}}
+    assert(copied.has('evidence-permissions.mjs')&&copied.has('process-scope.mjs')&&copied.has('evidence-location.mjs')&&!copied.has('ledger.mjs'));
     const result=run([copy,'--run',report.run_id,'--record']),body=JSON.parse(result.stdout);
     assert.equal(result.status,5,result.stdout+result.stderr);assert.equal(body.complete,true);assert.equal(body.ledger_rebuilt,false);assert.equal(body.ledger_url,null);assert(body.ledger_error);
   });

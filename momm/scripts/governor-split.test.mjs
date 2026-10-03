@@ -33,7 +33,7 @@ function fixture(name, { pieces, governorDirect = [], quorum, strict = false }) 
     run_id: id, governor: "codex", label: "SYNTHETIC validator fixture — not a live review", input_sha256: digest(code),
     source_snapshot: captureSourceSnapshot(dir, code, "answer.cjs"),
     gate_policy: { strict, quorum_required: 2, requested_routes: ["claude", "grok"] },
-    reviewers: ["claude", "grok"].map((agent) => ({ agent, status: "success", review_contract: "momm-peer-review/2", reviewed_scope: [{ quote: "module.exports = 42;", assessment: "Synthetic fixture." }], suggested_improvements: [] })),
+    reviewers: ["claude", "grok"].map((agent) => ({ agent, status: "success", review_contract: "momm-peer-review/3", reviewed_scope: [{ quote: "module.exports = 42;", assessment: "Synthetic fixture." }], suggested_improvements: [] })),
     findings: [],
     quorum, split: { ceiling_bytes: 4096, pieces, governor_direct: governorDirect },
   };
