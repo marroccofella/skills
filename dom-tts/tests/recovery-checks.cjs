@@ -102,6 +102,12 @@ async function lockChecks(check,fixture){
  check(()=>assert(!fs.existsSync(lockPath(race))));
 }
 
+function socketChecks(check){
+ if(process.platform==='win32')return;
+ check(()=>assert.throws(()=>runtime.endpoint('a'.repeat(32),'/tmp/'+'x'.repeat(90)),/too long for the local stop socket/));
+ check(()=>assert.ok(runtime.endpoint('a'.repeat(32),'/tmp/short').length<=100));
+}
+
 function tableChecks(check){
  const cases=[
   ['| Name | Value |\n|---|---|\n| speed | 1.0 |\n| **voice** | `Hazel` |','Name: speed, Value: 1.0.\nName: voice, Value: Hazel.'],
@@ -132,7 +138,8 @@ function replyChecks(check){
 
 module.exports=async function(check){
  // realpath: macOS temp folders sit under /var, a link to /private/var, which state paths refuse.
- const fixture=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dom-tts-recovery-')));
- try{await permissionChecks(check,fixture);await lockChecks(check,fixture);tableChecks(check);return {replies:replyChecks(check)};}
+ // Short base on POSIX: macOS limits Unix socket paths to 104 bytes.
+ const fixture=fs.realpathSync(fs.mkdtempSync(path.join(process.platform==='win32'?os.tmpdir():'/tmp','dtr-')));
+ try{await permissionChecks(check,fixture);await lockChecks(check,fixture);socketChecks(check);tableChecks(check);return {replies:replyChecks(check)};}
  finally{fs.rmSync(fixture,{recursive:true,force:true});}
 };

@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "3f68a223e51f11503010d7fe9587383b671368fe7eddde62d35d5ef51a119d88"
+      "sha256": "41ee47b31e8cb54e371042df485cbab4006d11fb26f3b51a62b4882f86f94e65"
     },
     {
       "path": "COMPATIBILITY.md",
@@ -68,7 +68,7 @@
     },
     {
       "path": "scripts/runtime.js",
-      "sha256": "f229d9345f65742eb272e8577397199204dc267cc51095db4ae8c8a9c0b913ee"
+      "sha256": "3af459e5646621b18ecf18212cea56c32afb6a42c7370c68e76865d6bb5284d2"
     },
     {
       "path": "scripts/self-test.js",
@@ -124,7 +124,7 @@
     },
     {
       "path": "tests/recovery-checks.cjs",
-      "sha256": "67da65a863d37b5f3f315f1b6b85f96388a6bbb3962f38b4e7e12d47d108bc04"
+      "sha256": "84841a60bcf4f042222a53ef151dff4483a6aa53b8ac1b49d7df3277bec34780"
     },
     {
       "path": "tests/windows-check.cjs",

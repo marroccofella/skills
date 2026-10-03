@@ -9,6 +9,9 @@
 - Markdown tables spoken row by row; blockquote markers removed; unified diffs and
   Python stack frames skipped in informative mode; log modes read fenced output and
   match names such as FileNotFoundError.
+- A POSIX state directory too long for the stop socket (over about 85 characters;
+  macOS allows 104 bytes per socket path) now fails with a clear message instead of
+  a truncated socket.
 - 30 realistic multi-paragraph replies added to the corpus with per-mode expectations.
 - One path-filtered CI workflow; the 0.3.2 workflow and the inert nested copy removed.
   CI verifies the committed manifest instead of regenerating it.
