@@ -365,7 +365,9 @@ export function createUpdateClock({ home, stateFile = defaultStateFile(), instal
       const due = !Number.isFinite(entry.installed_checked_at) || outcome === "changed" || t - entry.installed_checked_at >= DAY;
       if (due) {
         try {
-          const p = await ctx.exec(cliBinary(source.cli), ["--version"], { timeout: 15_000 });
+          // The clock's own environment decides where a CLI lives (tests inject one; production passes
+          // process.env). Reading process.env here made the test depend on the machine it ran on.
+          const p = await ctx.exec(cliBinary(source.cli, { env }), ["--version"], { timeout: 15_000 });
           entry.installed_version = p && p.code === 0 ? semver(p.stdout) || semver(p.stderr) : null;
         } catch { entry.installed_version = null; }
         entry.installed_checked_at = t;

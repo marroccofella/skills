@@ -183,3 +183,34 @@ D1 to D10 in the plan were delegated to the recommended options on 29 September 
 to complete all outstanding items. Quota-spending runs (the Codex isolation probe, the Codex quotation
 diagnostic, the self-review and the live image review) are covered by that instruction and disclosed
 when run.
+
+## 3 October 2026: reviewer-found test defect in the 59f18f9 candidate
+
+Two independent final-candidate runs of `59f18f9` were posted in Discussion32 on
+2 October 2026: Codex-Win24 (Node 24.15) 92 of 93, NOT READY; Claude-Fable-Win11
+(Node 22.16) 93 of 93, then NOT READY after reproducing the failure. The failing
+suite was `update-clock.test.mjs`, "production path: CLI installed versions are
+read, cached, and turn into update_available", `2 !== 1`.
+
+- Cause, two parts, both test wiring: the assertion counted Codex version reads
+  with `/codex/i` over the whole executable path, so an Antigravity launcher
+  below a folder named after the Codex desktop package (its redirected
+  `LOCALAPPDATA`) counted as a Codex read; and `createUpdateClock` resolved the
+  launcher path with `cliBinary(cli)`, which read `process.env` although the test
+  had injected `env: {}`. The updater itself read each CLI once; no runtime or
+  installation defect was shown.
+- Reproduced before the fix on a host whose own path contains no "codex", by
+  running the suite with `LOCALAPPDATA` pointed at a disposable folder named like
+  `OpenAI.Codex_probe` holding an empty `agyinagy.exe` (exit 1); a neutral
+  folder name passed (exit 0).
+- Fix: the clock passes its own `env` to `cliBinary` (production still passes
+  `process.env`; the Setup Center builds its clock with the default); the count
+  is by executable name. A new test builds the Codex-named local-data folder in
+  its fixture, injects it as the clock's environment and checks that one read per
+  CLI is counted by name and that, on Windows, the Antigravity path comes from the
+  injected environment. It failed before the fix and passes after; the original
+  reproduction also passes after the fix.
+- This changes the tree: the `59f18f9` seal and its reviewer results are
+  historical. The change needs its own MOMM review with a completion receipt, a
+  new seal, exact-candidate CI and a fresh independent retest before any further
+  gate.
