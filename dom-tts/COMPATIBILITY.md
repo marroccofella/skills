@@ -2,13 +2,14 @@
 
 | Layer | Windows x64 | Windows ARM64 | macOS Intel | macOS Apple Silicon | Linux x64/ARM64 |
 |---|---|---|---|---|---|
-| Portable Node logic | Local tests | Same source; not native-tested | CI configured | CI configured | CI configured |
+| Portable Node logic | Local tests; hosted CI pass | Same source; not native-tested | Hosted CI pass | Hosted CI pass | Hosted CI pass (x64 Node 18–24, ARM64 Node 24) |
 | Speech adapter | SAPI; local native test required per build | SAPI; unverified host | /usr/bin/say; unverified audio | /usr/bin/say; unverified audio | espeak-ng; engine/audio prerequisites; unverified audio |
 | Stop transport | Named pipe | Named pipe | Unix socket | Unix socket | Unix socket |
 | Skill | SKILL.md + command interface | Same | Same | Same | Same |
 
-Node 18/20/22/24 are in the offline CI matrix; test results on this machine
-must be recorded separately. CI configuration is not a hosted CI pass.
+Node 18/20/22/24 are in the offline CI matrix; all 17 hosted jobs passed for
+0.4.0-dev.2 (run 37156211045). Hosted CI covers offline logic only, not audible
+playback; native test results on each machine must be recorded separately.
 No architecture-specific npm modules or model SDKs are required.
 
 Codex: native Agent Skills install and Codex JSONL adapter.

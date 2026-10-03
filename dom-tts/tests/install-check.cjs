@@ -4,7 +4,7 @@ const parent=path.join(ROOT,'.local-test','install-'+Date.now());fs.mkdirSync(pa
 try{
  const unrelated=path.join(parent,'unrelated-skill');fs.mkdirSync(unrelated);fs.writeFileSync(path.join(unrelated,'keep'),'preserve');
  const args={dir:parent};const preview=install({...args,dryRun:true});assert(!fs.existsSync(preview.destination));
- const first=install(args);verify(first.destination);fs.writeFileSync(path.join(first.destination,'assets/settings.json'),'{}');
+ const first=install(args);verify(first.destination);assert(!fs.existsSync(path.join(first.destination,'.private-verified')));fs.writeFileSync(path.join(first.destination,'assets/settings.json'),'{}');
  const upgrade=install(args);assert(upgrade.backup);assert(fs.existsSync(path.join(first.destination,'assets/settings.json')));
  const rollback=install({...args,action:'rollback'});verify(rollback.destination);
  const removed=install({...args,action:'uninstall'});assert(!fs.existsSync(removed.destination));assert(fs.existsSync(removed.backup));assert.equal(fs.readFileSync(path.join(unrelated,'keep'),'utf8'),'preserve');

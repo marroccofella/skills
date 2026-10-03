@@ -19,13 +19,16 @@ can use this interface; native skill discovery depends on the host.
 
 When asked to stop, pause or interrupt, run `node scripts/stop.js` immediately.
 Status: `node scripts/status.js`. Never kill a PID copied from a state file.
-A stale lock can be inspected and recovered with `status.js --recover`; a live
-owner is never removed by recovery.
+A dead owner's lock is recovered automatically by the next playback;
+`status.js --recover` does the same on request. A live owner is never removed.
 
 Modes: informative (default), full, summary, action-items, errors-only,
 warnings-only, terminal-summary, diff-summary. Prefer diff-summary for a diff
-and errors-only for build errors. Summary selects sentences; for a meaningful
-spoken summary of complex code, compose it yourself and send that text.
+and errors-only for build errors. Informative reads tables row by row as
+"header: value" and skips code, diffs and stack frames; the log modes
+(errors-only, warnings-only, terminal-summary) also read fenced output.
+Summary selects sentences; for a meaningful spoken summary of complex code,
+compose it yourself and send that text.
 Profiles: conversational, engineering, concise. Speed: 0.5–2. Voice names must
 come from doctor. A missing voice fails visibly. Full mode includes code.
 

@@ -1,7 +1,8 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),net=require('node:net');
-const {ROOT,stateDir,ensurePrivate,readObject,writeObject,parseCli,endpoint,alive}=require('./runtime');
+const {ROOT,stateDir,ensurePrivate,readObject,writeObject,parseCli,endpoint}=require('./runtime');
 const {applyMode,chunkText,MODES}=require('./summarize');
 const native=require('./providers/native');
+const {inspectLock,recoverStale}=require('./lock');
 const PROFILES={conversational:{speed:1,maxChunkChars:420},engineering:{speed:0.95,maxChunkChars:520},concise:{speed:1.15,maxChunkChars:650}};
 const OPTIONS=['text','textFile','stdin','provider','mode','profile','voice','speed','maxChunkChars','includeCodeBlocks','includeCommandBlocks','dryRun','waitMs'];
 function parseArgs(argv){return parseCli(argv,{},OPTIONS);}
@@ -25,7 +26,7 @@ async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePri
  privacy(dir);const lock=path.join(dir,'playback.lock'),status=path.join(dir,'status.json'),token=crypto.randomBytes(16).toString('hex');
  const previousStop=stopValue(dir),start=Date.now();let acquired=false,child=null,stopped=false,server;
  const setStatus=patch=>writeObject(status,{...patch,updatedAt:new Date().toISOString()});
- while(!acquired){try{const fd=fs.openSync(lock,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{fs.closeSync(fd);}acquired=true;}catch(error){if(error.code!=='EEXIST')throw error;const owner=readObject(lock);if(!alive(owner.pid))throw new Error('Stale playback lock; run status.js --recover after checking the reported state');if(Date.now()-start>=options.waitMs)throw new Error('Another playback owns the lock; retry or use --wait-ms');if(stopValue(dir)!==previousStop)throw new Error('Playback stopped while waiting');await new Promise(r=>setTimeout(r,100));}}
+ while(!acquired){try{const fd=fs.openSync(lock,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{fs.closeSync(fd);}acquired=true;}catch(error){if(error.code!=='EEXIST')throw error;const seen=inspectLock(dir);if(seen.state==='stale'){recoverStale(dir);continue;}if(seen.state==='malformed')throw new Error('Malformed playback lock needs manual inspection; run status.js');if(Date.now()-start>=options.waitMs)throw new Error('Another playback owns the lock; retry or use --wait-ms');if(stopValue(dir)!==previousStop)throw new Error('Playback stopped while waiting');await new Promise(r=>setTimeout(r,100));}}
  const requestStop=()=>{stopped=true;if(child)child.kill();};
  const signal=()=>requestStop();process.on('SIGINT',signal);process.on('SIGTERM',signal);
  try{

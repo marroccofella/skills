@@ -32,6 +32,8 @@ From the repository's dom-tts directory, run npm test, node tests/install-check.
 
 The root Actions workflow runs portable checks on Windows, macOS Intel/Apple Silicon and Linux x64/ARM64. Native macOS/Linux playback, injection, environment and stop tests remain outstanding.
 
+**Correction (0.4.0-dev.2):** the workflow ran on push at a1de798 ([run 37154627806](https://github.com/marroccofella/skills/actions/runs/37154627806)). All 13 Linux and macOS jobs passed; all 4 Windows jobs failed in `tests/install-check.cjs` with "Private state directory unavailable". The failing step ran about 10.4 s against a 10 s PowerShell limit, consistent with a timeout. The statement under Compatibility limits that CI "has not been dispatched to hosted runners" was wrong. See the 0.4.0-dev.2 section for the fix and its CI result.
+
 ## Behavior
 
 - Windows SAPI, macOS say and Linux espeak-ng providers selected by the OS.
@@ -82,7 +84,8 @@ The macOS Intel/Apple Silicon and Linux x64/ARM64 adapters are implemented,
 but native audio receipts from those hosts are outstanding. Windows ARM64 is also
 unverified. No functioning WSL distribution was available here. Linux needs an
 installed espeak-ng and audio route. CI covers Windows, macOS Intel/ARM and Linux
-x64/ARM with Node 18/20/22/24, but it has not been dispatched to hosted runners.
+x64/ARM with Node 18/20/22/24; at a1de798 the four Windows jobs failed (see the
+correction above).
 
 Direct commands are model-independent. Native discovery and transcript schemas
 vary by harness; this does not establish automatic integration with every agent
@@ -119,3 +122,35 @@ ratings and all attempts remain in the private `.ensemble_reviews` ledger.
 
 **This is a locally usable development candidate. Independent review and cross-host
 release gates remain open; it is not a stable, universally certified 0.4 release.**
+
+## 0.4.0-dev.2 changes
+
+Made in a separate cloud session on Linux; the Windows evidence above was recorded
+for 0.4.0-dev.1 and has not been re-run on the developer's machine for dev.2.
+
+| Area | Change | Evidence |
+|---|---|---|
+| Windows CI | Permission check limit raised from 10 s to 60 s; typed failure reasons; check runs once per state folder via a folder-bound marker | All 4 Windows jobs pass ([run 37156211045](https://github.com/marroccofella/skills/actions/runs/37156211045)) |
+| Permission failures | Timeout, could-not-start, folder open to other accounts, and non-zero exit each give a distinct message with no path; a failed check stops playback before any lock or status is written | Offline tests with injected PowerShell results |
+| Stale locks | Next playback recovers a dead owner's lock, orphaned speech file and stale status; a live owner, a lock being written and an old malformed lock are never removed; a lock taken by another process during recovery is put back | Offline tests with real dead and live owner processes, plus a Linux end-to-end crash test with a stand-in engine |
+| Tables and corpus | Tables spoken as "header: value" rows; diffs and stack frames skipped in informative mode; 30 realistic replies with expectations for all 8 modes | Per-mode expectations were generated from the implementation and reviewed: all 30 informative outputs and the log-mode outputs in full, the other modes by sample |
+| Workflows | One workflow, path-filtered to `dom-tts/**` and itself; CI verifies the committed manifest | One workflow ran all 17 jobs |
+
+Mutation check: each new safeguard (live-owner detection, token re-check after
+moving a lock, write grace period, orphan cleanup, automatic recovery, marker skip,
+marker-to-folder binding, timeout reason and value, table rows, diff notice, error-name
+matching, fenced log reading, traceback skipping) was disabled in turn and the suite
+failed every time; a comment-only control change passed.
+
+Hosted CI at b782ec8 ([run 37156211045](https://github.com/marroccofella/skills/actions/runs/37156211045)):
+all 17 jobs passed (Ubuntu x64 and macOS Intel/Apple Silicon on Node 18/20/22/24,
+Windows on Node 18/20/22/24, Ubuntu ARM64 on Node 24). On the Windows runners the
+install check took 72–83 s for about three PowerShell permission checks, so each
+launch costs roughly 20 s there; with the old 10 s limit every check timed out.
+Later playbacks in an already-verified folder skip the check. Two macOS-only test
+issues found on the way were fixed: the temp folder sits under a symlink, and
+macOS limits socket paths to 104 bytes (a long DOM_TTS_STATE_DIR now gets a clear
+error). This is offline logic only; it is not evidence of audible playback.
+
+Still open, unchanged: second Windows machine or clean VM, native macOS and Linux
+audio, Tier 3 agent scoring, Tier 4 listening, and independent review quorum.

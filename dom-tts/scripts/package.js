@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {ROOT,writeObject}=require('./runtime');
-const entries=['scripts','tests','.github','assets/voices.json','README.md','SKILL.md','LICENSE','package.json','CHANGELOG.md','COMPATIBILITY.md'];
+const entries=['scripts','tests','assets/voices.json','README.md','SKILL.md','LICENSE','package.json','CHANGELOG.md','COMPATIBILITY.md'];
 function sourceFiles(root=ROOT){const files=[];function visit(relative){const absolute=path.join(root,relative),stat=fs.lstatSync(absolute);if(stat.isSymbolicLink())throw new Error('Source package contains a link');if(stat.isDirectory()){for(const child of fs.readdirSync(absolute))visit(path.join(relative,child));}else if(stat.isFile())files.push(relative.replace(/\\/g,'/'));else throw new Error('Source package contains a special file');}for(const item of entries)visit(item);return files.sort();}
 function manifest(root=ROOT){return {schema:'dom-tts-source/1',version:JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version,files:sourceFiles(root).map(file=>({path:file,sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')}))};}
 function verify(root=ROOT){const saved=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8')),current=manifest(root);if(JSON.stringify(saved)!==JSON.stringify(current))throw new Error('Source manifest mismatch; rebuild from reviewed source');return saved;}

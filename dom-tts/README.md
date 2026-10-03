@@ -2,7 +2,7 @@
 
 Local speech for coding assistants by **Prof Dom Marrocco / 42.uk**.
 
-Version **0.4.0-dev.1** is a working development build. The common interface is
+Version **0.4.0-dev.2** is a working development build. The common interface is
 model-independent: any harness that can run a command can pass text through
 stdin, a UTF-8 file, or --text. Agent Skills hosts can discover SKILL.md.
 
@@ -35,6 +35,9 @@ Speed 0.5–2; chunk limit 40–4000, further bounded by a conservative speech b
 Modes: informative, full, summary, action-items, errors-only, warnings-only,
 terminal-summary, diff-summary. Profiles: conversational, engineering, concise.
 Summary is deterministic sentence selection, not semantic summarization.
+Informative mode reads Markdown tables row by row as "header: value" pairs and
+skips code fences, unified diffs and Python stack frames (the exception line is
+kept). errors-only, warnings-only and terminal-summary also read fenced logs.
 
 ## Narrate one selected transcript
 
@@ -95,20 +98,30 @@ XDG_STATE_HOME/dom-tts (or ~/.local/state/dom-tts) on POSIX.
 DOM_TTS_STATE_DIR selects an isolated test directory. Existing state directories
 must already be private. New Windows state directories allow only the user,
 SYSTEM and Administrators; POSIX directories use owner-only permissions.
+On Windows the permission check runs once per state folder (up to 60 seconds,
+for slow first PowerShell starts). It leaves a `.private-verified` marker bound
+to that folder's identity, so later playbacks skip the PowerShell launch; a new
+or replaced folder is checked again. A failed check names its cause (timeout,
+could not start, folder open to other accounts, or exit code) without paths.
 
 Persistent status holds enums and counters, not speech text, transcript paths
 or raw errors. Speech exists briefly in a protected JSON file on Windows and is
 deleted after playback; macOS/Linux receive it on stdin. A machine crash can leave
-that temporary file; inspect status and use --recover after the owner is dead.
+that temporary file; the next playback removes it once the owner is dead.
 No raw speech is stored in queue or telemetry files. Native child environments
 use an allowlist rather than forwarding credentials.
 
 Stop uses a local named pipe/Unix socket and a random token from private state.
 It interrupts only the child handle held by the authenticated playback owner;
 it never kills a recorded PID. A live playback owns an exclusive lock.
---wait-ms can wait up to 60 seconds. Abnormally terminated owners can leave a
-stale lock; status.js --recover refuses a live owner and removes a verified dead
-owner's lock and speech files.
+--wait-ms can wait up to 60 seconds. If an owner terminates abnormally, the next
+playback (including the watcher's) recovers its lock automatically: a well-formed
+lock whose recorded process is no longer running is removed with its speech files,
+and a stale "speaking" status is reset. A live owner is never removed, a lock still
+being written is treated as busy, and an older malformed lock needs manual
+inspection. status.js --recover applies the same rules on request. If the dead
+owner's PID has been reused by another process, the lock looks live and waits
+until that process ends.
 
 support-bundle.js creates a protected diagnostics.json containing only typed,
 allowlisted operational fields. This is a portable JSON bundle, not a ZIP.
