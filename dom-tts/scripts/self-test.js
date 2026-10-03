@@ -1,0 +1,92 @@
+const assert = require("assert/strict");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
+const { applyMode } = require("./summarize");
+const { chunkText } = require("./speak");
+const { outputTextFromRecord, textKey, completeLines, parseArgs } = require("./watch-codex");
+const { sapiRate } = require("./providers/sapi");
+const { safeEnv, readObject, playbackProcessLooksOwned } = require("./runtime");
+
+async function main() {
+  assert.equal(applyMode("Error: failure\nAll ready", "errors-only"), "Error: failure");
+  assert.equal(applyMode("Fine", "warnings-only"), "No clear warnings found.");
+  assert(!applyMode("Hello\n```js\nprivateCode();\n```", "informative").includes("privateCode"));
+  assert.deepEqual(chunkText("x".repeat(1000), 100).map(x => x.length), Array(10).fill(100));
+  for (const limit of [0, -1, NaN, Infinity, 20, 4001]) assert.throws(() => chunkText("hello", limit));
+  const record = { type: "response_item", payload: { type: "message", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text: "Hello" }] } };
+  assert.equal(outputTextFromRecord(record, "final_answer", "false"), "Hello");
+  for (const role of ["user", "tool"]) assert.equal(outputTextFromRecord({ ...record, payload: { ...record.payload, role } }, "all", "false"), "");
+  for (const value of [null, [], 3]) assert.equal(outputTextFromRecord(value, "all", "true"), "");
+  assert.equal(outputTextFromRecord({ ...record, payload: { ...record.payload, phase: "commentary" } }, "final_answer", "false"), "");
+  assert.equal(textKey("Hello  WORLD"), textKey("hello world"));
+  const partial = completeLines(Buffer.from('{"a":1}\n{"b":'));
+  assert.equal(partial.bytes, 8);
+  assert.deepEqual(partial.lines, ['{"a":1}']);
+  assert.equal(completeLines(Buffer.from('{"b":')).bytes, 0);
+  assert.throws(() => completeLines(Buffer.alloc(1024 * 1024, 65)));
+  assert.equal(playbackProcessLooksOwned("0;not-a-pid"), false);
+  assert.equal(sapiRate(1.5), 5);
+  assert.equal(sapiRate(0.5), -5);
+  const parsed = parseArgs(["--dry-run", "--file", "fixture.jsonl", "--speak-startup", "false"]);
+  assert.equal(parsed.dryRun, true);
+  assert.equal(parsed.file, "fixture.jsonl");
+  assert.equal(parsed.speakStartup, "false");
+  assert.throws(() => parseArgs(["--file", "--dry-run"]));
+  const previous = process.env.DOM_TTS_TEST_API_KEY;
+  process.env.DOM_TTS_TEST_API_KEY = "fixture-not-a-credential";
+  assert(!Object.hasOwn(safeEnv(), "DOM_TTS_TEST_API_KEY"));
+  if (previous === undefined) delete process.env.DOM_TTS_TEST_API_KEY;
+  else process.env.DOM_TTS_TEST_API_KEY = previous;
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "dom-tts-offline-"));
+  try {
+    const root = path.join(fixture, "skill");
+    fs.cpSync(path.resolve(__dirname, ".."), root, { recursive: true, filter: src => !src.split(path.sep).includes("state") });
+    const state = path.join(root, "state");
+    fs.mkdirSync(state);
+    fs.writeFileSync(path.join(state, "playback.lock"), "not-my-lock");
+    fs.writeFileSync(path.join(state, "current.pid"), "not-my-pid");
+    const speak = path.join(root, "scripts", "speak.js");
+    const before = fs.readdirSync(state);
+    const dry = spawnSync(process.execPath, [speak, "--dry-run", "--text", "Hello."], { encoding: "utf8", timeout: 10000 });
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.equal(dry.stdout, "Hello.");
+    assert.deepEqual(fs.readdirSync(state), before);
+    assert.equal(fs.readFileSync(path.join(state, "playback.lock"), "utf8"), "not-my-lock");
+    for (const args of [["--maxChunkChars", "0"], ["--speed", "no"], ["--provider", "edge"]]) {
+      const bad = spawnSync(process.execPath, [speak, "--dry-run", "--text", "Hello", ...args], { encoding: "utf8", timeout: 10000 });
+      assert.equal(bad.status, 1);
+      assert.deepEqual(fs.readdirSync(state), before);
+    }
+    const locked = spawnSync(process.execPath, [speak, "--text", "Hello"], { encoding: "utf8", timeout: 10000 });
+    assert.equal(locked.status, 1);
+    assert.deepEqual(fs.readdirSync(state), before);
+    fs.writeFileSync(path.join(root, "assets", "settings.json"), "null");
+    const nullSettings = spawnSync(process.execPath, [speak, "--dry-run", "--text", "Hello"], { encoding: "utf8", timeout: 10000 });
+    assert.equal(nullSettings.status, 0, nullSettings.stderr);
+    assert.deepEqual(readObject(path.join(root, "assets", "settings.json")), {});
+    const watcher = require(path.join(root, "scripts", "watch-codex.js"));
+    const transcript = path.join(fixture, "rollout-fixture.jsonl");
+    const encoded = JSON.stringify(record);
+    fs.writeFileSync(transcript, encoded.slice(0, 20));
+    const keys = new Set();
+    const args = { dryRun: "true", phase: "final_answer", includeEventMessages: "false", dedupe: "true" };
+    const pending = await watcher.processNewLines(transcript, 0, args, keys);
+    assert.deepEqual(pending, { cursor: 0, spoken: 0 });
+    fs.appendFileSync(transcript, encoded.slice(20) + "\n" + encoded + "\n");
+    const complete = await watcher.processNewLines(transcript, pending.cursor, args, keys);
+    assert.equal(complete.spoken, 1);
+    assert.equal(complete.cursor, fs.statSync(transcript).size);
+    fs.mkdirSync(path.join(root, "state"), { recursive: true });
+    fs.writeFileSync(path.join(root, "state", "stop.flag"), "fixture-stop");
+    const stopped = await watcher.processNewLines(transcript, 0, args, new Set());
+    assert.equal(stopped.spoken, 0);
+    assert.equal(stopped.cursor, fs.statSync(transcript).size);
+  } finally { fs.rmSync(fixture, { recursive: true, force: true }); }
+  const support = spawnSync(process.execPath, [path.join(__dirname, "support-safety.test.js")], { encoding: "utf8", timeout: 30000 });
+  assert.equal(support.status, 0, support.stderr);
+  console.log("PASS: Dom TTS offline speech, watcher, ownership and diagnostic safety fixtures.");
+}
+
+main().catch(error => { console.error(error.stack); process.exitCode = 1; });
