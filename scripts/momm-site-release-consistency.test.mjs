@@ -35,9 +35,13 @@ check('safe front doors', () => {
     const signed = text.indexOf('Install MOMM for me by following https://marroccofella.github.io/skills/momm/install');
     const development = text.indexOf('Development checkout — unsigned');
     const clone = text.indexOf('git clone https://github.com/marroccofella/skills');
-    assert(signed >= 0 && development > signed && clone > development, name);
-    assert(text.slice(development).includes('node install.mjs --target claude --dry-run'), name);
-    assert(!text.includes('node install.mjs --target claude</code>'), name);
+    assert(signed >= 0, name + ': missing signed-install prompt');
+    assert(development > signed, name + ': development route must follow signed-install guidance');
+    assert(clone > development, name + ': clone command must be under the development heading');
+    const section = text.slice(development).split(name.endsWith('.md') ? /\n## / : /<\/div>/)[0];
+    const commands = section.match(/node install\.mjs --target [^\n<`]+/g) || [];
+    assert(commands.length > 0, name + ': missing development preview');
+    assert(commands.every(command => /(?:^|\s)--dry-run(?:\s|$)/.test(command)), name + ': development command must be preview-only');
   }
 });
 check('immutable 1.17 evidence links', () => {
