@@ -16,6 +16,8 @@ docs/evidence/** text eol=lf
 docs/momm/llms.txt text eol=lf
 # Captions are byte-hashed delivery assets, including their original line endings.
 *.vtt -text
+# Provider captures are test fixtures read byte for byte; keep the bytes exactly as captured.
+momm/scripts/fixtures/** -text
 docs/momm/brands/*.svg text eol=lf
 *.png binary
 *.jpg binary

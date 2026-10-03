@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {inspectEvidencePermissions,requirePrivateEvidence,requirePrivateScratch,preparePrivateEvidence,createPrivateDirectory,protectEvidence,evidenceRemediation} from '../momm/scripts/evidence-permissions.mjs';
+import {evidenceLocation,recordEvidenceProject} from '../momm/scripts/evidence-location.mjs';
 const dir=path.resolve('synthetic-evidence');
 // Actual allocator code, isolated dependencies: a stripped Windows environment
 // must refuse with the privacy error before spawning or allocating anything.
@@ -52,11 +53,12 @@ const start=source.indexOf('  const currentDepth = parseReviewDepth(process.env.
 const end=source.indexOf('  const sourceSnapshot = captureSourceSnapshot',start);
 assert(start>=0&&end>start);
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-const dispatchPrelude=new AsyncFunction('process','parseReviewDepth','VALID_GOVERNORS','options','path','preparePrivateEvidence','collectArtifact',source.slice(start,end));
+// 1.17 A7: the prelude resolves the evidence folder first; the real resolver, in its default mode.
+const dispatchPrelude=new AsyncFunction('process','parseReviewDepth','VALID_GOVERNORS','options','path','preparePrivateEvidence','collectArtifact','evidenceLocation','recordEvidenceProject',source.slice(start,end));
 for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',false]]){
  let collected=0,created=0;
  const fixture={...fsx,mkdirSync:(_dir,options)=>{created++;assert.equal(options.mode,0o700);if(kind==='mkdir_failed')throw Error('SENSITIVE FIXTURE DETAIL');},lstatSync:()=>stat({mode:kind==='broad'?0o40755:0o40700})};
- const run=dispatchPrelude({env:{}},()=>0,new Set(['codex']),{governor:'codex',timeoutMs:1000,maxBytes:1024},path,d=>preparePrivateEvidence(d,{platform:'linux',uid:123,fsx:fixture}),async()=>{collected++;return 'synthetic input';});
+ const run=dispatchPrelude({env:{},cwd:()=>path.resolve('synthetic-project')},()=>0,new Set(['codex']),{governor:'codex',timeoutMs:1000,maxBytes:1024},path,d=>preparePrivateEvidence(d,{platform:'linux',uid:123,fsx:fixture}),async()=>{collected++;return 'synthetic input';},evidenceLocation,recordEvidenceProject);
  if(expected)await run;
  else await assert.rejects(run,error=>error.code==='MOMM_EVIDENCE_PERMISSIONS'&&!error.message.includes('SENSITIVE FIXTURE DETAIL'));
  assert.equal(created,1);assert.equal(collected,expected?1:0);checks++;
@@ -86,6 +88,48 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
  assert.throws(()=>requirePrivateEvidence(dir,{...winBase,fsx,run:broadRun}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='additional_principal'
   &&/other accounts or groups can access it/.test(e.message)&&/evidence --protect/.test(e.message)&&/No permission changes were made/.test(e.message));checks++;
  assert.match(evidenceRemediation(dir,'linux'),/chmod -R go-rwx/);checks++;
+ // Gate-3 review of 1.17.0: with an evidence home the printed command names the same home, because
+ // --evidence-home given to the review does not carry over to the next command.
+ {
+  const home=path.resolve('synthetic-home'),folder=path.join(home,'0123456789abcdef0123456789abcdef');
+  for(const platform of ['linux','win32']){
+   const quoted=`'${home.replaceAll("'",platform==='win32'?"''":"'\\''")}'`,withHome=evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home});
+   assert(withHome.includes(`multi-review.mjs" evidence --evidence-home ${quoted} --protect`),withHome);
+   assert(evidenceRemediation(path.join(folder,'reports'),platform,{MOMM_EVIDENCE_HOME:home}).includes(`--evidence-home ${quoted} --protect`));
+   for(const env of [{},{MOMM_EVIDENCE_HOME:''},{MOMM_EVIDENCE_HOME:'relative-home'},{MOMM_EVIDENCE_HOME:path.resolve('other-home')}])
+    assert(evidenceRemediation(folder,platform,env).includes('multi-review.mjs" evidence --protect'),JSON.stringify(env));
+   assert(evidenceRemediation(dir,platform,{MOMM_EVIDENCE_HOME:home}).includes('multi-review.mjs" evidence --protect'),'the in-project folder needs no home');
+  }
+  checks++;
+ }
+ // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the printed command is one literal argument per path,
+ // single-quoted as the completion check is, so a home holding a quote, a dollar sign or an apostrophe cannot
+ // break the command or expand. The POSIX chmod equivalent quotes its folder the same way.
+ {
+  const home=path.resolve(`synthetic "h'o$me`),folder=path.join(home,'0123456789abcdef0123456789abcdef');
+  const posix=evidenceRemediation(folder,'linux',{MOMM_EVIDENCE_HOME:home}),windows=evidenceRemediation(folder,'win32',{MOMM_EVIDENCE_HOME:home});
+  assert(posix.includes(`evidence --evidence-home '${home.replaceAll("'","'\\''")}' --protect`),posix);
+  assert(posix.includes(`chmod -R go-rwx '${folder.replaceAll("'","'\\''")}'`),posix);
+  assert(windows.includes(`evidence --evidence-home '${home.replaceAll("'","''")}' --protect`),windows);
+  assert(!posix.includes(`"${home}"`)&&!windows.includes(`"${home}"`));
+  checks++;
+ }
+ // Final review of 1.17.0 (rev_20260930054910_0852b507489e): cmd.exe does not read single quotes, so a home with a
+ // space split into several arguments there and a home with & ran the rest as a command. Each Windows form now names
+ // its shell: PowerShell single quotes (typographic single quotes doubled too), cmd.exe double quotes, and no cmd.exe
+ // form for a home with a percent sign, which cmd.exe expands even inside double quotes.
+ {
+  const form=(text,shell)=>{const m=[...text.matchAll(/(node "<installed-momm>\/scripts\/multi-review\.mjs" evidence --evidence-home (?:'(?:[^']|'')*'|"[^"]*") --protect) in (PowerShell|cmd\.exe)/g)].find(x=>x[2]===shell);return m?m[1]:null;};
+  const at=(home)=>evidenceRemediation(path.join(home,'0123456789abcdef0123456789abcdef'),'win32',{MOMM_EVIDENCE_HOME:home});
+  const home=path.resolve('A B & c $x \u2019q\' (1)'),text=at(home);
+  assert.equal(form(text,'PowerShell'),`node "<installed-momm>/scripts/multi-review.mjs" evidence --evidence-home '${home.replace(/['\u2019]/g,'$&$&')}' --protect`,text);
+  assert.equal(form(text,'cmd.exe'),`node "<installed-momm>/scripts/multi-review.mjs" evidence --evidence-home "${home}" --protect`,text);
+  const percent=at(path.resolve('x %PATH% y'));
+  assert(form(percent,'PowerShell')&&!/ in cmd\.exe/.test(percent),percent);
+  if(process.platform==='win32')assert(at('D:\\').includes('--evidence-home "D:\\\\" --protect in cmd.exe'),'a drive root keeps its backslash inside the quotes');
+  assert(!/ in (PowerShell|cmd\.exe)/.test(evidenceRemediation(path.join(home,'0123456789abcdef0123456789abcdef'),'linux',{MOMM_EVIDENCE_HOME:home})),'POSIX keeps one form');
+  checks++;
+ }
  // The protect action only ever targets a directory named .ensemble_reviews, and spawns nothing otherwise.
  const noSpawn=()=>{throw Error('Must not spawn');};
  assert.throws(()=>protectEvidence(path.resolve('Documents'),{...winBase,run:noSpawn,fsx}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/only ever changes a directory named \.ensemble_reviews/.test(e.message));checks++;

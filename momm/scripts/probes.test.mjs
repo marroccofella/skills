@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { CODEX_REVIEW_ISOLATION_ARGS, commandShapeSha256 as shapeSha256 } from "./route-isolation.mjs";
+const CODEX_INPUT_SHAPE = (modality) => shapeSha256("codex", "input", modality);
 import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, PROBE_CLIS, PROBES_FILE, sha256, findFindings, unavailableReason, SYNTHETIC_DIFF, defaultExec, windowsLauncher, parseTimeoutArg, isolateReply, classifyReply, canaryPrompt, AUTH_PATTERN,
   runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent, relativeProbeRef } from "./probes.mjs";
 import zlib from "node:zlib";
@@ -49,7 +51,8 @@ function fakeExec({ reply, review = ok(JSON.stringify({ result: REVIEW })), vers
 // Every exec the fake saw (argv, stdin, cwd and any --prompt-file name), serialised: the review
 // route never reaches reply(), so token checks must scan this, not only what reply() observed.
 const callBlob = f => JSON.stringify(f.calls.map(c => ({ command: c.command, args: c.args, input: c.options?.input, cwd: c.options?.cwd })));
-const opts = extra => ({ tmpdir: fixture, timeoutMs: 5000, now: (() => { let t = 1_800_000_000_000; return () => (t += 1500); })(), ...extra });
+// A synthetic home: a codex probe reads ~/.codex/config.toml (read-only), never the real one here.
+const opts = extra => ({ tmpdir: fixture, timeoutMs: 5000, home: path.join(fixture, "home"), now: (() => { let t = 1_800_000_000_000; return () => (t += 1500); })(), ...extra });
 const leftovers = () => fs.readdirSync(fixture).filter(n => n.startsWith("momm-probe-"));
 
 try {
@@ -133,7 +136,9 @@ try {
     assert.deepEqual(denied, ["Read", "Grep", "Bash", "Edit", "MCPTool", "WebFetch", "WebSearch"]);
     assert.deepEqual(g, ["--prompt-file", "P", "--verbatim", "--no-subagents", ...denied.flatMap(t => ["--deny", t]), "--max-turns", "4", "--output-format", "json", "--permission-mode", "plan", "--disable-web-search"]);
     assert.deepEqual(containmentVector("antigravity", { canaryPath: "C", promptPath: "P", projectDir: "D", prompt: "X" }).args, ["-p", "X", "--new-project", "--output-format", "json", "--mode=plan", "--sandbox"]);
-    assert.deepEqual(reviewVector("codex", { promptPath: "P", projectDir: "D", prompt: "X" }).args, ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"]);
+    // 1.17 A2 parity: the codex probe sends the review's command, isolation included (codexReviewArgs).
+    assert.deepEqual(reviewVector("codex", { promptPath: "P", projectDir: "D", prompt: "X" }).args, ["exec", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...CODEX_REVIEW_ISOLATION_ARGS, "-"]);
+    assert.ok(CODEX_REVIEW_ISOLATION_ARGS.includes("--ignore-user-config") && CODEX_REVIEW_ISOLATION_ARGS.includes("--ignore-rules"));
     assert.deepEqual(containmentVector("copilot", { canaryPath: "C", promptPath: "P", projectDir: "D", prompt: "X" }).args, ["-p", "X", "-s", "--stream", "off", "--no-color", "--no-custom-instructions", "--disable-builtin-mcps", "--no-remote-export", "--log-level", "none", "--available-tools=view", "--allow-tool=view", "--add-dir", "D"]);
     assert.equal(SYNTHETIC_DIFF.split("\n").length, 20); assert.match(SYNTHETIC_DIFF, /i <= limit/);
   });
@@ -429,8 +434,42 @@ try {
     assert.equal(launch.error, undefined, launch.error?.message); assert.equal(launch.command, fs.realpathSync(path.join(native, "claude.exe")), "the checked, resolved path is returned");
     const onlyShim = windowsLauncher("claude", [], { PATH: shims }, "win32");
     assert.equal(onlyShim.error?.code, "MOMM_UNSUPPORTED_LAUNCHER", "an unverifiable shim with no native fallback is still refused");
-    assert.deepEqual(windowsLauncher("claude", ["a"], env, "linux"), { command: "claude", args: ["a"] });
+    // Until 1.17 A1 this asserted that off Windows the bare name came back ({ command: "claude" }), so a
+    // direct probes.mjs run left the choice to PATH, where an entry inside the project could supply it.
+    // Off Windows the launcher now resolves like processScope.spawn; see posix_launcher_* below.
+    assert.equal(windowsLauncher("claude", ["a"], env, "linux").command, undefined, "no bare name comes back off Windows");
   });
+  // 1.17 A1 follow-up (29 September 2026): direct probes.mjs runs resolve the way processScope does.
+  {
+    const posixDouble = (files, links = {}) => {
+      const real = p => { let s = String(p); for (const [from, to] of Object.entries(links)) if (s === from || s.startsWith(from + "/")) s = to + s.slice(from.length); return s; };
+      return { statSync: p => { const m = files[real(p)]; if (m === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return { isFile: () => m !== "dir", mode: m === "dir" ? 0o40755 : m }; }, realpathSync: Object.assign(real, { native: real }) };
+    };
+    const files = { "/proj": "dir", "/proj/bin": "dir", "/usr/bin": "dir", "/tmp/probe": "dir", "/proj/bin/claude": 0o100755, "/usr/bin/claude": 0o100755, "/opt/a": "dir", "/opt/a/claude": 0o100644 };
+    const launch = (command, PATH, extra = {}) => windowsLauncher(command, ["-p", "x"], { PATH }, "darwin", "/tmp/probe", { fs: posixDouble(files, extra.links), project: "/proj" });
+    await test("posix_launcher_resolves_outside_the_project_like_the_scope", () => {
+      assert.deepEqual(launch("claude", "/proj/bin:.::/opt/a:/usr/bin"), { command: "/usr/bin/claude", args: ["-p", "x"] });
+      assert.deepEqual(launch("claude", "/alias:/usr/bin", { links: { "/alias": "/proj/bin" } }), { command: "/usr/bin/claude", args: ["-p", "x"] }, "a link outside that lands inside the project is refused");
+    });
+    await test("posix_launcher_reports_not_installed_instead_of_a_bare_name", () => {
+      const inside = launch("claude", "/proj/bin");
+      assert.equal(inside.command, undefined); assert.equal(inside.error?.code, "ENOENT"); assert.match(inside.error.message, /only found inside the reviewed project/);
+      const relative = launch("./claude", "/usr/bin");
+      assert.equal(relative.command, undefined); assert.match(relative.error?.message ?? "", /relative path/);
+      assert.deepEqual(launch("/usr/bin/claude", ""), { command: "/usr/bin/claude", args: ["-p", "x"] }, "an absolute path MOMM named is used as given");
+    });
+    if (process.platform !== "win32") {
+      await test("posix_default_exec_scrubs_project_entries_from_the_child_path", async () => {
+        const proj = path.join(fixture, "posix-proj"); fs.mkdirSync(path.join(proj, "bin"), { recursive: true });
+        const trusted = fs.realpathSync(path.dirname(process.execPath));
+        const r = await defaultExec(process.execPath, ["-e", "process.stdout.write(String(process.env.PATH))"], { cwd: proj, env: { PATH: `${path.join(proj, "bin")}:.::${trusted}` }, timeout: 20_000 });
+        assert.equal(r.code, 0, r.stderr); assert.equal(r.stdout, trusted);
+        fs.writeFileSync(path.join(proj, "bin", "mommprobe"), "#!/bin/sh\necho planted\n", { mode: 0o755 });
+        const refused = await defaultExec("mommprobe", [], { cwd: proj, env: { PATH: path.join(proj, "bin") }, timeout: 20_000 });
+        assert.equal(refused.error?.code, "ENOENT"); assert.equal(refused.stdout, "");
+      });
+    }
+  }
   await test("windows_launcher_never_hands_a_bare_name_to_spawn", () => {
     // Gate rev_20260919023950_h6hn: on Windows a bare name given to spawn can be looked up in the
     // working directory (older libuv), which for a probe is a project that is not trusted. A name
@@ -446,8 +485,20 @@ try {
     }
     const cwdOnly = windowsLauncher("grok", [], { PATH: "." }, "win32");
     assert.equal(cwdOnly.error?.code, "ENOENT", "a relative PATH entry (the working directory) is never searched");
+    // An absolute path outside the project is launched, by the real path that was checked (the same file
+    // through an aliased temp folder); since gate-3 of 1.17.0 one that lies inside the project is refused.
     const absolute = path.join(bin, "grok.exe");
-    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: absolute, args: ["x"] });
+    assert.deepEqual(windowsLauncher(absolute, ["x"], env, "win32"), { command: process.platform === "win32" ? fs.realpathSync.native(absolute) : fs.realpathSync(absolute), args: ["x"] });
+    const project = path.join(fixture, "launcher-project"); fs.mkdirSync(path.join(project, "bin"), { recursive: true });
+    const planted = path.join(project, "bin", "grok.exe"); fs.writeFileSync(planted, "MZ");
+    for (const [label, cwd, opts] of [["the probe's working directory", project, {}], ["MOMM's own directory", bin, { project }]]) {
+      const inside = windowsLauncher(planted, ["x"], env, "win32", cwd, opts);
+      assert.equal(inside.command, undefined, `an absolute path inside ${label} is refused`); assert.equal(inside.error?.code, "ENOENT");
+    }
+    const alias = path.join(fixture, "launcher-alias"); fs.symlinkSync(path.join(project, "bin"), alias, "junction");
+    const linked = windowsLauncher(path.join(alias, "grok.exe"), ["x"], env, "win32", project);
+    assert.equal(linked.command, undefined, "an outside link whose real file is inside the project is refused"); assert.equal(linked.error?.code, "ENOENT");
+    assert.equal(windowsLauncher(path.join(fixture, "no-such", "grok.exe"), [], env, "win32").error?.code, "ENOENT", "a missing absolute path is refused, not launched");
   });
   // nan-timeout-from-argv
   await test("timeout_argument_is_validated", () => {
@@ -544,7 +595,12 @@ try {
       assert.equal(r.verdict, "pass", JSON.stringify(r.summary));
       assert.equal(f.calls.length, 4, `${cli}: version + 3 input probes`);
       assert.equal(reg.entries.length, 3);
-      for (const { home, entry } of reg.entries) { assert.equal(home, path.join(fixture, "home")); assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null); assert.equal(Date.parse(entry.expires_at) - Date.parse(entry.at), 7 * 86_400_000); assert.equal(entry.cli_version, "9.9.9"); assert.match(entry.machine_id, /^[0-9a-f]{32}$/); assert.equal(entry.direction, "input"); assert.equal(entry.evidence.probe, MODALITY_PROBE_SCHEMA); assert.match(entry.evidence.material_sha256, /^[0-9a-f]{64}$/); }
+      for (const { home, entry } of reg.entries) { assert.equal(home, path.join(fixture, "home")); assert.equal(entry.level, "verified");
+        // 1.17 A2 parity: codex input cells now send the review's isolation, a command 1.16.1 does not send, so
+        // the success is stored as probe_failed (which 1.16.1 refuses) plus the shape this MOMM routes on.
+        if (cli === "codex") { assert.equal(entry.blocker, "probe_failed"); assert.equal(entry.verified_command_shape_sha256, CODEX_INPUT_SHAPE(entry.modality)); }
+        else { assert.equal(entry.blocker, null); assert.equal(entry.verified_command_shape_sha256, undefined); }
+        assert.equal(Date.parse(entry.expires_at) - Date.parse(entry.at), 7 * 86_400_000); assert.equal(entry.cli_version, "9.9.9"); assert.match(entry.machine_id, /^[0-9a-f]{32}$/); assert.equal(entry.direction, "input"); assert.equal(entry.evidence.probe, MODALITY_PROBE_SCHEMA); assert.match(entry.evidence.material_sha256, /^[0-9a-f]{64}$/); }
       assert.deepEqual(reg.effectiveCalls[0].installedVersions, { [cli]: "9.9.9" });
       assert.equal(cellOf(r, "image").material.bytes, syntheticPng("red").length);
       assert.equal(fs.readdirSync(fixture).filter(n => n.startsWith("momm-modality-")).length, 0, "private probe directory removed");
@@ -609,8 +665,8 @@ try {
     assert.equal(video.status, "blocked"); assert.equal(video.blocker, "zdr"); assert.match(video.clearing_action, /privacy|bucket/);
     assert.equal(seen.length, 1, "the gate is learned from one request"); assert.ok(seen[0].some(a => /image_to_video/.test(a)) && seen[0].some(a => /probe\.png/.test(a)), "video probe uses the synthetic PNG");
     assert.equal(grok.entries[0].entry.blocker, "zdr"); assert.equal(grok.entries[0].entry.level, "verified"); assert.equal(grok.entries[0].entry.expires_at, new Date(at + 7 * 86_400_000).toISOString());
-    assert.equal(blockerInText('{"denied_actions":[{"action":"run_command","display_name":"RunCommand"}]}'), "allowlist");
-    assert.equal(blockerInText('{"denied_actions":[{"action":"read_file","display_name":"ViewFile"}]}'), "missing_flag");
+    assert.equal(blockerInText('{"denied_actions":[{"action":"run_command","display_name":"RunCommand"}]}', "antigravity"), "allowlist");
+    assert.equal(blockerInText('{"denied_actions":[{"action":"read_file","display_name":"ViewFile"}]}', "antigravity"), "missing_flag");
     assert.equal(clearingAction("reprobe").includes("--modalities"), true); assert.equal(clearingAction("nonsense"), null);
     assert.equal(expiresAtFor("probe_failed", at), null);
   });
@@ -757,7 +813,7 @@ try {
   });
   await test("vectors_bind_the_file_and_codex_closes_the_variadic_image_flag", () => {
     const v = inputProbeVector("codex", { filePath: "F", projectDir: "D", prompt: "P" });
-    assert.deepEqual(v.args, ["exec", "-i", "F", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", "-"]); assert.equal(v.input, "P");
+    assert.deepEqual(v.args, ["exec", "-i", "F", "--sandbox", "read-only", "--color", "never", "--skip-git-repo-check", ...CODEX_REVIEW_ISOLATION_ARGS, "-"]); assert.equal(v.input, "P");
     assert.ok(inputProbeVector("claude", { filePath: "F", projectDir: "D", prompt: "P" }).args.includes("--add-dir"));
     // gemini @refs split on whitespace, so the reference is relative to the probe cwd: compared
     // against the same realpath-based computation, on real paths, never a literal (CI run 34785555601).
@@ -823,7 +879,10 @@ try {
     assert.equal(cellOf(r, "image_gen").status, "verified", cellOf(r, "image_gen").reason);
     assert.equal(sent.length, 1); assert.match(sent[0], /image_gen tool/);
     assert.equal(cellOf(r, "video_gen").status, "skipped"); assert.equal(cellOf(r, "video_gen").blocker, "zdr");
-    const entry = reg.entries.find(e => e.entry.modality === "image_gen").entry; assert.equal(entry.level, "verified"); assert.equal(entry.blocker, null, "the recovery probe clears the blocker");
+    const entry = reg.entries.find(e => e.entry.modality === "image_gen").entry; assert.equal(entry.level, "verified");
+    // 1.17 (review rev_20260929211625_0b5ba54cb0e5): Grok image generation changed its command since 1.16.1, so the
+    // recovery probe records the success in the form older readers refuse (probe_failed) and this MOMM honours.
+    assert.equal(entry.blocker, "probe_failed"); assert.equal(entry.verified_command_shape_sha256, (await import("./route-isolation.mjs")).commandShapeSha256("grok", "output", "image_gen"), "the recovery probe verifies the cell for this MOMM's command");
   });
   // audio-refusal-verifies-capability: a refusal defeats every content pattern, not only CANNOT-VIEW.
   await test("refusals_never_confirm_any_modality", () => {
@@ -965,6 +1024,32 @@ try {
     // The projection of the shipped baseline is what the dispatcher pins as MODALITY_SUPPORT.
     const projected = registry.projection(registry.loadBaseline());
     assert.deepEqual(Object.keys(projected.grok).sort(), ["image", "pdf", "text"]);
+  });
+
+  // 29 September 2026: in headless mode Grok's image_gen and image_to_video tool calls raise a
+  // permission request that nobody can answer, so the call is cancelled (session log: decision
+  // "cancelled"). acceptEdits approves edits only. The generation vector must allow exactly the one
+  // tool it asks for, never every tool.
+  await test("grok_generation_allows_only_the_requested_media_tool", () => {
+    const allows = (v) => v.args.flatMap((a, i) => (a === "--allow" ? [v.args[i + 1]] : []));
+    const image = generativeProbeVector("grok", "image_gen", { projectDir: "D" });
+    assert.deepEqual(allows(image), ["image_gen"]);
+    const video = generativeProbeVector("grok", "video_gen", { projectDir: "D", imagePath: "I" });
+    assert.deepEqual(allows(video), ["image_to_video"]);
+    for (const v of [image, video]) {
+      assert.ok(!v.args.includes("bypassPermissions") && !v.args.includes("--always-approve"), "never approve everything");
+      assert.equal(v.args[v.args.indexOf("--permission-mode") + 1], "acceptEdits");
+    }
+  });
+  // The same day: a Grok reply mentioning permissions.allow was recorded as the Antigravity
+  // allowlist gate, with Antigravity's settings-file remedy. The allowlist and missing_flag
+  // phrasings are Antigravity's own; another route's reply never names them.
+  await test("antigravity_gate_phrasing_is_not_read_into_other_routes", () => {
+    const text = 'tool image_gen needs approval; add it to permissions.allow';
+    assert.equal(blockerInText(text, "antigravity"), "allowlist");
+    assert.equal(blockerInText(text, "grok"), null);
+    assert.equal(blockerInText('"denied_actions": ["read_file"] --add-dir', "grok"), null);
+    assert.equal(blockerInText("You have exceeded your monthly quota", "grok"), "quota", "provider-neutral gates still apply to every route");
   });
 
   if (failures.length) {

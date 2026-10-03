@@ -103,10 +103,24 @@ node .git/momm/update.mjs --rollback --yes
 
 Worktrees use the exact printed administrative path. Existing update claims are
 never automatically reclaimed, even when their PID appears dead: checking a PID
-then deleting a claim can race another updater. Independently confirm that no
-updater is running before manually removing only the reported `update.active`.
-Keep `transaction.json` and `momm.lock`, then retry the retained recovery command.
-A stale claim can therefore require this explicit recovery step. Recovery refuses local changes
+then deleting a claim can race another updater, and PIDs are reused. An updater
+killed mid-transaction therefore leaves `update.active` behind, and recovery
+refuses with the claim's path and two commands. Independently confirm that no
+updater is running, then release only that claim with the printed token:
+
+```text
+node .git/momm/update.mjs --release-claim <token>
+node .git/momm/update.mjs --rollback --yes
+```
+
+`--release-claim` removes `update.active` only when the file parses, its token
+equals the one given exactly, and its recorded PID is not running (a process
+that exists but cannot be signalled counts as running). It prints what it
+removed, never touches `transaction.json` or `momm.lock`, and cannot be combined
+with `--apply`, `--dry-run`, `--rollback` or any other option except `--repo`.
+An unreadable claim gets no release command: inspect it, remove only that file
+yourself, keep `transaction.json` and `momm.lock`, then retry the retained
+recovery command. Recovery refuses local changes
 or an unrelated checkout rather than overwriting them. A missing harness CLI may
 need restoring before relinking succeeds. Deleted Git objects, a deleted clone or
 disk failure require a real backup. This is not a promise that rollback survives

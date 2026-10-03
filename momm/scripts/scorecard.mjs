@@ -17,12 +17,24 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
+import { evidenceDir, evidenceReference } from './evidence-location.mjs';
 
 export const SCORE_MIN_RULED = 8;
 // The formula, in one place, so nobody has to guess what the number rewards.
 export const SCORE_WEIGHTS = { acceptance: 0.4, reliability: 0.25, unique_share: 0.2, calibration: 0.15 };
+// B6 (1.17): per route and role. Shown only; nothing routes on these numbers.
+export const ROSTER_LABEL = "Per route and role: this project's governor decisions, not a benchmark. Nothing routes on these numbers.";
+const ROSTER_DEFINITIONS = {
+  valid_review_rate: "successful reviews / reviews asked (split runs count pieces)",
+  reproduced_claim_rate: "applied findings whose decision row cites a hash-verified momm-check/1 'before' record with a non-zero exit / applied findings",
+  false_critical_rate: "CRITICAL findings rejected with a hash-verified, completed investigation record / CRITICAL findings accepted or rejected",
+  median_review_seconds: "median of the report's duration_ms per review asked",
+  cover_success_rate: "covers[] entries (1.17 --cover) that succeeded / covers attempted, credited to the covering route in the covered role; each cover is also a review asked of that seat",
+  attribution: "a decision counts for its row's reviewer and role; a row without role takes the report's reviewers[].role, else reviewers[].persona, else (a route that only covered) its covers[] role",
+};
 const CAVEAT = "Labels are this project's governor decisions, not ground truth. Agreement between reviewers is corroboration, not proof. Small samples mislead; a score appears only from " + SCORE_MIN_RULED + " ruled findings.";
 
 const CONTROL = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(8) + String.fromCharCode(11) + String.fromCharCode(12) + String.fromCharCode(14) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "-" + String.fromCharCode(159) + "]", "g");
@@ -48,13 +60,45 @@ function readJsonLines(file) {
   return { rows, unreadable, present: true };
 }
 function readEvidence(project) {
-  const er = path.join(project, ".ensemble_reviews");
+  const er = evidenceDir({ cwd: project, env: process.env }); // 1.17 A7: the resolved folder
   const log = readJsonLines(path.join(er, "review-log.jsonl")), decisions = readJsonLines(path.join(er, "dispositions.jsonl"));
   const reports = new Map(); let unreadableReports = 0;
   let names = []; try { names = fs.readdirSync(path.join(er, "reports")).filter((n) => /^rev_[A-Za-z0-9_]+\.json$/.test(n)).slice(0, 20000); } catch { /* no reports yet */ }
   for (const name of names) { try { const r = JSON.parse(fs.readFileSync(path.join(er, "reports", name), "utf8")); if (r?.run_id) reports.set(r.run_id, r); else unreadableReports++; } catch { unreadableReports++; } }
   return { er, present: log.present || decisions.present || names.length > 0, reports, decisions: decisions.rows, integrity: { unreadable_log_lines: log.unreadable, unreadable_disposition_lines: decisions.unreadable, unreadable_reports: unreadableReports } };
 }
+
+// A decision row's check reference, read only if it is a bounded regular file whose bytes match the
+// recorded sha256, inside the folder the reference resolves to: '.ensemble_reviews/...' in the resolved
+// evidence folder (1.17 A7, as governor.mjs and checks.mjs resolve it), anything else in the project.
+// Anything else is treated as no evidence, never as a failure.
+function readCheck(project, ref, evidence = evidenceDir({ cwd: project, env: process.env })) {
+  if (!ref || typeof ref !== "object" || typeof ref.path !== "string" || !/^[a-f0-9]{64}$/.test(ref.sha256 ?? "")) return null;
+  const rel = ref.path;
+  if (path.isAbsolute(rel) || rel.includes(":") || rel.includes("\\") || rel.split("/").some((p) => !p || p === "." || p === "..")) return null;
+  try {
+    const { base: from, parts } = evidenceReference(rel, { root: project, dir: evidence });
+    // An evidence home folder reached through a link is not followed (the governor refuses it too).
+    if (from !== path.resolve(project) && fs.lstatSync(from).isSymbolicLink()) return null;
+    const base = fs.realpathSync.native(from), file = path.join(base, ...parts), stat = fs.lstatSync(file);
+    // A project at a filesystem root already ends in the separator ("C:\", "/").
+    const inside = base.endsWith(path.sep) ? base : base + path.sep;
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8_000_000 || !fs.realpathSync.native(file).startsWith(inside)) return null;
+    const bytes = fs.readFileSync(file);
+    if (createHash("sha256").update(bytes).digest("hex") !== ref.sha256) return null;
+    const check = JSON.parse(bytes.toString("utf8"));
+    return check && check.schema === "momm-check/1" && Number.isInteger(check.exit_code) ? check : null;
+  } catch { return null; }
+}
+const roleOf = (entry) => { const role = entry?.role ?? entry?.persona; return typeof role === "string" && role.trim() ? clean(role, 80) : null; };
+// The role a route's finding is credited to when the decision row names none: its native row, else, for a
+// route that only covered, the one role it covered successfully (1.17 B3).
+const routeRole = (report, route) => {
+  const native = (report.reviewers ?? []).find((r) => lower(r?.agent) === route);
+  if (native) return roleOf(native);
+  const covered = [...new Set((Array.isArray(report.covers) ? report.covers : []).filter((c) => c?.cover === true && c.status === "success" && lower(c.agent) === route).map(roleOf))];
+  return covered.length === 1 ? covered[0] : null;
+};
 
 export function scoreOf({ acceptance_rate, valid_rate, unique_share, severity_inflation, ruled }) {
   if (!(ruled >= SCORE_MIN_RULED) || acceptance_rate === null || valid_rate === null) return { score: null, note: `insufficient evidence: ${ruled ?? 0} ruled findings, ${SCORE_MIN_RULED} needed` };
@@ -64,7 +108,7 @@ export function scoreOf({ acceptance_rate, valid_rate, unique_share, severity_in
 }
 
 export function buildScorecard(project) {
-  const { present, reports, decisions, integrity } = readEvidence(project);
+  const { er, present, reports, decisions, integrity } = readEvidence(project);
   const rulings = decisions.filter((d) => d.kind !== "review_rating" && typeof d.disposition === "string");
   const ratingRows = decisions.filter((d) => d.kind === "review_rating" && Number.isInteger(d.rating));
   const byFinding = new Map(); // run_id + finding_id -> ruling (the latest wins)
@@ -75,6 +119,8 @@ export function buildScorecard(project) {
   const NOT_A_REVIEW = new Set(["self_excluded", "not_dispatched", "disabled", "governor_direct"]);
   const ensemble = { runs: 0, quorum_met: 0, findings: 0, ruled: 0, accepted_findings: 0, accepted_corroborated: 0, accepted_single_source: 0, rejected_corroborated: 0, rejected_single_source: 0, missed_if_alone: {}, durations: [] };
   const acceptedSets = []; // for "missed if alone"
+  const roster = new Map();
+  const seat = (route, role) => { const k = JSON.stringify([lower(route), role]); if (!roster.has(k)) roster.set(k, { route: lower(route), role, reviews_asked: 0, reviews_valid: 0, applied_findings: 0, reproduced_claims: 0, critical_ruled: 0, critical_false: 0, covers_attempted: 0, covers_succeeded: 0, durations: [] }); return roster.get(k); };
 
   for (const report of reports.values()) {
     ensemble.runs++; if (report.quorum?.met === true) ensemble.quorum_met++;
@@ -91,9 +137,13 @@ export function buildScorecard(project) {
       const requested = pieces?.length ? pieces.filter(([status]) => !NOT_A_REVIEW.has(status)) : null;
       const asked = pieces?.length ? requested.reduce((sum, [, n]) => sum + n, 0) : 1;
       if (pieces?.length && asked === 0) continue; // every piece was withheld: nothing was asked of this route
+      const validBefore = p.reviews_valid;
       if (pieces?.length) { for (const [status, n] of requested) { p.outcomes[status] = (p.outcomes[status] ?? 0) + n; if (status === "success") p.reviews_valid += n; } }
       else { p.outcomes[row.status] = (p.outcomes[row.status] ?? 0) + 1; if (row.status === "success") p.reviews_valid++; }
       p.reviews_asked += asked;
+      const place = seat(row.agent, roleOf(row));
+      place.reviews_asked += asked; place.reviews_valid += p.reviews_valid - validBefore;
+      if (Number.isFinite(row.duration_ms)) place.durations.push(row.duration_ms / asked);
       p.retries += Array.isArray(row.retried_pieces) ? row.retried_pieces.length : ((row.attempts ?? 1) > 1 ? 1 : 0);
       if (Number.isFinite(row.duration_ms)) { p.durations.push(row.duration_ms / asked); longest = Math.max(longest, row.duration_ms); }
       // New reports retain invalid/failed attempts too. Never add the merged
@@ -108,6 +158,15 @@ export function buildScorecard(project) {
       }
     }
     if (longest) ensemble.durations.push(longest);
+    // 1.17 B3: covers live in covers[] only (reviewers[] keeps one native row per route). Each cover is one
+    // review asked of the covering route in the covered (vacated) role.
+    for (const c of Array.isArray(report.covers) ? report.covers : []) {
+      if (!c || c.cover !== true || typeof c.agent !== "string" || !c.agent || lower(c.agent) === lower(report.governor)) continue;
+      const place = seat(c.agent, roleOf(c));
+      place.reviews_asked++; place.covers_attempted++;
+      if (c.status === "success") { place.reviews_valid++; place.covers_succeeded++; }
+      if (Number.isFinite(c.duration_ms)) place.durations.push(c.duration_ms);
+    }
     for (const f of report.findings ?? []) {
       const sources = [...new Set((f.sources ?? []).map(lower))].filter(Boolean); if (!sources.length) continue;
       ensemble.findings++;
@@ -115,6 +174,15 @@ export function buildScorecard(project) {
       if (g === "accepted" || g === "rejected") ensemble.ruled++;
       if (g === "accepted") { ensemble.accepted_findings++; shared ? ensemble.accepted_corroborated++ : ensemble.accepted_single_source++; acceptedSets.push(sources); }
       if (g === "rejected") shared ? ensemble.rejected_corroborated++ : ensemble.rejected_single_source++;
+      if (g === "accepted" || g === "rejected") {
+        // The roster credits the decision row's own reviewer (one of the finding's sources) and role.
+        const route = typeof ruling.reviewer === "string" && ruling.reviewer ? lower(ruling.reviewer) : sources.length === 1 ? sources[0] : null;
+        if (route && sources.includes(route)) {
+          const place = seat(route, typeof ruling.role === "string" && ruling.role.trim() ? clean(ruling.role, 80) : routeRole(report, route));
+          if (g === "accepted") { place.applied_findings++; const before = readCheck(project, ruling.reproduction, er); if (before?.phase === "before" && before.exit_code !== 0) place.reproduced_claims++; }
+          if (critical) { place.critical_ruled++; const probe = g === "rejected" ? readCheck(project, ruling.verification, er) : null; if (probe?.phase === "investigation" && probe.exit_code === 0) place.critical_false++; }
+        }
+      }
       for (const s of sources) {
         const p = get(s); p.findings_raised++;
         if (critical) p.critical_raised++;
@@ -152,12 +220,16 @@ export function buildScorecard(project) {
 
   for (const r of reviewers) ensemble.missed_if_alone[r.reviewer] = acceptedSets.filter((set) => !set.includes(r.reviewer)).length;
   const { durations, ...rest } = ensemble;
+  const seconds = (xs) => (median(xs) === null ? null : Math.round(median(xs) / 100) / 10);
+  const rosterRows = [...roster.values()].map(({ durations: times, ...r }) => ({ ...r, valid_review_rate: ratio(r.reviews_valid, r.reviews_asked), reproduced_claim_rate: ratio(r.reproduced_claims, r.applied_findings),
+    false_critical_rate: ratio(r.critical_false, r.critical_ruled), median_review_seconds: seconds(times), cover_success_rate: ratio(r.covers_succeeded, r.covers_attempted) }))
+    .sort((a, b) => a.route.localeCompare(b.route) || String(a.role ?? "").localeCompare(String(b.role ?? "")));
   return { schema: "momm-scorecard/1", generated_at: new Date().toISOString(), evidence_present: present, caveat: CAVEAT, score_formula: { weights: SCORE_WEIGHTS, minimum_ruled_findings: SCORE_MIN_RULED },
     ensemble: { ...rest, quorum_rate: ratio(ensemble.quorum_met, ensemble.runs), acceptance_rate: ratio(ensemble.accepted_findings, ensemble.ruled),
       corroborated_acceptance_rate: ratio(ensemble.accepted_corroborated, ensemble.accepted_corroborated + ensemble.rejected_corroborated),
       single_source_acceptance_rate: ratio(ensemble.accepted_single_source, ensemble.accepted_single_source + ensemble.rejected_single_source),
       unique_catch_share: ratio(ensemble.accepted_single_source, ensemble.accepted_findings), median_run_seconds: median(durations) === null ? null : Math.round(median(durations) / 100) / 10 },
-    reviewers, ratings, integrity };
+    reviewers, roster: { label: ROSTER_LABEL, definitions: ROSTER_DEFINITIONS, rows: rosterRows }, ratings, integrity };
 }
 
 const pct = (x) => (x === null || x === undefined ? "n/a" : Math.round(x * 100) + "%");
@@ -175,24 +247,38 @@ const ensembleLines = (e) => [
   `${pct(e.unique_catch_share)} of accepted findings came from exactly one reviewer: that is what a second and third reviewer added.`,
   `Accepted findings each reviewer would have missed working alone: ${Object.entries(e.missed_if_alone).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.`,
 ];
+const fraction = (a, b, rate) => (b > 0 ? `${a}/${b} (${pct(rate)})` : "no data");
+const ROSTER_COLUMNS = [
+  ["Route", (r) => r.route], ["Role", (r) => r.role ?? "none recorded"], ["Valid reviews", (r) => fraction(r.reviews_valid, r.reviews_asked, r.valid_review_rate)],
+  ["Reproduced claims", (r) => fraction(r.reproduced_claims, r.applied_findings, r.reproduced_claim_rate)], ["False CRITICAL", (r) => fraction(r.critical_false, r.critical_ruled, r.false_critical_rate)],
+  ["Median time", (r) => (r.median_review_seconds == null ? "no data" : r.median_review_seconds + " s")], ["Cover success", (r) => fraction(r.covers_succeeded, r.covers_attempted, r.cover_success_rate)],
+];
+// A card from before the roster, or a partial one, renders an empty roster rather than throwing.
+const rosterOf = (card) => ({ label: card.roster?.label ?? ROSTER_LABEL, rows: Array.isArray(card.roster?.rows) ? card.roster.rows : [] });
 export function renderMarkdown(card) {
   const cell = (s) => clean(s, 200).split("|").join("/");
   const head = "| " + COLUMNS.map((c) => c[0]).join(" | ") + " |", rule = "|" + COLUMNS.map(() => " --- ").join("|") + "|";
   const rows = card.reviewers.map((r) => "| " + COLUMNS.map((c) => cell(c[1](r))).join(" | ") + " |");
-  return ["# MOMM effectiveness scorecard", "", ...ensembleLines(card.ensemble).map((l) => "- " + l), "", head, rule, ...rows, "", "> " + card.caveat, "", "Score = " + JSON.stringify(card.score_formula.weights) + ", shown from " + card.score_formula.minimum_ruled_findings + " ruled findings."].join("\n") + "\n";
+  const roster = rosterOf(card), rosterRows = roster.rows.length ? roster.rows.map((r) => "| " + ROSTER_COLUMNS.map((c) => cell(c[1](r))).join(" | ") + " |")
+    : ["| No routes or roles recorded yet. |" + " |".repeat(ROSTER_COLUMNS.length - 1)]; // as the HTML says it
+  const rosterTable = ["## Route and role roster", "", roster.label, "", "| " + ROSTER_COLUMNS.map((c) => c[0]).join(" | ") + " |", "|" + ROSTER_COLUMNS.map(() => " --- ").join("|") + "|", ...rosterRows];
+  return ["# MOMM effectiveness scorecard", "", ...ensembleLines(card.ensemble).map((l) => "- " + l), "", head, rule, ...rows, "", ...rosterTable, "", "> " + card.caveat, "", "Score = " + JSON.stringify(card.score_formula.weights) + ", shown from " + card.score_formula.minimum_ruled_findings + " ruled findings."].join("\n") + "\n";
 }
 const esc = (s) => clean(s, 400).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 export function renderHtml(card, themeCss = "") {
   const bar = (x) => (x === null || x === undefined ? "" : `<span class="bar"><span style="width:${Math.max(0, Math.min(100, Math.round(x * 100)))}%"></span></span>`);
   const rows = card.reviewers.map((r) => `<tr><th scope="row">${esc(r.reviewer)}</th><td class="score">${r.score === null ? '<span class="muted">insufficient</span>' : esc(r.score)}</td><td>${esc(COLUMNS[2][1](r))}${bar(r.valid_rate)}</td><td>${esc(r.findings_raised)}</td><td>${esc(r.accepted)}</td><td>${esc(r.rejected)}</td><td>${esc(pct(r.acceptance_rate))}${bar(r.acceptance_rate)}</td><td>${esc(r.unique_catches)}</td><td>${esc(pct(r.severity_inflation))}</td><td>${esc(COLUMNS[9][1](r))}</td><td>${esc(COLUMNS[10][1](r))}</td><td>${esc(COLUMNS[11][1](r))}</td></tr>`).join("");
+  const roster = rosterOf(card), rosterRows = roster.rows.map((r) => `<tr><th scope="row">${esc(r.route)}</th>${ROSTER_COLUMNS.slice(1).map((c) => { const v = c[1](r); return `<td${v === "no data" || v === "none recorded" ? ' class="muted"' : ""}>${esc(v)}</td>`; }).join("")}</tr>`).join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MOMM effectiveness scorecard</title><style>${themeCss}
 body{margin:0;padding:32px 24px;font-family:system-ui,sans-serif;background:var(--bg,#080a0a);color:var(--text,#e6ffe6)}main{max-width:1180px;margin:auto}h1{font-size:1.6rem;margin:0 0 4px}p.lead{color:var(--muted,#9db5a5);margin:0 0 24px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:0 0 24px}.card{border:1px solid var(--line,#1d3a2c);border-radius:10px;padding:14px 16px;background:var(--panel,#0d1412)}.card b{display:block;font-size:1.5rem;color:var(--accent,#00ff99)}.card span{color:var(--muted,#9db5a5);font-size:.85rem}
 .wrap{overflow-x:auto;border:1px solid var(--line,#1d3a2c);border-radius:10px}table{border-collapse:collapse;width:100%;min-width:980px;font-size:.92rem}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line,#1d3a2c);white-space:nowrap}thead th{position:sticky;top:0;background:var(--panel,#0d1412);color:var(--muted,#9db5a5);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}tbody tr:last-child td,tbody tr:last-child th{border-bottom:0}tbody th{color:var(--accent,#00ff99)}td.score{font-size:1.15rem;font-weight:700}.muted{color:var(--muted,#9db5a5);font-weight:400;font-size:.85rem}
-.bar{display:block;height:4px;margin-top:5px;border-radius:2px;background:var(--line,#1d3a2c)}.bar span{display:block;height:4px;border-radius:2px;background:var(--accent,#00ff99)}ul{color:var(--muted,#9db5a5);line-height:1.6}blockquote{margin:24px 0 0;padding:12px 16px;border-left:3px solid var(--accent,#00ff99);color:var(--muted,#9db5a5)}</style></head><body><main>
+h2{font-size:1.15rem;margin:28px 0 4px}.bar{display:block;height:4px;margin-top:5px;border-radius:2px;background:var(--line,#1d3a2c)}.bar span{display:block;height:4px;border-radius:2px;background:var(--accent,#00ff99)}ul{color:var(--muted,#9db5a5);line-height:1.6}blockquote{margin:24px 0 0;padding:12px 16px;border-left:3px solid var(--accent,#00ff99);color:var(--muted,#9db5a5)}</style></head><body><main>
 <h1>MOMM effectiveness scorecard</h1><p class="lead">What the reviews on this project found, what the governor did with it, and what each reviewer added. Generated ${esc(card.generated_at.slice(0, 10))}.</p>
 <div class="cards"><div class="card"><b>${esc(card.ensemble.runs)}</b><span>review runs, quorum met on ${esc(pct(card.ensemble.quorum_rate))}</span></div><div class="card"><b>${esc(card.ensemble.accepted_findings)}</b><span>findings accepted of ${esc(card.ensemble.ruled)} ruled (${esc(pct(card.ensemble.acceptance_rate))})</span></div><div class="card"><b>${esc(pct(card.ensemble.unique_catch_share))}</b><span>of accepted findings came from exactly one reviewer</span></div><div class="card"><b>${esc(pct(card.ensemble.corroborated_acceptance_rate))}</b><span>of corroborated findings accepted, against ${esc(pct(card.ensemble.single_source_acceptance_rate))} single-source</span></div></div>
 <div class="wrap" tabindex="0" role="region" aria-label="Reviewer scorecard"><table><thead><tr>${COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rows || '<tr><td colspan="12" class="muted">No reviews recorded yet.</td></tr>'}</tbody></table></div>
+<h2>Route and role roster</h2><p class="lead">${esc(roster.label)}</p>
+<div class="wrap" tabindex="0" role="region" aria-label="Route and role roster"><table><thead><tr>${ROSTER_COLUMNS.map((c) => `<th scope="col">${esc(c[0])}</th>`).join("")}</tr></thead><tbody>${rosterRows || '<tr><td colspan="7" class="muted">No routes or roles recorded yet.</td></tr>'}</tbody></table></div>
 <ul>${ensembleLines(card.ensemble).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
 <blockquote>${esc(card.caveat)} Score: 40% acceptance, 25% reliability, 20% unique catches, 15% severity calibration.</blockquote></main></body></html>\n`;
 }

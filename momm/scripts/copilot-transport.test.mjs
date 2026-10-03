@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import { PEER_CONTRACT, reviewProblem } from './review-contract.mjs';
+import { PEER_CONTRACT, reviewProblem, quotationDiagnostics } from './review-contract.mjs';
 import { assemblePrompt } from './guidance.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
@@ -16,6 +16,11 @@ const context=vm.createContext({fs,os,path,process,Buffer,PEER_CONTRACT,reviewPr
   attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic review contract',
   agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{copilot:'copilot login'},
   sanitizeText:s=>({value:s})});
+// 1.17 A4.2: an invalid answer carries private quotation diagnostics; the real helper and validator.
+const quoteFrom=source.indexOf('function quotationEvidence('),quoteTo=source.indexOf('\n}\n',quoteFrom)+3;
+assert(quoteFrom>=0&&quoteTo>quoteFrom);
+context.quotationDiagnostics=quotationDiagnostics;
+vm.runInContext(source.slice(quoteFrom,quoteTo),context);
 vm.runInContext(source.slice(start,end)+';this.invoke=invokeReviewer;',context);
 const artifact='export function average(xs) {\n  return xs.reduce((a, b) => a + b, 0) / xs.length;\n}\n';
 const payload={review_status:'complete',reviewed_scope:[{quote:'export function average(xs) {',assessment:'The finite nonempty input case was inspected.'}],
@@ -128,6 +133,19 @@ await test('a duplicate assistant message in the same turn replaces, and never r
 });
 await test('one JSON object instead of JSONL events is refused whatever it contains',async()=>{
   for(const text of [JSON.stringify(payload),JSON.stringify({type:'result',exitCode:0}),JSON.stringify({response:JSON.stringify(payload)})])assert.equal((await invoke(text)).status,'invalid_output');
+});
+// 1.17 A3: the dispatcher hands the staged attachments to the reply validator, so an observation
+// is accepted only for a digest actually sent in this run and is recorded as unverifiable.
+await test('an image observation is checked against the attachments actually sent',async()=>{
+  const sha='c'.repeat(64),staging={directory:null,attachments:[{name:'shot.png',staged_path:'attachment-1.png',modality:'image',bytes:4,sha256:sha,width:32,height:16,metadata_stripped:false}]};
+  const send=async(entry,sent=staging)=>context.invoke('copilot',artifact,{governor:'codex',timeoutMs:1000,staging:sent,
+    runProcess:async()=>({code:0,stdout:encode(events(JSON.stringify({...payload,reviewed_scope:[payload.reviewed_scope[0],entry]}))),stderr:''})});
+  const seen={attachment_sha256:sha,observation:'A blue banner spans the top.',assessment:'Consistent with the brief.',region:[0,0,32,8]};
+  const ok=await send(seen);assert.equal(ok.status,'success',ok.detail);
+  assert.equal(ok.review.reviewed_scope[1].kind,'observation');assert.equal(ok.review.reviewed_scope[1].unverifiable,true);
+  assert.equal((await send({...seen,attachment_sha256:'d'.repeat(64)})).status,'invalid_output');
+  assert.equal((await send({...seen,region:[0,10,32,8]})).status,'invalid_output');
+  assert.equal((await send(seen,{directory:null,attachments:[]})).status,'invalid_output');
 });
 console.log(JSON.stringify({passed:checks.filter(c=>c.passed).length,total:checks.length,checks},null,2));
 if(checks.some(c=>!c.passed))process.exitCode=1;

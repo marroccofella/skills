@@ -851,6 +851,45 @@ await test("gate: a grok step that ends cancelled stops the chain; no later step
   assert.equal(report.steps.length, 1); assert.deepEqual(report.steps[0].files, []);
 });
 
+// 29 September 2026: headless Grok cancels an image_gen call it cannot get permission for, so a
+// generative Grok step must allow exactly the media tool for its output, and a read-only step none.
+await test("grok generative steps allow only the media tool their output needs", () => {
+  const dir = fs.mkdtempSync(path.join(tmp, "grok-allow-")), promptFile = path.join(dir, "prompt.txt");
+  const allows = (args) => args.flatMap((a, i) => (a === "--allow" ? [args[i + 1]] : []));
+  const argv = (generative, outputs) => mod.commandFor("grok", { prompt: "P", promptFile, workDir: dir, generative, outputs }).args;
+  assert.deepEqual(allows(argv(true, ["image_gen"])), ["image_gen"]);
+  assert.deepEqual(allows(argv(true, ["video_gen"])), ["image_to_video"]);
+  assert.deepEqual(allows(argv(false, ["text"])), [], "a read-only step allows nothing");
+  assert.deepEqual(allows(argv(true, ["text"])), [], "no media output, no media tool");
+  assert.ok(!argv(true, ["image_gen"]).includes("bypassPermissions"));
+});
+
+// 1.17 A10 (Grok pilot G4, 29 September 2026): a generation run started the user's MCP servers because
+// only the review adapter switched Grok's imports off. Review, probe and generation now share one
+// isolation definition, and the probe certifies exactly the isolation the runner will use.
+await test("grok generation carries the same isolation as its probe and as review", async () => {
+  const { grokIsolationEnv, GROK_ISOLATION_ARGS } = await import("./route-isolation.mjs");
+  const { generativeProbeVector } = await import("./probes.mjs");
+  const dir = fs.mkdtempSync(path.join(tmp, "grok-iso-")), promptFile = path.join(dir, "prompt.txt");
+  const runner = mod.commandFor("grok", { prompt: "P", promptFile, workDir: dir, generative: true, outputs: ["image_gen"] });
+  const probe = generativeProbeVector("grok", "image_gen", { projectDir: dir });
+  const env = grokIsolationEnv();
+  assert.equal(env.GROK_MEMORY, "false"); assert.equal(env.GROK_CLAUDE_MCPS_ENABLED, "false"); assert.equal(env.GROK_CURSOR_MCPS_ENABLED, "false");
+  assert.deepEqual(runner.env, env, "the runner sends the isolation environment");
+  assert.deepEqual(probe.env, env, "the probe certifies the same environment");
+  for (const flag of GROK_ISOLATION_ARGS) { assert.ok(runner.args.includes(flag), `runner lacks ${flag}`); assert.ok(probe.args.includes(flag), `probe lacks ${flag}`); }
+  // The runner hands that environment to the process it starts.
+  const seen = [];
+  const exec = async (cmd, args, opts) => { seen.push(opts.env); return { code: 1, stdout: "", stderr: "stop", timedOut: false }; };
+  const planned = mod.plan(effective({ baseline: loadBaseline(), machine: "m", overlay: { entries: [] } }), { input: ["text"], output: ["image"] }, { prompt: "P" });
+  planned.steps[0].chosen = "grok"; planned.routes_used = ["grok"];
+  await mod.run(planned, { consent: true, exec, home: fs.mkdtempSync(path.join(tmp, "h-")), cwd: dir, effective: effective({ baseline: loadBaseline(), machine: "m", overlay: { entries: [] } }) }).catch(() => {});
+  assert.equal(seen.length, 1, "one grok step dispatched"); assert.equal(seen[0]?.GROK_CLAUDE_MCPS_ENABLED, "false", "the child process receives the isolation");
+  // PATH survives: the isolation is merged over the parent environment, never a replacement for it.
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH");
+  assert.equal(seen[0]?.[pathKey], process.env[pathKey], "the child keeps PATH beside the isolation switches");
+});
+
 try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 console.log(JSON.stringify({ passed, failures }, null, 2));
 if (failures.length || (filter && !passed.length)) process.exitCode = 1;

@@ -54,8 +54,72 @@ function updaterExecutableOutside(resolved, root) {
   const within = (base, q) => { const rel = win.relative(base.toLowerCase(), q.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith("..\\") && !win.isAbsolute(rel)); };
   return !within(rootLiteral, resolved) && !within(rootReal, resolved);
 }
-export function resolveTool(command, cwd, { env = process.env, platform = process.platform } = {}) {
-  if (platform !== "win32" || /[\\/]/.test(command)) return command;
+// POSIX (1.17 A1 follow-up, 29 September 2026): off Windows the name used to come back unchanged, so
+// spawnSync searched the child's PATH and an entry inside the skills clone, or inside the working
+// directory (--check-all runs from a reviewed project), could supply git, gitsign or a CLI. Same rule as
+// process-scope.mjs posixTool, copied because this file imports nothing from MOMM: an absolute PATH
+// entry outside the working directory AND the clone (literal and real path), a regular file with an
+// execute bit, whose real path is outside both too. executable-resolution.test.mjs holds both copies
+// to one attack matrix. The clone is the one this updater belongs to (a retained recovery copy lives
+// in <clone>/.git/momm, two levels down as well).
+const CLONE_ROOT = path.resolve(path.dirname(ENTRY), "../..");
+// An absolute command (gate-3 review of 1.17.0): its real path, and only when both it and the path as
+// named lie outside the working directory and the clone by both of their spellings; otherwise null. The same rule as
+// process-scope.mjs posixTool and windowsTool apply to an absolute path.
+function updaterAbsolute(command, cwd, { platform = process.platform, files = fs, project = CLONE_ROOT } = {}) {
+  const win = platform === "win32", P = win ? path.win32 : path.posix;
+  const real = q => { try { return String(win ? files.realpathSync.native(q) : files.realpathSync(q)); } catch { return null; } };
+  // Case is folded on every platform (final review of 1.17.0): on a case-insensitive volume (Windows, and
+  // macOS by default) a path that differs only in case is the same folder, so it counts as inside. On a
+  // case-sensitive volume folding can only refuse more, never launch more.
+  const key = q => q.toLowerCase();
+  const within = (base, q) => { const rel = P.relative(key(base), key(q)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + P.sep) && !P.isAbsolute(rel)); };
+  const resolved = P.isAbsolute(String(command)) ? real(String(command)) : null;
+  if (!resolved) return null;
+  for (const root of new Set([P.resolve(String(cwd || process.cwd())), project].filter(Boolean).map(String))) {
+    const rootReal = real(root);
+    if (!rootReal || [resolved, P.resolve(String(command))].some(q => within(root, q) || within(rootReal, q))) return null;
+  }
+  return resolved;
+}
+function updaterPosixTool(command, cwd, { env, files, project }) {
+  const P = path.posix, name = String(command);
+  if (name.includes("/")) {
+    if (P.isAbsolute(name)) {
+      const resolved = updaterAbsolute(name, cwd, { platform: "linux", files, project });
+      if (resolved) return resolved;
+      throw Object.assign(new Error(`${name}: refused: not found, or its real path lies inside the working directory or the skills clone`), { code: "ENOENT" });
+    }
+    throw Object.assign(new Error(`${name}: refused: a relative path containing a separator would be looked up from the working directory`), { code: "ENOENT" });
+  }
+  const real = q => { try { return String(files.realpathSync(q)); } catch { return null; } };
+  const roots = [...new Set([P.resolve(String(cwd || process.cwd())), project].filter(Boolean).map(String))].map(r => [r, real(r)]);
+  if (roots.some(([, r]) => !r)) throw Object.assign(new Error(`cannot resolve the working directory or the skills clone, so ${name} cannot be checked against them`), { code: "ENOENT" });
+  // Case folded as in updaterAbsolute: a spelling that differs only in case counts as inside (fail closed).
+  const within = (base, q) => { const rel = P.relative(base.toLowerCase(), q.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith("../") && !P.isAbsolute(rel)); };
+  const outside = q => roots.every(([literal, resolved]) => !within(literal, q) && !within(resolved, q));
+  for (const entry of String(env?.PATH ?? "").split(":")) {
+    const dir = real(entry);
+    if (!entry || !P.isAbsolute(entry) || !dir || !outside(P.resolve(entry)) || !outside(dir)) continue;
+    const candidate = P.join(entry, name);
+    try {
+      const st = files.statSync(candidate);
+      if (!st.isFile() || !(Number(st.mode) & 0o111)) continue;
+      const resolved = real(candidate); // resolve ONCE and return what was checked
+      if (resolved && outside(resolved)) return resolved;
+    } catch {}
+  }
+  throw Object.assign(new Error(`${name} was not found on an absolute PATH entry outside the working directory and the skills clone`), { code: "ENOENT" });
+}
+export function resolveTool(command, cwd, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT } = {}) {
+  if (platform !== "win32") return updaterPosixTool(command, cwd, { env, files, project });
+  if (/[\\/]/.test(command)) {
+    // A relative path with a separator is looked up from the working directory: refused, as on POSIX.
+    if (!path.win32.isAbsolute(command)) throw Object.assign(new Error(`${command}: refused: a relative path containing a separator would be looked up from the working directory`), { code: "ENOENT" });
+    const resolved = updaterAbsolute(command, cwd, { platform, files, project });
+    if (resolved) return resolved;
+    throw Object.assign(new Error(`${command}: refused: not found, or its real path lies inside the working directory or the skills clone`), { code: "ENOENT" });
+  }
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
   const real = p => fs.realpathSync.native(p);
   // An unresolvable working directory is a failure to CHECK, not a tool that is missing: say so
@@ -285,11 +349,13 @@ export function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (["--dry-run", "--apply", "--rollback", "--yes", "--accept-protocol", "--help", "--check-all", "--json"].includes(a)) o[a.slice(2).replaceAll("-", "_")] = true;
-    else if (["--version", "--channel", "--repo"].includes(a)) {
+    else if (["--version", "--channel", "--repo", "--release-claim"].includes(a)) {
       const value = argv[++i]; if (!value || value.startsWith("--")) throw new Error(`Missing value for ${a}`);
-      o[a.slice(2)] = value;
+      o[a.slice(2).replaceAll("-", "_")] = value;
     } else throw new Error(`Unknown update option: ${a}. No auto-update option exists.`);
   }
+  // A6b: releasing a stale claim is its own explicit step, never part of an update or a recovery.
+  if (o.release_claim !== undefined && Object.keys(o).some(k => !["release_claim", "repo"].includes(k))) throw new Error("--release-claim removes one stale update claim and does nothing else; combine it only with --repo");
   if (o.version && !VERSION.test(o.version)) throw new Error("Use an exact x.y.z release version");
   if (o.channel && !["stable", "pinned", "main"].includes(o.channel)) throw new Error("Channel must be stable, pinned or main");
   if ([o.dry_run, o.apply, o.rollback].filter(Boolean).length > 1) throw new Error("Choose only one of --dry-run, --apply or --rollback");
@@ -380,9 +446,10 @@ function clean(root) {
   throw Object.assign(new Error(lines.join("\n")), { code: "local_changes", changes });
 }
 function policyDiff(root, from, to) {
-  // Dispatcher contains default rules and personas. Show its whole diff rather
+  // Dispatcher contains default rules and the route-to-role defaults; the role briefs themselves
+  // (persona text and the loophole checklist) live in momm/roles since 1.17. Show whole diffs rather
   // than claiming a heuristic extraction detects every policy change.
-  return run("git", ["diff", "--no-ext-diff", "--no-textconv", from, to, "--", "momm/SKILL.md", "momm/scripts/multi-review.mjs", ":(glob)**/.reviewrules", ":(glob)**/*persona*"], root);
+  return run("git", ["diff", "--no-ext-diff", "--no-textconv", from, to, "--", "momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/roles", ":(glob)**/.reviewrules", ":(glob)**/*persona*"], root);
 }
 function checkout(root, commit) {
   if (!COMMIT.test(commit)) throw new Error("Invalid recovery commit");
@@ -428,12 +495,16 @@ const MANAGER_NAMES = { ".volta": "volta", scoop: "scoop", chocolatey: "chocolat
 const NOT_INSTALLED = /is not recognized as an internal or external command|command not found|no such file or directory|enoent/i;
 // Keeps a prerelease suffix (1.2.3-beta.1) so an installed prerelease is never mistaken for its stable.
 const semver = text => String(text ?? "").match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?/)?.[0] || null;
-export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+// The installer's own location is used only by its real path, and only when that lies outside the
+// working directory (--check-all runs from inside a reviewed project) and the clone (gate-3 review of
+// 1.17.0); otherwise the bare name goes to the resolver, which applies the same rule to PATH.
+export function cliBinary(cli, { env = process.env, platform = process.platform, home = os.homedir(), cwd = process.cwd(), project = CLONE_ROOT } = {}) {
+  const verified = (local, bare) => (fs.existsSync(local) && updaterAbsolute(local, cwd, { platform, project })) || bare;
   if (cli === "antigravity") {
     const local = platform === "win32" && env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe") : path.join(home, ".local", "bin", "agy");
-    return fs.existsSync(local) ? local : "agy";
+    return verified(local, "agy");
   }
-  if (cli === "grok") { const local = path.join(home, ".grok", "bin", platform === "win32" ? "grok.exe" : "grok"); return fs.existsSync(local) ? local : "grok"; }
+  if (cli === "grok") return verified(path.join(home, ".grok", "bin", platform === "win32" ? "grok.exe" : "grok"), "grok");
   return cli;
 }
 // PATH walk mirroring setup-ui.mjs detectInstallation, reduced to what
@@ -469,9 +540,14 @@ export function locateBinary(command, { env = process.env, platform = process.pl
 // directory BEFORE PATH, and --check-all is run from inside reviewed projects:
 // NoDefaultCurrentDirectoryInExePath stops a planted claude.cmd from running.
 const WIN_SHELL_META = /[\s&|<>^()%!"'`,;=@[\]{}~$]/;
-export function captureExec(command, args, { timeout = 20_000, cwd } = {}) {
+export function captureExec(command, args, { timeout = 20_000, cwd, env: sourceEnv = process.env } = {}) {
   const win = process.platform === "win32", shell = win && !(path.isAbsolute(command) && /\.exe$/i.test(command));
-  const env = win ? { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } : process.env;
+  const env = win ? { ...sourceEnv, NoDefaultCurrentDirectoryInExePath: "1" } : sourceEnv;
+  // POSIX (1.17 A1 follow-up): --check-all runs from inside a reviewed project, so a bare CLI name is
+  // resolved outside it (and outside the clone) first; a copy found only there reads as not installed.
+  if (!win) { try { command = resolveTool(command, cwd || process.cwd(), { env }); } catch (error) { return { code: -1, stdout: "", stderr: "", error }; } }
+  // An absolute Windows path is started directly (below), so it is held to the same rule first.
+  else if (path.isAbsolute(command)) { try { command = resolveTool(command, cwd || process.cwd(), { env }); } catch (error) { return { code: -1, stdout: "", stderr: "", error }; } }
   const p = spawnSync(shell && WIN_SHELL_META.test(command) ? `"${command}"` : command, args, { cwd, env, encoding: "utf8", shell: shell ? systemTool("cmd.exe") : false, windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024 });
   return { code: p.error ? -1 : p.status, stdout: p.stdout || "", stderr: p.stderr || "", error: p.error || null };
 }
@@ -479,9 +555,39 @@ const notInstalled = r => !r || r.error?.code === "ENOENT" || r.code === 127 || 
 // Reads the first review log found among `dirs` (a string or list; the report
 // says which file was used). Records that are not objects, carry no object
 // reviewer_status, or have an unparseable timestamp are skipped, never fatal.
-export function lastSuccessfulReviews(dirs) {
-  const searched = [].concat(dirs).map(d => path.join(d, ".ensemble_reviews", "review-log.jsonl")), latest = Object.create(null);
-  let file = searched[0], text, runs = 0;
+// The project's review log under the 1.17 evidence-location rule (evidence-location.mjs), copied here
+// because the updater must not import from the checkout it replaces; evidence-location.test.mjs pins
+// the two to the same answer. <dir>/.ensemble_reviews by default; with MOMM_EVIDENCE_HOME, the folder
+// <home>/<first 32 hex of sha256(project real path)>. null where the resolver would refuse (relative
+// home, unresolvable project, or a location inside the project by either spelling): nothing is read
+// then, and never the in-project folder instead.
+export function reviewLogFor(dir, env = process.env) {
+  const project = path.resolve(dir), chosen = env?.MOMM_EVIDENCE_HOME;
+  if (chosen === undefined || chosen === null || chosen === "") return path.join(project, ".ensemble_reviews", "review-log.jsonl");
+  if (typeof chosen !== "string" || !path.isAbsolute(chosen)) return null;
+  const win = process.platform === "win32";
+  const realOf = p => String(win ? fs.realpathSync.native(p) : fs.realpathSync(p));
+  const realLocation = p => {
+    const tail = [];
+    for (let cursor = p; ;) {
+      try { return path.join(realOf(cursor), ...tail); }
+      catch {
+        try { fs.lstatSync(cursor); return null; } catch { /* absent: resolve its parent */ }
+        const parent = path.dirname(cursor);
+        if (parent === cursor) return null;
+        tail.unshift(path.basename(cursor)); cursor = parent;
+      }
+    }
+  };
+  const within = (base, candidate) => { const key = q => (win ? q.toLowerCase() : q), rel = path.relative(key(base), key(candidate)); return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)); };
+  let projectReal; try { projectReal = realOf(project); } catch { return null; }
+  const folder = path.join(path.resolve(chosen), createHash("sha256").update(projectReal).digest("hex").slice(0, 32)), folderReal = realLocation(folder);
+  if (!folderReal || [project, projectReal].some(p => within(p, folder) || within(p, folderReal))) return null;
+  return path.join(folder, "review-log.jsonl");
+}
+export function lastSuccessfulReviews(dirs, env = process.env) {
+  const searched = [].concat(dirs).map(d => reviewLogFor(d, env)).filter(Boolean), latest = Object.create(null);
+  let file = searched[0] ?? null, text, runs = 0;
   for (const candidate of searched) { try { text = fs.readFileSync(candidate, "utf8"); file = candidate; break; } catch {} }
   if (text === undefined) return { file, searched, runs, routes: latest, present: false };
   for (const raw of text.split(/\r?\n/)) {
@@ -505,7 +611,7 @@ export async function checkAll(root, lock, dependencies = {}) {
   const report = { schema: "momm-check-all/1", checked_at: new Date().toISOString(), repo_root: root,
     skill: { installed: lock.current?.version || null, published: null, channel: lock.channel, update_available: null, release_verified: Boolean(lock.current?.verified), error: null },
     installations: { targets: [...(lock.targets || [])], custom_dirs: [...(lock.custom_dirs || [])], scopes: (lock.installations || []).map(s => ({ target: s.target, custom_dir: s.custom_dir || null, skills: s.skills || ["momm"] })) },
-    reviews: lastSuccessfulReviews([...new Set([cwd, root].map(d => path.resolve(d)))]), clis: [] };
+    reviews: lastSuccessfulReviews([...new Set([cwd, root].map(d => path.resolve(d)))], env), clis: [] };
   try {
     const m = await (dependencies.manifest || manifest)(fetcher);
     report.skill.published = m.momm;
@@ -521,7 +627,7 @@ export async function checkAll(root, lock, dependencies = {}) {
     const v = semver(JSON.parse(body).version); if (!v) throw new Error("no version in registry reply"); return v;
   };
   for (const cli of REVIEWER_CLIS) {
-    const binary = cliBinary(cli, { env, platform, home }), location = locateBinary(binary, { env, platform });
+    const binary = cliBinary(cli, { env, platform, home, cwd }), location = locateBinary(binary, { env, platform });
     const row = { cli, binary, installed: null, latest: null, latest_source: NPM_PACKAGES[cli] ? "npm registry" : cli === "grok" ? "grok update --check --stable --json" : "unknown (no check-only command)", update_available: null,
       path: location.path, package_manager_owned: location.package_manager_owned, manager: location.manager,
       update_command: location.package_manager_owned ? `update through ${location.manager}` : UPDATE_COMMANDS[cli], last_successful_review: report.reviews.routes[cli] || null, error: null };
@@ -564,6 +670,45 @@ export function checkAllTable(report) {
   lines.push("", "* update available. Nothing was installed; every update needs its explicit command.");
   return lines.join("\n");
 }
+// A6b (1.17 drill rehearsal, run 36635871345): an updater killed mid-transaction leaves update.active.
+// exclusive() never steals it, because PIDs are reused. This explicit step removes that one claim only
+// when the caller names its exact token (printed by the refusal) and the recorded PID is not running:
+// process.kill(pid, 0) must fail with ESRCH; EPERM means the process exists. Nothing else changes.
+export function releaseClaim(dir, token, { kill = (pid, signal) => process.kill(pid, signal) } = {}) {
+  const file = path.join(dir, "update.active");
+  if (!regular(file, true)) throw new Error(`No update claim exists at ${file}; nothing was changed.`);
+  const inspected = fs.lstatSync(file), bytes = fs.readFileSync(file);
+  const unconfirmed = reason => new Error(`Update claim ${file} cannot be confirmed: ${reason}. It was kept and nothing was changed; inspect it yourself.`);
+  let claim = null;
+  try { claim = JSON.parse(bytes.toString("utf8")); } catch { /* reported below */ }
+  if (!claim || typeof claim !== "object" || Array.isArray(claim)) throw unconfirmed("it is unreadable or incomplete");
+  if (typeof claim.token !== "string" || claim.token !== token) throw new Error(`Update claim ${file} carries a different token; nothing was changed. Use the exact token printed by the refusal that named this claim.`);
+  if (!Number.isSafeInteger(claim.pid) || claim.pid <= 0) throw unconfirmed("it records no valid process id");
+  let running = true, code = null;
+  try { kill(claim.pid, 0); } catch (error) { code = error?.code ?? null; running = code !== "ESRCH"; }
+  if (running) throw new Error(`Process ${claim.pid} named by update claim ${file} is still running${code ? ` or cannot be checked (${code})` : ""}; nothing was changed. Let it finish, or confirm and stop it yourself, then retry.`);
+  // The claim must be exactly the one inspected: never remove a claim that was replaced meanwhile.
+  const changed = () => new Error(`Update claim ${file} changed while it was inspected; nothing was removed.`);
+  if (!regular(file, true) || !fs.readFileSync(file).equals(bytes)) throw changed();
+  // Unlinking by path after that comparison left a gap in which a replacement claim could be removed (final
+  // review of 1.17.0). The claim is first moved to a private name in one atomic step, and only what was
+  // moved is examined: the inspected file (same inode, same bytes) is removed; anything else is put back,
+  // and link() never overwrites a claim that was made in the meantime.
+  const moved = `${file}.${randomUUID()}.release`;
+  fs.renameSync(file, moved);
+  let same = false;
+  try { const now = fs.lstatSync(moved); same = now.isFile() && !now.isSymbolicLink() && now.ino === inspected.ino && fs.readFileSync(moved).equals(bytes); } catch { same = false; }
+  if (!same) {
+    // A volume without hard links (FAT, exFAT) refuses link() itself: an exclusive copy puts the claim back with
+    // the same promise, never over a claim made meanwhile. rename() is never used: it would replace such a claim.
+    const putBack = () => { try { fs.linkSync(moved, file); } catch (error) { if (error?.code === "EEXIST") throw error; fs.copyFileSync(moved, file, fs.constants.COPYFILE_EXCL); } };
+    try { putBack(); } catch { throw new Error(`Update claim ${file} changed while it was released and another claim now stands there; the file that was moved aside is kept at ${moved}. Nothing else was changed; inspect both.`); }
+    fs.unlinkSync(moved);
+    throw changed();
+  }
+  fs.unlinkSync(moved);
+  return { file, pid: claim.pid, token: claim.token, started: String(claim.started ?? "unknown").slice(0, 64) };
+}
 async function consent(o, message) {
   if (o.yes) return;
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("No interactive terminal. Review --dry-run, then explicitly use --apply --yes (and --accept-protocol when required).");
@@ -577,7 +722,17 @@ function exclusive(dir, action) {
   let fd;
   // Reading a dead PID and then unlinking is not atomic: two claimants can
   // delete one another's newly acquired lock. Never automatically steal a claim.
-  if (regular(file, true)) throw new Error(`Existing update claim: ${file}. Preserved even if its PID appears dead. Independently confirm no updater is running before manually removing only this claim; preserve transaction.json and momm.lock, then retry recovery.`);
+  if (regular(file, true)) {
+    // Offer the token-confirmed release (A6b) only for a readable claim with a plain token, so nothing
+    // read from the file is ever pasted into a command line.
+    let token = null, pending = true;
+    try { const held = readJSON(file); if (typeof held?.token === "string" && /^[A-Za-z0-9-]{8,128}$/.test(held.token)) token = held.token; } catch { /* torn or unreadable claim */ }
+    try { pending = regular(path.join(dir, "transaction.json"), true); } catch { /* unsafe journal: still recovery */ }
+    const retry = pending ? `Then retry recovery: ${recoveryCommand(dir)}` : "Then repeat the command that was refused.";
+    throw new Error(`Existing update claim: ${file}. Preserved even if its PID appears dead. Independently confirm no updater is running, then ` + (token
+      ? `release only this claim (refused while its recorded PID is running; transaction.json and momm.lock are not touched):\nnode "${recoveryUpdater(dir)}" --release-claim ${token}\n${retry}`
+      : `remove only this unreadable claim yourself; preserve transaction.json and momm.lock. ${retry}`));
+  }
   try { fd = fs.openSync(file, "wx", 0o600); } catch { throw new Error(`Another update may be active. Inspect ${file}; do not remove it while its process is running.`); }
   const token = randomUUID();
   try { fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, token, started: new Date().toISOString() })); }
@@ -588,12 +743,33 @@ function exclusive(dir, action) {
     catch (error) { process.stderr.write(`MOMM update claim cleanup needs inspection: ${safeText(error.message)}\n`); }
   });
 }
+// The updater a printed command names (final review of 1.17.0): the copy retained in the state folder, which
+// recordInstall and every update keep there, outside the checkout, as recovery needs; or, when none was
+// retained (an install interrupted before it copied one), this updater, so a command never names a missing
+// file. One helper for the refusal and the release, so the two sentences cannot drift.
+function recoveryUpdater(dir) {
+  const retained = path.join(dir, "update.mjs");
+  try { if (regular(retained, true)) return retained; } catch { /* unsafe: name this updater instead */ }
+  return ENTRY;
+}
+const recoveryCommand = dir => `node "${recoveryUpdater(dir)}" --rollback --yes`;
 export async function update(argv, dependencies = {}) {
   const o = parse(argv), log = dependencies.log || (s => process.stdout.write(`${safeText(s)}\n`));
-  if (o.help) { log("MOMM update: [--dry-run | --apply | --rollback] [--version x.y.z] [--channel stable|pinned|main] [--accept-protocol] [--yes]\n             --check-all [--json]   Report skill version, every reviewer CLI's installed/latest version, install scopes and last successful review per route (read-only; contacts the release manifest and npm registry).\nDefault: manifest + changelog only. No automatic updates. Recovery: node <git-dir>/momm/update.mjs --rollback --yes"); return; }
+  if (o.help) { log("MOMM update: [--dry-run | --apply | --rollback] [--version x.y.z] [--channel stable|pinned|main] [--accept-protocol] [--yes]\n             --check-all [--json]   Report skill version, every reviewer CLI's installed/latest version, install scopes and last successful review per route (read-only; contacts the release manifest and npm registry).\n             --release-claim <token>   Remove one stale update.active claim whose recorded PID is not running (exact token required; nothing else changes).\nDefault: manifest + changelog only. No automatic updates. Recovery: node <git-dir>/momm/update.mjs --rollback --yes"); return; }
   const siblingLock = path.join(path.dirname(ENTRY), "momm.lock");
   const start = o.repo || (fs.existsSync(siblingLock) ? readJSON(siblingLock).repo_root : path.resolve(path.dirname(ENTRY), "../.."));
-  const root = repoRoot(start), dir = stateDir(root), lock = readLock(root);
+  const root = repoRoot(start), dir = stateDir(root);
+  if (o.release_claim !== undefined) {
+    // Needs no valid receipt: a crash may have left the installation half-way.
+    const released = releaseClaim(dir, o.release_claim, dependencies);
+    // The claim is already gone: an unsafe journal must not hide that, and still means recovery (as in exclusive()).
+    let pending = true;
+    try { pending = regular(path.join(dir, "transaction.json"), true); } catch { /* unsafe journal: still recovery */ }
+    log(`Released update claim ${released.file} (pid ${released.pid}, token ${released.token}, started ${released.started}); that process is not running. transaction.json and momm.lock were not changed.\n`
+      + (pending ? `An interrupted update needs recovery: ${recoveryCommand(dir)}` : "No interrupted transaction is recorded; repeat the command that was refused."));
+    return released;
+  }
+  const lock = readLock(root);
   const lockFile = path.join(dir, "momm.lock"), journalFile = path.join(dir, "transaction.json");
   const installer = dependencies.reinstall || reinstall;
   const inventoryAtCompletion = dependencies.inventory || (expected => {

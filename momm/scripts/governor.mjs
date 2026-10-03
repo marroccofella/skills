@@ -6,7 +6,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+import { evidenceDir, evidenceReference, evidenceFile } from "./evidence-location.mjs";
 import { pathEntryOutside, executableOutside } from "./process-scope.mjs";
+import { classifyStyleChange } from "./style-classifier.mjs";
+import { resolveGuidance } from "./guidance.mjs";
+import { commandShapeSha256 } from "./route-isolation.mjs";
+import { ATTEMPT_BUDGET, COVERABLE_STATUSES, coverVotes } from "./cover.mjs";
+import { loadRole } from "./roles.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -16,6 +22,22 @@ export const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const hash = s => typeof s === "string" && /^[a-f0-9]{64}$/.test(s);
 const nonempty = s => typeof s === "string" && !!s.trim();
 const demand = (ok, message) => { if (!ok) throw new Error(message); };
+// Reply contracts whose answers MOMM itself validated before sealing: /3 (1.17) adds typed claims and
+// attachment observations; /2 reports sealed by 1.16.x still complete. Anything else needs a fresh review.
+const VERIFIED_CONTRACTS = new Set(["momm-peer-review/2", "momm-peer-review/3"]);
+// Kept inline (as review-contract.mjs CLAIM_TYPES) so a script copied on its own still runs.
+const CLAIM_TYPES = ["DEFECT", "RISK", "QUESTION", "IDEA", "NOISE"];
+const SEVERITIES = ["CRITICAL", "WARNING", "NITPICK"];
+// A decision row may re-type (or re-grade) a finding only against the report's merged value, with a
+// reason (plan-1.17 B2). The report's own severity still decides what is material; a recorded
+// lowering is the governor's judgement on record, never a waiver of reproduction.
+export function recordedChange(row, content, { field, from, reason, allowed, label }) {
+  const reported = content[field] ?? null;
+  if (Object.hasOwn(row, from)) demand(row[from] === reported, `${label} must name the report's ${field} (${JSON.stringify(reported)})`);
+  if (!Object.hasOwn(row, field) || row[field] === reported) return;
+  demand(allowed.includes(row[field]), `invalid ${field} in decision row`);
+  demand(Object.hasOwn(row, from) && nonempty(row[reason]), `${label} not recorded: a decision row that changes ${field} needs ${from} equal to the report's value and a non-empty ${reason}`);
+}
 
 // Hash a fixed-size read snapshot with bounded memory. A concurrently growing
 // log fails this inspection instead of making the reader chase it forever.
@@ -53,19 +75,10 @@ export function captureSourceSnapshot(root, artifact, inputPath, range = null) {
     if (isDiff) {
       // Node 18 and 20 on Windows look for a bare name in the child's working directory first (the
       // project under review) and ignore the guard variable, so Git is named by an absolute PATH
-      // entry outside the project, or not at all.
-      const gitPath = () => {
-        if (process.platform !== "win32") return "git";
-        const inside = p => { const rel = path.relative(fs.realpathSync.native(root).toLowerCase(), p.toLowerCase()); return rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel)); };
-        const pathValue = Object.entries(process.env ?? {}).find(([k]) => k.toLowerCase() === "path")?.[1] ?? "";
-        for (const dir of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => d && path.isAbsolute(d))) {
-          const candidate = path.join(dir, "git.exe");
-          try { if (fs.statSync(candidate).isFile() && !inside(fs.realpathSync.native(candidate))) return candidate; } catch { /* not here */ }
-        }
-        return null;
-      };
-      const gitExecutable = gitPath();
-      demand(gitExecutable, "cannot verify current Git diff: git.exe was not found on an absolute PATH entry outside the project");
+      // entry outside the project, or not at all. Off Windows this used to be the bare name "git",
+      // which a PATH entry inside the project could supply (1.17 A1): one resolver, as for ranges.
+      const gitExecutable = resolveGit(root);
+      demand(gitExecutable, "cannot verify current Git diff: git was not found on an absolute PATH entry outside the project");
       const git = args => { const r = spawnSync(gitExecutable, args, { cwd: root, encoding: "utf8", timeout: 10000, windowsHide: true, maxBuffer: 2_000_000 }); demand(r.status === 0, "cannot verify current Git diff"); return r.stdout; };
       // Windows JS realpath can preserve an 8.3 spelling while Git returns
       // its long name. Native resolution compares the same physical root.
@@ -159,7 +172,9 @@ export function resolveGit(root, { platform = process.platform, env = process.en
   for (const dir of pathValue.split(win ? ";" : ":").map(d => d.replace(/^"|"$/g, "")).filter(d => pathEntryOutside(d, root, where))) {
     const candidate = paths.join(dir, name);
     try {
-      if (!files.statSync(candidate).isFile()) continue;
+      // On POSIX only a file with an execute bit, as execvp would take (1.17 A1, same rule as posixTool).
+      const st = files.statSync(candidate);
+      if (!st.isFile() || (!win && !(Number(st.mode) & 0o111))) continue;
       const resolved = real(candidate);
       if (resolved && executableOutside(resolved, root, where)) return resolved;
     } catch { /* not here */ }
@@ -179,7 +194,73 @@ export function normalizeTarget(value, files, root) {
   return raw;
 }
 
-export function inspectCompletion(root, runId) {
+// 1.17 B4.3: is this review still bound to what is installed now? The installation is the governor's
+// own (the same files multi-review.mjs runtimeProvenance hashes, from this file's location). Only
+// names and booleans leave this function: receipts carry no hashes, versions or text from here.
+// Recorded identity that cannot be observed offline (a CLI's version or model: asking would run the
+// CLI) and identity the report does not record are `unknown`, never a match. A stale review can
+// still be completed; the receipt says so.
+const INSTALL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+export function reviewStaleness(report, root, { installRoot = INSTALL_ROOT, home } = {}) {
+  const changed = [], unknown = [], matched = [];
+  // A comparison that cannot finish (a malformed report field) keeps every difference it already found and
+  // names the unfinished part `installation` in `unknown`. `stale` keeps its documented meaning, true only
+  // when something recorded differs, so an unfinished comparison reads as unknown, never as a match.
+  try { compareInstallation(report, root, { installRoot, home }, { changed, unknown, matched }); }
+  catch { unknown.push("installation"); }
+  return { stale: changed.length > 0, changed, unknown, matched };
+}
+function compareInstallation(report, root, { installRoot, home }, { changed, unknown, matched }) {
+  const compare = (name, recorded, current) => {
+    if (!hash(recorded)) unknown.push(name);
+    else if (recorded === current) matched.push(name);
+    else changed.push(name);
+  };
+  const installed = file => { try { return digest(fs.readFileSync(path.join(installRoot, "momm/scripts", file))); } catch { return null; } };
+  for (const [field, file] of [["dispatcher_sha256", "multi-review.mjs"], ["peer_contract_sha256", "review-contract.mjs"],
+    ["process_scope_sha256", "process-scope.mjs"], ["governor_sha256", "governor.mjs"]]) compare(field, report?.[field], installed(file));
+  // Guidance: the layers that come from installed files (user and trusted project guidance, .reviewrules)
+  // are re-resolved now. Per-invocation --guidance layers and personas (dispatcher bytes) are not state.
+  const routes = report?.guidance?.routes;
+  if (!routes || typeof routes !== "object" || Array.isArray(routes)) unknown.push("guidance");
+  else if (Object.keys(routes).length) {
+    let now = null;
+    try { now = resolveGuidance({ cwd: root, home, routes: Object.keys(routes), personas: {}, cli: {} }).routes; } catch { now = null; }
+    const fromFiles = layers => JSON.stringify(layers.filter(l => /^(?:user|project):/.test(l?.name)).map(l => [l.name, l.sha256]));
+    for (const [route, entry] of Object.entries(routes)) {
+      const name = `guidance.routes.${route}`;
+      if (!Array.isArray(entry?.layers) || !Array.isArray(now?.[route]?.layers)) unknown.push(name);
+      else (fromFiles(entry.layers) === fromFiles(now[route].layers) ? matched : changed).push(name);
+    }
+  }
+  for (const r of Array.isArray(report?.reviewers) ? report.reviewers : []) {
+    if (!r || typeof r.agent !== "string" || r.agent === report.governor || r.status !== "success") continue;
+    // Recorded or not (r.usage.reported.cli_version / .model), neither can be confirmed without running the CLI.
+    unknown.push(`reviewers.${r.agent}.cli_version`, `reviewers.${r.agent}.model`);
+    let current = null;
+    try { current = commandShapeSha256(r.agent, r.command_shape?.direction ?? "input", r.command_shape?.modality ?? "text"); } catch { current = null; }
+    compare(`reviewers.${r.agent}.command_shape_sha256`, r.command_shape_sha256, current);
+  }
+  // 1.17 B1: role briefs are installed files (momm/roles). A reviewer or cover that records a role is
+  // compared by its brief's file hash (and the included checklist's); a role without a recorded brief is
+  // unknown. Reports sealed before roles carry only `persona`, whose text was the dispatcher's own bytes.
+  const briefNow = (role) => { try { return loadRole(role, { dir: path.join(installRoot, "momm", "roles") }); } catch { return null; } };
+  const compareBrief = (name, role, recorded) => {
+    if (!nonempty(role)) return;
+    const current = briefNow(role);
+    compare(`${name}.role_brief`, recorded?.sha256, current?.sha256 ?? null);
+    if (recorded?.checklist || current?.checklists?.length) compare(`${name}.role_brief.checklist`, recorded?.checklist?.sha256, current?.checklists?.[0]?.sha256 ?? null);
+  };
+  for (const r of Array.isArray(report?.reviewers) ? report.reviewers : []) {
+    if (r && typeof r.agent === "string" && r.agent !== report.governor && r.status === "success") compareBrief(`reviewers.${r.agent}`, r.role, r.role_brief);
+  }
+  for (const c of Array.isArray(report?.covers) ? report.covers : []) {
+    if (c && typeof c.agent === "string" && c.status === "success") compareBrief(`covers.${c.agent}.${c.covering_for}${c.piece ? `.${c.piece}` : ""}`, c.role, c.role_brief);
+  }
+  for (const a of Array.isArray(report?.attachments) ? report.attachments : []) unknown.push(`attachments.${a?.name ?? "unnamed"}.sha256`);
+}
+
+export function inspectCompletion(root, runId, options = {}) {
   const state = { schema: "momm-completion/1", run_id: runId, complete: false,
     evidence_level: "local records and byte hashes validated; not independent proof of execution or correctness",
     items: [], unresolved: [], errors: [] };
@@ -188,14 +269,20 @@ export function inspectCompletion(root, runId) {
   try {
     root = fs.realpathSync(root);
     demand(/^rev_[a-zA-Z0-9_]+$/.test(runId), "invalid run id");
+    // The resolved evidence folder (1.17 A7): '.ensemble_reviews/...' references map into it, every
+    // other reference stays in the project. Default: <root>/.ensemble_reviews, walked from root as before.
+    const evidence = evidenceDir({ cwd: root, env: process.env });
+    const at = relative => evidenceFile(relative, { root, dir: evidence });
     const local = relative => {
       demand(nonempty(relative) && !relative.includes("\\") && !relative.includes(":") && !path.isAbsolute(relative)
         && relative.split("/").every(p => p && p !== "." && p !== ".."), "unsafe evidence path");
-      const absolute = path.resolve(root, relative);
+      const { base, parts } = evidenceReference(relative, { root, dir: evidence });
+      const absolute = path.resolve(base, ...parts);
       // Do not follow symlinks/junctions, including intermediate directories.
-      let cursor = root;
-      for (const part of relative.split("/")) { cursor = path.join(cursor, part); demand(!fs.lstatSync(cursor).isSymbolicLink(), "symlink evidence refused"); }
-      demand(fs.realpathSync(absolute).startsWith(root + path.sep), "evidence escapes project");
+      let cursor = base;
+      if (base !== root) demand(!fs.lstatSync(base).isSymbolicLink(), "symlink evidence refused");
+      for (const part of parts) { cursor = path.join(cursor, part); demand(!fs.lstatSync(cursor).isSymbolicLink(), "symlink evidence refused"); }
+      demand(fs.realpathSync(absolute).startsWith((base === root ? root : fs.realpathSync(base)) + path.sep), "evidence escapes project");
       demand(fs.statSync(absolute).isFile(), "evidence must be a regular file");
       return absolute;
     };
@@ -248,6 +335,8 @@ export function inspectCompletion(root, runId) {
     demand(entries[0].report_sha256 === reportSha && entries[0].input_sha256 === report.input_sha256
       && entries[0].report_path === `.ensemble_reviews/reports/${runId}.json`, "original report/log seal mismatch");
     demand(report.governor && Array.isArray(report.reviewers) && Array.isArray(report.findings), "malformed report");
+    try { state.stale = reviewStaleness(report, root, options); }
+    catch { state.stale = { stale: false, changed: [], unknown: ["installation"], matched: [] }; }
     demand(report.source_snapshot?.complete && report.source_snapshot.files.length > 0, "dispatch-time source snapshot missing; use local --input, a working-tree Git diff, or --range <base>..<head> for a committed range");
     // Source identity travels into the receipt: over WHICH tree, and for a split run WHICH pieces.
     const snapshot = report.source_snapshot;
@@ -267,7 +356,10 @@ export function inspectCompletion(root, runId) {
           demand(begun.event === 'started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>begun[k]===a[k]), 'attempt start binding mismatch');
         }
         const { evidence, ...expected } = a;
-        demand(JSON.stringify(stored) === JSON.stringify(expected) && stored.run_id === runId && stored.input_sha256 === report.input_sha256, 'attempt source or report binding mismatch');
+        // 1.17 A4.2: quotation diagnostics stay in the private record (covered by its sha256) and are
+        // never repeated in the report; every other field must match exactly.
+        const { quotation_diagnostics: _private, ...bound } = stored;
+        demand(JSON.stringify(bound) === JSON.stringify(expected) && stored.run_id === runId && stored.input_sha256 === report.input_sha256, 'attempt source or report binding mismatch');
         demand(stored.piece === 'whole' ? !report.split : report.split?.pieces.some(p => p.id === stored.piece), 'attempt belongs to unknown piece');
         return evidence;
       });
@@ -275,7 +367,52 @@ export function inspectCompletion(root, runId) {
     const routes = new Set();
     for (const r of report.reviewers) { demand(!routes.has(r.agent), "duplicate reviewer route"); routes.add(r.agent); }
     const successful = report.reviewers.filter(r => r.agent !== report.governor && r.status === "success");
-    demand(successful.every(r => r.review_contract === "momm-peer-review/2" && Array.isArray(r.reviewed_scope) && r.reviewed_scope.length), "legacy/unverified reply contract; needs a fresh review");
+    demand(successful.every(r => VERIFIED_CONTRACTS.has(r.review_contract) && Array.isArray(r.reviewed_scope) && r.reviewed_scope.length), "legacy/unverified reply contract; needs a fresh review");
+    // 1.17 B3: covers are recounted here, never trusted. A cover must name a coverable failure of
+    // another route on the same piece, stay inside the one attempt budget, and may add a quorum vote
+    // only for a known model family new to that piece (the sealed report's family table).
+    const covers = report.covers === undefined ? [] : report.covers;
+    demand(Array.isArray(covers), "malformed cover list");
+    const pieceIds = new Set((report.split?.pieces ?? []).map(p => p?.id));
+    const nativeStatus = (agent, piece) => piece === null ? report.reviewers.find(r => r.agent === agent)?.status : report.split?.pieces?.find(p => p.id === piece)?.reviewers?.[agent];
+    const nativeAttempts = (agent, piece) => {
+      if (piece === null) return report.reviewers.find(r => r.agent === agent)?.attempts ?? 1;
+      const rows = (report.attempt_evidence ?? []).filter(a => a.route === agent && a.piece === piece && a.cover_for === undefined);
+      return rows.length || 1;
+    };
+    // The budget is per piece and role, so earlier covers of the same failed route on the same piece
+    // count against it; and, as the dispatcher chooses them, a route covers at most one role per piece.
+    const coverSpent = new Map(), coverSeats = new Set();
+    const coverRows = covers.map(c => {
+      const piece = c?.piece ?? null;
+      const wellFormed = c && typeof c === "object" && c.cover === true && nonempty(c.agent) && nonempty(c.covering_for) && c.agent !== c.covering_for
+        && c.agent !== report.governor && c.covering_for !== report.governor && (c.role === null || nonempty(c.role)) && nonempty(c.status)
+        && (report.split ? pieceIds.has(piece) : piece === null);
+      if (!wellFormed) { state.errors.push("malformed cover row"); return null; }
+      const label = `${c.agent} covering ${c.covering_for}`;
+      if (!COVERABLE_STATUSES.includes(c.covered_status) || nativeStatus(c.covering_for, piece) !== c.covered_status) { state.errors.push(`cover does not match a coverable failure: ${label}`); return null; }
+      const seat = JSON.stringify([piece, c.agent]), slot = JSON.stringify([piece, c.covering_for]);
+      if (coverSeats.has(seat)) { state.errors.push(`a route covers at most one role per piece: ${label}`); return null; }
+      coverSeats.add(seat);
+      const earlier = coverSpent.get(slot) ?? 0;
+      coverSpent.set(slot, earlier + (Number.isInteger(c.attempts) && c.attempts > 0 ? c.attempts : ATTEMPT_BUDGET));
+      if (c.attempts !== 1 || nativeAttempts(c.covering_for, piece) + earlier + 1 > ATTEMPT_BUDGET) { state.errors.push(`cover exceeds the attempt budget: ${label}`); return null; }
+      if (c.status === "success") demand(VERIFIED_CONTRACTS.has(c.review_contract) && Array.isArray(c.reviewed_scope) && c.reviewed_scope.length, "legacy/unverified reply contract; needs a fresh review");
+      return { ...c, piece };
+    }).filter(Boolean);
+    const coverVotesFor = (piece, nativeOk) => {
+      const onPiece = coverRows.filter(c => c.piece === piece);
+      if (!onPiece.length) return 0;
+      const table = report.model_families;
+      if (!table || typeof table !== "object" || !table.map) { state.errors.push("covers need the report's model_families table"); return 0; }
+      const recount = coverVotes(onPiece.map(c => ({ agent: c.agent, status: c.status })), { successFamilies: nativeOk.map(agent => table.map[agent]).filter(f => nonempty(f) && f !== "unknown"), table });
+      let votes = 0;
+      onPiece.forEach((c, i) => {
+        if (c.counted_for_quorum === true && !recount[i].counted_for_quorum) state.errors.push(`cover counted as a quorum vote against the model-family rule: ${c.agent} covering ${c.covering_for}`);
+        else if (c.counted_for_quorum === true) votes += 1;
+      });
+      return votes;
+    };
     const required = report.gate_policy?.quorum_required ?? report.quorum?.required ?? 1;
     demand(Number.isInteger(required) && required > 0, "invalid report quorum");
     const requested = report.gate_policy?.requested_routes;
@@ -294,7 +431,8 @@ export function inspectCompletion(root, runId) {
         const claimed = Object.entries(p.reviewers).filter(([agent, status]) => agent !== report.governor && status === "success").map(([agent]) => agent);
         for (const agent of claimed) if (!successful.some(r => r.agent === agent)) state.errors.push(`piece reviewer success has no successful verified row: ${p.id}: ${agent}`);
         const ok = claimed.filter(agent => successful.some(r => r.agent === agent));
-        return { id: p.id, external_successes: ok.length, met: ok.length >= required, ok };
+        const votes = coverVotesFor(p.id, ok);
+        return { id: p.id, external_successes: ok.length + votes, met: ok.length + votes >= required, ok };
       });
       // A merged route row reads "success" when any piece succeeded; its per-status piece counts are
       // the piece-level fact it carries. The piece structure may not claim more successes for a
@@ -315,7 +453,8 @@ export function inspectCompletion(root, runId) {
         for (const p of perPiece) for (const agent of requested) if (agent !== report.governor && !p.ok.includes(agent)) state.errors.push(`strict reviewer policy not met on ${p.id}: ${agent}`);
       }
     } else {
-      state.quorum = { required, achieved: successful.length, met: successful.length >= required };
+      const votes = coverVotesFor(null, successful.map(r => r.agent));
+      state.quorum = { required, achieved: successful.length + votes, met: successful.length + votes >= required, ...(coverRows.length ? { cover_votes: votes } : {}) };
       if (!state.quorum.met) state.errors.push("external review quorum not met");
       if (report.gate_policy?.strict && Array.isArray(requested) && requested.some(agent => agent !== report.governor && !successful.some(r => r.agent === agent))) {
         state.errors.push("strict reviewer policy not met");
@@ -326,6 +465,8 @@ export function inspectCompletion(root, runId) {
       return { item_id: id, kind, reviewer, index, content };
     };
     for (const r of successful) (r.suggested_improvements ?? []).forEach((s, i) => state.items.push(item("suggestion", r.agent, i, s)));
+    // A cover's suggestions are obligations like any reviewer's; the index names the cover row.
+    coverRows.forEach((c, k) => { if (c.status === "success") (c.suggested_improvements ?? []).forEach((s, i) => state.items.push(item("suggestion", c.agent, `cover:${k}:${i}`, s))); });
     report.findings.forEach((f, i) => state.items.push(item("finding", null, i, f)));
     // Oversize scope no route reviewed is an obligation of its own: the governor
     // must record a decision with investigation evidence covering that path.
@@ -334,7 +475,7 @@ export function inspectCompletion(root, runId) {
       state.items.push(item("governor_direct", null, i, { id: entry.id, path: entry.path, hunk: entry.hunk ?? null, bytes: entry.bytes ?? null }));
     }
     let rows = [];
-    const decisionFile = path.join(root, ".ensemble_reviews/dispositions.jsonl");
+    const decisionFile = at(".ensemble_reviews/dispositions.jsonl");
     if (fs.existsSync(decisionFile)) rows = jsonl(".ensemble_reviews/dispositions.jsonl").filter(r => r.run_id === runId);
     else reads.set(".ensemble_reviews/dispositions.jsonl", null);
     const known = new Set(state.items.map(i => i.item_id));
@@ -347,6 +488,9 @@ export function inspectCompletion(root, runId) {
     const malformedRating = row => row && row.kind === "review_rating" && !isRating(row);
     rows = rows.filter(row => { if (malformedRating(row)) { state.errors.push("malformed review_rating row"); return false; } return !isRating(row); });
     for (const row of rows) if (!known.has(row.item_id)) state.errors.push("unknown or legacy decision item; cannot count as validated");
+    // `current`: true binds live bytes (after, investigation, final); false binds the reviewed baseline
+    // copy (before); "mutation" binds the copy of the bytes the check ran against with one decision
+    // reverted, which are gone from the working tree once the governor restores the file.
     const check = (entry, obligation, phase, current) => {
       const c = JSON.parse(ref(entry));
       demand(c.schema === "momm-check/1" && c.run_id === runId && c.item_id === obligation.item_id
@@ -359,9 +503,9 @@ export function inspectCompletion(root, runId) {
       for (const a of c.artifacts) {
         demand(!names.has(a.path) && hash(a.sha256), "duplicate/invalid artifact"); names.add(a.path);
         local(a.path);
-        if (current) ref(a);
-        else { demand(a.snapshot?.sha256 === a.sha256, "before snapshot must match original artifact hash"); ref(a.snapshot); }
-        if (!current) demand(report.source_snapshot.files.some(f => f.path === a.path && f.sha256 === a.sha256), "reproduction baseline differs from reviewed source");
+        if (current === true) ref(a);
+        else { demand(a.snapshot?.sha256 === a.sha256, current === "mutation" ? "mutation record must carry a copy of the reverted bytes" : "before snapshot must match original artifact hash"); ref(a.snapshot); }
+        if (current === false) demand(report.source_snapshot.files.some(f => f.path === a.path && f.sha256 === a.sha256), "reproduction baseline differs from reviewed source");
       }
       // A cited real project file must actually be covered by the check.
       const target = obligation.kind === 'finding'
@@ -382,6 +526,38 @@ export function inspectCompletion(root, runId) {
     const finalCheck = check(finalRef, { item_id: "run", kind: "run" }, "final", true);
     demand(finalCheck.exit_code === 0, "run-level final verification did not pass");
     demand(JSON.stringify(finalCheck.artifacts.map(f => f.path).sort()) === JSON.stringify(report.source_snapshot.files.map(f => f.path).sort()), "final verification must cover the whole reviewed source scope");
+    // 1.17 B4.1: `style` is earned from the bytes. Every file the after check binds that differs from the
+    // reviewed bytes must change only whitespace or comment lines (style-classifier.mjs). The reviewed
+    // bytes come from this decision's own before record (which may pass: it is a baseline, not a
+    // failing test) or from input text the report stored; without them the label is refused.
+    const styleRefusal = (row, after, obligation) => {
+      const baseline = row.reproduction ? check(row.reproduction, obligation, "before", false) : null;
+      for (const a of after.artifacts) {
+        const reviewed = report.source_snapshot.files.find(f => f.path === a.path);
+        if (!reviewed) return `${a.path}: not in the reviewed source snapshot, so the reviewed bytes are not available`;
+        if (reviewed.sha256 === a.sha256) continue;
+        const copy = baseline?.artifacts.find(b => b.path === a.path);
+        const stored = typeof report.input_text === "string" && digest(Buffer.from(report.input_text)) === reviewed.sha256 ? Buffer.from(report.input_text) : null;
+        const original = copy ? ref(copy.snapshot) : stored;
+        if (!original) return `${a.path}: the reviewed bytes are not available; record a before check for this decision (it may pass) so its baseline copy can be compared`;
+        const verdict = classifyStyleChange(a.path, original, ref(a));
+        if (!verdict.style) return verdict.reason;
+      }
+      return null;
+    };
+    // 1.17 B4.2: optional, counted, never required and never proof. A mutation record is the chosen
+    // test run with this one decision's change reverted; it counts only when that run failed.
+    state.mutation = { applied_decisions: 0, with_mutation_record: 0, mutation_survived: [], invalid: [] };
+    const mutationOf = (row, after, obligation) => {
+      try {
+        const m = check(row.mutation, obligation, "mutation", "mutation");
+        demand(m.test.path === after.test.path && m.test.sha256 === after.test.sha256, "mutation record must run the same test as the after check");
+        demand(JSON.stringify(m.artifacts.map(a => a.path).sort()) === JSON.stringify(after.artifacts.map(a => a.path).sort()), "mutation record must bind the after check's artifacts");
+        demand(m.artifacts.some(a => after.artifacts.find(b => b.path === a.path).sha256 !== a.sha256), "mutation record reverted nothing: its bytes equal the after check's");
+        if (m.exit_code > 0) state.mutation.with_mutation_record++;
+        else state.mutation.mutation_survived.push(obligation.item_id);
+      } catch (error) { state.mutation.invalid.push({ item_id: obligation.item_id, reason: error.message }); }
+    };
     for (const obligation of state.items) {
       try {
         const matching = rows.filter(r => r.item_id === obligation.item_id);
@@ -391,20 +567,39 @@ export function inspectCompletion(root, runId) {
           && row.governor === report.governor && nonempty(row.reason), "decision binding/reason/governor missing");
         const sources = obligation.kind === "finding" ? obligation.content.sources : obligation.kind === "governor_direct" ? [report.governor] : [obligation.reviewer];
         demand(sources?.includes(row.reviewer), "decision reviewer does not match item");
+        // B6: an optional `role` is a copy, never a claim: it must be the report's role for that reviewer
+        // (`role`, or `persona` in a report sealed before roles were recorded).
+        // 1.17 B3: a cover's suggestion was made in the cover's (vacated) role; a finding a route raised
+        // natively or as a cover may carry either of those roles. Covers never change a native row's role.
+        if (Object.hasOwn(row, "role")) {
+          const entry = report.reviewers.find(r => r.agent === row.reviewer), native = entry?.role ?? entry?.persona ?? null;
+          const fromCover = typeof obligation.index === "string" && /^cover:\d+:\d+$/.test(obligation.index) ? coverRows[Number(obligation.index.split(":")[1])] : null;
+          const allowed = fromCover ? [fromCover.role] : obligation.kind === "finding"
+            ? [native, ...coverRows.filter(c => c.agent === row.reviewer && c.status === "success").map(c => c.role)] : [native];
+          demand(nonempty(row.role) && allowed.includes(row.role), "decision role does not match the report's role for that reviewer");
+        }
+        const retypeFields = ["claim_type", "retyped_from", "retype_reason", "severity", "severity_from", "severity_reason"];
+        if (obligation.kind === "finding") {
+          recordedChange(row, obligation.content, { field: "claim_type", from: "retyped_from", reason: "retype_reason", allowed: CLAIM_TYPES, label: "re-typing" });
+          recordedChange(row, obligation.content, { field: "severity", from: "severity_from", reason: "severity_reason", allowed: SEVERITIES, label: "re-grading severity" });
+        } else demand(!retypeFields.some(k => Object.hasOwn(row, k)), "re-typing and severity fields apply to findings only");
         // governor_direct scope may also be closed as "reviewed": the governor read it directly and found nothing to change.
         demand(["applied", "applied-with-modification", "rejected", ...(obligation.kind === "governor_direct" ? ["reviewed"] : [])].includes(row.disposition), "deferred/unknown disposition remains open");
         if (row.disposition.startsWith("applied")) {
+          state.mutation.applied_decisions++;
           const after = check(row.verification, obligation, "after", true);
           demand(after.exit_code === 0, "verification did not pass");
           // Behavioral work includes all material findings; never infer style from prose.
           const material = obligation.kind === "finding" && ["CRITICAL", "WARNING"].includes(obligation.content.severity);
           demand(["behavior", "style"].includes(row.change_kind), "change_kind required");
+          if (row.change_kind === "style") { const refused = styleRefusal(row, after, obligation); demand(!refused, `change_kind style refused: ${refused}`); }
           if (material || row.change_kind === "behavior") {
             const before = check(row.reproduction, obligation, "before", false);
             demand(before.exit_code > 0 && before.test.path === after.test.path && before.test.sha256 === after.test.sha256
               && Date.parse(before.observed_at) < Date.parse(after.observed_at), "need same test failing before and passing after");
             demand(JSON.stringify(before.artifacts.map(a => a.path).sort()) === JSON.stringify(after.artifacts.map(a => a.path).sort()), "before/after artifact scope differs");
           }
+          if (row.mutation !== undefined && row.mutation !== null) mutationOf(row, after, obligation);
         } else if (obligation.kind === "finding" || obligation.kind === "governor_direct") {
           const investigation = check(row.verification, obligation, "investigation", true);
           demand(investigation.exit_code === 0, obligation.kind === "governor_direct" ? "governor_direct scope needs completed investigation evidence covering its path" : "rejected finding needs completed investigation evidence");
@@ -422,7 +617,7 @@ export function inspectCompletion(root, runId) {
     }
     // Recheck the read set so a concurrent edit cannot silently seal stale evidence.
     for (const [relative, sha] of reads) {
-      if (sha === null) demand(!fs.existsSync(path.join(root, relative)), "decision file changed during validation");
+      if (sha === null) demand(!fs.existsSync(at(relative)), "decision file changed during validation");
       else demand((logReads.has(relative) ? scanFile(local(relative)) : digest(fs.readFileSync(local(relative)))) === sha, "evidence changed during validation");
     }
     state.validated_files = Object.fromEntries(reads);
@@ -431,11 +626,12 @@ export function inspectCompletion(root, runId) {
   return state;
 }
 
-export function recordCompletion(root, runId) {
-  requirePrivateEvidence(path.join(root, '.ensemble_reviews'));
-  const result = inspectCompletion(root, runId);
+export function recordCompletion(root, runId, options = {}) {
+  const evidence = evidenceDir({ cwd: root, env: process.env });
+  requirePrivateEvidence(evidence);
+  const result = inspectCompletion(root, runId, options);
   if (!result.complete) return result;
-  const dir = path.join(root, ".ensemble_reviews/completions");
+  const dir = path.join(evidence, "completions");
   if (fs.existsSync(dir)) demand(!fs.lstatSync(dir).isSymbolicLink(), "completion directory symlink refused");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   requirePrivateEvidence(dir);
@@ -443,7 +639,7 @@ export function recordCompletion(root, runId) {
   try {
     const receipt = { ...result, recorded_at: new Date().toISOString(), validator_sha256: digest(fs.readFileSync(fileURLToPath(import.meta.url))) };
     fs.writeFileSync(tmp, JSON.stringify(receipt, null, 2) + "\n", { flag: "wx", mode: 0o600 });
-    const again = inspectCompletion(root, runId);
+    const again = inspectCompletion(root, runId, options);
     demand(again.complete && JSON.stringify(again.validated_files) === JSON.stringify(result.validated_files), "evidence changed before recording");
     if (fs.existsSync(final)) {
       const stat=fs.lstatSync(final);
@@ -477,7 +673,7 @@ if (isEntrypoint()) {
       const built = spawnSync(process.execPath, [fileURLToPath(new URL("ledger.mjs", import.meta.url))], { cwd: process.cwd(), encoding: "utf8", timeout: 15000, windowsHide: true });
       result.ledger_rebuilt = built.status === 0;
     }
-    result.ledger_url = result.ledger_rebuilt === true ? pathToFileURL(path.resolve(".ensemble_reviews/ledger.html")).href : null;
+    result.ledger_url = result.ledger_rebuilt === true ? pathToFileURL(path.join(evidenceDir({ cwd: process.cwd(), env: process.env }), "ledger.html")).href : null;
     if (result.ledger_rebuilt === false) result.ledger_error = 'Completion receipt recorded, but the private dashboard rebuild failed. Rebuild it explicitly; no current ledger link is claimed.';
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     process.exitCode = !result.complete ? 4 : result.ledger_rebuilt === false ? 5 : 0;

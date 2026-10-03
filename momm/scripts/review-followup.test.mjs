@@ -12,6 +12,7 @@ import { recordCheck } from './checks.mjs';
 import { digest } from './governor.mjs';
 import { privateTestFixture } from './private-test-fixture.mjs';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
+import { evidenceLocation } from './evidence-location.mjs';
 if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] ?? 'all';
@@ -19,7 +20,7 @@ const source = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const tests = {};
 tests.quorum = () => {
   const code = source('momm/scripts/multi-review.mjs');
-  const build = vm.runInNewContext(code.slice(code.indexOf('function buildOutstanding('), code.indexOf('function buildInsights(')) + ';buildOutstanding', {fs, path, process});
+  const build = vm.runInNewContext(code.slice(code.indexOf('function buildOutstanding('), code.indexOf('function buildInsights(')) + ';buildOutstanding', {fs, path, process, evidenceLocation});
   const rows = ['claude', 'grok'].map(agent => ({agent, status:'success'}));
   const failed = build([], rows, 'rev_synthetic', root, 2, null, {met:false, required:2, achieved:1});
   assert.equal(failed.review_quorum_met, false, 'merged route successes do not satisfy every split piece');

@@ -979,7 +979,8 @@ await test("production path: CLI installed versions are read, cached, and turn i
   assert.equal(row().installed, "0.154.0", "the installed version is read from the CLI");
   assert.equal(row().latest, "0.156.1");
   assert.equal(row().update_available, true, "an older installed CLI is reported as having an update");
-  const codexReads = () => versionCalls.filter((b) => /codex/i.test(b)).length;
+  // By executable name: a parent folder named after Codex (the Codex desktop app's LOCALAPPDATA) must not count.
+  const codexReads = () => versionCalls.filter((b) => /^codex(?:\.(?:exe|cmd))?$/i.test(path.basename(b))).length;
   assert.equal(codexReads(), 1);
   time.t += 2 * 3_600_000; await clock.trigger("manual");
   assert.equal(codexReads(), 1, "cached: not re-read on every check");
@@ -987,6 +988,42 @@ await test("production path: CLI installed versions are read, cached, and turn i
   assert.equal(codexReads(), 2, "refreshed at least daily, since the user may have updated");
   const agy = clock.status().sources.find((r) => r.name === "cli:antigravity");
   assert.equal(agy.update_available, null, "antigravity has no check-only command, so no claim either way");
+});
+
+// Reported on the 1.17.0 candidate 59f18f9 by two independent reviewers (Discussion #32, 2 October 2026):
+// under the Codex desktop app LOCALAPPDATA lies below a folder named "OpenAI.Codex…", so the Antigravity
+// executable's path contains "codex", the count above (then `/codex/i` over the whole path) read 2, and
+// the clock resolved that path from process.env although the test had injected env: {}. The test now
+// counts by executable name, and the clock resolves CLI paths from the environment it was given.
+await test("production path: the Antigravity binary below a \"Codex\"-named folder is not counted as a Codex read, and the injected environment decides the path", async () => {
+  const dir = path.join(fixture, `case-${n++}`); fs.mkdirSync(dir);
+  const home = path.join(dir, "home"), stateFile = path.join(dir, "state", "update-clock.json");
+  // A local-data folder named like the Codex desktop package, holding an Antigravity launcher. Only its
+  // path is used: exec is stubbed, nothing is ever started.
+  const localAppData = path.join(dir, "Packages", "OpenAI.Codex_probe", "LocalCache", "Local");
+  fs.mkdirSync(path.join(localAppData, "agy", "bin"), { recursive: true });
+  fs.writeFileSync(path.join(localAppData, "agy", "bin", "agy.exe"), "");
+  const versionCalls = [];
+  const exec = async (bin, args) => {
+    if (args[0] === "--version") { versionCalls.push(String(bin)); return { code: 0, stdout: "codex-cli 0.154.0\n", stderr: "" }; }
+    return { code: 1, stdout: "", stderr: "unexpected command" };
+  };
+  const fetcher = async () => ({ status: 200, ok: true, headers: new Headers({ etag: '"v1"' }), text: async () => JSON.stringify({ version: "0.156.1" }) });
+  const clock = createUpdateClock({ home, stateFile, fetcher, exec, env: { LOCALAPPDATA: localAppData }, now: () => 1_800_000_000_000, random: () => 0.5, sources: [npmSource("codex"), antigravitySource()] });
+  await clock.trigger("manual");
+  const names = versionCalls.map((b) => path.basename(b).replace(/\.(?:exe|cmd)$/i, "").toLowerCase()).sort();
+  assert.deepEqual(names, ["agy", "codex"], "one version read per CLI, counted by executable name");
+  const agyCall = versionCalls.find((b) => /agy/i.test(path.basename(b)));
+  if (process.platform === "win32") {
+    // Compared as real paths: the resolver returns the long form, while a temp folder (GitHub's Windows runners,
+    // for one) may be given to this test in 8.3 short form, so a prefix comparison on the raw strings fails there.
+    const realLower = (p) => fs.realpathSync.native(p).toLowerCase();
+    assert.equal(realLower(agyCall), realLower(path.join(localAppData, "agy", "bin", "agy.exe")), "the Antigravity path comes from the environment given to the clock, not from this process's LOCALAPPDATA");
+    assert.equal(versionCalls.filter((b) => /codex/i.test(b)).length, 2, "a whole-path match, as the old assertion used, counts both reads here; that is why it was wrong");
+  } else {
+    assert.ok(!agyCall.includes(localAppData), "LOCALAPPDATA has no meaning here; the resolver falls back to the home or bare name");
+  }
+  assert.equal(clock.status().sources.find((r) => r.name === "cli:codex").update_available, true);
 });
 
 // The check records what it finds; this is the part that tells the user. The notice lists each reviewer

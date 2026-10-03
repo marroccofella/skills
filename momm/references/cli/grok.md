@@ -26,6 +26,23 @@ xAI's terminal agent. MOMM route `grok`, default persona `innovator`. Installed:
 
 Output envelope (json): `{"text":"…","stopReason":"end_turn"|"tool_use"|"cancelled",…,"thought":"…"}`; the review is inside `text`.
 
+Reviews since 1.17 (A4.3) use `--output-format streaming-json` so a timeout still records first output, bytes, event count and the last event type.
+
+Streaming-json shape (verified: captured 29 September 2026, Grok CLI 1.0.41, synthetic prompt, `--permission-mode plan --deny '*'`; `scripts/fixtures/grok-streaming-json-1.0.41.jsonl`, 54 lines, session and request ids zeroed). Every line is a bare JSON object with a `type`:
+
+- `available_commands` (`tools`, `commands`), `thought` (`data`: a reasoning chunk) and `usage` (`usage`, `signature`): no answer text.
+- `text`: `{"type":"text","data":"<chunk>"}`; the answer is the `data` values joined in order.
+- one final `{"type":"end","stopReason":"end_turn","sessionId":…,"requestId":…,"usage":{…},"num_turns":…,"total_cost_usd":…,"modelUsage":{…}}`.
+
+There is no JSON-RPC wrapper and no ACP `agent_message_chunk`, whatever the help's "one ACP session update per line" suggests. `scripts/grok-stream.mjs` joins the `text` data, requires the one `end` line last with `stopReason` `end_turn`, and rebuilds the json envelope above. When Grok exits normally the stream decides the result, in this order:
+
+1. Anywhere in the stream, a line that is not a JSON object with a string `type` makes the whole answer `invalid_output` (it is never skipped).
+2. Otherwise the lines are read in order and the first of these wins: an `error` line, or a line marked as an error, makes the run an `error`, even after the `end`; any other line after the `end` (a second `end` included) makes it `invalid_output`.
+3. A line of an unknown type decides nothing: it is counted and ignored (after the `end`, rule 2 applies).
+4. After the last line, a missing `end`, or an `end` whose `stopReason` is not `end_turn`, is `invalid_output`.
+
+Usage and cost are read from the `end` line. In the capture Grok declined the synthetic canned-verdict prompt, so its answer is a sentence, not JSON.
+
 ## Observed behaviour
 
 - Small inputs: real reviews in 10–40 s.

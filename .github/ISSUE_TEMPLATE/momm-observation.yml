@@ -28,4 +28,4 @@ body:
     id: suggestion
     attributes:
       label: Suggested improvement and acceptance check
-      description: Say whether this is a 1.16.1 safety correction or a possible 1.17 feature; maintainers decide scope.
+      description: Say whether this is a 1.17.x safety correction or a possible 1.18 feature; maintainers decide scope.

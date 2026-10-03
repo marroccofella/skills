@@ -6,13 +6,14 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { digest } from './governor.mjs';
 import { requirePrivateEvidence } from './evidence-permissions.mjs';
+import { evidenceDir, evidenceReference, evidenceFile } from './evidence-location.mjs';
 const demand = (ok, text) => { if (!ok) throw new Error(text); };
 export function auditAttempts(root, ids) {
-  root = fs.realpathSync(root); requirePrivateEvidence(path.join(root,'.ensemble_reviews'));
+  root = fs.realpathSync(root); const evidence = evidenceDir({ cwd: root, env: process.env }); requirePrivateEvidence(evidence);
   demand(ids.length > 0 && ids.length <= 100 && new Set(ids).size === ids.length, 'choose 1–100 distinct runs');
   const read = (name, json = true) => {
     demand(typeof name === 'string' && name.startsWith('.ensemble_reviews/') && !name.includes('\\') && !name.includes(':') && name.split('/').every(x=>x && x!=='.' && x!=='..'), 'unsafe evidence reference');
-    let file=root; for (const part of name.split('/')) {file=path.join(file,part); demand(!fs.lstatSync(file).isSymbolicLink(),'linked evidence refused');}
+    const {base,parts}=evidenceReference(name,{root,dir:evidence}); let file=base; for (const part of parts) {file=path.join(file,part); demand(!fs.lstatSync(file).isSymbolicLink(),'linked evidence refused');}
     const stat=fs.statSync(file); demand(stat.isFile() && stat.nlink===1 && stat.size<=8_000_000,'unbounded or hard-linked evidence');
     const bytes=fs.readFileSync(file);return {value:json?JSON.parse(bytes):bytes.toString('utf8'),path:name,sha256:digest(bytes)};
   };
@@ -36,14 +37,14 @@ export function auditAttempts(root, ids) {
     for(const row of r.attempt_evidence) {
       demand(typeof row.attempt_id === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(row.attempt_id) && !seen.has(row.attempt_id),'missing or duplicate attempt identity');seen.add(row.attempt_id);
       demand(expectedPieces.includes(row.piece),'unknown attempt piece');
-      const stored=read(row.evidence.path),{evidence,...expected}=row;
+      const stored=read(row.evidence.path),{evidence:_reference,...expected}=row,{quotation_diagnostics:_private,...bound}=stored.value;
       if(row.start){const start=read(row.start.path);demand(start.sha256===row.start.sha256 && start.value.event==='started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>start.value[k]===row[k]),'attempt start binding mismatch');}
-      demand(stored.sha256===evidence.sha256 && JSON.stringify(stored.value)===JSON.stringify(expected) && row.run_id===id && row.input_sha256===r.input_sha256,'attempt hash or source mismatch');
+      demand(stored.sha256===_reference.sha256 && JSON.stringify(bound)===JSON.stringify(expected) && row.run_id===id && row.input_sha256===r.input_sha256,'attempt hash or source mismatch');
       const p=thisPieces.get(row.piece)??{hash:row.piece_sha256,routes:new Set()};
       demand(p.hash===row.piece_sha256,'piece changed within a run');thisPieces.set(row.piece,p);
       const terminal=r.split ? r.split.pieces.find(x=>x.id===row.piece)?.reviewers[row.route] : r.reviewers.find(x=>x.agent===row.route)?.status;
       const verified=r.reviewers.find(x=>x.agent===row.route);
-      if(row.outcome==='succeeded' && terminal==='success' && row.route!==r.governor && verified?.review_contract==='momm-peer-review/2' && verified.reviewed_scope?.length)p.routes.add(row.route);
+      if(row.outcome==='succeeded' && terminal==='success' && row.route!==r.governor && ['momm-peer-review/2','momm-peer-review/3'].includes(verified?.review_contract) && verified.reviewed_scope?.length)p.routes.add(row.route);
       attempts.push({...row,report_sha256:report.sha256});
     }
     demand(expectedPieces.every(p=>thisPieces.has(p)),'missing piece attempt evidence');
@@ -60,6 +61,6 @@ export function auditAttempts(root, ids) {
     caveat:'Cumulative coverage only. This does not replace original per-run failures, disposition checks, final verification or release approval. Retrying one route never creates a second reviewer.'};
 }
 if((()=>{try{return Boolean(process.argv[1])&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url));}catch{return false;}})()){
-  try{const report=auditAttempts(process.cwd(),process.argv.slice(2));const name=`.ensemble_reviews/attempt-audit-${randomUUID()}.json`;fs.writeFileSync(name,JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});console.log(JSON.stringify({path:name,sha256:digest(fs.readFileSync(name)),cumulative_quorum_met:report.cumulative_quorum_met,completion:false}));process.exitCode=report.cumulative_quorum_met?0:3;}
+  try{const report=auditAttempts(process.cwd(),process.argv.slice(2));const name=`.ensemble_reviews/attempt-audit-${randomUUID()}.json`;const file=evidenceFile(name,{root:process.cwd(),dir:evidenceDir({cwd:process.cwd(),env:process.env})});fs.writeFileSync(file,JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});console.log(JSON.stringify({path:name,sha256:digest(fs.readFileSync(file)),cumulative_quorum_met:report.cumulative_quorum_met,completion:false}));process.exitCode=report.cumulative_quorum_met?0:3;}
   catch(e){console.error(e.message);process.exitCode=1;}
 }

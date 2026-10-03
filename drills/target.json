@@ -1,9 +1,8 @@
 {
-  "_comment": "1.17 A6 rehearsal (not the 1.17 gate): the published signed momm-1.16.1, from momm-1.16.0 and momm-1.15.1, exercising the new interrupted-upgrade recovery step on GitHub-hosted runners. The 1.17 gate re-targets this file at the signed main-checkpoint of the 1.17 candidate.",
-  "target": "momm-1.16.1",
-  "expect": "1.16.1",
+  "checkpoint": "5a3385468011bafabcddc719264783f23d71602e",
+  "expect": "1.17.0",
   "from": [
-    "momm-1.16.0",
-    "momm-1.15.1"
+    "momm-1.16.1",
+    "momm-1.16.0"
   ]
 }

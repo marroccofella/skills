@@ -41,7 +41,8 @@ const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir
   const posix = path.posix;
   const present = new Set(['/proj/bin/git', '/usr/bin/git']);
   const files = {
-    statSync: (p) => { if (!present.has(p)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return { isFile: () => true }; },
+    // Mode bits since 1.17 A1: on POSIX resolveGit takes only a file with an execute bit, as execvp would.
+    statSync: (p) => { if (!present.has(p)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return { isFile: () => true, mode: 0o100755 }; },
     realpathSync: Object.assign((p) => p, { native: (p) => p }),
   };
   const at = (PATH) => resolveGit('/proj', { platform: 'linux', env: { PATH }, fs: files, path: posix });

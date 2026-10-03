@@ -48,7 +48,7 @@ try {
   const auditRun = (id,route) => {
     const row=attemptRecord({agent:route,status:'success'},{...base,runId:id});
     const evidence=persistAttempt(root,row);
-    const value={...report,run_id:id,governor:'codex',gate_policy:{quorum_required:2},reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/2',reviewed_scope:[{synthetic:true}]}],attempt_evidence:[{...row,evidence}]};
+    const value={...report,run_id:id,governor:'codex',gate_policy:{quorum_required:2},reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/3',reviewed_scope:[{synthetic:true}]}],attempt_evidence:[{...row,evidence}]};
     write(`.ensemble_reviews/reports/${id}.json`,JSON.stringify(value));
     fs.appendFileSync(path.join(root,'.ensemble_reviews/review-log.jsonl'),JSON.stringify({run_id:id,input_sha256:value.input_sha256,report_path:`.ensemble_reviews/reports/${id}.json`,report_sha256:digest(JSON.stringify(value))})+'\n',{mode:0o600});return value;
   };
@@ -64,7 +64,7 @@ try {
   const policyRun = (id,route,extra) => {
     const row=attemptRecord({agent:route,status:'success'},{...base,runId:id});
     const evidence=persistAttempt(root,row);
-    const value={...report,run_id:id,governor:'codex',gate_policy:{quorum_required:1},reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/2',reviewed_scope:[{synthetic:true}]}],attempt_evidence:[{...row,evidence}],...extra};
+    const value={...report,run_id:id,governor:'codex',gate_policy:{quorum_required:1},reviewers:[{agent:route,status:'success',review_contract:'momm-peer-review/3',reviewed_scope:[{synthetic:true}]}],attempt_evidence:[{...row,evidence}],...extra};
     write(`.ensemble_reviews/reports/${id}.json`,JSON.stringify(value));
     fs.appendFileSync(path.join(root,'.ensemble_reviews/review-log.jsonl'),JSON.stringify({run_id:id,input_sha256:value.input_sha256,report_path:`.ensemble_reviews/reports/${id}.json`,report_sha256:digest(JSON.stringify(value))})+String.fromCharCode(10),{mode:0o600});return value;
   };

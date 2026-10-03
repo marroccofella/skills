@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {PEER_CONTRACT,reviewProblem} from './review-contract.mjs';
 import {assemblePrompt} from './guidance.mjs';
 import {requirePrivateEvidence} from './evidence-permissions.mjs';
+import {codexIsolationArgs,codexReviewArgs,grokIsolationEnv} from './route-isolation.mjs';
+import {grokStreamProgress,grokStreamReview} from './grok-stream.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>0&&end>start);
@@ -17,13 +19,13 @@ let sequence=0;const checks=[];
 async function test(name,fn){try{await fn();checks.push({name,passed:true});}catch(e){checks.push({name,passed:false,error:e.message});}}
 function context(overrides={},command=()=> 'synthetic-agent'){
   const temporary=path.join(root,String(++sequence));fs.mkdirSync(temporary);
-  const ctx=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>temporary},path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
+  const ctx=vm.createContext({fs:{...fs,...overrides},os:{tmpdir:()=>temporary,homedir:()=>temporary},path,process,Buffer,PEER_CONTRACT,reviewProblem,assemblePrompt,
     createEvidenceWorkspace:prefix=>fs.mkdtempSync(path.join(temporary,prefix)),
     requirePrivateScratch:()=>{},
     VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
     attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
     agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},
-    sanitizeText:s=>({value:s}),clipped:(s,n)=>String(s).slice(0,n),antigravityCommand:command,grokCommand:command,REVIEW_JSON_SCHEMA:{type:'object'}});
+    sanitizeText:s=>({value:s}),clipped:(s,n)=>String(s).slice(0,n),antigravityCommand:command,grokCommand:command,REVIEW_JSON_SCHEMA:{type:'object'},grokIsolationEnv,codexIsolationArgs,codexReviewArgs,grokStreamProgress,grokStreamReview});
   vm.runInContext(source.slice(start,end)+';this.invoke=invokeReviewer;',ctx);
   return {ctx,temporary};
 }
@@ -88,7 +90,9 @@ try{
   const scratchReview=JSON.stringify({review_status:'complete',reviewed_scope:[{quote:scratchArtifact,assessment:'Synthetic exact source was inspected.'}],
     verdict:'ACCEPT',confidence:0.8,findings:[],summary:'Synthetic complete response.',suggested_improvements:[]});
   const scratchReply={antigravity:JSON.stringify({event:'result',result:{status:'SUCCESS',response:scratchReview}})+'\n',
-    copilot:[{type:'assistant.turn_start',data:{turnId:'t'}},{type:'assistant.message',data:{turnId:'t',content:scratchReview,toolRequests:[]}},{type:'assistant.turn_end',data:{turnId:'t'}},{type:'result',exitCode:0}].map(row=>JSON.stringify(row)).join('\n')+'\n'};
+    copilot:[{type:'assistant.turn_start',data:{turnId:'t'}},{type:'assistant.message',data:{turnId:'t',content:scratchReview,toolRequests:[]}},{type:'assistant.turn_end',data:{turnId:'t'}},{type:'result',exitCode:0}].map(row=>JSON.stringify(row)).join('\n')+'\n',
+    // 1.17 A4.3: Grok reviews read --output-format streaming-json (Grok CLI 1.0.41 shape: text lines, then end).
+    grok:[{type:'thought',data:'Reading.'},{type:'text',data:scratchReview},{type:'end',stopReason:'end_turn'}].map(row=>JSON.stringify(row)).join('\n')+'\n'};
   const scratchInvoke=(c,route,check,seam=false)=>{
     if(!seam)c.ctx.requirePrivateScratch=check;
     return c.ctx.invoke(route,scratchArtifact,{governor:'other',timeoutMs:1000,...(seam?{testWorkspaceCheck:check}:{}),
@@ -208,6 +212,8 @@ try{
       assert.equal(env[`GROK_${vendor}_${kind}_ENABLED`], 'false', `GROK_${vendor}_${kind}_ENABLED must be false for a MOMM review`);
     assert.equal(env.GROK_MEMORY, 'false', 'cross-session memory is off');
     assert.equal(env.GROK_DISABLE_AUTOUPDATER, '1', 'a review never updates the CLI');
+    // 1.17 A10: review, probe and generation share one definition; the review sends every switch in it.
+    for (const [k, v] of Object.entries(grokIsolationEnv())) assert.equal(env[k], v, `review isolation ${k} matches route-isolation.mjs`);
     const denied = seen.grok.args.flatMap((a, k, all) => (all[k - 1] === '--deny' ? [a] : []));
     assert.ok(denied.includes('*'), 'every tool class is denied, including ones added in future');
     for (const route of ['codex', 'antigravity']) assert.ok(!Object.keys(seen[route].env).some((k) => k.startsWith('GROK_')), `${route} receives no Grok switches`);
@@ -279,11 +285,11 @@ try{
       assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'medium');
     }
   });
-  // Codex's private directory sits in the reviewed project's .ensemble_reviews, and Codex reads AGENTS.md
-  // from the git root down, so the project's own instructions reached the reviewer; the user's hooks,
-  // plugins, apps and multi-agent tools were on too (25 September 2026). Owner decision: no project
-  // instructions and those features off; the model, effort and MCP servers shared with the Codex
-  // desktop app stay as the user set them until 1.17.
+  // Codex runs in a private temporary directory from createEvidenceWorkspace, yet it still read AGENTS.md
+  // files, and the user's hooks, plugins, apps and multi-agent tools were on (25 September 2026). Owner
+  // decision: no project instructions and those features off. 1.17 A2 (owner decision D2) also ignores
+  // the user's configuration and rules, and passes the model and effort read from it explicitly
+  // (codex-isolation.test.mjs covers the reading).
   await test('codex reads no project AGENTS.md and runs with hooks, plugins, apps, multi-agent and image generation off', async () => {
     const c = context();
     let seen = null;
@@ -299,7 +305,7 @@ try{
     const overrides = seen.args.flatMap((a, k, all) => (all[k - 1] === '-c' ? [a] : []));
     assert.ok(overrides.includes('project_doc_max_bytes=0'), "the reviewed project's AGENTS.md is not loaded as instructions");
     assert.equal(seen.args.at(-1), '-', 'the prompt still arrives on stdin');
-    assert.ok(!seen.args.includes('--ignore-user-config'), 'the shared model and effort stay as the user set them');
+    assert.ok(seen.args.includes('--ignore-user-config') && seen.args.includes('--ignore-rules'), "the user's MCP servers, instructions, skills and rules are not loaded");
   });
   // Owner decision, 25 September 2026, from range review rev_20260925004814_1ed9f58c2c3a: most failed pieces
   // were answers rejected because a model retyped a curly quote, a dash or a non-breaking space in its

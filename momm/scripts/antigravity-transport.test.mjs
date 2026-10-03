@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {PEER_CONTRACT,reviewProblem} from './review-contract.mjs';
+import {PEER_CONTRACT,reviewProblem, quotationDiagnostics} from './review-contract.mjs';
 import {assemblePrompt} from './guidance.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
@@ -16,6 +16,11 @@ const context=vm.createContext({fs,os,path,process,Buffer,PEER_CONTRACT,reviewPr
   attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
   agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},
   sanitizeText:s=>({value:s}),antigravityCommand:()=> 'agy',REVIEW_JSON_SCHEMA:{type:'object'}});
+// 1.17 A4.2: an invalid answer carries private quotation diagnostics; the real helper and validator.
+const quoteFrom=source.indexOf('function quotationEvidence('),quoteTo=source.indexOf('\n}\n',quoteFrom)+3;
+assert(quoteFrom>=0&&quoteTo>quoteFrom);
+context.quotationDiagnostics=quotationDiagnostics;
+vm.runInContext(source.slice(quoteFrom,quoteTo),context);
 vm.runInContext(source.slice(start,end)+';this.invoke=invokeReviewer;',context);
 const artifact='export const value = "literal & % ! ü";\n';
 const payload={review_status:'complete',reviewed_scope:[{quote:artifact.trim(),assessment:'Synthetic exact source was inspected.'}],

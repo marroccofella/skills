@@ -131,4 +131,50 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   const flat = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   for (const phrase of ['Stop if verification is unavailable', 'ask before installing a missing verifier', 'Ask me before applying']) assert(flat.includes(phrase), file + ' must keep: ' + phrase);
 }
+// 1.17 gate 3, review rev_20260930003709_e5847282134d (docs packet). Each statement is checked against the
+// code it describes where that is cheap, so the doc cannot drift from it.
+{
+  const flatText = (t) => t.replace(/\s+/g, ' ');
+  const skillFlat = flatText(read('momm/SKILL.md'));
+  const draft = read('momm/references/release-1.17-draft-notes.md');
+  // protect-flag-and-mark: the evidence commands follow --evidence-home only when it is passed again
+  // (takeEvidenceHomeOption applies it per process), and protectEvidence recognises an evidence-home
+  // folder by its hash name and project.json marker.
+  const evidenceText = flatText(read('momm/SKILL.md').split('## Private evidence folder')[1].split('\n## ')[0]);
+  assert(/same `--evidence-home <dir>`/.test(evidenceText), 'SKILL must tell the owner to repeat --evidence-home on evidence --status/--protect');
+  assert(evidenceText.includes('`project.json`') && !evidenceText.includes('its marked folder under `MOMM_EVIDENCE_HOME`'), 'SKILL must name the evidence-home folder --protect accepts');
+  // blind-judge-fixed-three: blind() labels one file per picture; validateCritique wants evidence for every
+  // result except cant_tell.
+  const blindStep = skillFlat.slice(skillFlat.indexOf('4. Judge blind'), skillFlat.indexOf('5. Further rounds'));
+  assert(/one per picture/.test(blindStep) && !blindStep.includes('A, B, C files') && !blindStep.includes('each of the first three'), 'SKILL step 4 must not fix blind judging at three files');
+  assert(blindStep.includes('`met`, `partly` or `missed` (`cant_tell` needs none)'), 'SKILL step 4 must say which results need evidence');
+  assert(!draft.includes('labelled A, B, C'), 'the draft notes must not fix blind labels at three');
+  // suggestion-index-undefined: selectionOf takes k from 1 to suggested_rounds.length.
+  assert(/`--suggestion <k>`, where k counts the previous round's `suggested_rounds` from 1/.test(skillFlat), 'SKILL must say --suggestion counts from 1');
+  // claim-type-order-undefined: CLAIM_TYPE_RANK in multi-review.mjs, most blocking first, null lowest.
+  assert(/most blocking first: `DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`; null when untyped, which ranks below `NOISE`/.test(skillFlat), 'SKILL must publish the claim-type order');
+  // draft-notes-contradict-header: the superseded long form must not say 1.17 is unreleased.
+  assert(!/Not a release note until|Nothing here is released until/.test(draft), 'the superseded draft notes must not contradict their header');
+  // release-claim-signal-vs-docs (doc side): releaseClaim treats any kill(pid, 0) error but ESRCH as running.
+  assert(/not running \(a process that exists but cannot be signalled counts as running\)/.test(flatText(draft)), 'the draft notes must state the unsignalable-process rule as updating.md does');
+  // unpinned-drill-branch: the drill tool is pinned by commit, verified and reported.
+  const plan = read('momm/references/third-party-test-plan-1.17.md');
+  assert(!plan.includes('--branch drills/momm-1.17') && plan.includes('git checkout --detach <DRILL_SHA>') && /Drill commit: <DRILL_SHA/.test(plan), 'the reviewer pack must pin, verify and report the drill commit');
+  // mutation-item-is-not-a-path: checks.mjs wants a 64-hex --item and one --artifact per reverted file.
+  const checksText = flatText(read('momm/references/verification-checks.md'));
+  assert(/`--item` names the decision \(its validator `item_id`\)/.test(checksText) && /repeat `--artifact` for each such file/.test(checksText), 'verification-checks must separate --item from the reverted --artifact files');
+  // grok-typeless-line-unspecified: grokStreamReview refuses the whole answer on a typeless line.
+  const grokText = flatText(read('momm/references/cli/grok.md'));
+  assert(/a line that is not a JSON object with a string `type` makes the whole answer `invalid_output` \(it is never skipped\)/.test(grokText), 'grok.md must say what a typeless line does');
+  // Final review of 1.17.0 (rev_20260930034635_c08cfb6df42f): the rules are an ordered list, so "first decisive one
+  // wins" is not read as covering unknown types, and an error line after the end is an error, as the code decides.
+  const grokRaw = read('momm/references/cli/grok.md').replace(/\r\n/g, '\n');
+  assert(['1. Anywhere in the stream, a line', '2. Otherwise the lines are read in order', '3. A line of an unknown type decides nothing', '4. After the last line'].every((item) => grokRaw.includes(`\n${item}`)), 'grok.md must give the stream rules as an ordered list');
+  assert(/an `error` line, or a line marked as an error, makes the run an `error`, even after the `end`; any other line after the `end` \(a second `end` included\) makes it `invalid_output`/.test(grokText), 'grok.md must say what a line after the end does');
+  assert(/a missing `end`, or an `end` whose `stopReason` is not `end_turn`, is `invalid_output`/.test(grokText), 'grok.md must say what a missing end or another stopReason does');
+  const { grokStreamReview } = await import('../momm/scripts/grok-stream.mjs');
+  const end = JSON.stringify({ type: 'end', stopReason: 'end_turn' });
+  assert(grokStreamReview(`{"data":"x"}\n${end}\n`).envelope === null && grokStreamReview(`${end}\n${end}\n`).envelope === null && grokStreamReview('{"type":"end","stopReason":"max_turns"}\n').envelope === null, 'grok-stream.mjs must refuse what grok.md says it refuses');
+  assert(grokStreamReview(`${end}\n{"type":"error"}\n`).status === 'error' && grokStreamReview(`{"type":"mystery"}\n${end}\n`).envelope !== null && grokStreamReview(`${end}\n{"type":"mystery"}\n`).envelope === null, 'grok-stream.mjs must decide a line after the end as grok.md says');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

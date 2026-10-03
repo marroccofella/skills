@@ -2,8 +2,8 @@
 
 Where ideas live when they are not in the release being built. One place, one format, so that a
 later maintainer can see what was proposed, why, what became of it, and what would make it worth
-doing. The release being built is governed by its own plan (today:
-[plan-1.16.1.md](plan-1.16.1.md)); `ROADMAP.md` says what is now, next and later; this register is
+doing. The release being built is governed by its own plan: today 1.17, in
+[plan-1.17.md](plan-1.17.md) (the last released plan is [plan-1.16.1.md](plan-1.16.1.md)); `ROADMAP.md` says what is now, next and later; this register is
 the memory behind "later".
 
 **Rules.** An idea enters with an origin and a reason, not only a name. It carries a "worth doing
@@ -21,10 +21,10 @@ is corroboration, not proof.
 
 | Idea | Origin | Why | Worth doing when |
 | --- | --- | --- | --- |
-| `--early-exit` after quorum | 1.16.0 plan, deferred | Stops paying for reviews the gate no longer needs | In-flight cancellation exists inside `runProcess` and is proven not to orphan a provider process on any OS |
-| `--split auto` | 1.16.0 plan | Removes a manual choice | Five live runs above 100 KB show at most 10% coverage loss against a manual split |
+| `--early-exit` after quorum | 1.16.0 plan, deferred | Stops paying for reviews the gate no longer needs. Status 29 September: the decision helper `earlyExitDecision` exists in `scheduler.mjs` with unit tests; dispatch does not call it | In-flight cancellation exists inside `runProcess` and is proven not to orphan a provider process on any OS |
+| `--split auto` | 1.16.0 plan | Removes a manual choice. Status 29 September: already parsed and applied with a fixed 40 KB ceiling; the evaluation below is what remains | Five live runs above 100 KB show at most 10% coverage loss against a manual split |
 | Ledger-learned route caps, higher `--jobs` ceiling | 1.16.0 measurement: throughput is bound by concurrency | Faster gates | The attempt ledger (1.16.1 C) has a month of clean timing per route and size |
-| Adaptive timeouts from seconds per KB | 1.16.0 notes | Fewer false timeouts | Outcome classification (1.16.1 C1) has separated timeout from quota, auth and invalid output for long enough to trust the timing |
+| Adaptive timeouts from seconds per KB | 1.16.0 notes | Fewer false timeouts. Status 29 September: `adaptiveTimeoutMs` exists in `scheduler.mjs` with unit tests; dispatch does not call it | Outcome classification (1.16.1 C1) has separated timeout from quota, auth and invalid output for long enough to trust the timing |
 | `--cross-check` for `verify_first` findings | ROADMAP "Planned" | A second opinion only where history says one is needed | The scorecard shows which routes' single-source findings are most often rejected |
 | Recognise one observation across finding ids | 1.16.0 image critiques | Agreement score 0 was shown for reviewers who agreed in different words | It can match without merging, rewriting or dropping any original finding; until then agreement 0 is never presented as disagreement |
 | Bounded surrounding-code context | Owner proposal, 20 September | Reviewers reject or miss findings because they saw only a hunk | Context is bounded by bytes and by file, is part of the receipt identity, and never widens what is sent without saying so |
@@ -44,6 +44,144 @@ while an older copy is active.
 | Version banner in the Setup Center and in reports | "Which MOMM ran?" should never need a command | The report field is additive and the path is scrubbed from any public export |
 | Fresh-session verification | MOMM cannot see inside a harness | Each harness has a documented, scriptable way to list the skills it loaded |
 | Consented verifier install in `bootstrap.mjs` | Every new user is stopped to install `gitsign`, which has no Windows installer | Owner decision pending; the download is pinned, checksum-checked, user-only, and never silent |
+
+## 1.17 design candidate: role-preserving review
+
+**Origin.** Owner proposal, 28 September 2026, with an assessment of it from a second session. The
+proposal: keep one writer and make the bench around it harsher. When a reviewer fails, cover its
+*role* with another route instead of dropping it or retrying blindly; type every claim; accept nothing
+without reproduction. Its summary: "authority is singular, scrutiny is plural, and a missing critic
+is replaced by role, not by committee."
+
+**Fit.** It strengthens the standing constraints rather than crossing them: a cover reviewer is still
+a read-only reviewer, and the governor remains the only writer. It gathers several rows above into
+one design (`--cross-check`, the persona field on dispositions, deterministic evidence beside model
+reviews, bounded context, receipt invalidation on change) and the controlled benchmark below. It
+moves into 1.17 only through a 1.17 design plan (`plan-1.17.md`, not yet written), which must
+reconcile it with those rows. It is not a change to the released 1.16.1.
+
+**Staging.** Each stage is opt-in and fail-closed, and ships only when the stage before it is proven.
+
+| Stage | What | Worth doing when |
+| --- | --- | --- |
+| 1. Roles and typed claims | Separate a reviewer's *role* (surgeon, architect, adversary, verifier, innovator: today's personas) from the *route* that performs it, and version each role's brief as a reviewed artifact rather than prompt text that drifts. Add a claim type beside severity: `DEFECT` (reproducible, must be proven or refuted), `RISK` (plausible, needs a probe), `QUESTION` (missing assumption), `IDEA` (optional, never blocks), `NOISE` (style, taste, out of scope). Additive report fields; every original claim and its evidence kept intact. | The type is recorded next to severity, never replaces it, and a test shows that no type can authorize an edit or count as proof of a defect. Only `DEFECT` and `RISK` can hold up acceptance |
+| 2. Opt-in role cover | When a route fails, the role is marked vacant, not the vendor. MOMM may offer, or with an explicit flag perform, a cover: the same role packet (stance, what the role must not do, the claims already on the table, and the failure reason) sent to another route from the user's own allowed reviewers. The report records the failed route, its status, the cover route, attempts, the role and the packet version, and labels the result a cover review, never a native one. Change role or route in one step, never both. The packet is data, not instructions: earlier claims and the failure reason reach the cover route as quoted evidence, never in its instruction channel (the same line as "Automatic debate" under Refused) | Every terminal status has a defined cover rule. Authentication and quota failures are never retried or routed around (a quota is the provider's allowance, not an obstacle). No provider is added and no permission relaxed. Two routes backed by the same model family are not counted as independent quorum votes. The cover appears in the attempt ledger |
+| 3. Harder accept gate | "No reproduction, no edit" stays the rule (it already is the protocol). A change to source or guidance marks earlier reviews stale; only the claims it touches and any failed test are re-verified. A second look runs only on a specific disagreement: two roles contradict, a `CRITICAL` fails reproduction, tests pass but an architect says the contract is wrong, or the only review of a role was a cover. It asks one fresh route about that one claim, adds no new scope and keeps the original reviews. When the governor rejects a `CRITICAL`, a different route may be asked to refute the rejection, which is the nearest thing to a second writer without splitting the pen | The receipt binds source, guidance and prompt-template hashes (see "Receipt invalidation on change"); `--cross-check` exists as the narrow single-claim mechanism; the second look provably never feeds one reviewer's output to another as instructions (see "Automatic debate" under Refused) |
+| 4. Measure before choosing pairings | A roster card per route and role: valid-review rate, reproduced-claim rate, false-`CRITICAL` rate, median time, and cover success when standing in for another role. Choose covers by a route's record *in that role*. Test writer-to-reviewer pairings in both directions on a blinded, seeded set: findings found, seeded defects missed, false criticals, reproduction rate, regressions introduced, time and cost | The controlled benchmark below exists. Promotion thresholds are written down before a pilot's results are seen. The roster stays advisory: it orders attention and cover choice, and never replaces reproduction |
+
+**The pairing evidence is a hypothesis, not a rule.** The proposal cites a 2026 study
+([arXiv 2607.21656](https://arxiv.org/abs/2607.21656)) in which one model reviewing another's drafts
+raised the pass rate and the reverse direction lowered it. The assessment notes its limits: two
+model versions, 116 single-file Python benchmark tasks, a stated lack of generalisation to
+repository-scale work, and a direct comparison between the two directions that was not significant
+after correction. The maintainer has not checked the paper independently. Measure on MOMM's own
+work before routing on it.
+
+**Also proposed, already partly in place.** Deterministic gates before any model reviewer (tests,
+types, linters, secret scan: see "Deterministic test and scanner evidence" above). Reviewers never
+see the governor's reasoning: they receive only the artifact, and that stays an invariant. Scope by
+what the diff reaches (callers, migrations, contracts) instead of the bare hunk: see "Bounded
+surrounding-code context" above. A budget ladder (one cheap reviewer for a small change, native roles
+for a medium one, the full bench plus covers for a hard one, a second look only on disagreement) extends
+today's `--tier quick|deep`.
+
+**Deferred beyond the first 1.17 release.** Each needs its own threat model and evidence:
+
+| Idea | Why not yet | Worth doing when |
+| --- | --- | --- |
+| Split cover (two cheap routes each take half of a wide role's checklist) | Divides a role's context and doubles the ways a cover can be wrong | Single-route cover has a measured success rate per role |
+| Sketch patches attached to a review as evidence | A patch from a reviewer is one step from a reviewer writing | It is stored as a quoted artifact only, never applied or offered as a diff to apply, and the ledger records "inspired by route X" when the governor reproduces and rewrites a line from it |
+| Shuffled multi-pass on one role (several passes with the diff in a random order, keeping what survives two passes) | Cheap diversity, but multiplies quota use | The benchmark shows it finds seeded defects that a single pass misses, at a stated cost |
+| Automatic pairing optimisation | Depends on stage 4 data that does not exist yet | A month of roster data per route and role |
+| Local project memory of what reproduced, what kept failing reproduction, and which pairings helped | See "Refused" for the automatic form | Opt-in, local, structured fields rather than free text, scrubbed of source, and read as data rather than loaded as instructions |
+
+**Acceptance tests to write before any implementation.** A cover rule for every failure status;
+same-role cover; refusal when quorum cannot be met; no duplicate or correlated votes; immutable input
+hashes across a cover; permission boundaries unchanged for a cover route; "no reproduction, no edit";
+authentication and quota never retried by a cover. Then a small opt-in pilot, against thresholds set
+before it runs.
+
+**Review status.** A MOMM review of the proposal (`rev_20260928085108_fa71e697d72f`) did not reach
+quorum (0 of 2): the input was outside the project's review scope and the routes that ran failed on
+connection, authentication or a policy lock. It produced no valid findings and is not a peer
+sign-off. The 1.17 design plan gets its own review, with the plan inside the project.
+
+## 1.17 design candidate: loophole-aware critical review
+
+**Origin.** Owner proposal, 28 September 2026: "we need much more critical thinking." Roadmap entry:
+[ROADMAP.md, "1.17"](../ROADMAP.md#117-design-no-code-before-its-plan). The idea is a
+*structural discrepancy*: a rule obeyed to the letter while its purpose is defeated. Rules are finite
+text laid over dynamic behaviour, so a capable actor finds the gaps. That applies to statutes and tax
+codes, and equally to software, where the actor may be a user, an attacker or an agent optimising
+for a passing check.
+
+**Two uses in MOMM.** (a) A *lens* for what reviewers look for in the work under review. (b) The
+same lens turned on MOMM's own gates, which are rules an agent, the governor included, can satisfy
+on paper while missing the point. The second use matters as much as the first: MOMM's integrity
+claims rest on its gates meaning what they say.
+
+### The lens (four ways a rule leaks)
+
+| Theme | In reviewed work, look for |
+| --- | --- |
+| Letter versus spirit | Code that satisfies a test, type, lint rule or spec wording while defeating what it was for: a check that inspects the wrong value, a guard on one form of a behaviour but not another, a test that passes without exercising the claim |
+| Categorical arbitrage | A value, request or file that escapes a control by changing its label rather than its nature: a renamed type, a reclassified error, a path that is "not a file", a status that skips a branch |
+| Temporal latency | Rules and data that were right when written and are silently stale: cached decisions, pinned versions, allowlists, expiry that never fires, docs that lag the code |
+| Compositional blind spots | Steps that are each permitted but chain into a forbidden state: a safe read plus a safe write that together escape a sandbox, two retries through two different paths, two partial checks that each assume the other ran |
+
+Four thinking styles drive it: **adversarial** (what inputs give the most reward with no failing
+state?), **formalist** (undefined terms, silent exemptions, "shall" against "may", where a rule's power
+ends), **systems** (second-order effects: Goodhart's law, the cobra effect, how participants adapt
+to a metric), and **counterfactual** (stress the rule far from its designer's median case).
+
+Five techniques turn it into checks: **boundary values** (just below and above every threshold, and
+splitting one thing into several to stay under it); **intent anchoring** (state the purpose a rule
+serves, so a manoeuvre that meets the text and defeats the purpose is named as such); **invariants**
+(states that must never occur whatever sequence of valid steps is taken, tested as properties rather
+than examples); **payoff auditing** (where finding a bypass is cheap and the gain is large, expect it
+to be found); **sunset and review triggers** (rules that expire or are re-examined when a measure
+drifts).
+
+### The lens turned on MOMM's own gates
+
+Each row is a real, current discrepancy, checked against the location it cites. None of them is a
+hidden defect; most are documented limits. Each counter-measure is labelled for what it would do:
+**Closes** (the letter-compliant path no longer exists), **Narrows** (the path still exists but is
+harder or visible), or **Documents** (it cannot be closed locally, so it is stated wherever the gate
+is shown). A counter that only narrows is not reported as a fix.
+
+| Gate | How the letter can be met without the purpose | Counter-measure to consider |
+| --- | --- | --- |
+| Completion receipt: `change_kind` | The governor declares a decision `behavior` or `style`, and only `behavior` needs failing-before/passing-after evidence (`governor.mjs`: `if (material \|\| row.change_kind === "behavior")`). Declaring a change "style" is a categorical arbitrage. It happened in this project on 28 September: a test-only strengthening was recorded as "style" (owner's private ledger, run `rev_20260928015057_fbe9e5568938`) | **Closes**. A decision can be "style" only when a mechanical check shows the diff of every file it touches is whitespace or comments only. A diff the check cannot classify (binary, rename, generated file) fails closed to `behavior` |
+| Reproduction test adequacy | The validator checks that the same test failed and then passed. It "cannot prove that an arbitrary chosen test is adequate" (`governor-completion.md`). A test that fails for an unrelated reason, then passes, meets the letter | **Narrows**. A recorded mutation check: with the fix reverted, the test must fail again, on the same assertion. Reverting cannot prove adequacy either (a revert that does not build fails too), so a recorded mutation is stronger evidence, not proof. The governor did this by hand for PR #29 |
+| Quorum | Quorum counts routes that answered. Two routes backed by the same model family are correlated, so two answers may be one opinion counted twice | **Closes**, owned elsewhere. The rule belongs to role-preserving review stage 2 ("correlated routes never count as independent votes") and is only cited here, so the two themes cannot publish two voting rules |
+| Retry limits under composition | Outage retry and `--retry-invalid` share one limit: a route "is retried at most once per piece, whether after an outage or under `--retry-invalid`" (`SKILL.md`). A cover review would be a third path to another answer for the same piece and role | **Closes**. One budget per piece and role: at most two route invocations in total (the first and one more), counted across outage retry, `--retry-invalid` and cover together. Every invocation counts, including ones that fail or time out |
+| Typed claims (proposed) | A `DEFECT` labelled `IDEA` never blocks acceptance. Whoever assigns the type can route a real defect around the gate | **Narrows**. Severity keeps its own gate: a `CRITICAL` or `WARNING` blocks whatever its type. Re-typing a claim is recorded with who did it and why; lowering a severity stays possible, so it is recorded the same way |
+| Split review | Dividing a long one-line hunk at line boundaries showed reviewers only its removal half, so they reported pages as deleted (this register, "Make the full-range review able to finish") | **Closes**. Every piece a reviewer sees is a well-formed diff that carries both halves of each change it contains |
+| Scorecard and ratings | The acceptance rate and ratings are the governor's own rulings. Once they steer routing (role-preserving review stage 4), a route that learns to be agreeable scores well (Goodhart's law) | **Narrows**. Routing uses reproduced-claim and seeded-defect rates from the benchmark, not the governor's acceptance rate alone, and the scorecard keeps saying which measure it shows |
+| Local evidence chain | The validator checks bytes and hashes. It cannot rule out that "a same-user actor did not rewrite the whole local chain" (`governor-completion.md`) | **Documents**. Not closable with local files; see "Signed receipts" under Measurement. Said wherever a receipt is shown |
+| Expiry | Capability probes expire after seven days, so they sunset. Role briefs, guidance and project rules have no review date | **Narrows**. Versioned role briefs (role-preserving review stage 1) carry a review date and are re-measured when a route's record drifts. A date forces a look, not a correct one |
+
+**Property tests over an explicit alphabet.** The invariants marked Closes are tested as properties:
+every sequence up to a fixed depth over the steps `retry`, `retry-invalid`, `cover`, `split`,
+`re-type` and `re-severity` is generated, and the test fails if a forbidden state is reachable
+(a third invocation for one piece and role, an unclassifiable diff recorded as style, a half-change
+piece). A fixed alphabet and depth keep the search finite and say exactly what was covered.
+
+### How it would ship
+
+| Idea | Worth doing when |
+| --- | --- |
+| A short loophole checklist (the four themes, one line each, and the five techniques by name) kept as its own versioned file and included by reference in the adversary brief, so the review prompt does not carry this essay. Findings must still quote the artifact and name a concrete sequence of steps, not a general worry | The brief is a versioned artifact (role-preserving review, stage 1), and the seeded benchmark includes letter-versus-spirit and compositional defects to show the checklist finds more than the current brief does |
+| A separate "loophole auditor" role | Only if the benchmark shows the checklist inside the adversary brief misses what a dedicated role finds; otherwise it is one more voice to pay for |
+| MOMM invariants as property tests | Each invariant marked Closes above has a depth-bounded property test over the explicit step alphabet. These join the acceptance tests of role-preserving review |
+| A gate self-audit in every release plan | Each plan (starting with `plan-1.17.md`) has a section asking of every new gate: what meets its letter and misses its purpose, and which invariant catches that |
+
+**A limit on intent anchoring.** In law, a general anti-avoidance clause lets an adjudicator set aside
+a manoeuvre that meets the text. In MOMM the adjudicator is the governor, which is also the party
+whose shortcuts the gates exist to catch. So purpose clauses may only ever *tighten* a gate (refuse
+something that meets the text), never loosen one (accept something that fails it because it "meets
+the spirit"). A reviewer's appeal to intent is a claim like any other and needs evidence.
 
 ## Measurement, datasets and services
 
@@ -67,6 +205,8 @@ while an older copy is active.
 | Automatic debate or negotiation between reviewers | It turns untrusted outputs into inputs for each other and hides who said what; revisit only with a design that keeps every original claim intact |
 | Grok media binding by loosening `--deny Read` | It trades containment for a feature. A staged-files-only read grant is a 1.17 design review, not a patch |
 | An install path that skips signature verification | It removes first-run friction by removing the proof that a release is genuine |
+| Runs that write lessons into a skill or instructions the governor loads next time | It would carry reviewed source into persistent instructions and turn untrusted reviewer text into next session's guidance. The opt-in, local, structured form is deferred under "Role-preserving review" |
+| A panel whose judge or synthesizer produces the change | The synthesizer becomes a second writer. Merging several notes into one claim list inside a single reviewer role is fine; authoring the fix is not |
 | Self-healing capabilities (automatic re-probe) | Synthetic probes spend quota and send traffic; expiry stays fail-closed and manual |
 
 ## Corrections recorded so they are not re-argued
@@ -165,6 +305,11 @@ recorded here so the reason is a decision rather than an omission. Each one is i
   `--version` spawn alone takes 10 to 18 ms. Next step: profile one ordinary review with
   `node --cpu-prof` (no extra provider calls) and move the blocking work off the loop, or run
   preflight before dispatch. The report's preflight rows are informational and gate nothing.
+- **Evidence outside the project (1.17, owner decision).** Found 28 September 2026 on the Mannin
+  project: an evidence folder on a drive whose defaults grant other local accounts access is refused
+  until the owner runs `evidence --protect` once per project. A per-user location (one folder per
+  project under the user's profile) never inherits drive-level access. In [plan-1.17.md](plan-1.17.md)
+  as A7, opt-in, with the same permission checks wherever the folder lives.
 - **Finish isolating the Codex route (1.17).** 1.16.1 stops project `AGENTS.md` and switches off hooks,
   plugins, apps, multi-agent and image generation for MOMM's Codex runs (owner decision, 25 September
   2026). Still inherited: the user's MCP servers (six on the owner's machine), global instructions and
