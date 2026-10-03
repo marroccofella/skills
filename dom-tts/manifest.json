@@ -1,14 +1,18 @@
 {
   "schema": "dom-tts-source/1",
-  "version": "0.4.0-dev.2",
+  "version": "0.5.0-dev.1",
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "41ee47b31e8cb54e371042df485cbab4006d11fb26f3b51a62b4882f86f94e65"
+      "sha256": "66932333de8a76ff388064afd32318ef8eec8044216c15939dde3538b883e850"
     },
     {
       "path": "COMPATIBILITY.md",
-      "sha256": "7d8c7ffc721ad9720985ae96ed8e1a21b99f400471e417f0897da8f7d9e920ee"
+      "sha256": "9dc871d5fa053be470131550cc6adcd2a05870200a2d16e5e967ff098127b6fa"
+    },
+    {
+      "path": "EVOLUTION.md",
+      "sha256": "4a21f78616bbb6aa749f96c9a5c6c3830e7bb930edab497ac424a890bd34412f"
     },
     {
       "path": "LICENSE",
@@ -16,11 +20,11 @@
     },
     {
       "path": "README.md",
-      "sha256": "a545706446291aa0cff1b63c97c83aed1851b3922546408e98da73cda24c83ef"
+      "sha256": "e3650d3e2314a1711e94f1d0aa6ec7b364f88e17d2ed04f5d25217ef21ad9714"
     },
     {
       "path": "SKILL.md",
-      "sha256": "8f13b1c16c425f2162bb010ce2e3a819a51b93e241105e62087b23217ec5455b"
+      "sha256": "946225d3dcdbfc0447bfb8596e940004adbc7b07ec1c227dcc08f838765367f5"
     },
     {
       "path": "assets/voices.json",
@@ -28,7 +32,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "6f1ba7c6bf0386568752a9c94bc3066ddf323b5707d8f404a5b0ee4153c96e8a"
+      "sha256": "8effe1fe7d2e586210c5b70f8f471a669674a627e5d7288a12364bec6540d362"
     },
     {
       "path": "scripts/avatar-state.js",
@@ -40,15 +44,15 @@
     },
     {
       "path": "scripts/install.js",
-      "sha256": "0c192ab55edf1c3b7a4db5a21c755528591ef19d7a8a837aac81eb2480919dee"
+      "sha256": "e2c2afb4b956781f52d99d55f5093937c46948c7ef4a61e768b3fd663da7470b"
     },
     {
       "path": "scripts/lock.js",
-      "sha256": "e65b3a159719c1ec28fdbb9a003ea687966fd7b3134c4282f27860b39d436fcf"
+      "sha256": "f9916b9f21e17e28414cba38fb837a9c5d5afebdc6881ca5bd961c9f53bc1469"
     },
     {
       "path": "scripts/package.js",
-      "sha256": "9221abd4830becb09f1541f7b4ed673f898702f5af6c70cc6537b9750fa9b1a6"
+      "sha256": "c839206767aee3e08d5a8113b95332eff1441e944db324eb3401223e7541fc01"
     },
     {
       "path": "scripts/providers/native-worker.js",
@@ -56,7 +60,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "7b100aac7241b87dc2183007a97d67d7633c74963b460accebfbd8b220ae3a52"
+      "sha256": "b1bcf5728ccd24524dbe9ccffb76077269886d832c5d5c4bf4b94ed6a1cd18ea"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -68,15 +72,15 @@
     },
     {
       "path": "scripts/runtime.js",
-      "sha256": "3af459e5646621b18ecf18212cea56c32afb6a42c7370c68e76865d6bb5284d2"
+      "sha256": "d9fb93a83e77306560a2e87d528beb6bfd112b02ffcd9a23883d3d175dee520d"
     },
     {
       "path": "scripts/self-test.js",
-      "sha256": "be4065e9977a0d08fee316e19499cbb8a2c6e2b962ec5a659d307b1feaa7ee1b"
+      "sha256": "440f8ffec424e88316ccd1a2824ace42ba5337b359f542fc2748872cab70c3f1"
     },
     {
       "path": "scripts/speak.js",
-      "sha256": "09ef3068ad5ed84c13ed696e74f6da2ec2be711a9e4927abb2396747d1b085bd"
+      "sha256": "49fbcd8f97ee8843a0174ae5021650fd3ba5ebef041c9788a041171ef5e4139d"
     },
     {
       "path": "scripts/status.js",
@@ -88,7 +92,7 @@
     },
     {
       "path": "scripts/summarize.js",
-      "sha256": "3171e51f1dc3410f9ca66bb247c62b94e0feae865a894ae6f672bd5b4c7c4c6b"
+      "sha256": "a64ec0253ae5cde1549569cf98fd2b9e4d69a8f781d4b9703b8b3bba26d1229d"
     },
     {
       "path": "scripts/support-bundle.js",
@@ -108,7 +112,7 @@
     },
     {
       "path": "scripts/watch-codex.js",
-      "sha256": "80accf5957bf1adc0647c64fc293a3acd044c027c29d4746ba35d93957ba33da"
+      "sha256": "811e7701d4ba0189f22c037ca5ed138592a50d0b856d2db58b67b53b1114c3ff"
     },
     {
       "path": "tests/corpus/golden.json",
@@ -116,19 +120,31 @@
     },
     {
       "path": "tests/corpus/replies.json",
-      "sha256": "417aab5ef0e69187714e066e2e8ad35832941b9758db809f0e538897c6a3694d"
+      "sha256": "d291258e8995b9628ef4b108baec7686d8cd2038845fdc7a3c3deb1642c2d020"
+    },
+    {
+      "path": "tests/evolution-checks.cjs",
+      "sha256": "e5465dc0252c7335b664e85ab2927eb1dc6735ef57656b103d44609c495509c0"
     },
     {
       "path": "tests/install-check.cjs",
-      "sha256": "452a3d69f140b5b808f2bad4d51f3b82bf16907bce588818f5f8207eb99f73b9"
+      "sha256": "6576c35b88dfb9b0eb0c3da41f02415470ea79612b9163e439f560bdd25b4ea2"
+    },
+    {
+      "path": "tests/native-boundary.cjs",
+      "sha256": "a55d4861003ef7bfd302078643042efa014df8e1dadc4805ff2e75811a3b3765"
     },
     {
       "path": "tests/recovery-checks.cjs",
-      "sha256": "84841a60bcf4f042222a53ef151dff4483a6aa53b8ac1b49d7df3277bec34780"
+      "sha256": "adab1cc58a822c7e3746f0990d70e11498c4eb63205487170ff1b54137f74c32"
     },
     {
       "path": "tests/windows-check.cjs",
-      "sha256": "5ddb55a3607b432e548eebdeb56fd4ee522c17fe7ab8a47462d4e1ab66679c3c"
+      "sha256": "a319f2fc343c04536bbf6b75eb8455f6392f7127508518fe5be3b894d14e9930"
+    },
+    {
+      "path": "tests/windows-privacy.cjs",
+      "sha256": "b39944644b8ec156b098bd53f15b9eedea33f604de8ab6330ba6f4edca09d8d4"
     }
   ]
 }

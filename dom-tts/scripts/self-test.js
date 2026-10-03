@@ -51,6 +51,7 @@ async function main(){
  const skill=fs.readFileSync(path.join(__dirname,'../SKILL.md'),'utf8');check(()=>assert(/^---\r?\nname: dom-tts\r?\ndescription: [^\n]{1,1024}\r?\n---/.test(skill)));
  for(const file of fs.readdirSync(__dirname).filter(x=>x.endsWith('.js')))check(()=>assert.equal(spawnSync(process.execPath,['--check',path.join(__dirname,file)],{encoding:'utf8'}).status,0));
  const extra=await require('../tests/recovery-checks.cjs')(check);
+ require('../tests/evolution-checks.cjs')(check);
  console.log('PASS: '+checks+' assertions; '+corpus.length+' golden inputs and '+extra.replies+' realistic replies × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; permission-check failures; stale-lock recovery and live-owner preservation; tables; diagnostics and CLI.');
  }finally{fs.rmSync(fixture,{recursive:true,force:true});}
 }

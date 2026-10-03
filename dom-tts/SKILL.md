@@ -3,13 +3,16 @@ name: dom-tts
 description: Speak selected text or assistant replies locally, stop speech, check speech status, or narrate one consented transcript with Dom TTS. Use for read aloud and spoken replies; excludes transcription and voice cloning.
 ---
 
-# Dom TTS 0.4
+# Dom TTS 0.5
 
 Use Node 18+ and the scripts in this skill's directory. Prefer a maintained Node
 LTS. Run doctor before first playback: `node scripts/doctor.js --voices true`.
 Windows uses built-in SAPI; macOS Intel and Apple Silicon use /usr/bin/say;
 Linux needs an already installed espeak-ng. Missing engines produce an error.
 Do not install a package or download a voice without the user's request.
+Windows script execution policy is respected; report a policy refusal without
+changing policy or silently using inline execution. Settings apply unless the
+caller explicitly overrides them. See EVOLUTION.md for migration and release gates.
 
 Read selected text with `node scripts/speak.js --text "Text to speak"`.
 For long text or text containing shell symbols, pass stdin or a UTF-8 file:
@@ -46,4 +49,3 @@ not yet been audibly certified on native machines. Inspect COMPATIBILITY.md.
 Runtime state is private and separate from the skill; do not share it.
 `node scripts/support-bundle.js` exports a sanitized diagnostics.json, never
 speech, raw errors, settings or transcript paths. Review it before sharing.
-

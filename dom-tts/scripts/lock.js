@@ -22,6 +22,16 @@ function recoverStale(dir,options={}){
  try{fs.renameSync(file,aside);}catch(e){if(e.code==='ENOENT')return false;throw e;}
  const moved=readObject(aside);
  if(moved.token!==seen.token){try{fs.linkSync(aside,file);}catch{}try{fs.unlinkSync(aside);}catch{}return false;}
- fs.unlinkSync(aside);if(inspectLock(dir,options).state==='free'){removeOrphans(dir);resetStatus(dir);}return true;
+ // Claim the same exclusive lock used by playback before cleaning shared files.
+ // A new player that wins this race owns cleanup; never touch its state or speech.
+ const token=crypto.randomBytes(16).toString('hex');let fd;
+ try{fd=fs.openSync(file,'wx',0o600);}catch(error){if(error.code==='EEXIST'){fs.unlinkSync(aside);return false;}throw error;}
+ try{
+  fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));
+  fs.unlinkSync(aside);removeOrphans(dir);resetStatus(dir);return true;
+ }finally{
+  fs.closeSync(fd);
+  if(readObject(file).token===token)fs.unlinkSync(file);
+ }
 }
 module.exports={inspectLock,recoverStale,removeOrphans,resetStatus,WRITE_GRACE_MS};

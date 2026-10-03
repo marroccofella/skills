@@ -14,13 +14,23 @@ function commandFor(provider,options,inputFile){
  throw new Error('Unknown native provider');
 }
 function findEspeak(){
- // Resolve a real binary on the user's PATH, never shell scripts or an implicit install.
+ // Only absolute PATH entries outside the project may supply executable files.
+ // Scripts/symlinks are allowed for package-managed launchers; PATH is a user trust boundary.
  for(const dir of (process.env.PATH||'').split(path.delimiter).filter(Boolean)){
-  const file=path.resolve(dir,'espeak-ng');try{const stat=fs.lstatSync(file);if(stat.isFile()||stat.isSymbolicLink()){fs.accessSync(file,fs.constants.X_OK);return file;}}catch{}
+  if(!path.isAbsolute(dir))continue;
+  const file=path.resolve(dir,'espeak-ng');
+  const inside=(base,target)=>{const rel=path.relative(base,target);return !rel||(!rel.startsWith('..'+path.sep)&&rel!=='..'&&!path.isAbsolute(rel));};
+  if(inside(process.cwd(),file)||inside(ROOT,file))continue;
+  try{if(inside(process.cwd(),fs.realpathSync(file))||inside(ROOT,fs.realpathSync(file)))continue;const stat=fs.lstatSync(file);if(stat.isFile()||stat.isSymbolicLink()){fs.accessSync(file,fs.constants.X_OK);return file;}}catch{}
  }
- throw new Error('espeak-ng is not installed. Install it through your OS package manager, then run doctor again.');
+ throw new Error('espeak-ng was not found on trusted absolute PATH entries outside this project. Install it through your OS package manager, then run doctor again.');
 }
 function available(provider){try{if(provider==='espeak-ng')findEspeak();else fs.accessSync(provider==='sapi'?powershell:'/usr/bin/say',fs.constants.F_OK);return true;}catch{return false;}}
+function failureMessage(stderr=''){
+ if(/PSSecurityException|running scripts is disabled|execution polic(?:y|ies)/i.test(stderr))
+  return 'Windows speech script was blocked by execution policy; use an administrator-approved signed script or policy. Dom TTS does not bypass policy.';
+ return 'Native speech failed'+(stderr.includes('SelectVoice')?': requested voice is unavailable':'; check doctor and your audio device');
+}
 function runChild(command,input,context,onProgress){
  return new Promise((resolve,reject)=>{
   if(context.stopped())return resolve();
@@ -33,7 +43,7 @@ function runChild(command,input,context,onProgress){
   child.stderr.on('data',data=>{stderr=(stderr+data).slice(-4096);});
   child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match){clearTimeout(timer);timer=setTimeout(()=>{cancel();finish(new Error('Native speech chunk exceeded 120 seconds'));},120000);onProgress(Number(match[1]));}}});
   child.on('error',error=>finish(new Error(error.code==='ENOENT'?'Native speech executable is missing':'Native speech could not start')));
-  child.on('exit',code=>finish(code===0?null:new Error('Native speech failed'+(stderr.includes('SelectVoice')?': requested voice is unavailable':'; check doctor and your audio device'))));
+  child.on('exit',code=>finish(code===0?null:new Error(failureMessage(stderr))));
  });
 }
 async function play(chunks,options,context){
@@ -51,4 +61,4 @@ function voices(provider){
  const command=provider==='sapi'?{file:powershell,args:['-NoProfile','-Command',"Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; try { $s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name } } finally { $s.Dispose() }"]}:provider==='say'?{file:'/usr/bin/say',args:['-v','?']}:{file:findEspeak(),args:['--voices']};
  const result=spawnSync(command.file,command.args,{encoding:'utf8',windowsHide:true,timeout:10000,env:safeEnv()});if(result.error||result.status!==0)throw new Error('Voice discovery failed');return result.stdout.trim().split(/\r?\n/).filter(Boolean);
 }
-module.exports={selectProvider,commandFor,available,play,voices,runChild};
+module.exports={selectProvider,commandFor,available,play,voices,runChild,failureMessage,findEspeak};

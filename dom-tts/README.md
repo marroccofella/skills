@@ -1,10 +1,19 @@
-# Dom TTS 0.4
+# Dom TTS 0.5
 
 Local speech for coding assistants by **Prof Dom Marrocco / 42.uk**.
 
-Version **0.4.0-dev.2** is a working development build. The common interface is
+Version **0.5.0-dev.1** is a working development build. The common interface is
 model-independent: any harness that can run a command can pass text through
 stdin, a UTF-8 file, or --text. Agent Skills hosts can discover SKILL.md.
+
+This is a bug-fix candidate, not a stable release. See [EVOLUTION.md](EVOLUTION.md)
+for accepted fixes, migration scope and the remaining release gates. Saved settings
+apply to direct speech and the watcher; explicit CLI values override them.
+
+Windows rechecks directory permissions in each process (up to 60 seconds on a slow
+host). Dom TTS respects PowerShell execution policy and reports blocked scripts;
+it does not bypass policy. On Linux, relative/project-local PATH engine entries are
+rejected; remaining absolute PATH entries are a user-managed trust boundary.
 
 ## Run
 
@@ -12,7 +21,7 @@ Use Node 18 or newer (a maintained LTS is recommended). No npm install is needed
 
 ```text
 node scripts/doctor.js --voices true
-node scripts/speak.js --text "Dom TTS version zero point four is ready."
+node scripts/speak.js --text "Dom TTS version zero point five is ready."
 node scripts/speak.js --text-file answer.txt --mode informative
 node scripts/speak.js --dry-run --text=--verbose
 node scripts/stop.js
@@ -131,4 +140,3 @@ voice text are data, never executable PowerShell fragments.
 See [COMPATIBILITY.md](COMPATIBILITY.md) for tested scope and remaining gates.
 Derived from skills PR #35, commit fd2811ef640b4e6cf29a0d2dc281a55022e1e164;
 original source retains its MIT license.
-

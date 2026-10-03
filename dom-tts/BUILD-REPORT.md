@@ -1,156 +1,60 @@
-# Dom TTS 0.4 development build
+# Dom TTS 0.5.0-dev.1 build report
 
-4 October 2026, Asia/Dubai. Version 0.4.0-dev.1.
+4 October 2026, Asia/Dubai. Development candidate authored by Legion (Codex).
+Base: 75ba1ce6bd9653cd62264bb954ee17e6cb943075, 0.4.0-dev.2 / PR #39.
+Only bug fixes, safety improvements and migration/acceptance documentation.
+See EVOLUTION.md for the feedback disposition and release sequence.
 
-## Delivered
-
-This branch publishes source for independent testing. Copies installed for Codex and Claude Code on the developer's Windows machine completed playback with Microsoft Hazel Desktop and returned to idle. Audibility remains unconfirmed. Private review evidence, runtime state, settings, recordings and the local ZIP are excluded from Git.
-
-## Four baseline defect regressions
-
-| Defect | Regression evidence in scripts/self-test.js |
-|---|---|
-| Prose lines dropped | Six explicit assertions preserve sentences beginning Git, Node, npm, Python, cd and PowerShell; separate commands remain filtered. |
-| Double dash spoken as decrement | tests/corpus/golden.json contains dash inputs with literal expected output across eight modes. Text-output checks do not establish acoustic pronunciation. |
-| Chunks exceed the two-minute budget | Explicit long-input tests enforce 720 characters at speed 1 and the 8 × speed × 90 budget at speeds 0.5, 1 and 2. Seeded cases test maximum and word boundaries. Character budgeting is a heuristic; actual voice durations need measurement. |
-| Watcher silently loses messages | Failed speech retains cursor 0, marks failure and leaves deduplication empty; a successful retry advances the cursor and counts one message. |
-
-## Assertion breakdown
-
-The 9,244 counted assertions comprise 8,640 seeded chunk-property checks, 512 expected-output comparisons (64 synthetic inputs × eight modes), and 92 other regression, CLI, watcher, IPC, diagnostics and syntax checks. This is not a corpus of 9,244 distinct real assistant replies.
-
-## Plan gates
-
-| Gate | Candidate status |
-|---|---|
-| Merge baseline | Four defect regressions covered; full acceptance and merge remain open. |
-| Windows verified | One machine only. Native stop-to-process-exit timings: 33 ms and 63 ms. Second machine or clean VM, acoustic timings and device cases remain open. |
-| Release | Agent-in-the-loop scoring, listening tests and independent review quorum remain open. |
-| Next version scoped | Cross-platform adapters followed the owner's expanded request before evidence gates closed. They remain experimental. |
-
-From the repository's dom-tts directory, run npm test, node tests/install-check.cjs, and source manifest verification through require('./scripts/package').verify().
-
-The root Actions workflow runs portable checks on Windows, macOS Intel/Apple Silicon and Linux x64/ARM64. Native macOS/Linux playback, injection, environment and stop tests remain outstanding.
-
-**Correction (0.4.0-dev.2):** the workflow ran on push at a1de798 ([run 37154627806](https://github.com/marroccofella/skills/actions/runs/37154627806)). All 13 Linux and macOS jobs passed; all 4 Windows jobs failed in `tests/install-check.cjs` with "Private state directory unavailable". The failing step ran about 10.4 s against a 10 s PowerShell limit, consistent with a timeout. The statement under Compatibility limits that CI "has not been dispatched to hosted runners" was wrong. See the 0.4.0-dev.2 section for the fix and its CI result.
-
-## Behavior
-
-- Windows SAPI, macOS say and Linux espeak-ng providers selected by the OS.
-- Pure Node core with no architecture-specific npm modules or model SDKs.
-- A shared stdin/file/text interface for any command-capable harness or model.
-- Agent Skills installation for Codex/Claude and an explicit custom parent for other hosts.
-- Codex final-answer JSONL, strictly end_turn-marked Claude JSONL, and generic JSONL readers.
-- Corrected prose filtering, identifier/dash cleanup, abbreviation splitting and chunk limits.
-- Failed watcher playback stays pending for retry; it is never counted or deduplicated as spoken.
-- One Windows speech engine per request; local authenticated IPC stop without killing recorded PIDs.
-- An IPC-connected native worker cancels its child when the calling process dies.
-- Persistent private status contains operational fields, not spoken text or transcript paths.
-- Typed diagnostic JSON, allowlisted child environments and source-manifest-verified installation.
-- Fresh install, upgrade, retained rollback and reversible uninstall with unrelated skills preserved.
-
-## Executed checks
+## Verification performed locally
 
 | Check | Result |
 |---|---|
-| Node 22.16.0 offline suite | 9,244 assertions passed |
-| Node 24.19.0 offline suite | 9,244 assertions passed |
-| Golden corpus | 64 synthetic inputs × eight modes; not the full real-reply/listener corpus |
-| Chunk properties | 1,000 fixed-seed strings; maximum, reconstruction and word boundaries |
-| CLI | Strict modes/profiles/options, equals text values, speed boundaries, stdin/file equivalence |
-| Watcher | Partial/CRLF records, failed speaker retention/retry, dedupe cap, stop, truncation, deletion and format filtering |
-| IPC interruption | Fake-owner test under 500 ms; native Windows runs 33 ms and 63 ms to process exit |
-| Windows process safety | Unrelated recorded PID survived; locks and temporary speech files removed |
-| Windows injection | Hostile speech and voice values created no sentinel file; invalid voice failed visibly |
-| Owner crash | Native child ended; dead-owner recovery removed lock and temporary speech |
-| Diagnostics | Sanitized fields only; private directory checks passed |
-| Install lifecycle, Node 22/24 | Preview, install, repeat/upgrade, settings preservation, rollback, uninstall and unmanaged refusal passed |
-| Fresh ZIP extraction | Manifest verification and all 9,244 assertions passed |
-| Skill Creator validation | Passed; PyYAML installed only into the isolated test-dependency folder |
+| Baseline reproductions | Same ten-group evolution test on unchanged dev.2: nine groups fail on Windows; POSIX group skips on Windows |
+| Fixed evolution regressions | All ten groups pass locally; POSIX mode test requires hosted/native POSIX execution |
+| Offline suite, Node 22.16.0 and 24.19.0 | 9,703 counted assertions pass |
+| Corpus | 64 short synthetic inputs + 30 realistic synthetic multi-paragraph replies across eight modes; no claim of a collected real-chat or listening corpus |
+| Assertion count | 8,640 chunk-property checks, 512 short-input comparisons, 240 multi-paragraph comparisons, 311 other counted checks |
+| Install lifecycle | Pass; meaningful mode/profile/inclusion settings retained; injected stage-rename refusal restores the prior install |
+| Real worker boundary | Pass: synthetic environment canary excluded and owned child stops within 1,000 ms; Node stand-in, not native audio |
+| Windows native directory privacy | Pass: broad-parent/new-child protection, broad-existing empty refusal, junction refusal, changed-ACL revalidation in a fresh process |
+| Windows native SAPI safety | Pass on one Windows x64 host / Node 22.16.0: playback, busy refusal, stop 43 ms to process exit, unrelated PID survives, hostile speech/voice no sentinel, invalid voice fails |
+| Diagnostics | No synthetic sentinel in native diagnostics; privacy and 500 ms stop bound now affect the native pass verdict |
 
-Local environment: Windows 11 Home Single Language build 26300, x64;
-Windows PowerShell 5.1.26100.9444. Speech voices available: David, Hazel, Zira,
-Helena and Sabina Desktop. Process completion does not establish audibility or
-listener quality; owner listening confirmation remains pending. Stop measurements
-are process-exit durations, not recorded acoustic latency or first-sound latency.
+The original privacy fixture attempted an unnecessary owner rewrite and failed
+with PrivilegeNotHeldException. The fixture was corrected to modify only the DACL
+and passed; that original attempt was not a runtime privacy failure.
 
-An initial new-adapter native run failed; direct diagnostic and subsequent
-same-source native runs passed. Its underlying transient cause was not conclusively
-isolated. The failed attempt is retained in the chat/tool record; it is not a pass.
+Five corpus expectations were inspected and updated for the intended diagnostic
+selection changes. Expected values are implementation-derived synthetic fixtures,
+not independent listening verdicts. Stand-in worker tests exercise actual processes
+and IPC but do not certify say/espeak-ng binaries, sound devices or acoustic latency.
 
-## Compatibility limits
+## Exact-head CI and independent review
 
-The macOS Intel/Apple Silicon and Linux x64/ARM64 adapters are implemented,
-but native audio receipts from those hosts are outstanding. Windows ARM64 is also
-unverified. No functioning WSL distribution was available here. Linux needs an
-installed espeak-ng and audio route. CI covers Windows, macOS Intel/ARM and Linux
-x64/ARM with Node 18/20/22/24; at a1de798 the four Windows jobs failed (see the
-correction above).
+0.4 base historical CI passed all 17 jobs. The 0.5 workflow runs portable tests,
+committed-manifest verification, installation, real worker containment and Windows
+native directory probes. 0.5 hosted results are pending.
 
-Direct commands are model-independent. Native discovery and transcript schemas
-vary by harness; this does not establish automatic integration with every agent
-product. A Claude transcript lacking end_turn needs direct invocation or a generic
-producer. No microphone, cloud voice, barge-in, avatar or Duplex feature is enabled.
+MOMM preflight found the four configured OAuth routes present. The first 0.5 dispatch
+was rejected by automatic approval review: prior sharing approval explicitly covered
+0.4, not the new 0.5 payload. No source was sent by that rejected call. Specific
+0.5 source-sharing approval was requested; quorum and findings are pending.
+Private MOMM evidence, runtime state, settings, transcripts, recordings and local
+archives are excluded from Git. No stable release approval is claimed.
 
-The supplied plan's second Windows machine, clean non-admin setup, Bluetooth/sleep
-and device cases, acoustic timings, outbound-traffic audit, complete Tier 3 agent
-scoring and Tier 4 listener evaluation remain outstanding. Their thresholds have
-not been declared met, and no evolution decision is based on invented measurements.
+## Remaining gates and scope
 
-## Independent review
+PowerShell execution policy is respected. A policy refusal now gives a specific,
+sanitized explanation; the skill does not silently bypass it. Hal's restricted-policy
+native compatibility case is not claimed resolved by this diagnostic improvement.
 
-The owner explicitly approved source sharing to Claude, Antigravity, Copilot and
-Grok after automatic approval review initially rejected the provider destinations.
-Only source artifacts were submitted. Three OAuth-only MOMM attempts ran:
+The host-specific default install EPERM root cause remains unknown. An actionable
+message and rollback test improve refusal behavior without claiming that host fixed.
 
-| Run | Scope | Outcome |
-|---|---|---|
-| rev_20261003201602_87155fc6e9af | Full Git diff | Claude/Copilot/Grok timeout; Antigravity invalid output; quorum 0/2 |
-| rev_20261003202222_bcd7e521bf7f | Complete final source/tests/docs | Claude/Copilot/Grok timeout; Antigravity invalid output after one retry; quorum 0/2 |
-| rev_20261003202925_482f7699dc9d | Executable runtime safety | All four external routes timed out; quorum 0/2 |
-
-Codex was self-excluded as governor in each run. There were no usable findings or
-suggestions, no agreement score, verdict split, unique catches or risk heatmap.
-These are transport/output statuses, not evidence of a clean review or authentication
-failure. No login change or quota workaround was attempted. Usage was unavailable,
-not zero. Actual final test executions and source hashes were recorded with MOMM
-checks; no completion receipt is issued when external quorum is unmet.
-
-The disposition table has no entries because no valid findings or suggestions
-were returned. No fabricated disposition rows were appended. Reviewer outcome
-ratings and all attempts remain in the private `.ensemble_reviews` ledger.
-
-**This is a locally usable development candidate. Independent review and cross-host
-release gates remain open; it is not a stable, universally certified 0.4 release.**
-
-## 0.4.0-dev.2 changes
-
-Made in a separate cloud session on Linux; the Windows evidence above was recorded
-for 0.4.0-dev.1 and has not been re-run on the developer's machine for dev.2.
-
-| Area | Change | Evidence |
-|---|---|---|
-| Windows CI | Permission check limit raised from 10 s to 60 s; typed failure reasons; check runs once per state folder via a folder-bound marker | All 4 Windows jobs pass ([run 37156211045](https://github.com/marroccofella/skills/actions/runs/37156211045)) |
-| Permission failures | Timeout, could-not-start, folder open to other accounts, and non-zero exit each give a distinct message with no path; a failed check stops playback before any lock or status is written | Offline tests with injected PowerShell results |
-| Stale locks | Next playback recovers a dead owner's lock, orphaned speech file and stale status; a live owner, a lock being written and an old malformed lock are never removed; a lock taken by another process during recovery is put back | Offline tests with real dead and live owner processes, plus a Linux end-to-end crash test with a stand-in engine |
-| Tables and corpus | Tables spoken as "header: value" rows; diffs and stack frames skipped in informative mode; 30 realistic replies with expectations for all 8 modes | Per-mode expectations were generated from the implementation and reviewed: all 30 informative outputs and the log-mode outputs in full, the other modes by sample |
-| Workflows | One workflow, path-filtered to `dom-tts/**` and itself; CI verifies the committed manifest | One workflow ran all 17 jobs |
-
-Mutation check: each new safeguard (live-owner detection, token re-check after
-moving a lock, write grace period, orphan cleanup, automatic recovery, marker skip,
-marker-to-folder binding, timeout reason and value, table rows, diff notice, error-name
-matching, fenced log reading, traceback skipping) was disabled in turn and the suite
-failed every time; a comment-only control change passed.
-
-Hosted CI at b782ec8 ([run 37156211045](https://github.com/marroccofella/skills/actions/runs/37156211045)):
-all 17 jobs passed (Ubuntu x64 and macOS Intel/Apple Silicon on Node 18/20/22/24,
-Windows on Node 18/20/22/24, Ubuntu ARM64 on Node 24). On the Windows runners the
-install check took 72–83 s for about three PowerShell permission checks, so each
-launch costs roughly 20 s there; with the old 10 s limit every check timed out.
-Later playbacks in an already-verified folder skip the check. Two macOS-only test
-issues found on the way were fixed: the temp folder sits under a symlink, and
-macOS limits socket paths to 104 bytes (a long DOM_TTS_STATE_DIR now gets a clear
-error). This is offline logic only; it is not evidence of audible playback.
-
-Still open, unchanged: second Windows machine or clean VM, native macOS and Linux
-audio, Tier 3 agent scoring, Tier 4 listening, and independent review quorum.
+Still required: exact-candidate green hosted CI, independent final-byte review and
+dispositions, native macOS/Linux engines and audio, second Windows host/clean
+non-admin evidence, human listening and acoustic timings, device/sleep/load cases,
+and agent-in-loop scoring. Windows ARM64 is unverified. No global session watcher,
+tray, microphone, cloud provider or Duplex feature was added. Default spoken replies
+remain a separately configured host preference. Do not merge or tag as stable until
+the evidence gates and owner's release decision are satisfied.

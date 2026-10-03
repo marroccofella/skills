@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
 const {ROOT,stateDir,ensurePrivate,writeObject,parseCli,safeEnv}=require('./runtime');
-function parseArgs(argv){const args=parseCli(argv,{format:'codex',phase:'final_answer',pollMs:750,speakStartup:'false',mode:'informative',profile:'conversational',provider:'auto',dryRun:false},['file','format','phase','includeCommentary','pollMs','mode','profile','provider','voice','speed','maxChunkChars','dryRun','once','speakStartup']);if(!['codex','claude','generic'].includes(args.format))throw new Error('format must be codex, claude or generic');if(!['final','final_answer','all'].includes(args.phase))throw new Error('phase must be final_answer or all');if(args.phase==='all'&&!args.includeCommentary)throw new Error('Commentary requires --include-commentary true');if(args.speakStartup!=='false')throw new Error('Startup speech is disabled in 0.4');return args;}
+function parseArgs(argv){const args=parseCli(argv,{format:'codex',phase:'final_answer',pollMs:750,speakStartup:'false',dryRun:false},['file','format','phase','includeCommentary','pollMs','mode','profile','provider','voice','speed','maxChunkChars','dryRun','once','speakStartup','includeCodeBlocks','includeCommandBlocks']);if(!['codex','claude','generic'].includes(args.format))throw new Error('format must be codex, claude or generic');if(!['final','final_answer','all'].includes(args.phase))throw new Error('phase must be final_answer or all');if(args.phase==='all'&&!args.includeCommentary)throw new Error('Commentary requires --include-commentary true');if(args.speakStartup!=='false')throw new Error('Startup speech is disabled in 0.5');return args;}
 function outputTextFromRecord(record,phase='final_answer',includeCommentary=false,format='codex'){
  if(!record||typeof record!=='object'||Array.isArray(record))return '';
  let role,actualPhase,text='';
@@ -13,7 +13,14 @@ function outputTextFromRecord(record,phase='final_answer',includeCommentary=fals
 }
 function textKey(text){return crypto.createHash('sha256').update(String(text)).digest('hex');}
 function completeLines(buffer){const end=buffer.lastIndexOf(10);if(end<0){if(buffer.length>=1048576)throw new Error('Transcript record exceeds 1 MB');return {bytes:0,lines:[]};}return {bytes:end+1,lines:buffer.subarray(0,end+1).toString('utf8').split(/\r?\n/).filter(Boolean)};}
-function speaker(text,args){return new Promise(resolve=>{const options=['--provider',args.provider||'auto','--profile',args.profile||'conversational','--mode',args.mode||'informative','--wait-ms','30000','--stdin','true'];for(const key of ['voice','speed','maxChunkChars'])if(args[key]!==undefined)options.push('--'+key,String(args[key]));const env={...safeEnv(),DOM_TTS_STATE_DIR:stateDir};const child=spawn(process.execPath,[path.join(ROOT,'scripts','speak.js'),...options],{windowsHide:true,stdio:['pipe','ignore','pipe'],env});child.stdin.on('error',()=>{});child.stdin.end(text);child.stderr.resume();child.on('error',()=>resolve(false));child.on('exit',code=>resolve(code===0));});}
+function speechArgs(args){
+ const options=['--wait-ms','30000','--stdin','true'];
+ for(const key of ['provider','profile','mode','voice','speed','maxChunkChars','includeCodeBlocks','includeCommandBlocks']){
+  if(args[key]!==undefined)options.push('--'+key,String(args[key]));
+ }
+ return options;
+}
+function speaker(text,args){return new Promise(resolve=>{const options=speechArgs(args);const env={...safeEnv(),DOM_TTS_STATE_DIR:stateDir};const child=spawn(process.execPath,[path.join(ROOT,'scripts','speak.js'),...options],{windowsHide:true,stdio:['pipe','ignore','pipe'],env});child.stdin.on('error',()=>{});child.stdin.end(text);child.stderr.resume();child.on('error',()=>resolve(false));child.on('exit',code=>resolve(code===0));});}
 async function processNewLines(file,cursor,args,keys,{speak=speaker,dir=stateDir}={}){
  let stat;try{stat=fs.statSync(file);}catch(e){if(e.code==='ENOENT')return {cursor,spoken:0};throw e;}
  const size=stat.size;if(size<cursor)return {cursor:size,spoken:0};if(size===cursor)return {cursor,spoken:0};
@@ -46,5 +53,5 @@ async function main(){
  }while(!args.once&&!stopped);}finally{process.off('SIGINT',signal);process.off('SIGTERM',signal);}
 }
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
-module.exports={parseArgs,outputTextFromRecord,textKey,completeLines,processNewLines};
+module.exports={parseArgs,outputTextFromRecord,textKey,completeLines,processNewLines,speechArgs};
 

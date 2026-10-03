@@ -30,3 +30,6 @@ jobs:
       - run: npm test
       - run: node -e "require('./scripts/package').verify()"
       - run: node tests/install-check.cjs
+      - run: node tests/native-boundary.cjs
+      - if: runner.os == 'Windows'
+        run: node tests/windows-privacy.cjs
