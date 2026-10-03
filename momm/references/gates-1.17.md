@@ -201,7 +201,7 @@ read, cached, and turn into update_available", `2 !== 1`.
   installation defect was shown.
 - Reproduced before the fix on a host whose own path contains no "codex", by
   running the suite with `LOCALAPPDATA` pointed at a disposable folder named like
-  `OpenAI.Codex_probe` holding an empty `agyinagy.exe` (exit 1); a neutral
+  `OpenAI.Codex_probe` holding an empty `agy\bin\agy.exe` (exit 1); a neutral
   folder name passed (exit 0).
 - Fix: the clock passes its own `env` to `cliBinary` (production still passes
   `process.env`; the Setup Center builds its clock with the default); the count
@@ -210,6 +210,11 @@ read, cached, and turn into update_available", `2 !== 1`.
   CLI is counted by name and that, on Windows, the Antigravity path comes from the
   injected environment. It failed before the fix and passes after; the original
   reproduction also passes after the fix.
+- The first re-pin, `e12172f` (seal 249870e5…33fe), failed its own exact-commit
+  run and hosted CI on `source-hygiene.test.mjs`: this record carried a raw
+  backspace byte where a Windows path was written through a tool that decodes
+  escapes. The byte is replaced, the pack was run on the sealed tree before the
+  next push, and `e12172f` is historical.
 - This changes the tree: the `59f18f9` seal and its reviewer results are
   historical. The change needs its own MOMM review with a completion receipt, a
   new seal, exact-candidate CI and a fresh independent retest before any further
