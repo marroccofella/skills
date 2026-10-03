@@ -215,6 +215,12 @@ read, cached, and turn into update_available", `2 !== 1`.
   backspace byte where a Windows path was written through a tool that decodes
   escapes. The byte is replaced, the pack was run on the sealed tree before the
   next push, and `e12172f` is historical.
+- The second re-pin, `6272f4b` (seal 9efd2c52…4735), passed 93 of 93 locally and on
+  the hosted macOS and Linux runners but failed on every hosted Windows runner: the
+  new regression compared the resolved Antigravity path with the fixture folder by
+  string prefix, and the runners' temp folder is an 8.3 short path while the resolver
+  returns the long real path. Reproduced locally with a short-named temp folder; the
+  test now compares real paths. `6272f4b` is historical.
 - This changes the tree: the `59f18f9` seal and its reviewer results are
   historical. The change needs its own MOMM review with a completion receipt, a
   new seal, exact-candidate CI and a fresh independent retest before any further

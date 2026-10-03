@@ -1015,7 +1015,10 @@ await test("production path: the Antigravity binary below a \"Codex\"-named fold
   assert.deepEqual(names, ["agy", "codex"], "one version read per CLI, counted by executable name");
   const agyCall = versionCalls.find((b) => /agy/i.test(path.basename(b)));
   if (process.platform === "win32") {
-    assert.ok(agyCall.startsWith(localAppData), "the Antigravity path comes from the environment given to the clock, not from this process's LOCALAPPDATA");
+    // Compared as real paths: the resolver returns the long form, while a temp folder (GitHub's Windows runners,
+    // for one) may be given to this test in 8.3 short form, so a prefix comparison on the raw strings fails there.
+    const realLower = (p) => fs.realpathSync.native(p).toLowerCase();
+    assert.equal(realLower(agyCall), realLower(path.join(localAppData, "agy", "bin", "agy.exe")), "the Antigravity path comes from the environment given to the clock, not from this process's LOCALAPPDATA");
     assert.equal(versionCalls.filter((b) => /codex/i.test(b)).length, 2, "a whole-path match, as the old assertion used, counts both reads here; that is why it was wrong");
   } else {
     assert.ok(!agyCall.includes(localAppData), "LOCALAPPDATA has no meaning here; the resolver falls back to the home or bare name");
