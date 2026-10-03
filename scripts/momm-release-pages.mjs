@@ -54,6 +54,14 @@ export function releasePages(root) {
     let notes;
     if(entry.notes_path){if(entry.notes_path!==`momm/references/release-${entry.version}.md`)throw Error('Unsafe release note path');notes=fs.readFileSync(path.join(root,entry.notes_path),'utf8');}
     else notes='## Historical change record\n\n'+entry.summary+'\n\nThis summary is attributed to the linked public release or commit. A separate contemporary Markdown note was not found; no new test results or release guarantees are inferred.';
+    // Pin only the four sealed 1.17 evidence records, leaving the post-release
+    // note itself and unrelated historical links unchanged.
+    if(entry.version==='1.17.0' && entry.kind==='release') {
+      for(const file of ['plan-1.17.md','gates-1.17.md','third-party-test-plan-1.17.md','release-1.17-draft-notes.md']) {
+        notes=notes.replaceAll(`](${file})`, `](https://github.com/marroccofella/skills/blob/momm-1.17.0/momm/references/${file})`);
+      }
+      notes+='\n\nTag-pinned records retain their pre-publication wording (including candidate testing and pending gates); use the published release record above for final status.\n';
+    }
     const date=entry.published_date?`Published ${entry.published_date.slice(0,10)}`:entry.commit_date?`Commit dated ${entry.commit_date.slice(0,10)} (not a publication date)`:'This snapshot does not assert publication status.';
     const body=`<section class="page-hero"><p class="eyebrow">${escape(kinds[entry.kind])}</p><h1>${entry.version==='0.1.0'?'multi-llm-review':'MOMM'} <span>${escape(entry.version)}</span></h1><p class="lead">${escape(entry.summary)}</p><p>${escape(date)}${entry.tag?' · Tag '+escape(entry.tag):''}</p><a class="text-link" href="${escape(entry.source_url)}">Original source record ↗</a></section><div class="doc-body wide"><aside class="notice"><strong>History is not an update target.</strong><p>Historical tags are not retroactively trusted by the signed updater. Read the <a href="../updates.html">upgrade procedure</a>; candidate notes do not establish that a release exists.</p></aside>${markdown(notes)}<p><a href="index.html">← All version notes</a></p></div>`;
     output[`docs/momm/releases/${entry.version}.html`]=shell('Version '+entry.version,body);

@@ -16,6 +16,7 @@ await import("./momm-site-technical.test.mjs");
 await import("./momm-site-home.test.mjs");
 await import("./momm-site-flow.test.mjs");
 await import("./momm-site-community.test.mjs");
+await import("./momm-site-release-consistency.test.mjs");
 await import("./momm-release-observer.test.mjs");
 await import("./momm-improvement-regressions.test.mjs");
 await import("./preview-module.test.mjs");
