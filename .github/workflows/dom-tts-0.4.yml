@@ -31,6 +31,7 @@ jobs:
       - run: node tests/source-reader-checks.cjs
       - run: node tests/segment-stream-checks.cjs
       - run: node tests/native-timeout-check.cjs
+      - run: node tests/playback-abort-check.cjs
       - run: node -e "require('./scripts/package').verify()"
       - run: node tests/install-check.cjs
       - run: node tests/native-boundary.cjs

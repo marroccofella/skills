@@ -96,7 +96,7 @@
     },
     {
       "path": "scripts/speak.js",
-      "sha256": "49fbcd8f97ee8843a0174ae5021650fd3ba5ebef041c9788a041171ef5e4139d"
+      "sha256": "a2e16ce4c86ee8beee9ece11398e4df51254f35b710e3c04ecd53a6387a30413"
     },
     {
       "path": "scripts/status.js",
@@ -165,6 +165,10 @@
     {
       "path": "tests/permission-cache-checks.cjs",
       "sha256": "54c1c817a83c2f1fa412ac884ac33a2e0dcace5e1b8ed080d88c1e9e739b40b9"
+    },
+    {
+      "path": "tests/playback-abort-check.cjs",
+      "sha256": "714d1a0578695d93f05dee98511472a75cd0ec6b08a099a856fe1059c08649b3"
     },
     {
       "path": "tests/recovery-checks.cjs",

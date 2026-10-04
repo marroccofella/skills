@@ -154,3 +154,12 @@ not acoustic stop, an explanation of the earlier short-reply timeout, or listeni
 certification. A non-settling worker/cancellation channel remains a containment gate;
 the implementation does not fabricate successful cleanup on a watchdog deadline.
 Exact-candidate CI and independent review remain pending for this draft correction.
+
+Playback now accepts an optional AbortSignal in its dependency context for queue
+adapters. It uses the existing owned stop path; pre-aborted requests refuse before
+privacy/state work, waiting lock acquisition checks cancellation, and active abort
+updates stopped status only after the supplied player settles. Listener and lock
+cleanup are retained. The new injected-player regression fails before/passes after;
+9903 Windows assertions/six skips, worker stop and timeout regressions pass.
+This is cancellation plumbing, not a connected native streaming adapter or measured
+acoustic stop. Current direct CLI behavior has no new automatic source/harness hook.
