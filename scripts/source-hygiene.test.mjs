@@ -156,17 +156,25 @@ check('no tracked text file contains a machine home path or a credential-looking
 // tests failed on hosted runners that way. The rule is deliberately narrow: a line of a test that takes a
 // real path and compares against the unresolved temp folder. It cannot see a real path made on another line.
 const RAW_TMP = String.raw`(?:path\.(?:resolve|join|normalize)\(\s*)?os\.tmpdir\(\)`;
-const TMP_COMPARED = [new RegExp(String.raw`\.(?:includes|startsWith)\(\s*` + RAW_TMP), new RegExp(String.raw`[!=]==?\s*` + RAW_TMP), new RegExp(String.raw`(?:path\.(?:resolve|normalize)\(\s*os\.tmpdir\(\)\s*\)|os\.tmpdir\(\))\s*[!=]==?`)];
+// An equality assertion compares too (1.17.1 gate review): the temp folder as its first argument or a later
+// one, itself or joined, but not wrapped in a call that resolves it.
+const EQUAL = String.raw`assert\.(?:not)?(?:deep)?(?:strict)?equal\(`;
+const TMP_COMPARED = [new RegExp(String.raw`\.(?:includes|startsWith)\(\s*` + RAW_TMP), new RegExp(String.raw`[!=]==?\s*` + RAW_TMP), new RegExp(String.raw`(?:path\.(?:resolve|join|normalize)\(\s*os\.tmpdir\(\)[^()]*\)|os\.tmpdir\(\))\s*[!=]==?`),
+  new RegExp(EQUAL + String.raw`\s*` + RAW_TMP + String.raw`\s*[,)]`, 'i'), new RegExp(EQUAL + String.raw`[^;]*,\s*` + RAW_TMP + String.raw`\s*[,)]`, 'i')];
 const tmpComparisons = (text) => text.split('\n').flatMap((line, index) => /realpathSync/.test(line) && TMP_COMPARED.some(pattern => pattern.test(line)) ? [index + 1] : []);
 const tmp = 'os.' + 'tmpdir()', real = 'fs.realpath' + 'Sync';
 check('a test line that compares the unresolved temp folder with a real path is reported', () => {
   for (const line of [`assert(${real}(dir).startsWith(${tmp}));`, `assert(${real}.native(dir).startsWith(path.resolve(${tmp}) + path.sep));`, `if (${real}(dir) === ${tmp}) done();`,
-    `assert(${tmp} !== ${real}.native(dir));`, `assert(${real}(file).includes(path.join(${tmp}, 'momm-')));`])
+    `assert(${tmp} !== ${real}.native(dir));`, `assert(${real}(file).includes(path.join(${tmp}, 'momm-')));`,
+    // 1.17.1 gate review: the assertion these suites use most, and a joined temp folder on the left, were not seen.
+    `assert.equal(${real}(dir), ${tmp});`, `assert.strictEqual(${tmp}, ${real}.native(dir));`, `assert.notEqual(${real}(dir), path.resolve(${tmp}));`,
+    `assert.deepStrictEqual(${real}(dir), path.join(${tmp}, 'momm-x'));`, `assert(path.join(${tmp}) === ${real}(dir));`, `assert(path.join(${tmp}, 'momm-x') === ${real}(dir));`])
     assert.deepEqual(tmpComparisons('first\n' + line + '\n'), [2], line);
   // Both sides real, the temp folder only joined or passed on, or no real path on the line: not this defect.
   for (const line of [`assert.equal(${real}(path.dirname(temp)), ${real}(${tmp}));`, `assert(${real}.native(dir).startsWith(${real}.native(${tmp}) + path.sep));`,
     `const base = fs.mkdtempSync(path.join(${real}.native(${tmp}), 'momm-x-'));`, `if (path.dirname(fixture) === ${tmp}) fs.rmSync(fixture);`, `assert(resolved.startsWith(path.resolve(${tmp}) + path.sep));`,
-    `if (value === undefined) x(); assert.equal(path.dirname(a), ${real}(${tmp})); assert(path.basename(a).startsWith('momm-'));`])
+    `if (value === undefined) x(); assert.equal(path.dirname(a), ${real}(${tmp})); assert(path.basename(a).startsWith('momm-'));`,
+    `assert.equal(${tmp}.length, ${real}(dir).length);`, `assert.deepEqual(list, [${real}(dir), ${tmp}]);`])
     assert.deepEqual(tmpComparisons(line), [], line);
 });
 check('no tracked test compares the unresolved temp folder with a real path', () => {
@@ -193,5 +201,13 @@ check('realTempDir gives the real native path of a new temp folder, however the 
     assert.equal(path.dirname(child.stdout), target, 'the real folder, not the spelling the environment gave');
     assert(path.basename(child.stdout).startsWith('momm-hygiene-child-') && fs.statSync(child.stdout).isDirectory());
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+check('realTempDir leaves no folder behind when the real path cannot be read', () => {
+  const prefix = `momm-hygiene-orphan-${process.pid}-`, native = fs.realpathSync.native;
+  fs.realpathSync.native = () => { throw Object.assign(new Error('injected'), { code: 'EIO' }); };
+  try { assert.throws(() => realTempDir(prefix), { code: 'EIO' }); } finally { fs.realpathSync.native = native; }
+  const left = fs.readdirSync(os.tmpdir()).filter(name => name.startsWith(prefix));
+  for (const name of left) fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+  assert.deepEqual(left, [], 'the folder made before the failure was removed');
 });
 console.log(JSON.stringify({ passed: results.every(r => r.passed), files: files.length, scanned: scanned.length, results }, null, 2));

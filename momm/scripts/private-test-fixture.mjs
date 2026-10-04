@@ -14,7 +14,12 @@ if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExeP
 // that compares paths starts here, so both sides are spelled the same way. Permissions are not changed.
 export function realTempDir(prefix='momm-test-') {
   if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
-  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(),prefix)));
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
+  try { return fs.realpathSync.native(root); }
+  catch(error) {
+    // Exact freshly allocated target only: the caller never learns its name, so it is not left behind.
+    fs.rmSync(root,{recursive:true,force:true});throw error;
+  }
 }
 export function privateTestFixture(prefix='momm-test-',{run=spawnSync}={}) {
   if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
