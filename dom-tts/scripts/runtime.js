@@ -7,14 +7,11 @@ function safeEnv(){return Object.fromEntries(Object.entries(process.env).filter(
 function psQuote(value){return "'"+String(value).replace(/'/g,"''")+"'";}
 function readObject(file,fallback={}){try{const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1048576)return fallback;const obj=JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));return obj&&typeof obj==='object'&&!Array.isArray(obj)?obj:fallback;}catch{return fallback;}}
 function assertNoLinks(dir){let part=path.resolve(dir);while(true){if(fs.existsSync(part)&&fs.lstatSync(part).isSymbolicLink())throw new Error('State directories must not contain links');const parent=path.dirname(part);if(parent===part)break;part=parent;}}
-// Verified once per process and folder: a successful Windows ACL check leaves a marker bound to the
-// folder's identity, so later playbacks skip the PowerShell launch. A new or replaced folder is
-// checked again, including after a process restart. Disk markers never authorize a new process.
-// POSIX modes are checked on each call. Failure reasons omit paths/raw output.
 // The Windows ACL check runs on every call: no marker file or in-process memory stands in for it,
 // because ACLs can change without changing anything a cache could compare. Each caller checks once
 // per run (speak, status --recover, support bundle, watcher start), so this costs one PowerShell
-// launch per playback. Failure reasons are typed; no path or raw PowerShell output is reported.
+// launch per playback. POSIX modes are also checked on every call. Failure reasons are typed; no
+// path or raw PowerShell output is reported.
 function privacyFailure(result,timeoutMs){
  if(result.error&&result.error.code==='ETIMEDOUT')return 'Windows permission check timed out after '+Math.round(timeoutMs/1000)+' s';
  if(result.error)return 'Windows permission check could not start ('+(result.error.code||'error')+')';
