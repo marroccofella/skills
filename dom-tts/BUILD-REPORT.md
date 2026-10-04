@@ -29,6 +29,31 @@ selection changes. Expected values are implementation-derived synthetic fixtures
 not independent listening verdicts. Stand-in worker tests exercise actual processes
 and IPC but do not certify say/espeak-ng binaries, sound devices or acoustic latency.
 
+## Follow-up: permission cache removed
+
+Addresses the residual same-process permission-cache finding from the independent
+Windows retest (discussion #38). The Windows ACL check now runs on every call; no
+marker file or in-process memory stands in for it. Production callers each check once
+per run, so the runtime cost is unchanged from 0.5.0-dev.1 for direct speech; the
+watcher, support bundle and recovery command behave the same way.
+
+| Regression test | Before (0.5.0-dev.1 runtime) | After |
+|---|---|---|
+| Same folder, same process, ACL change with marker untouched | Fail: check skipped | Pass: refused |
+| Replacement at a checked path with a matching forged marker | Fail: check skipped | Pass: refused |
+| Forged marker in a fresh process | Pass (already fixed in 0.5.0-dev.1) | Pass |
+| Every call runs the permission helper | Fail | Pass |
+| Native: real ACL change, recheck in the same process (Windows CI) | Not reached: the offline suite failed first | See PR results |
+
+An installer optimization (stage inside the checked backups folder, eecca32) was reverted
+after an independent native Windows reproduction: a private backups folder whose ACL
+entries are not inheritable passes its check, but a stage created inside it, and the
+installed destination, are not private. The stage again gets its own explicit permission
+check; the native test that reproduces the failure now passes.
+
+Assertion counts are now reported per platform: on Linux, 9,706 run on every platform
+plus 6 POSIX-only; on Windows, the same 9,706 with those 6 skipped.
+
 ## Exact-head CI and independent review
 
 0.4 base historical CI passed all 17 jobs. The 0.5 workflow runs portable tests,

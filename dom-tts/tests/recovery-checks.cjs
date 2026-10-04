@@ -1,7 +1,7 @@
 // Permission-check failure, stale-lock recovery, live-owner preservation, table and reply-corpus checks.
 // Called by scripts/self-test.js with its assertion counter; runs offline on every platform.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{spawn,spawnSync}=require('node:child_process');
-const runtime=require('../scripts/runtime'),{ensurePrivate,verifiedDirs,writeObject}=runtime;
+const runtime=require('../scripts/runtime'),{ensurePrivate,writeObject}=runtime;
 const {inspectLock,recoverStale}=require('../scripts/lock'),{playback}=require('../scripts/speak'),{recover}=require('../scripts/status');
 const {applyMode,MODES}=require('../scripts/summarize');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -13,7 +13,7 @@ const quickPlay=async()=>{};
 
 async function permissionChecks(check,fixture){
  const win={platform:'win32'};
- const reset=()=>verifiedDirs.clear();
+ const reset=()=>{};
  // Each failure kind gives a typed reason and never echoes the folder path or PowerShell output.
  const failures=[
   [{error:Object.assign(new Error('x'),{code:'ETIMEDOUT'}),status:null},/timed out after 60 s/],
@@ -35,22 +35,18 @@ async function permissionChecks(check,fixture){
  const blocked=path.join(fixture,'perm-blocked');fs.mkdirSync(blocked);reset();
  await assert.rejects(playback(options,{dir:blocked,play:quickPlay,privacy:dir=>ensurePrivate(dir,{...win,run:()=>({status:3,stderr:'DOM_TTS_NOT_PRIVATE'})})}),/grants access/);
  check(()=>assert.deepEqual(fs.readdirSync(blocked),[]));
- // Success writes a marker bound to the folder; later calls skip PowerShell until the marker no longer matches.
- const good=path.join(fixture,'perm-good');fs.mkdirSync(good);reset();let calls=0;const ok=()=>{calls++;return {status:0};};
- ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));check(()=>assert(fs.existsSync(path.join(good,'.private-verified'))));
- ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));
- reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,2));
- fs.writeFileSync(path.join(good,'.private-verified'),'{"schema":"dom-tts-private/1","ino":"0","birthtimeMs":0}');reset();ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,3));
- const copied=path.join(fixture,'perm-copied');fs.mkdirSync(copied);fs.copyFileSync(path.join(good,'.private-verified'),path.join(copied,'.private-verified'));reset();ensurePrivate(copied,{...win,run:ok});check(()=>assert.equal(calls,4));
+ // Success writes no marker, every call runs the check, and a legacy 0.4/0.5 marker is removed.
+ const good=path.join(fixture,'perm-good');fs.mkdirSync(good);let calls=0;const ok=()=>{calls++;return {status:0};};
+ fs.writeFileSync(path.join(good,'.private-verified'),'{"schema":"dom-tts-private/1","ino":"0","birthtimeMs":0}');
+ ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,1));check(()=>assert(!fs.existsSync(path.join(good,'.private-verified'))));
+ ensurePrivate(good,{...win,run:ok});check(()=>assert.equal(calls,2));
  // A new folder is created by the check itself; a "success" that leaves no folder is refused.
- const fresh=path.join(fixture,'perm-fresh');reset();ensurePrivate(fresh,{...win,run:()=>{fs.mkdirSync(fresh);return {status:0};}});check(()=>assert(fs.existsSync(path.join(fresh,'.private-verified'))));
+ const fresh=path.join(fixture,'perm-fresh');reset();ensurePrivate(fresh,{...win,run:()=>{fs.mkdirSync(fresh);return {status:0};}});check(()=>assert(fs.existsSync(fresh)&&!fs.existsSync(path.join(fresh,'.private-verified'))));
  const missing=path.join(fixture,'perm-missing');reset();check(()=>assert.throws(()=>ensurePrivate(missing,{...win,run:()=>({status:0})}),/folder missing/));
- if(process.platform!=='win32'){
-  const link=path.join(fixture,'perm-link');fs.symlinkSync(good,link);reset();let ran=false;
-  check(()=>assert.throws(()=>ensurePrivate(path.join(link,'state'),{...win,run:()=>{ran=true;return {status:0};}}),/must not contain links/));check(()=>assert.equal(ran,false));
-  const open=path.join(fixture,'perm-open');fs.mkdirSync(open,{mode:0o755});fs.chmodSync(open,0o755);reset();check(()=>assert.throws(()=>ensurePrivate(open),/owner-only/));
-  const made=path.join(fixture,'perm-made');reset();ensurePrivate(made);check(()=>assert.equal(fs.statSync(made).mode&0o777,0o700));
- }
+ const posix=fn=>check.on?check.on('posix',fn):(process.platform!=='win32'&&check(fn));
+ posix(()=>{const link=path.join(fixture,'perm-link');fs.symlinkSync(good,link);let ran=false;assert.throws(()=>ensurePrivate(path.join(link,'state'),{...win,run:()=>{ran=true;return {status:0};}}),/must not contain links/);assert.equal(ran,false);});
+ posix(()=>{const open=path.join(fixture,'perm-open');fs.mkdirSync(open,{mode:0o755});fs.chmodSync(open,0o755);assert.throws(()=>ensurePrivate(open),/owner-only/);});
+ posix(()=>{const made=path.join(fixture,'perm-made');ensurePrivate(made);assert.equal(fs.statSync(made).mode&0o777,0o700);});
  reset();
 }
 
@@ -103,9 +99,9 @@ async function lockChecks(check,fixture){
 }
 
 function socketChecks(check){
- if(process.platform==='win32')return;
- check(()=>assert.throws(()=>runtime.endpoint('a'.repeat(32),'/tmp/'+'x'.repeat(90)),/too long for the local stop socket/));
- check(()=>assert.ok(runtime.endpoint('a'.repeat(32),'/tmp/short').length<=100));
+ const posix=fn=>check.on?check.on('posix',fn):(process.platform!=='win32'&&check(fn));
+ posix(()=>assert.throws(()=>runtime.endpoint('a'.repeat(32),'/tmp/'+'x'.repeat(90)),/too long for the local stop socket/));
+ posix(()=>assert.ok(runtime.endpoint('a'.repeat(32),'/tmp/short').length<=100));
 }
 
 function tableChecks(check){

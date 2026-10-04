@@ -21,7 +21,6 @@ function install(args){
   fs.copyFileSync(path.join(ROOT,'manifest.json'),path.join(stage,'manifest.json'));verify(stage);
   if(exists&&fs.existsSync(path.join(dest,'assets','settings.json'))){const settings=readObject(path.join(dest,'assets','settings.json'),null);if(settings===null)throw new Error('Existing settings need inspection before upgrade');writeObject(path.join(stage,'assets','settings.json'),settings);}
   writeObject(path.join(stage,'.dom-tts-install.json'),{schema:'dom-tts-install/1',version:source.version,backup:exists?backup:null});
-  try{fs.unlinkSync(path.join(stage,'.private-verified'));}catch{}
   if(exists)fs.renameSync(dest,backup);try{fs.renameSync(stage,dest);}catch(e){if(exists)fs.renameSync(backup,dest);throw e;}
  }finally{if(fs.existsSync(stage))fs.rmSync(stage,{recursive:true,force:true});}
  return {...plan,backup:exists?backup:undefined};

@@ -1,6 +1,8 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{spawnSync}=require('node:child_process');
 const {MODES,applyMode,chunkText}=require('./summarize'),{parseArgs,prepare,playback}=require('./speak'),{safeEnv,readObject}=require('./runtime'),{selectProvider,commandFor}=require('./providers/native'),watch=require('./watch-codex'),{stop}=require('./stop');
-let checks=0;function check(fn){fn();checks++;}
+// Platform-specific checks are counted apart so results from different hosts can be compared.
+let checks=0;const only={posix:{run:0,skipped:0},windows:{run:0,skipped:0}};function check(fn){fn();checks++;}
+check.on=(tag,fn)=>{if((tag==='windows')!==(process.platform==='win32')){only[tag].skipped++;return;}fn();checks++;only[tag].run++;};
 async function main(){
  const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'dom-tts-test-'));try{
  const corpus=JSON.parse(fs.readFileSync(path.join(__dirname,'../tests/corpus/golden.json'),'utf8').replace(/^\uFEFF/,''));assert(corpus.length>=60);
@@ -52,7 +54,9 @@ async function main(){
  for(const file of fs.readdirSync(__dirname).filter(x=>x.endsWith('.js')))check(()=>assert.equal(spawnSync(process.execPath,['--check',path.join(__dirname,file)],{encoding:'utf8'}).status,0));
  const extra=await require('../tests/recovery-checks.cjs')(check);
  require('../tests/evolution-checks.cjs')(check);
- console.log('PASS: '+checks+' assertions; '+corpus.length+' golden inputs and '+extra.replies+' realistic replies × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; permission-check failures; stale-lock recovery and live-owner preservation; tables; diagnostics and CLI.');
+ require('../tests/permission-cache-checks.cjs')(check);
+ const ran=only.posix.run+only.windows.run,skipped=only.posix.skipped+only.windows.skipped;
+ console.log('PASS: '+checks+' assertions on '+process.platform+' ('+(checks-ran)+' on every platform + '+only.posix.run+' POSIX-only + '+only.windows.run+' Windows-only; '+skipped+' platform-specific skipped here); '+corpus.length+' golden inputs and '+extra.replies+' realistic replies × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; permission-check failures; stale-lock recovery and live-owner preservation; tables; diagnostics and CLI.');
  }finally{fs.rmSync(fixture,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error.stack);process.exitCode=1;});
