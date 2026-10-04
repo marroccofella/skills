@@ -168,6 +168,85 @@ try {
     assert.deepEqual(plain(outcome.recorded), []); assert.ok(outcome.error);
     assert.equal(fs.readFileSync(elsewhere, 'utf8'), before); assert.ok(fs.lstatSync(file).isSymbolicLink());
   });
+  // ---- 1.17.1 gate review (rev_20261004083921_b12f1d0fd3bf) ----
+  // Something already has the temporary file's name at the moment the writer creates it: a link to a
+  // file elsewhere where this account may create links, a plain file where it may not (Windows
+  // without developer mode). Either way nothing is written through it or put in the record's place.
+  await test('the temporary file is created exclusively: an entry already at its name is never written through', () => {
+    const dir = home(), file = need('compatibilityPath')(dir), elsewhere = path.join(dir, 'elsewhere.txt');
+    fs.writeFileSync(elsewhere, 'kept');
+    const open = fs.openSync, write = fs.writeFileSync; let planted = null, linked = false;
+    const plant = (target) => {
+      if (planted || typeof target !== 'string' || !target.endsWith('.tmp') || path.dirname(target) !== path.dirname(file)) return;
+      planted = target;
+      try { fs.symlinkSync(elsewhere, target); linked = true; } catch { write.call(fs, target, 'planted'); }
+    };
+    fs.openSync = function (target, ...rest) { plant(target); return open.call(fs, target, ...rest); };
+    fs.writeFileSync = function (target, ...rest) { plant(target); return write.call(fs, target, ...rest); };
+    let outcome; try { outcome = settle(dir, [failed()], { codex: '0.157.1' }); } finally { fs.openSync = open; fs.writeFileSync = write; }
+    assert.ok(planted, 'the writer makes a temporary file in the record\'s folder');
+    assert.notEqual(path.basename(planted), `${path.basename(file)}.${process.pid}.tmp`, 'its name cannot be worked out beforehand');
+    assert.equal(fs.readFileSync(elsewhere, 'utf8'), 'kept', 'nothing is written through a link');
+    if (linked) assert.ok(fs.lstatSync(planted).isSymbolicLink(), 'the link is left as found'); else assert.equal(fs.readFileSync(planted, 'utf8'), 'planted', 'the entry is left as found');
+    assert.equal(fs.existsSync(file), false, 'and it is not moved into the record\'s place');
+    assert.deepEqual(plain(outcome.recorded), []); assert.match(outcome.error, /temporary file/);
+    assert.ok(!outcome.error.includes(dir), 'the report carries no home path');
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), [path.basename(planted)], 'no lock is left');
+    // Left alone, the same write leaves the record and nothing else.
+    fs.rmSync(planted); assert.deepEqual(plain(settle(dir, [failed()], { codex: '0.157.1' }).recorded), ['codex']);
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), [path.basename(file)]);
+  });
+  // Run A read a record for an older CLI version and planned its removal. Before A holds the lock, run B
+  // records a failure for the version A runs. That moment is reached here as A creates its lock file.
+  await test('a removal planned before the lock is taken never erases a newer record for the same route', () => {
+    const dir = home(), file = need('compatibilityPath')(dir), machine = registry.machineId();
+    settle(dir, [failed()], { codex: '0.157.1' });
+    const newer = { route: 'codex', cli_version: '0.158.0', model: 'gpt-test-9', at: '2026-10-04T08:00:00.000Z', machine_id: machine };
+    const write = fs.writeFileSync; let raced = 0;
+    fs.writeFileSync = function (target, ...rest) {
+      if (target === `${file}.lock` && !raced++) write.call(fs, file, JSON.stringify({ schema: 'momm-compatibility/1', machine_id: machine, entries: [newer] }));
+      return write.call(fs, target, ...rest);
+    };
+    let outcome; try { outcome = settle(dir, [{ agent: 'codex', status: 'timeout', route_settings: { model: 'gpt-test-9' } }], { codex: '0.158.0' }); } finally { fs.writeFileSync = write; }
+    assert.equal(raced, 1, 'the other run wrote between the first reading and the lock');
+    assert.deepEqual(plain(outcome), { recorded: [], cleared: [], error: null });
+    assert.deepEqual(need('readCompatibility')(dir).entries, [newer]);
+    assert.ok(known(dir, '0.158.0'), 'the newer failure is still shown');
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), [path.basename(file)], 'no lock or temporary file is left');
+  });
+  // The configuration can change between two pieces of one run (the Codex desktop app shares it).
+  await test('a success given another model does not hide a compatibility failure; the same model still clears', () => {
+    const ok = (model) => ({ agent: 'codex', status: 'success', route_settings: { model, model_from: 'user_config' } });
+    const dir = home('gpt-test-10');
+    assert.deepEqual(plain(settle(dir, [ok('gpt-test-9'), failed('gpt-test-10')], { codex: '0.157.1' })), { recorded: ['codex'], cleared: [], error: null });
+    assert.equal(known(dir, '0.157.1').model, 'gpt-test-10', 'the next check says so while that model is configured');
+    assert.deepEqual(plain(settle(home('gpt-test-10'), [failed('gpt-test-10'), ok('gpt-test-9')], { codex: '0.157.1' })).recorded, ['codex'], 'in either order');
+    // An unread version neither records nor removes while that failure stands.
+    assert.deepEqual(plain(settle(dir, [ok('gpt-test-9'), failed('gpt-test-10')], { codex: null })), { recorded: [], cleared: [], error: null });
+    assert.ok(known(dir, '0.157.1'));
+    // A success with the model that failed shows the pair works: the record goes, as before.
+    assert.deepEqual(plain(settle(dir, [ok('gpt-test-10'), failed('gpt-test-10')], { codex: '0.157.1' })), { recorded: [], cleared: ['codex'], error: null });
+    // So does a success whose settings were not recorded: it is not known to differ.
+    settle(dir, [failed('gpt-test-10')], { codex: '0.157.1' });
+    assert.deepEqual(plain(settle(dir, [{ agent: 'codex', status: 'success' }, failed('gpt-test-10')], { codex: '0.157.1' })), { recorded: [], cleared: ['codex'], error: null });
+  });
+  await test('the model is recorded and compared by one rule, and a record is kept while any run was given its model', () => {
+    const timeout = (model) => ({ agent: 'codex', status: 'timeout', route_settings: { model } });
+    // Every run's model is looked at, in any order, not the first one found.
+    const dir = home(); settle(dir, [failed()], { codex: '0.157.1' });
+    assert.deepEqual(plain(settle(dir, [timeout('gpt-test-10'), timeout('gpt-test-9')], { codex: '0.157.1' })), { recorded: [], cleared: [], error: null });
+    assert.deepEqual(plain(settle(dir, [timeout('gpt-test-10'), timeout('gpt-test-11')], { codex: '0.157.1' })).cleared, ['codex'], 'no run was given the recorded model');
+    // A value a record cannot hold is "none" where it is recorded and where it is compared.
+    const odd = home(null); settle(odd, [failed('two words')], { codex: '0.157.1' });
+    assert.equal(need('readCompatibility')(odd).entries[0].model, null);
+    assert.deepEqual(plain(settle(odd, [timeout('two words')], { codex: '0.157.1' })), { recorded: [], cleared: [], error: null });
+    assert.ok(known(odd, '0.157.1'));
+    // A model is recorded only for a route MOMM reads one for, so the next check can match it.
+    const other = home(null);
+    settle(other, [{ agent: 'grok', status: 'error', detail: codexGap.detail, route_settings: { model: 'grok-test-1' } }], { grok: '1.0.41' });
+    assert.equal(need('readCompatibility')(other).entries[0].model, null);
+    assert.ok(need('knownIncompatibility')({ home: other, env: {}, route: 'grok', cliVersion: '1.0.41' }));
+  });
   // ---- preflight ----
   function preflight(dir, version) {
     const calls = [];

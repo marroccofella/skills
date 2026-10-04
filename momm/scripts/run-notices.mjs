@@ -47,7 +47,11 @@ function logTail(file) {
     let offset = 0;
     while (offset < buffer.length) { const read = fs.readSync(fd, buffer, offset, buffer.length - offset, start + offset); if (!read) break; offset += read; }
     const text = buffer.subarray(0, offset).toString("utf8");
-    return start > 0 ? text.slice(text.indexOf("\n") + 1) : text;
+    if (start === 0) return text;
+    // The tail starts inside a line: it is read from the end of that line. With no line end in it at
+    // all it holds no whole line (one line longer than the tail), and a fragment is never a row.
+    const cut = text.indexOf("\n");
+    return cut === -1 ? "" : text.slice(cut + 1);
   } catch { return ""; } finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* read-only handle */ } } }
 }
 
