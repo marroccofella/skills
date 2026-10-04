@@ -76,7 +76,7 @@
     },
     {
       "path": "scripts/self-test.js",
-      "sha256": "440f8ffec424e88316ccd1a2824ace42ba5337b359f542fc2748872cab70c3f1"
+      "sha256": "096d76aa1c6750a693981a290f5e931f806112b2160f5d28879c86dbb969aa90"
     },
     {
       "path": "scripts/speak.js",
@@ -135,6 +135,10 @@
       "sha256": "a55d4861003ef7bfd302078643042efa014df8e1dadc4805ff2e75811a3b3765"
     },
     {
+      "path": "tests/permission-cache-checks.cjs",
+      "sha256": "54c1c817a83c2f1fa412ac884ac33a2e0dcace5e1b8ed080d88c1e9e739b40b9"
+    },
+    {
       "path": "tests/recovery-checks.cjs",
       "sha256": "adab1cc58a822c7e3746f0990d70e11498c4eb63205487170ff1b54137f74c32"
     },
@@ -144,7 +148,7 @@
     },
     {
       "path": "tests/windows-privacy.cjs",
-      "sha256": "b39944644b8ec156b098bd53f15b9eedea33f604de8ab6330ba6f4edca09d8d4"
+      "sha256": "84b41601d1c0135e797f69b408d5fa03357ad250c3cd45211915a805156bb692"
     }
   ]
 }

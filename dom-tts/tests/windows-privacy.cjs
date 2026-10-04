@@ -23,8 +23,8 @@ try {
   const link = path.join(fixture, 'junction'); fs.symlinkSync(fresh, link, 'junction');
   assert.throws(() => ensurePrivate(link), /must not contain links/);
   fs.unlinkSync(link);
-  // Alter a previously verified ACL, then simulate the next process.
+  // Alter a previously verified ACL; the same process must see the change on its next check.
   ps('$dir=' + psQuote(fresh) + "; $acl=[IO.Directory]::GetAccessControl($dir,[System.Security.AccessControl.AccessControlSections]::Access); $sid=New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545'); $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'ReadAndExecute','ContainerInherit,ObjectInherit','None','Allow'))); [IO.Directory]::SetAccessControl($dir,$acl)");
-  verifiedDirs.clear(); assert.throws(() => ensurePrivate(fresh), /grants access/);
+  assert.throws(() => ensurePrivate(fresh), /grants access/);
   console.log('PASS: broad-parent new state, broad-existing refusal, junction refusal and fresh-process ACL revalidation');
 } finally { verifiedDirs.clear(); fs.rmSync(fixture, { recursive: true, force: true }); }
