@@ -99,8 +99,8 @@ await test('a later empty or malformed assistant answer cannot rescue an earlier
 await test('new user input after an answer invalidates that earlier answer',async()=>{
   const rows=events();rows.splice(-1,0,event('user.message',{content:'later request'}));assert.equal((await invoke(rows)).status,'invalid_output');
 });
-await test('rendered text, quoted JSON, fences and literal newlines are not repaired',async()=>{
-  for(const content of [JSON.stringify(JSON.stringify(payload)),'```json\n'+JSON.stringify(payload)+'\n```','{"findings":[],"summary":"literal\nnewline"}'])assert.equal((await invoke(events(content))).status,'invalid_output');
+await test('rendered text, quoted JSON and literal newlines are not repaired',async()=>{
+  for(const content of [JSON.stringify(JSON.stringify(payload)),'{"findings":[],"summary":"literal\nnewline"}'])assert.equal((await invoke(events(content))).status,'invalid_output');
   assert.equal((await invoke(JSON.stringify(payload))).status,'invalid_output');
 });
 await test('wrong scope and incomplete contract remain refused after transport succeeds',async()=>{
@@ -147,8 +147,8 @@ await test('an image observation is checked against the attachments actually sen
   assert.equal((await send({...seen,region:[0,10,32,8]})).status,'invalid_output');
   assert.equal((await send(seen,{directory:null,attachments:[]})).status,'invalid_output');
 });
-// 1.17.1: Copilot CLI 1.0.90 and 1.0.91 add two events to the JSONL stream, seen in a synthetic capture
-// on 4 October 2026 with MOMM's own flags: one leading session.warning (a policy notice) and one
+// 1.17.1: Copilot CLI 1.0.91 adds two events to the JSONL stream (1.0.90 failed the same way on
+// 1 October but its events were not captured), seen in a synthetic capture on 4 October 2026 with MOMM's own flags: one leading session.warning (a policy notice) and one
 // model.call_final_result after each model call ({model, isByok, result: "success"}). 1.17.0 refused
 // every Copilot review as "unrecognized event type". Both are bookkeeping, never an answer; the
 // vocabulary stays closed and a model call that does not report success is refused.
@@ -209,6 +209,36 @@ await test('an unrecognised event is named in the refusal; a name that is not pl
   assert.match(o.detail,/2 with names not shown/);
   const many=events1091();many.splice(-1,0,...['a.one','a.two','a.three','a.four','a.five'].map(type=>event(type)));
   const m=await invoke(many);assert.match(m.detail,/a\.one, a\.two, a\.three; and 2 more/);
+});
+// 1.17.1: on 4 October 2026 Copilot (CLI 1.0.91) answered a real 10 KB review, twice, with its whole
+// answer inside one Markdown code fence, against the contract's "no markdown fences". Every other
+// route already extracts the object from such an answer; this adapter refused it. A fence is a
+// wrapper, not content: an answer that is exactly one fenced block is unwrapped and its inside is
+// parsed as strictly as before. Nothing is repaired: prose beside the fence, a second block, another
+// fence character or broken JSON inside are all still refused.
+const FENCE='```';
+const fenced=(body,lang='json')=>FENCE+lang+'\n'+body+'\n'+FENCE;
+await test('an answer that is exactly one fenced JSON block is unwrapped and held to the full contract',async()=>{
+  for(const content of [fenced(JSON.stringify(payload)),fenced(JSON.stringify(payload,null,2)),fenced(JSON.stringify(payload),''),
+    '\n'+fenced(JSON.stringify(payload))+'\n',fenced(JSON.stringify(payload)).replaceAll('\n','\r\n')]){
+    const r=await invoke(events1091(content));assert.equal(r.status,'success',JSON.stringify(content.slice(0,24))+' '+r.detail);
+    assert.equal(r.review.summary,payload.summary);assert.equal(r.review.review_contract,PEER_CONTRACT);
+  }
+  const quoting={...payload,summary:'The note shows a block: '+FENCE+'js then code then '+FENCE+' inside a string.'};
+  const q=await invoke(events1091(fenced(JSON.stringify(quoting))));assert.equal(q.status,'success',q.detail);assert.equal(q.review.summary,quoting.summary);
+});
+await test('a fence is never a licence to repair: prose, a second block, other fences and broken JSON are refused',async()=>{
+  const good=JSON.stringify(payload);
+  for(const content of ['Here is my review:\n'+fenced(good),fenced(good)+'\nHope that helps.',fenced(good)+'\n'+fenced(good),
+    fenced('{bad}'),fenced(''),fenced(JSON.stringify(good)),FENCE+'json\n'+good,good+'\n'+FENCE,'~~~json\n'+good+'\n~~~',
+    FENCE+'json '+good+' '+FENCE,fenced(good,'javascript'),fenced('['+good+']')]){
+    const r=await invoke(events1091(content));assert.equal(r.status,'invalid_output','accepted '+JSON.stringify(content.slice(0,40)));assert(!r.review);
+  }
+});
+await test('a fenced answer with a wrong quote or an incomplete contract is still refused after unwrapping',async()=>{
+  const wrong={...payload,reviewed_scope:[{quote:'NOT_IN_ARTIFACT',assessment:'Synthetic'}]};
+  assert.equal((await invoke(events1091(fenced(JSON.stringify(wrong))))).status,'invalid_output');
+  assert.equal((await invoke(events1091(fenced(JSON.stringify({...payload,review_status:'pending'}))))).status,'invalid_output');
 });
 console.log(JSON.stringify({passed:checks.filter(c=>c.passed).length,total:checks.length,checks},null,2));
 if(checks.some(c=>!c.passed))process.exitCode=1;

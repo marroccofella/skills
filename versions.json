@@ -1,8 +1,17 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.0",
+  "momm": "1.17.1",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.1",
+      "tag": "momm-1.17.1",
+      "changes": [
+        "Copilot reviews work again on recent Copilot CLI versions (captured on 1.0.91; 1.0.90 failed the same way): MOMM 1.17.0 refused every Copilot answer because those CLIs add two events (session.warning, model.call_final_result) to the output it reads. Older Copilot CLIs and other routes were not affected.",
+        "Copilot sometimes returns its whole answer inside one Markdown code fence; that answer is now unwrapped and checked as strictly as before, instead of being refused. When a reviewer CLI adds an event in future, the refusal names the unrecognised event types; a model call that does not report success is refused.",
+        "No other behaviour changes. If Codex reports a CLI/model compatibility error, update the Codex CLI; MOMM never changes your Codex settings."
+      ]
+    },
     {
       "version": "1.17.0",
       "tag": "momm-1.17.0",

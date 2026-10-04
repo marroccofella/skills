@@ -37,7 +37,7 @@ if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
-const MOMM_VERSION = "1.17.0";
+const MOMM_VERSION = "1.17.1";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -1305,7 +1305,7 @@ function unwrapReviewPayload(stdout, nesting = 0) {
 // The known event vocabulary is deliberately closed: drift needs inspection,
 // not silent acceptance of a new error/cancellation event. Never echo this stream
 // in diagnostics: non-answer events can contain tool input or reasoning metadata.
-// 1.17.1: Copilot CLI 1.0.90 and 1.0.91 add `session.warning` (a notice, for example an organisation
+// 1.17.1: Copilot CLI 1.0.91 adds (and 1.0.90, which failed the same way, probably added) `session.warning` (a notice, for example an organisation
 // policy that disables third-party MCP servers) and `model.call_final_result` (one per model call:
 // {model, isByok, result}), seen in a synthetic capture with these flags on 4 October 2026. Both are
 // bookkeeping and never an answer. A model call that does not report "success" is refused.
@@ -1350,8 +1350,13 @@ function copilotReviewPayload(stdout) {
   }
   if (!completed || typeof answer?.content !== "string" || !answer.content.trim()
     || !Array.isArray(answer.toolRequests) || answer.toolRequests.length) return invalid("no completed tool-free assistant answer");
+  // 1.17.1: the model sometimes returns its whole answer inside one Markdown code fence, against the
+  // contract. A fence is a wrapper, not content: an answer that is exactly one fenced block is unwrapped
+  // and its inside parsed as strictly as before. Prose beside the fence, a second block, another fence
+  // character or a language tag other than json leave it unmatched or unparseable, and it is refused.
+  const fence = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/.exec(answer.content.trim());
   let payload;
-  try { payload = JSON.parse(answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
+  try { payload = JSON.parse(fence ? fence[1] : answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("assistant answer must be a JSON object");
   return { payload };
 }
