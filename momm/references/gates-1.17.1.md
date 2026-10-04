@@ -227,10 +227,12 @@ twelve pieces no Copilot answer was refused as not strict JSON.
   once because a quote did not match the diff and its retry timed out, so it gave no valid review of
   that piece. Copilot's answers on pieces 2, 3 and 5 were refused once (a summary that was missing or
   too long; two quotes that did not match) and accepted on a retry. 7 WARNING and 1 NITPICK: one real
-  and fixed, seven shown not to hold. 50 suggestions ruled, two applied. Receipt complete. Fixed: a
-  fixture's description called an answer shape "refused" beside a case that expects success; a test
-  that claimed "refused before anything is written" read only a file a refusing renderer cannot
-  change. Four of the seven rejections were made by running the committed suite against a product
+  and fixed, seven shown not to hold. 50 suggestions ruled, two applied. Receipt complete. Two things
+  were fixed, one under the real finding and one under a suggestion. The finding: a fixture's
+  description called an answer shape "refused" beside a case that expects success (one of the two
+  applied suggestions asked for the same change). The other applied suggestion, with a modification:
+  a test that claimed "refused before anything is written" read only a file a refusing renderer
+  cannot change. Four of the seven rejections were made by running the committed suite against a product
   module broken in the way the test names, and seeing that test fail. This receipt was recorded on the
   tree that holds this review's own two fixes: the fixes of the other closing review add tests to
   files this one read, and a receipt accounts only for its own review's decisions. Those added tests

@@ -283,4 +283,13 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
     assert(at > 0 && /fails without/.test(text.slice(Math.max(0, at - 220), at)), name + ' must say that the notice is marked after a refresh that fails without the version check');
   }
 }
+// 1.17.1 final review rev_20261004130329_38fbda81466d (closing-receipt-fix-count): the entry of the second
+// closing review counted one real finding and then listed two things as fixed. The second came from a
+// suggestion, and the sentence that names it says so.
+{
+  const reviews = read('momm/references/gates-1.17.1.md').replace(/\r\n/g, '\n').split('\n## Reviews\n')[1].split('\n## ')[0];
+  const entry = (reviews.split(/\n(?=- `rev_)/).find((block) => block.startsWith('- `rev_20261004112834_a8bab82d9d93`')) ?? '').replace(/\s+/g, ' ');
+  const sentence = entry.split(/(?<=\.) /).find((one) => one.includes('anything is written')) ?? '';
+  assert(/one real and fixed/.test(entry) && /suggestion/.test(sentence), 'gates-1.17.1.md: the entry of rev_20261004112834 counts one real finding, so the second thing it lists as fixed must be given to the suggestion it came from');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));
