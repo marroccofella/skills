@@ -2,7 +2,7 @@
   "schema": "momm-adapter-fixtures/1",
   "route": "copilot",
   "cli_version": "1.0.91",
-  "shape_from": "momm/scripts/copilot-transport.test.mjs events1091(), the stream of Copilot CLI 1.0.91 with session.warning and model.call_final_result; quota event from the dispatcher self-test. Synthetic content.",
+  "shape_from": "momm/scripts/copilot-transport.test.mjs events1091(), the stream of Copilot CLI 1.0.91 with session.warning and model.call_final_result; quota event from the dispatcher self-test. narrated-fenced-success is the fenced answer with one sentence of narration before the block, the shape of refused pieces of a real review on 4 October 2026. not-json is narration around a bare answer, which stays refused on this route. Synthetic content.",
   "cases": {
     "success.jsonl": {
       "expect": {
@@ -11,6 +11,12 @@
       }
     },
     "fenced-success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "narrated-fenced-success.jsonl": {
       "expect": {
         "status": "success",
         "verdict": "ACCEPT"

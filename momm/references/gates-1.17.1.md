@@ -41,12 +41,25 @@ released as 1.17.1 and that twenty reliability improvements go into the same ver
   with complete, valid JSON inside. Claude, Codex, Gemini and Grok extract the object from such an
   answer; the Copilot and Antigravity adapters did not. An answer that is exactly one fenced block
   (three backticks, optionally `json` in any case) is now unwrapped and its inside parsed strictly, by
-  one rule shared by both adapters. Still refused: prose beside the fence, a second fenced block, a
-  line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside. The
-  small synthetic check had passed because that answer happened to come back bare.
+  one rule shared by both adapters. The small synthetic check had passed because that answer happened
+  to come back bare.
+- **A third cause, found by the gate review of this release.** In the review of the runner and the
+  records (`rev_20261004085941_a8b4e58041e1`, seven pieces) three Copilot answers were refused as "not
+  strict JSON": piece 2 on both attempts, and piece 6 on its first attempt (its retry was accepted).
+  The other routes met quorum on every piece, so the review stood; these refusals are recorded here as
+  statuses of the Copilot route, separately from that quorum. The private shape record (item S2) showed
+  why without keeping the answers: two of the three began with a sentence of narration ("Good, I have
+  everything needed to complete the review.") and ended with the fence. The rule now reads an answer
+  that holds exactly one fenced block and ignores text before or after it; the inside is parsed as
+  strictly as before. Still refused: a second fenced block, any other line that starts with a fence, an
+  unclosed fence, a tilde fence, another language tag, narration around a bare answer or broken JSON
+  inside. The third refused answer neither began nor ended with a fence; its shape is otherwise unknown
+  and it is still refused. In the first gate review (`rev_20261004083921_b12f1d0fd3bf`) one Copilot
+  answer was refused for an invalid finding and accepted on its retry, and Grok timed out on one piece.
 - **Evidence.** `copilot-transport.test.mjs` passed 22 of 25 checks on the 1.17.0 code and 25 of 25
   with the event change; the fence check failed first with the production error. With the fence change
-  and the review's test suggestions the suite had 29 checks, all passing. A live review of a synthetic
+  and the review's test suggestions the suite had 29 checks, all passing; with the narration change it has
+  30, all passing. A live review of a synthetic
   diff with the patched dispatcher returned valid reviews from Copilot, Codex, Antigravity and Grok.
   The second review of the fix (`rev_20261004063546_38c3f0e783cb`) had all four routes valid.
 - **Lesson.** A status is not a finding, but a status that repeats is a signal. The 1 October
@@ -90,7 +103,7 @@ that refusal.
 | R7 | A refused evidence location prints one plain line with the reason and a safe remedy | `evidence-location.test.mjs`, `shutdown.test.mjs` |
 | R8 | An update stops on a Git lock before any change; the lock is never removed | `update.test.mjs`, `stabilisation.test.mjs`, `update-claim.test.mjs` |
 | R9 | A saved report records the actual `HEAD` and tree state beside the supplied label | `scripts/ci-runner-report.test.mjs` |
-| R10 | A Setup Center running an older version than the installed one says so | `setup-maintenance.test.mjs` |
+| R10 | A Setup Center running an older version than the installed one says so, names the control that stops it, and after a failed refresh keeps the notice marked as not checked again | `setup-maintenance.test.mjs` |
 | S1 | One fence-unwrapping rule for Copilot and Antigravity; the extracting routes are unchanged | `review-answer.test.mjs` |
 | S2 | A non-JSON answer leaves a private shape record: its first 80 characters after redaction, and no more of the answer | `review-answer.test.mjs` |
 | S3 | Three recorded runs with the same failure produce a notice | `run-notices.test.mjs` |

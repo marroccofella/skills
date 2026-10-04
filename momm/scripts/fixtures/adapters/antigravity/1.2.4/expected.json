@@ -2,7 +2,7 @@
   "schema": "momm-adapter-fixtures/1",
   "route": "antigravity",
   "cli_version": "1.2.4",
-  "shape_from": "momm/scripts/antigravity-transport.test.mjs events(), the stdin stream transport verified on agy 1.2.4 (momm/references/cli/antigravity.md, Adapter notes). Synthetic content.",
+  "shape_from": "momm/scripts/antigravity-transport.test.mjs events(), the stdin stream transport verified on agy 1.2.4 (momm/references/cli/antigravity.md, Adapter notes). not-json is narration around a bare answer, which stays refused on this route. Synthetic content.",
   "cases": {
     "success.jsonl": {
       "expect": {

@@ -13,7 +13,7 @@
 {"type":"assistant.turn_start","data":{"turnId":"answer-turn"}}
 {"type":"model.call_start","data":{}}
 {"type":"model.call_finished","data":{}}
-{"type":"assistant.message","data":{"turnId":"answer-turn","content":"Here is my review:\n```json\n{\"review_status\":\"complete\",\"reviewed_scope\":[{\"quote\":\"export function average(xs) {\",\"assessment\":\"The whole function was read.\"}],\"verdict\":\"ACCEPT\",\"confidence\":0.8,\"findings\":[],\"summary\":\"Synthetic valid review.\",\"suggested_improvements\":[]}\n```","toolRequests":[]}}
+{"type":"assistant.message","data":{"turnId":"answer-turn","content":"Here is my review:\n{\"review_status\":\"complete\",\"reviewed_scope\":[{\"quote\":\"export function average(xs) {\",\"assessment\":\"The whole function was read.\"}],\"verdict\":\"ACCEPT\",\"confidence\":0.8,\"findings\":[],\"summary\":\"Synthetic valid review.\",\"suggested_improvements\":[]}","toolRequests":[]}}
 {"type":"assistant.reasoning","data":{"content":"Synthetic reasoning."}}
 {"type":"assistant.turn_end","data":{"turnId":"answer-turn"}}
 {"type":"session.usage_checkpoint","data":{}}

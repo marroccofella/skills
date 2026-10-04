@@ -5,7 +5,7 @@
 // - copilot (copilotReviewPayload): the content of the last assistant message of a completed, tool-free
 //   turn in the JSONL event stream, read by strictAnswer below.
 // - antigravity (antigravityStreamPayload): the `response` of the one final SUCCESS result, read by
-//   strictAnswer below. Until 1.17.1 it took bare JSON only and refused a whole-answer fence.
+//   strictAnswer below. Until 1.17.1 it took bare JSON only and refused a fenced answer.
 // - claude, gemini (unwrapReviewPayload over extractJsonObjects): stdout is a JSON envelope; the
 //   review is looked for in its answer field (`result`, `response`).
 // - codex (the same functions): stdout is the answer text itself.
@@ -14,31 +14,41 @@
 //   These four extract the top-level JSON objects found anywhere in the text and take the last one that
 //   has findings[]. Prose, a fence of any kind or tag and earlier blocks are passed over, so they never
 //   needed the fence rule. That behaviour is older than this module and is deliberately unchanged:
-//   strictAnswer is not used there, and extraction is not added to the two strict routes.
+//   strictAnswer is not used there, and extraction is not added to the two strict routes: they read
+//   the one fenced block or the whole answer, and never choose between candidates.
 // No route repairs an answer: JSON that does not parse is refused everywhere.
 
-// 1.17.1: a model sometimes returns its whole answer inside one Markdown code fence, against the
-// contract (Copilot CLI 1.0.91, 4 October 2026, twice on a real 10 KB review). A fence is a wrapper,
-// not content: an answer that is exactly one fenced block (three backticks, optionally the tag json in
-// any case) is unwrapped and its inside parsed as strictly as a bare answer. Prose beside the fence, a
-// second block, another fence character or another language tag leave it unmatched or unparseable, and
-// it is refused. No line inside the block may start with a fence: strict JSON could not contain one
-// anyway, and the explicit check keeps that rule readable here.
-const WHOLE_FENCE = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/i;
-const FENCE_LINE = /^[ \t]*```/m;
+// 1.17.1: a model sometimes returns its answer inside one Markdown code fence, against the contract
+// (Copilot CLI 1.0.91, 4 October 2026, twice on a real 10 KB review), and sometimes writes a sentence
+// of narration before that fence ("Good, I have everything needed to complete the review.": two of
+// three answers refused in a 108 KB review the same day, known from their shape records). A fence is a
+// wrapper, not content, and narration is not the answer. An answer that holds exactly one fenced block
+// (three backticks at the start of a line, optionally the tag json in any case, closed by three
+// backticks alone on a line) is unwrapped and the inside parsed as strictly as a bare answer; text
+// before or after that one block is ignored. There is exactly one candidate or none: a second block,
+// any other line that starts with a fence (an indented one included), an unclosed fence, a tilde
+// fence or another language tag leave it unmatched, and the answer is then parsed as it stands and
+// refused. Narration around a bare answer is refused too: nothing is searched for.
+const FENCE_LINE = /^[ \t]*```/, FENCE_OPEN = /^```(?:json)?[ \t]*$/i, FENCE_CLOSE = /^```[ \t]*$/;
+// The inside of the one fenced block, or null when the answer does not hold exactly one.
+function fencedBlock(answer) {
+  const lines = answer.split(/\r?\n/), fences = [];
+  for (let k = 0; k < lines.length; k++) if (FENCE_LINE.test(lines[k])) fences.push(k);
+  if (fences.length !== 2 || !FENCE_OPEN.test(lines[fences[0]]) || !FENCE_CLOSE.test(lines[fences[1]])) return null;
+  return lines.slice(fences[0] + 1, fences[1]).join("\n");
+}
 // V8 names an offset for some syntax errors and none for others ("Unexpected end of JSON input", or a
 // quoted snippet). Anchored at the end so a number inside a quoted snippet is never read as one.
 const PARSE_POSITION = / in JSON at position (\d+)(?: \(line \d+ column \d+\))?$/;
 
 // The one strict reading of an answer string: {payload} for a JSON object, else {payload: null,
 // problem: "not_json" | "not_object"}. `position` is the parser's error offset in the text it was
-// given (the inside of a whole-answer fence, else the answer), or null when it names none.
+// given (the inside of the one fenced block, else the answer), or null when it names none.
 export function strictAnswer(answer) {
   if (typeof answer !== "string") return { payload: null, problem: "not_json", position: null };
-  const fenceMatch = WHOLE_FENCE.exec(answer.trim());
-  if (fenceMatch && FENCE_LINE.test(fenceMatch[1])) return { payload: null, problem: "not_json", position: null };
+  const inside = fencedBlock(answer);
   let payload;
-  try { payload = JSON.parse(fenceMatch ? fenceMatch[1] : answer); } catch (error) {
+  try { payload = JSON.parse(inside ?? answer); } catch (error) {
     const at = PARSE_POSITION.exec(String(error?.message ?? ""));
     return { payload: null, problem: "not_json", position: at ? Number(at[1]) : null };
   }

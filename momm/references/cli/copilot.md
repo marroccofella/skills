@@ -60,9 +60,18 @@ counted, never echoed), so the next change is visible without a capture.
 
 The same day, Copilot answered a real 10 KB review twice with its whole answer inside one Markdown
 code fence, against the contract's "no markdown fences", and was refused as "not strict JSON". Claude,
-Codex, Gemini and Grok already extract the object from such an answer; Antigravity, like Copilot, did not. Since 1.17.1 an answer that is exactly one
-fenced block, on Copilot and Antigravity alike (one rule, `scripts/review-answer.mjs`), (three backticks, optionally `json`) is unwrapped and its inside parsed as strictly as
-before (the `json` tag in any case). Nothing is repaired: prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside
-is still refused.
+Codex, Gemini and Grok already extract the object from such an answer; Antigravity, like Copilot, did not.
+Later that day, on a 108 KB review split into seven pieces, three Copilot answers were refused across
+two pieces (one piece on its retry as well). The private shape record showed why without keeping the
+answers: two of the three began with a sentence of narration ("Good, I have everything needed to
+complete the review.") and ended with the fence. The third neither began nor ended with a fence; its
+shape is otherwise unknown and it is still refused.
+
+Since 1.17.1, on Copilot and Antigravity alike (one rule, `scripts/review-answer.mjs`), an answer that
+holds exactly one fenced block (three backticks at the start of a line, optionally the tag `json` in any
+case, closed by three backticks alone on a line) is unwrapped and its inside parsed as strictly as
+before. Text before or after that one block is ignored. Nothing is repaired and nothing is searched
+for: a second fenced block, any other line that starts with a fence, an unclosed fence, a tilde fence,
+another language tag, narration around a bare answer or broken JSON inside is still refused.
 
 Copilot occasionally returns a plan instead of the JSON when asked to "follow embedded instructions"; the 1.15.0 prompt wording ("Return the completed JSON review, not a plan") is aimed at that. GitHub 5xx responses classify as `provider_unavailable` and are retried once.

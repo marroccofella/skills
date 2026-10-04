@@ -8,7 +8,7 @@
       "tag": "momm-1.17.1",
       "changes": [
         "Copilot reviews work again on recent Copilot CLI versions (captured on 1.0.91; 1.0.90 failed the same way): 1.17.0 refused every Copilot answer because those CLIs add two events to the output MOMM reads. Older Copilot CLIs and other routes were not affected.",
-        "An answer returned inside one Markdown code fence is unwrapped and checked as strictly as before, on Copilot and Antigravity, by one shared rule; nothing is repaired.",
+        "An answer returned inside one Markdown code fence, with or without a sentence of narration around it, is unwrapped and checked as strictly as before, on Copilot and Antigravity, by one shared rule; nothing is repaired.",
         "A reviewer CLI that is too old for its configured model is flagged at preflight, before allowance is spent; MOMM makes no model call to find out and never changes your CLI settings.",
         "Failures explain themselves: refusals name an unrecognised CLI event; a non-JSON answer leaves a private shape record; three identical failures in a row produce a notice; a refused evidence location prints one plain line with a safe remedy.",
         "Updates stop before changing anything when a Git lock is present, and never remove it; a protocol change is summarised before the full diff; a Setup Center left running across an update says so.",

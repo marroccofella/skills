@@ -12,7 +12,9 @@ weakened; no setting of the user's is changed. Every item has failing-first test
 
 - **F1.** Copilot CLI events `session.warning` and `model.call_final_result` are recognised; a model
   call that does not report success is refused.
-- **F2.** An answer that is exactly one fenced block is unwrapped and parsed strictly.
+- **F2.** An answer that holds exactly one fenced block is unwrapped and parsed strictly; text before or
+  after that one block is ignored. (The second half was added on 4 October after the gate review of
+  this release showed Copilot writing a sentence before the fence.)
 - **F3.** A refusal for an unrecognised event names it (plain names only).
 
 ## Reliability items proposed on 4 October (R1 to R10)
@@ -52,12 +54,14 @@ weakened; no setting of the user's is changed. Every item has failing-first test
   whether the tree was clean, beside the caller-supplied label, clearly distinguished. Done when: a
   label that differs from `HEAD` is recorded as a mismatch and said so in the summary.
 - **R10. Stale Setup Center warning.** A running Setup Center whose version differs from the installed
-  one says so and asks for a restart. Done when: the page shows the notice after the installed version
-  changes under it, and its self-test covers it.
+  one says so and asks for a restart, naming the control that stops it. After a refresh that fails
+  without the version check, a notice already shown stays and says it was not checked again. Done
+  when: the page shows the notice after the installed version changes under it, and its self-test
+  covers it.
 
 ## Items from this release's own failures (S1 to S10)
 
-- **S1. One fence-unwrapping rule for the two strict routes.** The whole-answer fence rule lives in one
+- **S1. One fence-unwrapping rule for the two strict routes.** The fence rule lives in one
   place (`scripts/review-answer.mjs`) and is used by Copilot and Antigravity, the two routes that read
   one answer string strictly. Claude, Codex, Gemini and Grok extract the last review object from text
   and are unchanged. One matrix of answers runs against every route's parser. No adapter repairs

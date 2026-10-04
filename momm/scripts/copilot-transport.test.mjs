@@ -216,9 +216,11 @@ await test('an unrecognised event is named in the refusal; a name that is not pl
 // 1.17.1: on 4 October 2026 Copilot (CLI 1.0.91) answered a real 10 KB review, twice, with its whole
 // answer inside one Markdown code fence, against the contract's "no markdown fences". Every other
 // route already extracts the object from such an answer; this adapter refused it. A fence is a
-// wrapper, not content: an answer that is exactly one fenced block is unwrapped and its inside is
-// parsed as strictly as before. Nothing is repaired: prose beside the fence, a second block, another
-// fence character or broken JSON inside are all still refused.
+// wrapper, not content: an answer that holds exactly one fenced block is unwrapped and its inside is
+// parsed as strictly as before. The same day, on a 108 KB review, Copilot answers put a sentence of
+// narration before that block; narration around the one block is ignored. Nothing is repaired and
+// nothing is searched for: a second block, any other fence line, another fence character, narration
+// around a bare answer or broken JSON inside are all still refused.
 const FENCE='```';
 const fenced=(body,lang='json')=>FENCE+lang+'\n'+body+'\n'+FENCE;
 await test('an answer that is exactly one fenced JSON block is unwrapped and held to the full contract',async()=>{
@@ -232,9 +234,27 @@ await test('an answer that is exactly one fenced JSON block is unwrapped and hel
   const quoting={...payload,summary:'The note shows a block: '+FENCE+'js then code then '+FENCE+' inside a string.'};
   const q=await invoke(events1091(fenced(JSON.stringify(quoting))));assert.equal(q.status,'success',q.detail);assert.equal(q.review.summary,quoting.summary);
 });
-await test('a fence is never a licence to repair: prose, a second block, other fences and broken JSON are refused',async()=>{
+await test('narration around the one fenced block is ignored, and the block is held to the full contract',async()=>{
   const good=JSON.stringify(payload);
-  for(const content of ['Here is my review:\n'+fenced(good),fenced(good)+'\nHope that helps.',fenced(good)+'\n'+fenced(good),
+  for(const content of ['Good, I have everything needed to complete the review.\n\n'+fenced(good),
+    'Exact text confirmed. Now producing the final review.\n\n'+fenced(JSON.stringify(payload,null,2)),
+    'Here is my review:\n'+fenced(good),fenced(good)+'\nHope that helps.',('Done.\n'+fenced(good)+'\nThanks.').replaceAll('\n','\r\n')]){
+    const r=await invoke(events1091(content));assert.equal(r.status,'success',JSON.stringify(content.slice(0,24))+' '+r.detail);
+    assert.equal(r.review.summary,payload.summary);assert.equal(r.review.review_contract,PEER_CONTRACT);
+  }
+  const wrong={...payload,reviewed_scope:[{quote:'NOT_IN_ARTIFACT',assessment:'Synthetic'}]};
+  assert.equal((await invoke(events1091('Here is my review:\n'+fenced(JSON.stringify(wrong))))).status,'invalid_output');
+  // The narration is not the answer: a review object in it is never read.
+  const decoy={...payload,verdict:'REJECT',summary:'A decoy in the narration.'};
+  const d=await invoke(events1091('I considered '+JSON.stringify(decoy)+' first.\n'+fenced(good)));
+  assert.equal(d.status,'success',d.detail);assert.equal(d.review.verdict,payload.verdict);assert.equal(d.review.summary,payload.summary);
+});
+await test('a fence is never a licence to repair: a second block, other fences, narration around a bare answer and broken JSON are refused',async()=>{
+  const good=JSON.stringify(payload);
+  for(const content of ['Here is my review:\n'+good,good+'\nHope that helps.','Here is my review:\n'+FENCE+'json\n'+good,
+    'An example:\n'+fenced('x = 1','')+'\n'+fenced(good),'Here is my review:\n  '+FENCE+'json\n'+good+'\n  '+FENCE,
+    'Here is my review:\n'+fenced(good,'javascript'),'Here is my review:\n~~~json\n'+good+'\n~~~',FENCE+'json\n'+good+'\n'+FENCE+' done',
+    'Here is my review:\n'+fenced('{bad}'),fenced(good)+'\n'+fenced(good),
     fenced('{bad}'),fenced(''),fenced(JSON.stringify(good)),FENCE+'json\n'+good,good+'\n'+FENCE,'~~~json\n'+good+'\n~~~',
     FENCE+'json '+good+' '+FENCE,fenced(good,'javascript'),fenced(good,'jsonc'),fenced('['+good+']'),
     fenced(good)+'\n'+FENCE /* a second fence on its own closing line */,fenced(good+'\n'+FENCE+'\n'+good)]){

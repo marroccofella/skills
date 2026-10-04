@@ -15,7 +15,7 @@
 {"type":"assistant.turn_start","data":{"turnId":"answer-turn"}}
 {"type":"model.call_start","data":{}}
 {"type":"model.call_finished","data":{}}
-{"type":"assistant.message","data":{"turnId":"answer-turn","content":"{\"review_status\":\"complete\",\"reviewed_scope\":[{\"quote\":\"export function average(xs) {\",\"assessment\":\"The whole function was read.\"}],\"verdict\":\"ACCEPT\",\"confidence\":0.8,\"findings\":[],\"summary\":\"Synthetic valid review.\",\"suggested_improvements\":[]}\nHope that helps.","toolRequests":[]}}
+{"type":"assistant.message","data":{"turnId":"answer-turn","content":"Good, I have everything needed to complete the review.\n\n```json\n{\"review_status\":\"complete\",\"reviewed_scope\":[{\"quote\":\"export function average(xs) {\",\"assessment\":\"The whole function was read.\"}],\"verdict\":\"ACCEPT\",\"confidence\":0.8,\"findings\":[],\"summary\":\"Synthetic valid review.\",\"suggested_improvements\":[]}\n```","toolRequests":[]}}
 {"type":"model.call_final_result","data":{"model":"synthetic-model","isByok":false,"result":"success"},"ephemeral":true,"id":"00000000-0000-4000-8000-000000000000","timestamp":"2026-10-04T06:00:00.000Z","parentId":null}
 {"type":"assistant.turn_end","data":{"turnId":"answer-turn"}}
 {"type":"session.usage_checkpoint","data":{}}

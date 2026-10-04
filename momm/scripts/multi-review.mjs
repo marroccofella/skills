@@ -1364,8 +1364,9 @@ function copilotReviewPayload(stdout) {
   }
   if (!completed || typeof answer?.content !== "string" || !answer.content.trim()
     || !Array.isArray(answer.toolRequests) || answer.toolRequests.length) return invalid("no completed tool-free assistant answer");
-  // 1.17.1: an answer that is exactly one fenced block is unwrapped and its inside parsed as strictly
-  // as a bare answer. The rule is strictAnswer (review-answer.mjs), shared with Antigravity.
+  // 1.17.1: an answer that holds exactly one fenced block is unwrapped (text around the block is
+  // ignored) and its inside parsed as strictly as a bare answer. The rule is strictAnswer
+  // (review-answer.mjs), shared with Antigravity.
   const { payload, problem } = strictAnswer(answer.content);
   if (problem === "not_json") return { ...invalid("assistant answer is not strict JSON"), ...answerShapeEvidence(answer.content) };
   if (problem) return invalid("assistant answer must be a JSON object");

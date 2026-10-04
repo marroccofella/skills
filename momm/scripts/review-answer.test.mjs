@@ -68,8 +68,21 @@ const MATRIX = [
   { name: 'fenced, no language tag', answer: fenced(good, ''), strict: true, extracting: true },
   { name: 'fenced, tag in capitals', answer: fenced(good, 'JSON'), strict: true, extracting: true },
   { name: 'fenced, CRLF line endings', answer: fenced(good).replaceAll('\n', '\r\n'), strict: true, extracting: true },
-  { name: 'fenced with prose before', answer: `Here is my review:\n${fenced(good)}`, strict: false, extracting: true },
-  { name: 'fenced with prose after', answer: `${fenced(good)}\nHope that helps.`, strict: false, extracting: true },
+  // Narration around the one fenced block is ignored (Copilot CLI 1.0.91, 4 October 2026: the first row
+  // is the shape of refused pieces of one real review).
+  { name: 'narration, a blank line, then the fenced answer', answer: `Good, I have everything needed to complete the review.\n\n${fenced(good)}`, strict: true, extracting: true },
+  { name: 'fenced with prose before', answer: `Here is my review:\n${fenced(good)}`, strict: true, extracting: true },
+  { name: 'fenced with prose after', answer: `${fenced(good)}\nHope that helps.`, strict: true, extracting: true },
+  { name: 'fenced with prose on both sides, CRLF', answer: `Done.\n${fenced(good)}\nThanks.`.replaceAll('\n', '\r\n'), strict: true, extracting: true },
+  { name: 'narration that mentions braces', answer: `The object {a} is below.\n${fenced(good)}`, strict: true, extracting: true },
+  // Exactly one candidate or none: the strict rule never chooses between blocks and never searches.
+  { name: 'narration around a bare answer', answer: `Here is my review:\n${good}`, strict: false, extracting: true },
+  { name: 'narration with its own fenced block first', answer: `An example:\n${fenced('x = 1', '')}\n${fenced(good)}`, strict: false, extracting: true },
+  { name: 'narration, then an unclosed fence', answer: `Here is my review:\n${FENCE}json\n${good}`, strict: false, extracting: true },
+  { name: 'narration, then an indented fence', answer: `Here is my review:\n  ${FENCE}json\n${good}\n  ${FENCE}`, strict: false, extracting: true },
+  { name: 'narration, then another language tag', answer: `Here is my review:\n${fenced(good, 'javascript')}`, strict: false, extracting: true },
+  { name: 'narration, then a tilde fence', answer: `Here is my review:\n${fenced(good, 'json', TILDE)}`, strict: false, extracting: true },
+  { name: 'text on the closing fence line', answer: `${FENCE}json\n${good}\n${FENCE} done`, strict: false, extracting: true },
   // The extracting routes take the last review object; the strict rule refuses a second block.
   { name: 'two blocks', answer: `${fenced(earlier)}\n${fenced(good)}`, strict: false, extracting: true },
   { name: 'a fence line inside the block', answer: fenced(`${earlier}\n${FENCE}\n${good}`), strict: false, extracting: true },

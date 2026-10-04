@@ -15,12 +15,13 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
   "unrecognized event type". Both events are now recognised; neither is ever treated as an answer, and
   a model call that does not report success is refused. If you do not use the Copilot route, or your
   Copilot CLI is older, you were not affected.
-- **A fenced answer is unwrapped, not refused.** Copilot sometimes returns its whole answer inside one
-  Markdown code fence. An answer that is exactly one fenced block is now unwrapped and checked as
-  strictly as before, on Copilot and Antigravity alike, by one shared rule. Still refused: prose beside
-  the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another
-  language tag or broken JSON inside. Claude, Codex, Gemini and Grok already read such answers and are
-  unchanged.
+- **A fenced answer is unwrapped, not refused.** Copilot sometimes returns its answer inside one
+  Markdown code fence, and sometimes writes a sentence before it. An answer that holds exactly one
+  fenced block is now unwrapped and checked as strictly as before, on Copilot and Antigravity alike, by
+  one shared rule; text before or after that one block is ignored. Still refused: a second fenced
+  block, any other line that starts with a fence, an unclosed fence, a tilde fence, another language
+  tag, narration around a bare answer or broken JSON inside. Claude, Codex, Gemini and Grok already
+  read such answers and are unchanged.
 - **A CLI that is too old for its configured model is flagged before you spend allowance.** When a
   review ends with a CLI/model compatibility error, MOMM remembers it on this machine and the next
   `--preflight` and the next review say so, with the official update command. It makes no model call to
@@ -46,7 +47,9 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
 - When a release changes the protocol, the updater prints a short summary (files, and the headings
   that changed in `SKILL.md`) before the full diff. `--accept-protocol` is still required.
 - A Setup Center left running across an update says which version it is running and which is now
-  installed, and asks you to close it and start it again.
+  installed, and asks you to choose Close Setup Center and start it again. If a later refresh fails,
+  the notice stays and says it was not checked again. Quick Setup no longer verifies a reviewer whose
+  card reads "CLI update needed".
 
 **Testing MOMM itself**
 - `scripts/run-ci-suites.mjs` refuses an unknown or misspelled option, checks report storage before

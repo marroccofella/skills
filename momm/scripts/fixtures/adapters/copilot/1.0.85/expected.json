@@ -2,7 +2,7 @@
   "schema": "momm-adapter-fixtures/1",
   "route": "copilot",
   "cli_version": "1.0.85",
-  "shape_from": "momm/scripts/copilot-transport.test.mjs events(), the 21-event stream of Copilot CLI 1.0.85; quota event from the dispatcher self-test copilot_quota_failure_is_named_and_stream_never_echoed. Synthetic content.",
+  "shape_from": "momm/scripts/copilot-transport.test.mjs events(), the 21-event stream of Copilot CLI 1.0.85; quota event from the dispatcher self-test copilot_quota_failure_is_named_and_stream_never_echoed. not-json is narration around a bare answer, which stays refused on this route. Synthetic content.",
   "cases": {
     "success.jsonl": {
       "expect": {

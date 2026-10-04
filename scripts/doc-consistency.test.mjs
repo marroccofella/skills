@@ -222,13 +222,15 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   }
   // tilde-fence-dropped, and one list everywhere: what is still refused, in the gate record, the release
   // notes and both adapter notes, and true of the rule itself.
-  const refusedList = 'prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken json inside';
+  const refusedList = 'a second fenced block, any other line that starts with a fence, an unclosed fence, a tilde fence, another language tag, narration around a bare answer or broken json inside';
   for (const name of ['momm/references/gates-1.17.1.md', 'momm/references/release-1.17.1.md', 'momm/references/cli/copilot.md', 'momm/references/cli/antigravity.md'])
     assert(flatText(read(name)).toLowerCase().includes(refusedList), name + ' must give the whole list of fenced answers that are still refused');
   const fence = '`'.repeat(3), tilde = '~'.repeat(3), answer = '{"findings":[]}';
   assert.deepEqual(strictAnswer(`${fence}json\n${answer}\n${fence}`).payload, { findings: [] }, 'one fenced block is unwrapped');
-  for (const refusedAnswer of [`Here it is:\n${fence}json\n${answer}\n${fence}`, `${fence}json\n${answer}\n${fence}\n${fence}json\n${answer}\n${fence}`, `${fence}\n${fence}\n${answer}\n${fence}`,
-    `${tilde}json\n${answer}\n${tilde}`, `${fence}js\n${answer}\n${fence}`, `${fence}json\n{"findings":[\n${fence}`])
+  for (const narrated of [`Here it is:\n${fence}json\n${answer}\n${fence}`, `${fence}json\n${answer}\n${fence}\nThat is all.`])
+    assert.deepEqual(strictAnswer(narrated).payload, { findings: [] }, 'text around the one fenced block is ignored, as the records say');
+  for (const refusedAnswer of [`${fence}json\n${answer}\n${fence}\n${fence}json\n${answer}\n${fence}`, `${fence}\n${fence}\n${answer}\n${fence}`, `Here it is:\n${fence}json\n${answer}`,
+    `${tilde}json\n${answer}\n${tilde}`, `${fence}js\n${answer}\n${fence}`, `Here it is:\n${answer}`, `${fence}json\n{"findings":[\n${fence}`])
     assert.equal(strictAnswer(refusedAnswer).payload, null, 'review-answer.mjs must refuse what the records say is still refused');
   // every-reviewer-lede: the release repairs Copilot and flags a CLI that is too old; it does not make
   // every route work, and the records do not say so.
