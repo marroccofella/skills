@@ -130,9 +130,10 @@ that refusal.
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.1 changes is listed here with a complete
-receipt. Listed: the two reviews of the Copilot fix and the three range reviews of the whole delta (R1
-to R10 and S1 to S10). The closing review of the changes made in triage is added when its receipt is
-complete; until it is listed, gate 3 is open.
+receipt. Listed: the two reviews of the Copilot fix, the three range reviews of the whole delta (R1 to
+R10 and S1 to S10) and the two closing reviews of the changes made in triage. The final review of the
+changes made in closing triage is added when its receipt is complete; until it is listed, gate 3 is
+open.
 
 - `rev_20261004062357_5e1763ad52ff` — the Copilot event fix. Codex, Antigravity and Grok ACCEPT, no
   findings; Copilot `invalid_output` (the fenced answer, finding 1). Six suggestions ruled, three
@@ -198,6 +199,45 @@ fix was merged, so that the same bytes hold on the reviewed commit and on the fi
 pinned wording that those two changes replaced, and one belonged to a suggestion whose change another
 packet made. Ten suggestions that one packet had declined as outside its files are recorded as applied,
 because the neighbouring packet made exactly that change under a finding of the same review.
+
+The two closing reviews below read everything changed after the three range reviews: the triage fixes,
+the two governor changes and the records. They were run with the dispatcher of this release. In their
+twelve pieces no Copilot answer was refused as not strict JSON.
+
+- `rev_20261004111650_5ab46e76a382` — product code and records (six pieces). Each of the four routes
+  returned valid reviews, and quorum was met on all six pieces. Grok timed out on piece 5 (one
+  attempt), so it gave no valid review of that piece. Three answers were refused once because a quote
+  did not match the diff, and accepted on a retry: Grok's on piece 3, Copilot's on pieces 1 and 3.
+  1 CRITICAL, 13 WARNING and 2 NITPICK: seven real and fixed, nine shown not to hold. 51 suggestions
+  ruled, nine applied. Receipt complete; it records `stale: dispatcher_sha256` because one comment in
+  the dispatcher followed a fix. The CRITICAL was real and was in this record: gate 5 said that all
+  four routes returned valid reviews in all three range reviews, beside an entry saying Copilot was
+  refused on one piece on both attempts; the row and the entries now say what happened by route and
+  piece. Also fixed: an answer with a tilde-fenced block beside the one backtick-fenced block, or with
+  the bare answer beside it, was accepted and one of the two chosen (both are now refused); the "not
+  checked again" mark on a stale Setup Center notice stayed after a refresh that succeeded without the
+  version check, and a refresh asked for before the last verified answer could set it by failing late
+  (refreshes are now ordered); a review-log row that begins exactly where the 1 MiB tail begins was
+  dropped from the repeated-status history; the retries of the save that writes the retry count were
+  left out of that count; the update notes said that repeating the command names the locks not shown
+  (it names the same eight while they exist); and R10's "Done when" had no clause for two of its
+  three promises.
+- `rev_20261004112834_a8bab82d9d93` — test files and fixtures (six pieces). Each of the four routes
+  returned valid reviews, and quorum was met on all six pieces. Grok's answer on piece 5 was refused
+  once because a quote did not match the diff and its retry timed out, so it gave no valid review of
+  that piece. Copilot's answers on pieces 2, 3 and 5 were refused once (a summary that was missing or
+  too long; two quotes that did not match) and accepted on a retry. 7 WARNING and 1 NITPICK: one real
+  and fixed, seven shown not to hold. 50 suggestions ruled, two applied. Receipt complete. Fixed: a
+  fixture's description called an answer shape "refused" beside a case that expects success; a test
+  that claimed "refused before anything is written" read only a file a refusing renderer cannot
+  change. Four of the seven rejections were made by running the committed suite against a product
+  module broken in the way the test names, and seeing that test fail. This receipt was recorded on the
+  tree that holds this review's own two fixes: the fixes of the other closing review add tests to
+  files this one read, and a receipt accounts only for its own review's decisions. Those added tests
+  are in the range of the final review.
+
+One suggestion that the records packet of the first closing review had declined as outside its files
+is recorded as applied, because the product packet made that change under a finding of the same review.
 
 ## Found in triage and carried forward
 
