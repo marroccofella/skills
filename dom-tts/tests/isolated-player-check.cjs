@@ -7,6 +7,7 @@ let phase='configuration';
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-'));
   const root = fs.realpathSync(temporary);
   const dir = path.join(root, 's');
+  let primaryFailure;
   try {
     assert.throws(() => createIsolatedNativePlayer({ options: { command: 'unsafe' } }), /configuration/);
     assert.throws(() => createIsolatedNativePlayer({ options: { voice: () => {} } }), /configuration/);
@@ -53,5 +54,11 @@ let phase='configuration';
     assert.deepEqual(['SIGINT','SIGTERM'].map(name => process.listenerCount(name)), listeners);
     console.log('PASS: isolated real permission/lock cleanup, asynchronous host, pre-abort/bounds, linked-state refusal, timed and synchronized lock-wait owner-preserving abort; no audio');
     console.log('Temporary fixture canonicalized: ' + (temporary !== root));
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } catch(error) { primaryFailure=error; throw error; } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }); }
+    catch(error) {
+      if(primaryFailure)console.error(JSON.stringify(require('./isolated-check-diagnostic.cjs').diagnostic('cleanup',error)));
+      else { phase='cleanup'; throw error; }
+    }
+  }
 })().catch(error => { console.error(JSON.stringify(require('./isolated-check-diagnostic.cjs').diagnostic(phase,error))); process.exitCode = 1; });
