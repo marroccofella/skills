@@ -136,6 +136,57 @@ try {
     assert.deepEqual(updater.headingChanges("## A\none\n## A\ntwo\n", "## A\none\n## A\nthree\n"), { added: [], removed: [], changed: ["## A"] }, "a repeated heading is compared as a whole");
     assert.deepEqual(updater.headingChanges("#hashtag\n####### seven\n", "#hashtag changed\n####### seven\n").changed, ["(text before the first heading)"], "not headings: no space after the marks, or more than six");
   });
+  // Gate review of 1.17.1 (fence-closer-with-info, invalid-fence-closer): any later fence-shaped line closed an
+  // open fence, so ```js inside a block ended it; sample lines then read as headings and the real headings
+  // after them were swallowed. Markdown's rule: a closing fence is the same mark, at least as long, followed
+  // only by spaces or tabs; and a backtick line with a backtick after the mark opens nothing.
+  await test("skill_heading_summary_follows_markdown_fence_rules", () => {
+    const none = { added: [], removed: [] };
+    const withInfo = body => ["## Rules", "```", "```js", "## Not a heading", "still code", "```", "## Real", body].join("\n");
+    assert.deepEqual(updater.headingChanges(withInfo("one"), withInfo("two")), { ...none, changed: ["## Real"] }, "```js inside an open block does not close it");
+    const trailing = sample => ["# A", "~~~~", "~~~~ not a close", `# ${sample}`, "~~~", "``` nor this", "~~~~  \t", "# B", "text"].join("\n");
+    assert.deepEqual(updater.headingChanges(trailing("sample"), trailing("revised")), { ...none, changed: ["# A"] }, "text after the mark, a shorter mark and the other mark do not close; spaces and tabs after the mark do");
+    const span = body => ["```not a fence``` here", "# H1", "a", "# H2", body].join("\n");
+    assert.deepEqual(updater.headingChanges(span("b"), span("c")), { ...none, changed: ["# H2"] }, "a backtick line with a backtick after the mark is not a fence");
+    const tilde = body => ["~~~js extra `words`", "# code", "~~~js", "# still code", "~~~", "# H", body].join("\n");
+    assert.deepEqual(updater.headingChanges(tilde("x"), tilde("y")), { ...none, changed: ["# H"] }, "a tilde fence may carry any text when it opens, none when it closes");
+    // A fence that is never closed runs to the end, as in Markdown. Its text is still compared: a change inside
+    // it shows as a change of the section it sits in.
+    assert.deepEqual(updater.headingChanges("# A\n```\n# x\n", "# A\n```\n# y\n"), { ...none, changed: ["# A"] });
+  });
+  // Gate review of 1.17.1 (duplicate-heading-merge-masks-moves): the summary must never read as "nothing
+  // changed" when sections moved. Sections that changed places compared equal one by one, and the bodies of
+  // a repeated heading were joined with a NUL, so text containing one could make two layouts compare equal.
+  await test("skill_heading_summary_reports_moved_sections_and_keeps_repeated_headings_apart", () => {
+    const none = { added: [], removed: [] }, NUL = String.fromCharCode(0), ORDER = "(order of sections)", h = updater.headingChanges;
+    assert.deepEqual(h("## A\nx\n## B\ny", "## B\ny\n## A\nx"), { ...none, changed: [ORDER] }, "two sections changed places");
+    assert.deepEqual(h("## Notes\nfoo\n## Other\nx\n## Notes\nbar", "## Notes\nfoo\n## Notes\nbar\n## Other\nx"), { ...none, changed: [ORDER] }, "a section moved past a repeated heading");
+    assert.deepEqual(h("## A\nfoo\n## A\nbar", "## A\nbar\n## A\nfoo"), { ...none, changed: ["## A"] }, "text exchanged between two sections of one name");
+    assert.deepEqual(h(`## N\nx${NUL}y\n## N\nz`, `## N\nx\n## N\ny${NUL}z`), { ...none, changed: ["## N"] }, "each occurrence is compared with the same occurrence");
+    assert.deepEqual(h(`## A\nx${NUL}y`, "## A\nx\n## A\ny"), { ...none, changed: ["## A"] }, "one section is never equal to two");
+    // Not a change of order: a repeat that was dropped (the heading itself is listed), or sections added and removed.
+    assert.deepEqual(h("## A\nx\n## A\ny\n## B\nz", "## A\nx\n## B\nz"), { ...none, changed: ["## A"] });
+    assert.deepEqual(h("## A\nx\n## B\ny", "## A\nx\n## C\nz\n## B\ny"), { added: ["## C"], removed: [], changed: [] });
+    assert.deepEqual(h("## A\nx\n## B\ny", "## C\nz\n## B\nw\n## A\nx"), { added: ["## C"], removed: [], changed: ["## B", ORDER] }, "order is reported beside the other changes");
+    assert.deepEqual(h("## A\nx\n## B\ny", "## A\r\nx\r\n## B\r\ny"), { ...none, changed: [] }, "line endings alone are still not a change");
+  });
+  // Gate review of 1.17.1: a label cut to fit the summary says so, and sections that only changed places are
+  // listed at the gate instead of "none added, removed or changed".
+  await test("protocol_summary_marks_a_cut_label_and_lists_reordered_sections", () => {
+    const repo = path.join(fixture, "summary-labels"), long = `## ${"a long heading ".repeat(12).trim()}`;
+    fs.mkdirSync(repo); git(repo, "init");
+    write(repo, "momm/SKILL.md", "# T\n\ntext\n"); const one = commit(repo, "one");
+    write(repo, "momm/SKILL.md", `# T\n\ntext\n\n${long}\n\nbody\n\n## Short\n\nbody\n`); const two = commit(repo, "two");
+    write(repo, "momm/SKILL.md", `# T\n\ntext\n\n## Short\n\nbody\n\n${long}\n\nbody\n`); const three = commit(repo, "three");
+    const added = updater.policySummary(repo, one, two).split("\n"), cut = added.find(row => row.includes("## a long heading"));
+    assert(long.length > 120 && cut, "the fixture heading is longer than a label");
+    assert.match(cut, /^ {4}added {4}## a long heading.*\.\.\.$/, "a cut label ends with a mark");
+    assert.equal(cut.slice("    added    ".length).length, 120, "and still fits the bound");
+    assert(added.includes("    added    ## Short"), "a label that fits is printed whole, with no mark");
+    const moved = updater.policySummary(repo, two, three);
+    assert.match(moved, /^ {4}changed {2}\(order of sections\)$/m); assert(!moved.includes("none added, removed or changed"), "a reordered file is never summarised as unchanged");
+    assert(updater.policySummary(repo, two, two.slice(0, 12)).includes("momm/SKILL.md: not changed."), "an unchanged file still says so");
+  });
   // R8 (1.17.1; field report of 3 October 2026): installing 1.17.0 failed at the checkout on a leftover
   // .git/index.lock (empty, six days old, no Git process running), after the transaction had been staged.
   // A Git lock is now reported before anything starts. It is never removed, and its age is shown, not judged.
@@ -205,6 +256,50 @@ try {
       for (const name of ["transaction.json", "update.active"]) assert.equal(fs.existsSync(path.join(stateDir(installed), name)), false, `${name} was left behind`);
       assert(fs.existsSync(lockFile), "the lock was removed");
     } finally { if (lockFile) fs.unlinkSync(lockFile); }
+  });
+  // Gate review of 1.17.1 (truncated-lock-steps): the message names at most eight locks, and its second step
+  // said to remove "only the files named above" without a word about the rest. It now says how many are not
+  // shown and that repeating the command names them. Still nothing is removed.
+  await test("git_lock_message_says_when_some_locks_are_not_shown", async () => {
+    const plantMany = count => Array.from({ length: count }, (_, i) => plantLock(`refs/heads/fixture-${i + 1}.lock`));
+    const ten = plantMany(10);
+    try {
+      const { error, logs } = await refused(["--dry-run"]);
+      assert.equal(error?.code, "git_lock_present"); assert.equal(error.locks.length, 10, "the error carries every lock"); assert.deepEqual(logs, []);
+      assert.equal(error.locks.filter(lock => error.message.includes(lock.file)).length, 8, "eight are named");
+      assert.match(error.message, /^ {2}\.\.\. and 2 more, not shown here$/m);
+      assert.match(error.message, /^2\. Only if it lists none, remove only the files named above yourself\. Locks not shown here \(2\) are named when you repeat the command\.$/m);
+      assert(error.message.split("\n").length <= 16, "still one bounded message");
+      for (const file of ten) assert(fs.existsSync(file), "a lock is never removed");
+    } finally { for (const file of ten) fs.unlinkSync(file); }
+    const eight = plantMany(8);
+    try {
+      const { error } = await refused(["--dry-run"]);
+      assert.equal(error?.code, "git_lock_present"); assert.equal(error.locks.filter(lock => error.message.includes(lock.file)).length, 8);
+      assert(!/not shown/.test(error.message), "every lock is named: nothing more to say");
+      assert.match(error.message, /^2\. Only if it lists none, remove only the files named above yourself\.$/m);
+    } finally { for (const file of eight) fs.unlinkSync(file); }
+  });
+  // Gate review of 1.17.1 (suggestion: cover the linked-worktree case). In a linked worktree index.lock and
+  // HEAD.lock are in that worktree's own Git directory; config, shallow, packed-refs and the refs are shared
+  // with the main one. Each lock is reported once, and another worktree's index is not this checkout's.
+  await test("git_lock_check_in_a_linked_worktree_reads_its_own_and_the_shared_git_directory", () => {
+    const linked = path.join(fixture, "linked-worktree"), planted = [];
+    git(installed, "worktree", "add", "--detach", linked, first);
+    try {
+      const own = gitDirOf(linked), common = gitDirOf(installed);
+      assert.notEqual(fs.realpathSync.native(own), fs.realpathSync.native(common), "a linked worktree has a Git directory of its own");
+      const lockAt = (dir, name) => { const file = path.join(dir, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ""); planted.push(file); return file; };
+      const mine = [lockAt(own, "index.lock"), lockAt(own, "HEAD.lock")];
+      const shared = [lockAt(common, "config.lock"), lockAt(common, "shallow.lock"), lockAt(common, "packed-refs.lock"), lockAt(common, "refs/heads/fixture.lock")];
+      const mainIndex = lockAt(common, "index.lock");
+      const real = files => files.map(file => fs.realpathSync.native(file)).sort(), found = locks => real(locks.map(lock => lock.file));
+      assert.deepEqual(found(updater.gitLocks(linked)), real([...mine, ...shared]), "its own index and HEAD, and the shared locks, each once");
+      assert.deepEqual(found(updater.gitLocks(linked, { checkoutOnly: true })), real(mine), "recovery in a linked worktree looks at its own two locks");
+      assert.deepEqual(found(updater.gitLocks(installed)), real([mainIndex, ...shared]), "the main worktree does not report the linked one's index or HEAD");
+      for (const file of planted) assert(fs.existsSync(file), "a lock is never removed");
+    } finally { for (const file of planted) fs.rmSync(file, { force: true }); git(installed, "worktree", "remove", "--force", linked); }
+    assert.deepEqual(updater.gitLocks(installed), []);
   });
   await test("wrong_package_hash_refused_before_checkout", async () => {
     await assert.rejects(update(["--repo", installed, "--apply", "--yes", "--accept-protocol"], { ...deps, manifest: async () => ({ momm: "1.1.0", momm_releases: [{ ...release, sha256: "0".repeat(64) }] }) }), /SHA-256/);

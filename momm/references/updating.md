@@ -34,8 +34,11 @@ an update without the user's authorization.
 From 1.17.1, when the protocol changes, a short summary is printed before the full
 diff: the protocol files added, removed or changed, and the `momm/SKILL.md` headings
 added, removed or changed (changed means the text under the heading differs; a
-renamed heading shows as one removed and one added). It is a reading aid. The full
-diff still follows and the gate is the same: nothing is accepted automatically.
+renamed heading shows as one removed and one added). Sections that only changed
+places are listed as `(order of sections)`, and a label cut to fit ends with three
+dots. Headings are read as Markdown reads them: a line inside fenced code is not
+one. It is a reading aid. The full diff still follows and the gate is the same:
+nothing is accepted automatically.
 
 In 1.16, the separate update clock can apply updates only after the user enables
 its off-by-default automation setting. Automatic protocol acceptance is a second,
@@ -99,7 +102,9 @@ From 1.17.1, `--dry-run` and `--apply` first look for a Git lock file in the clo
 Git directory (`index.lock`, `HEAD.lock`, `config.lock`, `shallow.lock`,
 `packed-refs.lock` and any `*.lock` under `refs`) and stop before the first request
 if one exists. The message names the lock and its age, and gives the command that
-lists running Git processes. The age does not prove a lock is stale, and the
+lists running Git processes. It names at most eight locks: when there are more it
+says how many are not shown, and repeating the command names them. The age does
+not prove a lock is stale, and the
 updater never removes one: close editors and Git tools that use the clone, confirm
 that no Git process is running, remove that one file yourself, then repeat the
 command. `--rollback` checks only `index.lock` and `HEAD.lock`, which its checkout
