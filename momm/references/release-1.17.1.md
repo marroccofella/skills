@@ -3,8 +3,10 @@
 **Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.17.1` is
 published, the current signed release remains 1.17.0. Do not install an unsigned branch as a signed release.
 
-1.17.1 makes every reviewer usable again and makes failures explain themselves. It began as a fix for
-the Copilot reviewer and carries twenty reliability improvements, each found by using 1.17.0 for real.
+1.17.1 makes Copilot reviews work again on recent Copilot CLI versions and makes failures explain
+themselves. It does not make every route work: a reviewer CLI that is too old for its configured model
+is flagged at the next preflight, and you still have to update it. The release began as a fix for the
+Copilot reviewer and carries twenty reliability improvements, each found by using 1.17.0 for real.
 One writer, read-only reviewers, account logins only and automatic updates off: none of that changes.
 
 **Reviewers that work**
@@ -16,8 +18,9 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
 - **A fenced answer is unwrapped, not refused.** Copilot sometimes returns its whole answer inside one
   Markdown code fence. An answer that is exactly one fenced block is now unwrapped and checked as
   strictly as before, on Copilot and Antigravity alike, by one shared rule. Still refused: prose beside
-  the fence, a second fenced block, a line inside that starts with a fence, another language tag, or
-  broken JSON inside. Claude, Codex, Gemini and Grok already read such answers and are unchanged.
+  the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another
+  language tag or broken JSON inside. Claude, Codex, Gemini and Grok already read such answers and are
+  unchanged.
 - **A CLI that is too old for its configured model is flagged before you spend allowance.** When a
   review ends with a CLI/model compatibility error, MOMM remembers it on this machine and the next
   `--preflight` and the next review say so, with the official update command. It makes no model call to
@@ -27,8 +30,8 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
 **Failures that explain themselves**
 - A refusal for an unrecognised CLI event names the event (plain names only).
 - When an answer is refused as not JSON, the private attempt record keeps its shape: length, whether it
-  starts and ends with a fence, the parser's error position and a redacted 80-character prefix. Never
-  the answer.
+  starts and ends with a fence, the parser's error position and the first 80 characters of the answer
+  after redaction. The shape holds no more of the answer than that, and not the parser's message.
 - When a route has failed the same way in its last three recorded runs in a project, the report says so
   and names the likely cause. A notice only; nothing is routed on it.
 - A diff file passed as `--input` gets a notice that its findings cannot receive a completion receipt

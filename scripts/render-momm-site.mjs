@@ -10,7 +10,7 @@ import { evidenceVisuals, releasePanel, releaseChecks, chartSeries } from "./mom
 import { definition, answerSection, enhanceSearch, projectStory, evidenceBenefits, addAttribution } from "./momm-site-search.mjs";
 import { watchOutputs } from './momm-site-videos.mjs';
 import {technicalBody, brandBadge, ensembleObservations} from './momm-site-technical.mjs';
-import {homeCinema,homeDiagrams,releaseStatus,releaseStatusHtml,withReleaseStatus} from './momm-site-home.mjs';
+import {homeCinema,homeDiagrams,releaseStatus,homeWithReleaseStatus,withReleaseStatus} from './momm-site-home.mjs';
 import {mediaBody, improvementBody, normalizeNavigation, navigationLinks} from './momm-site-community.mjs';
 import {llmsText} from './momm-site-discovery.mjs';
 
@@ -180,8 +180,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
     output[file] = output[file].replace('</header>', '</header>' + banner(prefix))
       .replace('</head>', `<link rel="icon" type="image/svg+xml" href="${prefix}favicon.svg"></head>`);
   }
-  output['docs/momm/index.html'] = output['docs/momm/index.html']
-    .replace('<h1>Give your AI agent', () => releaseStatusHtml(status) + '<h1>Give your AI agent')
+  output['docs/momm/index.html'] = homeWithReleaseStatus(output['docs/momm/index.html'], status)
     .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
     .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
     .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
