@@ -220,22 +220,33 @@ check('realTempDir leaves no folder behind when the real path cannot be read', (
 // suite that tests the evidence home sets its own afterwards. It is a statement in the suite, never a
 // module that does it on import: ledger.mjs imports the test-support module, and a product command
 // must not lose the user's setting that way.
-const ISOLATED = /^delete process\.env\.MOMM_EVIDENCE_HOME;/;
-// The first top-level line that is a statement other than a static import. Comments are skipped.
+// The statement has a line to itself, from the first column: nothing may follow it but a // comment.
+const ISOLATED = /^delete process\.env\.MOMM_EVIDENCE_HOME;[ \t]*(?:\/\/.*)?$/;
+// A line ends where JavaScript ends one, which is also where a // comment stops.
+const LINE_END = new RegExp(String.raw`\r\n|[\n\r` + String.fromCharCode(0x2028, 0x2029) + ']');
+// A static import in its plain forms: a module alone, or a default, a namespace and names (comments
+// allowed between them) from a module. Any other form, one with attributes included, is not matched.
+// A comment is matched inside a lookahead so that it is taken once, to its own end, and never stretched
+// to a later one over code in between.
+const IMPORT = /import(?=[\s{*'"])\s*(?:(?:[\w$*{},\s]|(?=(?<comment>\/\/.*|\/\*[^]*?\*\/))\k<comment>)+?\bfrom\s*)?(?<quote>['"])[^'"\r\n]+\k<quote>[ \t]*;?/y;
+// The whole line on which the first top-level statement other than a static import starts, and its number.
+// The text is read from its start, a comment or an import at a time, so code that shares a line with the
+// end of one is found (the first version read whole lines and never saw it). Whatever is not a comment or a
+// plain import is taken as that statement: a layout this cannot read is reported, never accepted.
 function firstStatement(text) {
-  // An import ends on the line that names its module, with or without a semicolon.
-  const ended = (line) => /(?:\bfrom\s*|^import\s*)(['"])[^'"]+\1\s*;?\s*(?:\/\/.*)?$/.test(line);
-  let comment = false, importing = false;
-  for (const [index, raw] of text.split('\n').entries()) {
-    const line = raw.replace(/\r$/, '');
-    if (comment) { comment = !line.includes('*/'); continue; }
-    if (importing) { importing = !ended(line); continue; }
-    if (!line.trim() || line.startsWith('//') || (index === 0 && line.startsWith('#!'))) continue;
-    if (line.startsWith('/*')) { comment = !line.includes('*/'); continue; }
-    if (/^import[\s{'"*]/.test(line)) { importing = !ended(line); continue; }
-    return { line: index + 1, text: line };
+  let at = text.startsWith('#!') ? text.search(LINE_END) : 0;
+  while (at >= 0) { // -1: a first line or a comment that never ends
+    at += /^\s*/.exec(text.slice(at))[0].length;
+    if (text.startsWith('//', at)) { const end = text.slice(at).search(LINE_END); at = end < 0 ? -1 : at + end; continue; }
+    if (text.startsWith('/*', at)) { const end = text.indexOf('*/', at + 2); at = end < 0 ? -1 : end + 2; continue; }
+    IMPORT.lastIndex = at;
+    const length = IMPORT.exec(text)?.[0].length;
+    if (!length) break;
+    at += length;
   }
-  return null;
+  if (at < 0 || at >= text.length) return null;
+  const before = text.slice(0, at).split(LINE_END), start = at - before.at(-1).length;
+  return { line: before.length, text: text.slice(start).split(LINE_END, 1)[0] };
 }
 const isolated = (text) => ISOLATED.test(firstStatement(text)?.text ?? '');
 // Commands the workflow runs that are not suites: they report on the user's own setup or on the site, so
@@ -245,12 +256,41 @@ const drop = 'delete process.env.MOMM_EVIDENCE_HOME;';
 check('a suite whose first statement does not drop the evidence home is reported', () => {
   const imports = "#!/usr/bin/env node\n// header\nimport fs from 'node:fs';\nimport {\n  a,\n  b } from './x.mjs'; // two lines\n/* block\n   comment */\nimport './side-effect.mjs';\nimport os from \"node:os\"\n";
   for (const good of [imports + drop + '\nconst x = 1;\n', imports + '\n// why\n' + drop + ' // and why\nconst x = 1;\n', drop + '\nconst { y } = await import("./y.mjs");\n',
-    imports + drop + "\nconst GIT = find();\nimport later from './later.mjs';\n"])
+    imports + drop + "\nconst GIT = find();\nimport later from './later.mjs';\n",
+    // Windows line ends, and the import forms the suites use: a default with a namespace, comments between the names.
+    imports.replaceAll('\n', '\r\n') + drop + ' // and why\r\nconst x = 1;\r\n', "import d, * as ns from './x.mjs'\nimport { a as b, // why\n  c /* and */ } from \"./y.mjs\";\n" + drop + '\n'])
     assert.equal(isolated(good), true, good.slice(-60));
   for (const bad of [imports + 'const x = 1;\n' + drop + '\n', imports + 'const previous = process.env.X;\ntry { run(); } finally { ' + drop + ' }\n', imports + '  ' + drop + '\n', imports + '// ' + drop + '\nconst x = 1;\n',
     imports + "process.env.MOMM_EVIDENCE_HOME = '';\n", imports + 'const { y } = await import("./y.mjs");\n' + drop + '\n', imports, ''])
     assert.equal(isolated(bad), false, bad.slice(-60));
   assert.deepEqual(firstStatement(imports + 'const x = 1;\n'), { line: 11, text: 'const x = 1;' });
+  // Review rev_20261004215722 of this guard. Its first version read whole lines: code that shared a line with
+  // the end of a comment or of an import was never looked at, and anything could follow the statement. In
+  // each of these the caller's home is kept, or put back, and every one was accepted.
+  const kept = 'globalThis.kept = process.env.MOMM_EVIDENCE_HOME;';
+  for (const [layout, bad] of Object.entries({
+    'code after a comment, on its line': '/* note */ const kept = process.env.MOMM_EVIDENCE_HOME;\n' + drop + '\n',
+    'code after the end of a comment, on that line': imports + '/* a\n   b */ ' + kept + '\n' + drop + '\n',
+    'the variable set again on the line of the statement': drop + " process.env.MOMM_EVIDENCE_HOME = 'x';\n",
+    'code behind a comment on the line of the statement': drop + ' /* fine */ restore();\n',
+    'code after an import, on its line': "import a from './a.mjs'; " + kept + "\nimport b from './b.mjs';\n" + drop + '\n',
+    'a comment ended by a carriage return alone': '// note\r' + kept + '\n' + drop + '\n',
+    'a comment ended by a line separator': '// note' + String.fromCharCode(0x2028) + kept + '\n' + drop + '\n',
+    'the statement inside a second comment': '/* a */ /* b\n' + drop + '\n*/\nconst x = 1;\n',
+    'code between two comments, after an import of a quoted name': "import { /* a */ \"n\" as b } from './x.mjs'; " + kept + " /* b */ import c from './y.mjs';\n" + drop + '\n',
+  })) assert.equal(isolated(bad), false, layout);
+  // Anything that is not a comment or a plain static import is the first statement, so these are reported
+  // too: the statement has a line to itself, and nothing but imports and comments comes before it.
+  for (const [layout, bad] of Object.entries({
+    'the statement after a comment, on its line': '/* note */ ' + drop + '\n',
+    'another variable': 'delete process.env.MOMM_EVIDENCE_HOME_X;\n',
+    'a re-export': "export * from './x.mjs';\n" + drop + '\n', 'a re-export of names': "export { a } from './x.mjs';\n" + drop + '\n',
+    'the statement inside a template literal': 'const t = `\n' + drop + '\n`;\n',
+    'an import with attributes': "import data from './d.json' with { type: 'json' };\n" + drop + '\n',
+    'an import() call': "import('./x.mjs');\n" + drop + '\n',
+    'a comment that never ends': '/* open\n' + drop + '\n',
+  })) assert.equal(isolated(bad), false, layout);
+  assert.deepEqual(firstStatement(imports + '/* a\n   b */ run();\n' + drop + '\n'), { line: 12, text: '   b */ run();' }, 'the whole line the statement starts on');
 });
 check('every suite drops the caller\'s evidence home before anything else', () => {
   const listed = spawnSync(process.execPath, [path.join(root, 'scripts/run-ci-suites.mjs'), '--list'], { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 30_000 });

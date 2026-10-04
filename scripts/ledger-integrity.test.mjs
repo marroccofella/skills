@@ -73,7 +73,7 @@ try {
   const scenario = 'self-test-ignores-the-callers-evidence-home';
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-ledger-selftest-home-'));
   try {
-    // The two runs share nothing (each makes its own fixtures), so they run side by side.
+    // The runs share nothing (each makes its own fixtures), so they run side by side.
     const selfTest = (env) => new Promise((resolve) => {
       const child = spawn(process.execPath, [path.join(root, 'momm/scripts/ledger.mjs'), '--self-test'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 120000, windowsHide: true, env: { ...process.env, NO_UPDATE_CHECK: '1', ...env } });
       let stdout = ''; child.stdout.setEncoding('utf8').on('data', (text) => { stdout += text; });
@@ -83,9 +83,12 @@ try {
         resolve({ status, checks: report && Object.keys(report.tests).length, failing: report && Object.entries(report.tests).filter(([, ok]) => ok !== true).map(([name]) => name) });
       });
     });
-    const [control, homed] = await Promise.all([selfTest({}), selfTest({ MOMM_EVIDENCE_HOME: home })]);
+    // As for the Setup Center self-test: a usable home, and a setting the product refuses for a real project
+    // (a relative path), which stopped the fixtures' children another way.
+    const [control, homed, refused] = await Promise.all([selfTest({}), selfTest({ MOMM_EVIDENCE_HOME: home }), selfTest({ MOMM_EVIDENCE_HOME: 'relative-evidence-home' })]);
     assert(control.checks > 10, `the self-test printed no report (exit ${control.status})`);
     assert.deepEqual(homed, control, 'the self-test reports the same with the caller\'s evidence home set');
+    assert.deepEqual(refused, control, 'the self-test reports the same with a setting the product refuses');
     assert.deepEqual(fs.readdirSync(home), [], 'nothing was written into the caller\'s evidence home');
     tests.push({ scenario, passed: true });
   } catch (error) { tests.push({ scenario, passed: false, error: error.message }); }
