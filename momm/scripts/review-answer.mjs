@@ -47,10 +47,12 @@ export function strictAnswer(answer) {
 }
 
 // 1.17.1 S2: what a non-JSON answer looked like, for the private attempt record only: its length in
-// characters, whether it starts and ends with a fence (backticks or tildes, after trimming), the
-// parser's error position if it gave one, and the first 80 characters after the caller's redaction
-// (the dispatcher passes sanitizeText). Never the answer, and never the parser's message, which
-// quotes the answer.
+// code points, whether it starts and ends with a fence (backticks or tildes, after trimming), the
+// parser's error position if it gave one (the parser's own offset, in UTF-16 code units, into the text
+// it was given) and the first 80 code points after the caller's redaction (the dispatcher passes
+// sanitizeText). That prefix is the only answer text kept: an answer of 80 characters or fewer is
+// kept whole, and nothing past them of a longer one. The parser's message, which quotes the answer,
+// is not kept.
 export function answerShape(answer, { redact = (value) => value } = {}) {
   const text = typeof answer === "string" ? answer : "", trimmed = text.trim();
   return {
