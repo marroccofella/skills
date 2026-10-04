@@ -171,6 +171,34 @@ try {
     assert.equal(adapters.split('strictAnswer(').length - 1, 2, 'Copilot and Antigravity each read their answer through strictAnswer');
     assert.equal(adapters.split('JSON.parse(').length - 1, 3, 'only the event lines are parsed here; the answer is parsed by strictAnswer');
   });
+  // Closing review of 1.17.1 (mixed-fence-candidates). Only backtick lines were counted as fences, so a
+  // tilde-fenced block beside the one backtick block was passed over as narration, and so was the answer
+  // written bare beside it: two candidates, one chosen. Both are refused; nothing is chosen between them.
+  const SECOND_CANDIDATE = [
+    { name: 'a tilde-fenced block before the fenced answer', answer: `${fenced(earlier, 'json', TILDE)}\n${fenced(good)}` },
+    { name: 'a tilde-fenced block after the fenced answer', answer: `${fenced(good)}\n${fenced(earlier, 'json', TILDE)}` },
+    { name: 'narration with a tilde-fenced block of its own', answer: `An example:\n${fenced(earlier, '', TILDE)}\nThe review:\n${fenced(good)}` },
+    { name: 'an indented tilde fence line in the narration', answer: `Notes:\n  ${TILDE}\n${fenced(good)}` },
+    { name: 'the answer bare, then fenced', answer: `${earlier}\n${fenced(good)}` },
+    { name: 'the answer fenced, then bare', answer: `${fenced(good)}\n\n${earlier}\n` },
+    { name: 'the answer bare over several lines, then fenced', answer: `${JSON.stringify(JSON.parse(earlier), null, 2)}\n\n${fenced(good)}` },
+  ];
+  for (const row of SECOND_CANDIDATE) {
+    await check(`S1: a second candidate beside the one fenced block is refused, never passed over: ${row.name}`, async () => {
+      const result = reviewAnswer.strictAnswer(row.answer);
+      assert.equal(result.payload, null); assert.equal(result.problem, 'not_json');
+      for (const route of ['copilot', 'antigravity']) {
+        const refused = await run(route, ROUTES[route].stdout(row.answer));
+        assert.equal(refused.status, 'invalid_output', `${route}: ${refused.detail}`); assert(!refused.review, route);
+      }
+      // The extracting routes are unchanged: they take the last review object, as before.
+      for (const route of ['claude', 'gemini', 'codex', 'grok']) assert.equal((await run(route, ROUTES[route].stdout(row.answer))).status, 'success', route);
+    });
+  }
+  await check('S1: prose beside the one fenced block is still narration, whatever it mentions', () => {
+    for (const narration of ['The object {a} is below.', 'I checked JSON.parse("{}") and [1, 2] first.', 'Verdict: "ACCEPT" - see below.', 'Tildes ~~ in a sentence, and ~~~ not at the start of a line.'])
+      assert.deepEqual(reviewAnswer.strictAnswer(`${narration}\n${fenced(good)}\n${narration}`).payload, payload, narration);
+  });
 
   // ---- S2 ----
   await check('S2: answerShape describes an answer without keeping it', () => {
