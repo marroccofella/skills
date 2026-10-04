@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "d47b983189351a8905eac577d0857a6ef6879d6990dd1b02070fde8c22ca6f62"
+      "sha256": "a562d8a7d858c7fc31319769f8c5197fe88c7bcd24b7fe12cd8cbefde5a88995"
     },
     {
       "path": "COMPATIBILITY.md",
@@ -44,7 +44,7 @@
     },
     {
       "path": "scripts/install.js",
-      "sha256": "9f112c4f7a530c73692613bacde7b0a87dc3b77acb5c0f9af9e5bee3ce2c4335"
+      "sha256": "8508fef0bcb8c435497a8016e530c59264c603e06de8408a5fc4d636035d7941"
     },
     {
       "path": "scripts/lock.js",
@@ -128,7 +128,7 @@
     },
     {
       "path": "tests/install-check.cjs",
-      "sha256": "c6092bc32a702a739d3e0bd009fe32cc00b5c6aec652ab592e1751ee3ac3d706"
+      "sha256": "6576c35b88dfb9b0eb0c3da41f02415470ea79612b9163e439f560bdd25b4ea2"
     },
     {
       "path": "tests/native-boundary.cjs",

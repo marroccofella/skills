@@ -45,12 +45,11 @@ watcher, support bundle and recovery command behave the same way.
 | Every call runs the permission helper | Fail | Pass |
 | Native: real ACL change, recheck in the same process (Windows CI) | Not reached: the offline suite failed first | See PR results |
 
-The installer now creates its stage inside the already-checked backups folder, so each
-install action makes one Windows permission check (the backups folder) instead of two.
-This reduces PowerShell launches in the hosted install check, where one Node 18 job
-timed out at 60 s on #43's head. The installed folder inherits the backups folder's
-protected entries (same principals: the user, SYSTEM, Administrators) instead of
-carrying its own explicit protected ACL.
+An installer optimization (stage inside the checked backups folder, eecca32) was reverted
+after an independent native Windows reproduction: a private backups folder whose ACL
+entries are not inheritable passes its check, but a stage created inside it, and the
+installed destination, are not private. The stage again gets its own explicit permission
+check; the native test that reproduces the failure now passes.
 
 Assertion counts are now reported per platform: on Linux, 9,706 run on every platform
 plus 6 POSIX-only; on Windows, the same 9,706 with those 6 skipped.
