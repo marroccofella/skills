@@ -234,9 +234,10 @@ try {
     const app = fs.readFileSync(new URL('../assets/setup-ui/app.js', import.meta.url), 'utf8');
     const state = vm.runInNewContext(between(app, 'function routeState(', 'function stateLabel(') + ';routeState', { liveResults: new Map() });
     const route = { agent: 'codex', installed: true, ready: false, auth: 'ok', version: '0.157.1', note: 'reason', compatibility: { cli_version: '0.157.1' } };
-    assert.notEqual(state(route), 'login');
+    assert.equal(state(route), 'update', 'its own state: never Sign in, and not an inconclusive check');
     const copy = vm.runInNewContext(between(app, 'function routeCopy(', 'function providerMaintenance(') + ';routeCopy', { liveResults: new Map() });
-    assert.equal(copy(route, state(route)), 'reason', 'the card shows the reason and the update command');
+    assert.match(copy(route, state(route)), /The installed CLI \(0\.157\.1\) needs an update to work with its configured model\./, 'the card says what to do; setup-maintenance.test.mjs covers the command and the action');
+    assert.doesNotMatch(copy(route, state(route)), /sign[\s-]?in/i);
     assert.equal(state({ agent: 'codex', installed: true, ready: false, auth: 'absent' }), 'login', 'a signed-out route still reads Sign in');
     const setup = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8');
     const models = between(setup, 'async function modelStatus(', '\n}\n');

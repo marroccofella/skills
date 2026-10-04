@@ -1241,7 +1241,8 @@ await test('a failed matrix refresh clears the pipelines sentence along with the
 // The server is long-running: an update replaces the files under it and the process keeps the code
 // and the version it started with. The watch below is the production one, sliced from setup-ui.mjs
 // and bound to a fixture dispatcher whose declared version the test changes under it.
-const STALE_SENTENCE=/Setup Center is running 1\.17\.1; 1\.17\.2 is now installed\. Close this window and start the Setup Center again\./;
+// Closing the browser window does not stop the server, so the sentence names the control that does.
+const STALE_SENTENCE=/Setup Center is running 1\.17\.1; 1\.17\.2 is now installed\. Choose Close Setup Center, then start it again\./;
 await test('a server started on one version reports the version now installed, prints one console line, and never runs the dispatcher',()=>{
   const marker=path.join(staleRoot,'executed.txt'),file=staleDispatcher('detect','1.17.1',`import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(marker)}, "x");\n`);
   const w=versionWatch(file);
@@ -1320,6 +1321,50 @@ await test('the page shows the restart notice from a status or maintenance answe
   await c.core.loadMaintenance(true);await flush();
   assert.match(html,STALE_SENTENCE);assert.doesNotMatch(html,/<(?!\/?p\b)/,'the notice is text in a paragraph: no control, no link, no script');
 });
+// A refresh that fails after the installed scripts changed is when the notice matters most: the error
+// answers of the two refresh routes carry the version check, and the page shows the banner from them.
+await test('a failed status or maintenance refresh still carries the version check; other errors and other routes do not',async()=>{
+  const file=staleDispatcher('errors','1.17.1'),w=versionWatch(file);staleDispatcher('errors','1.17.2');
+  const broken=async()=>{throw new Error('Readiness check failed');};
+  const extra={setupCenterVersion:w.check,readiness:broken,maintenanceReport:broken,saveGuidance:()=>{throw new Error('guidance failed');}};
+  const expected={running_version:'1.17.1',installed_version:'1.17.2',stale:true};
+  const status=await handler({},true,extra).serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});
+  assert.equal(status.status,500);assert.equal(status.value.error,'Readiness check failed');same(status.value.setup_center,expected);
+  const maintained=await handler({governor:'codex'},true,extra).serve({method:'POST',url:'/api/maintenance',socket:{}},{});
+  assert.equal(maintained.status,500);assert.equal(maintained.value.error,'Readiness check failed');same(maintained.value.setup_center,expected);
+  assert.equal(w.lines.length,1,'the console line is still printed once');
+  const guidance=await handler({},true,extra).serve({method:'POST',url:'/api/guidance',socket:{}},{});
+  assert.equal(guidance.status,500);assert.equal('setup_center' in guidance.value,false,'only the two refresh routes carry the check');
+  const refused=await handler({},true,extra).serve({method:'GET',url:'/api/status?governor=nobody',socket:{}},{});
+  assert.equal(refused.status,400);assert.equal('setup_center' in refused.value,false,'a refused request is not a failed refresh');
+  for(const [method,url] of [['GET','/api/status?governor=codex'],['POST','/api/maintenance']]){
+    const denied=await handler({governor:'codex'},false,extra).serve({method,url,socket:{}},{});
+    assert.equal(denied.status,403);assert.doesNotMatch(JSON.stringify(denied),/setup_center|1\.17\./,'no version is disclosed without the session token');
+  }
+});
+await test('the page shows the banner from a failed refresh when the server says it is stale, and still reports the failure',async()=>{
+  const check={running_version:'1.17.1',installed_version:'1.17.2',stale:true};let body={error:'Readiness check failed',setup_center:check};
+  const c=ui({fetch:async()=>({ok:false,status:500,json:async()=>body})});
+  c.init({token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);
+  const region=c.node('#stale-notice');
+  await c.core.refresh();
+  assert.match(region.innerHTML,STALE_SENTENCE,'a failed status refresh shows the banner');
+  assert.match(c.node('#summary').textContent,/could not check/);assert(c.toasts.some(t=>/Readiness check failed/.test(t)),'the failure itself is still shown');
+  body={error:'Readiness check failed',setup_center:{...check,installed_version:'1.17.1',stale:false}};
+  await c.core.refresh();assert.equal(region.innerHTML,'','an error answer that says the versions agree shows no banner');
+  body={error:'Readiness check failed'};await c.core.refresh();assert.equal(region.innerHTML,'','an error without the field changes nothing');
+  body={error:'Readiness check failed',setup_center:check};
+  await c.core.loadMaintenance(true);await flush();
+  assert.match(region.innerHTML,STALE_SENTENCE,'a failed maintenance refresh shows the banner');
+  assert.match(c.node('#maintenance-summary').textContent,/could not finish/);
+});
+await test('the banner names the control that stops the server, by its label on the page',()=>{
+  const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
+  const label=/<button id="close-server"[^>]*>([^<]+)<\/button>/.exec(page)?.[1];
+  assert.equal(label,'Close Setup Center');
+  assert(client.includes(`is now installed. Choose ${label}, then start it again.`),'the sentence uses the button label exactly');
+  assert.doesNotMatch(client,/Close this window/,'closing the browser window does not stop the server');
+});
 await test('the notice region is a polite live region that is always in the page, above the content',()=>{
   const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
   const region=/<div id="stale-notice"([^>]*)><\/div>/.exec(page);
@@ -1335,6 +1380,72 @@ await test('the notice is readable text on its surface in every palette, and is 
   const size=/font-size:\s*(\d+)px/.exec(notice);assert(size&&Number(size[1])>=14,'body-size text, not a footnote');
   assert.doesNotMatch(block('.stale-notice-region {'),/display:\s*none|visibility|opacity/,'the live region itself stays rendered while empty');
   assert(!/--[\w-]+\s*:/.test(notice),'the notice declares no colour of its own: tokens only');
+});
+// --- 1.17.1 R1 in the Setup Center: a remembered CLI/model mismatch has its own card state -----
+// Preflight reports such a route as not ready, with `compatibility` and `update_hint`. The card says
+// the CLI needs updating for the configured model, offers the existing update action when this
+// installation has an allowlisted command (else shows the hint as text), and never says "sign in".
+const compatRoute=(extra={})=>({agent:'codex',role:'reviewer',installed:true,ready:false,auth:'ok',version:'0.157.1',note:'codex: CLI 0.157.1 and the configured model gpt-test-9 did not work together on this machine.',
+  update_hint:'npm install -g @openai/codex@latest',compatibility:{cli_version:'0.157.1',model:'gpt-test-9',at:'2026-10-03T14:02:11.000Z',notice:'n'},...extra});
+const compatSession={token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'https://example.invalid'}}};
+const allowlisted="npm install -g --prefix 'p' @openai/codex@latest";
+const compatMaintenance=(cli={},models='update_required')=>({cli_updates:[{agent:'codex',current:'0.157.1',latest:'0.158.0',source:'npm registry',status:'update_available',installed:true,update_command:allowlisted,installation:{kind:'npm'},...cli}],models:[{agent:'codex',status:models,models:[]}],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:new Date().toISOString()});
+const SIGN_IN=/sign[\s-]?in/i;
+await test('a route with a compatibility record says the CLI needs updating for the configured model and shows the update command',()=>{
+  const c=ui();c.init(compatSession,null);const route=compatRoute();
+  assert.equal(c.core.routeState(route),'update','its own state, not the inconclusive-check stopgap');
+  const card=c.core.providerCard(route);
+  assert.match(card,/class="chip status chip-warn">CLI update needed</);
+  assert.match(card,/The installed CLI \(0\.157\.1\) needs an update to work with the configured model gpt-test-9\./);
+  assert.match(card,/<code>npm install -g @openai\/codex@latest<\/code>/,'without an allowlisted action the update_hint is shown as text');
+  assert.match(card,/then choose Check again/);
+  assert.doesNotMatch(card,/data-action=/,'the hint is text: no action is offered that the server did not allowlist');
+  assert.doesNotMatch(card,/Check inconclusive|Verify connection|data-test=/,'a verification would spend allowance on a route known not to work');
+  assert.doesNotMatch(card,SIGN_IN);
+  const bare=c.core.providerCard(compatRoute({compatibility:{cli_version:'0.157.1',model:null,at:'2026-10-03T14:02:11.000Z',notice:'n'},update_hint:null}));
+  assert.match(bare,/The installed CLI \(0\.157\.1\) needs an update to work with its configured model\./);
+  assert.match(bare,/official update command/);assert.doesNotMatch(bare,/<code>|data-action=/);assert.doesNotMatch(bare,SIGN_IN);
+});
+await test('with an allowlisted update command the card offers the existing update action, and only that',async()=>{
+  const c=ui({window:{confirm:()=>true}});c.init(compatSession,compatMaintenance());const route=compatRoute();
+  const card=c.core.providerCard(route);
+  assert.match(card,/<button class="button primary" data-action="update" data-provider="codex">Update CLI…<\/button>/);
+  assert.equal((card.match(/data-action="update"/g)||[]).length,1,'one update control, not two');
+  assert.deepEqual([...card.matchAll(/data-action="([^"]+)"/g)].map(m=>m[1]),['update'],'no new action type');
+  assert.doesNotMatch(card,/<code>/,'the confirmation shows the exact allowlisted command; the hint is not a second command');
+  assert.match(card,/<strong>Needs CLI update<\/strong>/);assert.doesNotMatch(card,SIGN_IN);
+  // The button is the existing action: the page echoes the Setup Center's own command, never the hint.
+  const d=deferredApi();c.setApi(d.stub);c.core.launchAction('codex','update');await flush();
+  same(d.find('/api/action','POST').map(call=>call.body),[{provider:'codex',action:'update',expected_command:allowlisted}]);
+  // A package-manager-owned installation has no allowlisted command: text only, and nothing is posted.
+  const owned=ui({window:{confirm:()=>true}});owned.init(compatSession,compatMaintenance({update_command:null,installation:{kind:'homebrew'}}));
+  const text=owned.core.providerCard(route);assert.doesNotMatch(text,/data-action=/);assert.match(text,/<code>npm install -g @openai\/codex@latest<\/code>/);
+  const none=deferredApi();owned.setApi(none.stub);await owned.core.launchAction('codex','update');assert.equal(none.calls.length,0,'the hint can never be launched from the page');
+});
+await test('a card with a compatibility record never says sign in, whatever else is cached about the route',()=>{
+  const c=ui();c.init(compatSession,compatMaintenance({},'login_required'));
+  const variants=[compatRoute(),compatRoute({auth:'absent',login_hint:'codex login'}),compatRoute({note:null})];
+  for(const route of variants){const card=c.core.providerCard(route);assert.equal(c.core.routeState(route),'update');assert.doesNotMatch(card,SIGN_IN,JSON.stringify(route));assert.doesNotMatch(card,/data-action="login"/);}
+  c.fail('codex',{route_status:'authentication_required',detail:'Sign in using this provider’s browser login, then verify again.'});
+  const failed=c.core.providerCard(compatRoute());
+  assert.equal(c.core.routeState(compatRoute()),'update','a remembered mismatch explains the failed check');assert.doesNotMatch(failed,SIGN_IN);assert.doesNotMatch(failed,/data-action="login"/);
+  // Values from the record are text.
+  const hostile='"><img src=x onerror=alert(1)>';
+  const escaped=ui();escaped.init(compatSession,null);
+  for(const route of [compatRoute({update_hint:hostile}),compatRoute({compatibility:{cli_version:hostile,model:hostile,at:'x',notice:'n'}})]){const card=escaped.core.providerCard(route);assert.doesNotMatch(card,/<img/);assert.match(card,/&lt;img/);}
+  for(const hint of ['line one\nline two',{command:'x'},'x'.repeat(400)])assert.doesNotMatch(escaped.core.providerCard(compatRoute({update_hint:hint})),/<code>/,'only a short single-line string is shown as a command');
+  // Control: a signed-out route without a record still reads Sign in.
+  const signedOut={agent:'codex',role:'reviewer',installed:true,ready:false,auth:'absent',version:'0.157.1'};
+  assert.equal(escaped.core.routeState(signedOut),'login');assert.match(escaped.core.providerCard(signedOut),/data-action="login"[^>]*>Sign in</);
+});
+await test('the status summary and Quick Setup count an outdated CLI as an update, not an account to connect',async()=>{
+  const c=ui();c.init(compatSession,null);c.setReport({routes:[compatRoute()]});c.core.render();
+  assert.match(c.node('#summary').textContent,/1 CLI to update for its configured model/);
+  assert.doesNotMatch(c.node('#summary').textContent,/account|inconclusive/);assert.doesNotMatch(c.node('#quick-setup-note').textContent,SIGN_IN);
+  c.setApi(async url=>url.startsWith('/api/status')?{routes:[compatRoute()]}:compatMaintenance());
+  await c.core.runQuickSetup();await flush();
+  assert(c.toasts.length>0,'Quick Setup says what is left');for(const toast of c.toasts)assert.doesNotMatch(toast,SIGN_IN,toast);
+  assert(c.toasts.some(toast=>/provider cards/.test(toast)));
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

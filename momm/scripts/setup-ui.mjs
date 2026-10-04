@@ -1750,7 +1750,10 @@ function createServer() {
       }
       return sendJson(response, 404, { error: "Not found" });
     } catch (error) {
-      return sendJson(response, 500, { error: safeDetail(error.message) || "Unexpected local error" });
+      // A status or maintenance refresh that fails after the installed scripts changed is when the notice
+      // matters most. Only those two routes, and only for a request that carries the session token.
+      const refresh = (requestUrl.pathname === "/api/status" || requestUrl.pathname === "/api/maintenance") && authorized(request);
+      return sendJson(response, 500, { error: safeDetail(error.message) || "Unexpected local error", ...(refresh ? { setup_center: setupCenterVersion() } : {}) });
     }
   });
 }
@@ -2441,7 +2444,8 @@ function staleNoticeRegression() {
     checks.stale_notice_pattern_matches_inventory = ["SEMVER", "VERSION_LINE"].every((name) => Boolean(declared(inventory, name)) && declared(own, name) === declared(inventory, name));
     const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
     checks.stale_notice_present_in_ui = /<div id="stale-notice"[^>]*\brole="status"[^>]*\baria-live="polite"[^>]*><\/div>/.test(html) && !/<div id="stale-notice"[^>]*\bhidden\b/.test(html)
-      && js.includes("renderStaleNotice") && js.includes("is now installed. Close this window and start the Setup Center again.")
+      && js.includes("renderStaleNotice") && js.includes("is now installed. Choose Close Setup Center, then start it again.") && html.includes(">Close Setup Center</button>")
+      && js.includes("renderStaleNotice(error.setup_center)") // a failed refresh shows it too
       && css.includes(".stale-notice {") && css.includes(".stale-notice-region {");
   } catch (error) {
     checks.stale_notice_regression_threw = true;
