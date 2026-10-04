@@ -70,7 +70,8 @@ shape is otherwise unknown and it is still refused.
 Since 1.17.1, on Copilot and Antigravity alike (one rule, `scripts/review-answer.mjs`), an answer that
 holds exactly one fenced block (three backticks at the start of a line, optionally the tag `json` in any
 case, closed by three backticks alone on a line) is unwrapped and its inside parsed as strictly as
-before. Text before or after that one block is ignored. Nothing is repaired and nothing is searched
+before. Narration before or after that one block is ignored; text there that is itself JSON is a second answer
+and is refused. Nothing is repaired and nothing is searched
 for: a second fenced block, any other line that starts with a fence, an unclosed fence, a tilde fence,
 another language tag, narration around a bare answer or broken JSON inside is still refused.
 

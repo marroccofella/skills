@@ -50,7 +50,8 @@ released as 1.17.1 and that twenty reliability improvements go into the same ver
   statuses of the Copilot route, separately from that quorum. The private shape record (item S2) showed
   why without keeping the answers: two of the three began with a sentence of narration ("Good, I have
   everything needed to complete the review.") and ended with the fence. The rule now reads an answer
-  that holds exactly one fenced block and ignores text before or after it; the inside is parsed as
+  that holds exactly one fenced block and ignores narration before or after it (text there that is
+  itself JSON is a second answer and is refused); the inside is parsed as
   strictly as before. Still refused: a second fenced block, any other line that starts with a fence, an
   unclosed fence, a tilde fence, another language tag, narration around a bare answer or broken JSON
   inside. The third refused answer neither began nor ended with a fence; its shape is otherwise unknown

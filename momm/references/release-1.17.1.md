@@ -18,10 +18,10 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
 - **A fenced answer is unwrapped, not refused.** Copilot sometimes returns its answer inside one
   Markdown code fence, and sometimes writes a sentence before it. An answer that holds exactly one
   fenced block is now unwrapped and checked as strictly as before, on Copilot and Antigravity alike, by
-  one shared rule; text before or after that one block is ignored. Still refused: a second fenced
+  one shared rule; narration before or after that one block is ignored. Still refused: a second fenced
   block, any other line that starts with a fence, an unclosed fence, a tilde fence, another language
-  tag, narration around a bare answer or broken JSON inside. Claude, Codex, Gemini and Grok already
-  read such answers and are unchanged.
+  tag, narration around a bare answer or broken JSON inside. Text beside the block that is itself JSON
+  is refused too. Claude, Codex, Gemini and Grok already read such answers and are unchanged.
 - **A CLI that is too old for its configured model is flagged before you spend allowance.** When a
   review ends with a CLI/model compatibility error, MOMM remembers it on this machine and the next
   `--preflight` and the next review say so, with the official update command. It makes no model call to
