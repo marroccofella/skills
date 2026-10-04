@@ -14,6 +14,9 @@ timing probe now runs only after Windows CI failure; it does not alter permissio
 disable checks, retry installation or turn the failed step green. Local Windows
 x64/Node22.16.0 probe passed: fresh private child1480ms, existing child1364ms.
 Local success does not resolve that hosted failure. Keep actual EPERM distinct.
+Same exact head's other run37183106417 passes17/17, including Windows Node18;
+the failed run is16/17. This establishes inconsistent duplicate-run outcomes, not
+a diagnosed OS/Node/runtime cause. Neither receipt is transferred to successor bytes.
 
 Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
 stable-segment kernel with an injected player, not a production watcher/engine path.

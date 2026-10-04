@@ -73,6 +73,8 @@ in a separately reviewed active companion before transplanting desktop controls.
 1. Diagnose exact8491472 Windows Node18 installation timeout: helper exceeded60s
    after offline9903 assertions and manifest verification passed. Preserve run37183108521,
    job111379459703; no claim of an ACL refusal or confirmed Node18-specific cause.
+   Same exact head's other run37183106417 passes17/17, including Windows Node18.
+   Both receipts remain valid; one green duplicate does not erase the timed-out run.
 2. Close installation EPERM and policy compatibility with the affected/clean hosts.
 3. Connect consent registry, event/delta reconciliation, queue and contained player;
    then build verified legacy control migration against the same core.
