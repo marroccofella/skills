@@ -476,15 +476,17 @@ export function refuseGitLocks(root, retry, options) {
   const locks = gitLocks(root, options);
   if (!locks.length) return;
   const since = ms => { const s = Math.max(0, Math.floor(ms / 1000)), [unit, size] = [["day", 86400], ["hour", 3600], ["minute", 60], ["second", 1]].find(([, n]) => s >= n) ?? ["second", 1], n = Math.floor(s / size); return `${n} ${unit}${n === 1 ? "" : "s"}`; };
-  const now = Date.now(), one = locks.length === 1;
+  // At most eight are named, to keep the message short. The rest are counted, and step 2 says that repeating
+  // the command names them (gate review of 1.17.1): "the files named above" alone left them unmentioned.
+  const now = Date.now(), one = locks.length === 1, hidden = Math.max(0, locks.length - 8);
   const shown = locks.slice(0, 8).map(l => `  ${safeText(l.file)}   last written ${since(now - l.modified)} ago (${new Date(l.modified).toISOString()})`);
   const lines = [
     "Git lock found in the skills clone, so nothing was changed. MOMM never removes a Git lock.",
-    ...shown, ...(locks.length > 8 ? [`  ... and ${locks.length - 8} more`] : []),
+    ...shown, ...(hidden ? [`  ... and ${hidden} more, not shown here`] : []),
     "Git keeps a lock while one of its commands works in this clone, and a command that crashed leaves its lock behind. The age does not prove a lock is stale.",
     "1. Close editors and Git tools that have this clone open, then list the Git processes that are running:",
     process.platform === "win32" ? '     tasklist /FI "IMAGENAME eq git.exe"' : "     pgrep -lx git",
-    `2. Only if it lists none, ${one ? "remove that one file yourself" : "remove only the files named above yourself"}.`,
+    `2. Only if it lists none, ${one ? "remove that one file yourself" : "remove only the files named above yourself"}.${hidden ? ` Locks not shown here (${hidden}) are named when you repeat the command.` : ""}`,
     `3. ${retry}`,
   ];
   throw Object.assign(new Error(lines.join("\n")), { code: "git_lock_present", locks });
@@ -501,35 +503,51 @@ function policyDiff(root, from, to) {
 // A heading is "changed" when the text under it (up to the next heading) differs; a renamed heading
 // shows as one removed and one added. ATX headings (# to ######) outside fenced code only. This is a
 // reading aid: it decides nothing, the full diff still follows and the gate is unchanged.
+// Gate review of 1.17.1. Fences follow Markdown's rule: an open fence is closed only by the same mark, at
+// least as long, with nothing but spaces or tabs after it (```js inside a block does not close it), and a
+// backtick line with a backtick after the mark opens nothing. The texts under a repeated heading are kept
+// apart, in order, and compared one by one: joined into one string they could compare equal by accident.
+// Sections that only changed places compared equal one by one, so the list could read as "nothing changed":
+// they are now listed as "(order of sections)" under changed.
 export function headingChanges(before, after) {
   const sections = text => {
-    const found = new Map();
+    const found = new Map(), order = [];
     let heading = "(text before the first heading)", body = [], fence = null;
-    const close = () => found.set(heading, (found.has(heading) ? `${found.get(heading)}\0` : "") + body.join("\n"));
+    const close = () => { order.push(heading); found.set(heading, [...(found.get(heading) ?? []), body.join("\n")]); };
     for (const line of String(text ?? "").split(/\r?\n/)) {
-      const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-      if (mark && (!fence || (mark[0] === fence[0] && mark.length >= fence.length))) fence = fence ? null : mark;
-      else if (!fence && /^ {0,3}#{1,6}(?:[ \t]|$)/.test(line)) { close(); heading = line.trim(); body = []; continue; }
+      const mark = /^ {0,3}(`{3,}|~{3,})([^]*)$/.exec(line);
+      if (fence) { if (mark && mark[1][0] === fence[0] && mark[1].length >= fence.length && !/[^ \t]/.test(mark[2])) fence = null; }
+      else if (mark && !(mark[1][0] === "`" && mark[2].includes("`"))) fence = mark[1];
+      else if (/^ {0,3}#{1,6}(?:[ \t]|$)/.test(line)) { close(); heading = line.trim(); body = []; continue; }
       body.push(line);
     }
     close();
-    return found;
+    return { found, order };
   };
-  const old = sections(before), now = sections(after);
-  return { added: [...now.keys()].filter(h => !old.has(h)), removed: [...old.keys()].filter(h => !now.has(h)),
-    changed: [...now.keys()].filter(h => old.has(h) && old.get(h) !== now.get(h)) };
+  const old = sections(before), now = sections(after), text = JSON.stringify;
+  // Order is compared over the headings both sides have the same number of times: one added, removed or
+  // repeated a different number of times is listed by name already.
+  const kept = h => old.found.has(h) && now.found.has(h) && old.found.get(h).length === now.found.get(h).length;
+  const moved = text(old.order.filter(kept)) !== text(now.order.filter(kept));
+  return { added: [...now.found.keys()].filter(h => !old.found.has(h)), removed: [...old.found.keys()].filter(h => !now.found.has(h)),
+    changed: [...[...now.found.keys()].filter(h => old.found.has(h) && text(old.found.get(h)) !== text(now.found.get(h))), ...(moved ? ["(order of sections)"] : [])] };
 }
 export function policySummary(root, from, to) {
-  const label = text => safeText(text).replace(/\s+/g, " ").slice(0, 120), words = { A: "added", D: "removed" };
+  // A label cut to fit ends with three dots, so a shortened path or heading is never taken for the whole of it.
+  const label = text => { const plain = safeText(text).replace(/\s+/g, " "); return plain.length > 120 ? `${plain.slice(0, 117)}...` : plain; }, words = { A: "added", D: "removed" };
   const fields = run("git", ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z", from, to, "--", ...POLICY_PATHS], root).split("\0").filter(Boolean);
   const files = [];
   for (let i = 0; i + 1 < fields.length; i += 2) files.push({ state: words[fields[i][0]] || "changed", path: fields[i + 1] });
   const capped = (rows, limit) => [...rows.slice(0, limit), ...(rows.length > limit ? [`    ... and ${rows.length - limit} more (see the full diff)`] : [])];
   const lines = ["Protocol change summary (a reading aid; the full diff follows):", `  Protocol files changed: ${files.length}`,
     ...capped(files.map(f => `    ${f.state.padEnd(8)} ${label(f.path)}`), 30)];
-  if (files.some(f => f.path === "momm/SKILL.md")) {
-    const blob = ref => { try { return run("git", ["show", `${ref}:momm/SKILL.md`], root); } catch { return ""; } }; // absent on one side: all added or all removed
-    const h = headingChanges(blob(from), blob(to));
+  const skill = files.find(f => f.path === "momm/SKILL.md");
+  if (skill) {
+    // Read only where the diff says the file exists (gate review of 1.17.1). The side it is absent from is
+    // empty: all added, or all removed. A side that exists and cannot be read stops the command; a failed
+    // read used to count as an empty file, and two of them as "none added, removed or changed".
+    const blob = (ref, absent) => absent ? "" : run("git", ["show", `${ref}:momm/SKILL.md`], root);
+    const h = headingChanges(blob(from, skill.state === "added"), blob(to, skill.state === "removed"));
     const rows = ["added", "removed", "changed"].flatMap(kind => h[kind].map(text => `    ${kind.padEnd(8)} ${label(text)}`));
     lines.push("  momm/SKILL.md headings (changed: the text under the heading differs):", ...(rows.length ? capped(rows, 40) : ["    none added, removed or changed"]));
   } else lines.push("  momm/SKILL.md: not changed.");
