@@ -35,6 +35,7 @@ class NarrationQueue {
     return { generation, group, job: key([group, e.segmentId]) };
   }
   accept(input) {
+    if (this.externallyStopped) throw new Error('queue stopped; explicit new queue required');
     const event = this.validate(input), ids = this.identities(event), hash = fingerprint(event);
     if (this.cancelled.has(ids.generation)) throw new Error('generation cancelled');
     const old = this.jobs.get(ids.job);
@@ -55,6 +56,7 @@ class NarrationQueue {
     this.schedule(); return { state: 'queued' };
   }
   retry(input) {
+    if (this.externallyStopped) throw new Error('queue stopped; explicit new queue required');
     const event = this.validate(input), ids = this.identities(event), job = this.jobs.get(ids.job);
     if (this.cancelled.has(ids.generation)) throw new Error('generation cancelled');
     if (!job || job.hash !== fingerprint(event)) throw new Error('retry must match retained segment');
@@ -115,9 +117,20 @@ class NarrationQueue {
     if (!job) { for (const resolve of this.waiters.splice(0)) resolve(); return; }
     this.active = job; this.lastGroup = job.event.sessionId; job.state = 'playing'; job.controller = new AbortController();
     try {
-      await this.play(job.event.text, { signal: job.controller.signal,
+      const outcome = await this.play(job.event.text, { signal: job.controller.signal,
         sessionId: job.event.sessionId, turnId: job.event.turnId, generationId: job.event.generationId,
         messageId: job.event.messageId, segmentId: job.event.segmentId });
+      // An authenticated global playback stop closes this queue, including other
+      // selected sessions. Restart requires explicit construction, never retry.
+      if (outcome?.state === 'stopped' && !job.controller.signal.aborted) {
+        this.externallyStopped = true;
+        for (const pending of this.jobs.values()) {
+          if (['queued','failed','playing','cancelling'].includes(pending.state)) {
+            pending.state = 'cancelled'; this.forgetText(pending);
+          }
+        }
+        job.controller.abort();
+      }
       job.state = job.controller.signal.aborted ? 'cancelled' : 'completed';
     } catch { job.state = job.controller.signal.aborted ? 'cancelled' : 'failed'; }
     finally {

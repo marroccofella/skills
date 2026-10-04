@@ -48,11 +48,11 @@
     },
     {
       "path": "scripts/experimental/narration-queue.js",
-      "sha256": "a0d8e54d856c20ed648a9c0587cdb09675e6c6c167c26770e5c1a0073a8515d9"
+      "sha256": "6642be7d2f97093cbee46f1ad3bb994e23a529beb2468b8267017f66768bb519"
     },
     {
       "path": "scripts/experimental/native-player.js",
-      "sha256": "4a30fe4511df0e0d9553221062f2ceb95df5c93c918fcbdbf16864aaf0ebbb59"
+      "sha256": "9033a802a423e03de7cbb8fab3423e4b66615c6940212ec1c69815ad87ae655b"
     },
     {
       "path": "scripts/experimental/segment-stream.js",
@@ -100,7 +100,7 @@
     },
     {
       "path": "scripts/speak.js",
-      "sha256": "f879d800438cfb0dc16ff617d33de96908ac295d0389f9fec6b798a07fbbe057"
+      "sha256": "90c2ee039da89cf17af0b780f11fc58404719e95a014c52ba92ef556bd597981"
     },
     {
       "path": "scripts/status.js",
@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/native-player-check.cjs",
-      "sha256": "b1e058f7c00855d7c821c5ed6823c6c91c79c2787e6fb80fbaff78933357da27"
+      "sha256": "ee242610d60adb97cf83b299c344e9b7f8a18c3234e3f81c82870646b1520961"
     },
     {
       "path": "tests/native-timeout-check.cjs",

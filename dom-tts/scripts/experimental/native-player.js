@@ -11,7 +11,7 @@ function createNativePlayer({ options = {}, dir = stateDir, playbackImpl = playb
     if (typeof text !== 'string') throw new Error('segment text required');
     // Text stays in the existing bounded in-process input path, never shell interpolation.
     const prepared = prepare({ ...settings, text }, { settings: {} });
-    await playbackImpl(prepared, { dir, abortSignal: signal });
+    return await playbackImpl(prepared, { dir, abortSignal: signal });
   };
 }
 module.exports = { createNativePlayer };

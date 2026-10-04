@@ -55,6 +55,7 @@ async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePri
   process.off('SIGINT',signal);process.off('SIGTERM',signal);abortSignal?.removeEventListener('abort',requestStop);
   if(readObject(lock).token===token){try{fs.unlinkSync(lock);}catch{}}
  }
+ return {state:stopped?'stopped':'completed'};
 }
 async function main(){const args=parseArgs(process.argv.slice(2)),options=prepare(args);if(args.dryRun){process.stdout.write(options.chunks.join('\n---\n'));return;}options.provider=native.selectProvider(options.provider);await playback(options);}
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});

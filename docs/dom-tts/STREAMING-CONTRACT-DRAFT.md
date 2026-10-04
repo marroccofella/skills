@@ -209,3 +209,19 @@ text interpolation or new command option. Saved settings are not read implicitly
 Its composed regression exercises the actual playback lock/status/cancellation
 path with an injected engine. Actual native queue-stream execution, human listening,
 device timing and all real harness/source adapters remain unverified.
+# Authenticated global stop outcome
+
+Playback now returns an explicit completed or stopped outcome after owned cleanup.
+The native queue adapter propagates that outcome. An external authenticated stop
+closes the entire queue, cancels pending work across its selected sessions, clears
+retained text and refuses admission/retry until an explicitly constructed new queue.
+Queue-initiated session revocation still affects only that selected session.
+The regression uses the real lock and authenticated stop IPC with an injected
+engine: before the fix the stopped segment incorrectly reported completed; after
+the fix active and pending segments report cancelled and no pending player starts.
+
+Host responsiveness is still open. On Windows x64 Node 22.16, an actual permission
+check with an injected engine delayed a 20 ms event-loop timer from 22 ms to 1138 ms
+(1116 ms added delay). This is a host timer measurement, not visible GUI latency or
+an acoustic timing. The in-process native adapter is experimental and needs worker
+isolation before an immediate-display claim is supported.
