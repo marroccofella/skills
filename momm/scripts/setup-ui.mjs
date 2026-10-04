@@ -1614,7 +1614,8 @@ function createVersionWatch({ read = installedDispatcherVersion, log = (line) =>
     const stale = running !== null && installed !== null && installed !== running;
     if (stale && announced !== installed) {
       announced = installed;
-      log(`MOMM Setup Center is running ${running}; ${installed} is now installed. Close this Setup Center and start it again.\n`);
+      // The console line is a courtesy: a console that cannot be written to must not fail the answer that carries the notice.
+      try { log(`MOMM Setup Center is running ${running}; ${installed} is now installed. Close this Setup Center and start it again.\n`); } catch { /* the page still says it */ }
     }
     return { running_version: running, installed_version: installed, stale };
   };

@@ -111,9 +111,9 @@ function staleSlice(){
   assert(a>=0&&b>a,'the stale-notice section must sit directly before createServer in setup-ui.mjs');
   return source.slice(a,b);
 }
-function versionWatch(file){
+function versionWatch(file,closedConsole=null){
   const lines=[];
-  const c=vm.createContext({fs,Buffer,Math,String,dispatcherScript:file,process:{stderr:{write:text=>{lines.push(String(text));}}}});
+  const c=vm.createContext({fs,Buffer,Math,String,dispatcherScript:file,process:{stderr:{write:text=>{lines.push(String(text));if(closedConsole)throw new Error(closedConsole);}}}});
   vm.runInContext(staleSlice()+';this.check=setupCenterVersion;this.read=installedDispatcherVersion;',c);
   return {check:c.check,read:c.read,lines};
 }
@@ -1399,6 +1399,9 @@ await test('a route with a compatibility record says the CLI needs updating for 
   assert.match(card,/The installed CLI \(0\.157\.1\) needs an update to work with the configured model gpt-test-9\./);
   assert.match(card,/<code>npm install -g @openai\/codex@latest<\/code>/,'without an allowlisted action the update_hint is shown as text');
   assert.match(card,/then choose Check again/);
+  // The control it names is the status banner's own button, which asks for readiness again (no model call).
+  assert.match(fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8'),/<button id="refresh"[^>]*>Check again<\/button>/,'the card names that button by its label on the page');
+  assert(client.includes('refreshButton.addEventListener("click", refresh);'),'Check again runs the readiness check');
   assert.doesNotMatch(card,/data-action=/,'the hint is text: no action is offered that the server did not allowlist');
   assert.doesNotMatch(card,/Check inconclusive|Verify connection|data-test=/,'a verification would spend allowance on a route known not to work');
   assert.doesNotMatch(card,SIGN_IN);
@@ -1446,6 +1449,95 @@ await test('the status summary and Quick Setup count an outdated CLI as an updat
   await c.core.runQuickSetup();await flush();
   assert(c.toasts.length>0,'Quick Setup says what is left');for(const toast of c.toasts)assert.doesNotMatch(toast,SIGN_IN,toast);
   assert(c.toasts.some(toast=>/provider cards/.test(toast)));
+});
+// --- 1.17.1 gate review rev_20261004085003_77d89c336993 (Setup Center packet) -------------------
+// quick-setup-verifies-incompatible-cli: the card already says the CLI and its configured model do
+// not work together, so Quick Setup must not spend allowance verifying it. Preflight reports such a
+// route as not ready; the page decides by the state it shows and does not depend on that flag.
+await test('Quick Setup never verifies a CLI the card says needs an update, whatever the readiness flag says',async()=>{
+  const session={token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'x'},grok:{label:'Grok',docs:'x'}}};
+  const detected={agent:'grok',role:'reviewer',installed:true,ready:true,version:'1.0.41'};
+  const run=async routes=>{
+    const c=ui();c.init(session,null);const verified=[];
+    c.setApi(async(url,options={})=>{
+      if(url.startsWith('/api/status'))return {routes};
+      if(url==='/api/test'){verified.push(JSON.parse(options.body).provider);throw new Error('synthetic: the verification is not started');}
+      throw new Error('offline');
+    });
+    await c.core.runQuickSetup();await flush();return {c,verified};
+  };
+  const withSession=compatRoute({ready:true});
+  const mixed=await run([withSession,detected]);
+  assert.equal(mixed.c.core.routeState(withSession),'update');
+  same(mixed.verified,['grok'],'the detected session is verified (control); the outdated CLI is not');
+  const only=await run([withSession]);
+  same(only.verified,[],'no verification is asked for a CLI known not to work with its configured model');
+  assert(only.c.toasts.some(toast=>/provider cards/.test(toast)),'Quick Setup says what is left');
+  for(const toast of only.c.toasts){assert.doesNotMatch(toast,/already verified/,toast);assert.doesNotMatch(toast,SIGN_IN,toast);}
+  // As preflight reports it (not ready): the same answer.
+  same((await run([compatRoute(),detected])).verified,['grok']);
+  // Control: without a record the same two routes are both verified, and nothing left reads "all verified".
+  same((await run([{...withSession,compatibility:undefined,update_hint:undefined},detected])).verified,['codex','grok']);
+  const none=await run([]);same(none.verified,[]);assert(none.c.toasts.some(toast=>/already verified/.test(toast)),'control: with nothing left, Quick Setup says so');
+});
+await test('the update state follows the compatibility record for every readiness and installation combination',()=>{
+  const c=ui();c.init(compatSession,null);
+  for(const [extra,expected] of [[{ready:false},'update'],[{ready:true},'update'],[{ready:true,auth:'present'},'update'],[{installed:null,version:null,version_status:'timeout'},'update'],
+    [{installed:false},'install'],[{compatibility:null},'login'],[{compatibility:null,ready:true},'detected']])
+    assert.equal(c.core.routeState(compatRoute(extra)),expected,JSON.stringify(extra));
+  // A route that reads ready beside a record still gets the update card: no verification control, no sign-in.
+  const card=c.core.providerCard(compatRoute({ready:true}));
+  assert.match(card,/class="chip status chip-warn">CLI update needed</);assert.doesNotMatch(card,/data-test=|data-action="login"/);assert.doesNotMatch(card,SIGN_IN);
+  c.setReport({routes:[compatRoute({ready:true})]});c.core.render();
+  assert.match(c.node('#summary').textContent,/1 CLI to update for its configured model/);assert.doesNotMatch(c.node('#summary').textContent,/detected session/);
+  assert.equal(c.node('#quick-setup').textContent,'Run Quick Setup','an outdated CLI is not counted as a session to verify');
+});
+// missing-test-update-required-branch: modelStatus is the production function, sliced from
+// setup-ui.mjs and called directly. A route that is not ready is never asked for its models.
+await test('modelStatus answers update_required for a remembered mismatch and login_required for a signed-out route, without running a CLI',async()=>{
+  const a=source.indexOf('function extractModelNames('),b=source.indexOf('\nasync function bootstrapStatus(',a);
+  assert(a>=0&&b>a&&source.indexOf('async function modelStatus(')>a&&source.indexOf('async function modelStatus(')<b,'modelStatus sits between extractModelNames and bootstrapStatus');
+  const commands=[];
+  const c=vm.createContext({providers:Object.fromEntries(['codex','claude','gemini','antigravity','copilot','grok'].map(n=>[n,{}])),safeDetail:s=>String(s||''),
+    runCommand:async(command,args)=>{commands.push([command,...args]);return {code:0,stdout:'grok-test-1\n',stderr:''};}});
+  vm.runInContext(source.slice(a,b)+';this.models=modelStatus;',c);
+  const rows=Object.fromEntries((await c.models([
+    compatRoute(),
+    {agent:'claude',installed:true,ready:false,auth:'absent'},
+    {agent:'gemini',installed:false,ready:false,compatibility:{cli_version:'1.0.0',model:null}},
+    {agent:'copilot',installed:true,ready:true},
+    {agent:'grok',installed:true,ready:true},
+  ])).map(row=>[row.agent,row]));
+  assert.equal(rows.codex.status,'update_required','a remembered CLI/model mismatch is an update, never a sign-in');
+  assert.equal(rows.claude.status,'login_required','a signed-out route without a record still reads sign-in');
+  assert.equal(rows.gemini.status,'missing','a CLI that is not installed is missing, whatever else the route carries');
+  assert.equal(rows.antigravity.status,'missing','a route the readiness answer did not mention');
+  assert.equal(rows.copilot.status,'interactive_selector');assert.equal(rows.grok.status,'available','control: a ready route with a model list command');
+  same(commands,[['grok','models']],'no CLI is run for a route that is not ready');
+  for(const agent of ['codex','claude','gemini','antigravity'])same(rows[agent].models,[],agent);
+  // The page reads that status as an update on the card's Models fact.
+  const page=ui();page.init(compatSession,compatMaintenance({},rows.codex.status));
+  assert.match(page.core.providerCard(compatRoute()),/<strong>Needs CLI update<\/strong>/);
+});
+// Suggestion 58b9d959 (modified): the console line is a courtesy. A console that cannot be written
+// to must not fail the answer that carries the notice, on a good refresh or on a failed one.
+await test('a console that cannot be written to never fails a refresh: the notice still reaches the page',async()=>{
+  const expected={running_version:'1.17.1',installed_version:'1.17.2',stale:true};
+  const closed=name=>{const w=versionWatch(staleDispatcher(name,'1.17.1'),'synthetic: console closed');staleDispatcher(name,'1.17.2');return w;};
+  const direct=closed('console-direct');
+  let first;assert.doesNotThrow(()=>{first=direct.check();});same(first,expected);
+  same(direct.check(),expected);assert.equal(direct.lines.length,1,'the line is tried once per installed version, not on every refresh');
+  const good=closed('console-good');
+  const answered=await handler({},true,{setupCenterVersion:good.check}).serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});
+  assert.equal(answered.status,200,'a healthy status answer is not turned into an error by the console: '+JSON.stringify(answered.value));
+  same(answered.value.setup_center,expected);same(answered.value.routes,[]);
+  const broken=async()=>{throw new Error('Readiness check failed');};
+  for(const [method,url] of [['GET','/api/status?governor=codex'],['POST','/api/maintenance']]){
+    const w=closed('console-failed-'+method.toLowerCase());
+    const failed=await handler({governor:'codex'},true,{setupCenterVersion:w.check,readiness:broken,maintenanceReport:broken}).serve({method,url,socket:{}},{});
+    assert.equal(failed.status,500,url);assert.equal(failed.value.error,'Readiness check failed','the failure reported is the refresh, not the console');
+    same(failed.value.setup_center,expected);assert.equal(w.lines.length,1);
+  }
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

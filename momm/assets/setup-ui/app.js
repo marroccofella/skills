@@ -560,12 +560,14 @@ async function runQuickSetup() {
   try {
     await refresh();
     await loadMaintenance(false);
-    // A card already being verified is not eligible: its running job owns it.
-    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing"].includes(routeState(route)));
+    // A card already being verified is not eligible: its running job owns it. Nor is a CLI known not
+    // to work with its configured model (1.17.1 R1): the card says so, and a verification would spend
+    // allowance on that failure. The state the card shows decides, whatever the readiness flag says.
+    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing", "update"].includes(routeState(route)));
     if (!eligible.length) {
       const disconnected = reviewerRoutes().filter((route) => !route.ready);
-      const outdated = disconnected.some((route) => routeState(route) === "update");
-      showToast(!disconnected.length ? "All available reviewer connections are already verified." : outdated ? "Detected sessions are checked. Follow the remaining provider cards." : "Detected sessions are checked. Use Sign in on the remaining provider cards.");
+      const outdated = reviewerRoutes().some((route) => routeState(route) === "update");
+      showToast(outdated ? "Detected sessions are checked. Follow the remaining provider cards." : disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
       return;
     }
     let passed = 0;
