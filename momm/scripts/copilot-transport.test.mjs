@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { PEER_CONTRACT, reviewProblem, quotationDiagnostics } from './review-contract.mjs';
 import { assemblePrompt } from './guidance.mjs';
+import * as reviewAnswer from './review-answer.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>=0&&end>start,'Inspect changed adapter extraction boundaries');
@@ -15,7 +16,9 @@ const context=vm.createContext({fs,os,path,process,Buffer,PEER_CONTRACT,reviewPr
   VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
   attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic review contract',
   agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{copilot:'copilot login'},
-  sanitizeText:s=>({value:s})});
+  sanitizeText:s=>({value:s}),
+  // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+  ...reviewAnswer});
 // 1.17 A4.2: an invalid answer carries private quotation diagnostics; the real helper and validator.
 const quoteFrom=source.indexOf('function quotationEvidence('),quoteTo=source.indexOf('\n}\n',quoteFrom)+3;
 assert(quoteFrom>=0&&quoteTo>quoteFrom);

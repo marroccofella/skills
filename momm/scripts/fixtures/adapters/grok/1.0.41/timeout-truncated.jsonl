@@ -1,0 +1,8 @@
+{"type":"available_commands","tools":["read_file","grep"],"commands":["compact"]}
+{"type":"thought","data":"The user wants a review"}
+{"type":"thought","data":" of one small function."}
+{"type":"text","data":"{\"review_status\":\"complete\","}
+{"type":"text","data":"\"reviewed_scope\":[{\"quote\":\""}
+{"type":"text","data":"export function average(xs) "}
+{"type":"text","data":"{\",\"assessment\":\"The whole f"}
+{"type":"text","da

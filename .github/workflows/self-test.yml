@@ -60,6 +60,12 @@ jobs:
       - name: Private quotation diagnostics (1.17 A4.2)
         timeout-minutes: 2
         run: node momm/scripts/quotation-diagnostics.test.mjs
+      - name: One answer rule for every route and private answer shape (1.17.1 S1, S2)
+        timeout-minutes: 2
+        run: node momm/scripts/review-answer.test.mjs
+      - name: Versioned adapter regression matrix (1.17.1 R2)
+        timeout-minutes: 2
+        run: node momm/scripts/adapter-matrix.test.mjs
       - name: Fail-closed Windows PATH identity
         timeout-minutes: 2
         run: node momm/scripts/path-resolution.test.mjs

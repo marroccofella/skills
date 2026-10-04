@@ -37,7 +37,7 @@ export function auditAttempts(root, ids) {
     for(const row of r.attempt_evidence) {
       demand(typeof row.attempt_id === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(row.attempt_id) && !seen.has(row.attempt_id),'missing or duplicate attempt identity');seen.add(row.attempt_id);
       demand(expectedPieces.includes(row.piece),'unknown attempt piece');
-      const stored=read(row.evidence.path),{evidence:_reference,...expected}=row,{quotation_diagnostics:_private,...bound}=stored.value;
+      const stored=read(row.evidence.path),{evidence:_reference,...expected}=row,{quotation_diagnostics:_private,answer_shape:_shape,...bound}=stored.value;
       if(row.start){const start=read(row.start.path);demand(start.sha256===row.start.sha256 && start.value.event==='started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>start.value[k]===row[k]),'attempt start binding mismatch');}
       demand(stored.sha256===_reference.sha256 && JSON.stringify(bound)===JSON.stringify(expected) && row.run_id===id && row.input_sha256===r.input_sha256,'attempt hash or source mismatch');
       const p=thisPieces.get(row.piece)??{hash:row.piece_sha256,routes:new Set()};

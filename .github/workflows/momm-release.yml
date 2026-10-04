@@ -118,6 +118,8 @@ jobs:
           node momm/scripts/attempts.test.mjs
           node momm/scripts/evidence-location.test.mjs
           node momm/scripts/quotation-diagnostics.test.mjs
+          node momm/scripts/review-answer.test.mjs
+          node momm/scripts/adapter-matrix.test.mjs
           node momm/scripts/path-resolution.test.mjs
           node momm/scripts/review-claims.test.mjs
           node momm/scripts/review-workflow.test.mjs

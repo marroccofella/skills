@@ -356,9 +356,10 @@ export function inspectCompletion(root, runId, options = {}) {
           demand(begun.event === 'started' && ['run_id','attempt_id','route','piece','input_sha256','piece_sha256','ordinal','started_at'].every(k=>begun[k]===a[k]), 'attempt start binding mismatch');
         }
         const { evidence, ...expected } = a;
-        // 1.17 A4.2: quotation diagnostics stay in the private record (covered by its sha256) and are
-        // never repeated in the report; every other field must match exactly.
-        const { quotation_diagnostics: _private, ...bound } = stored;
+        // 1.17 A4.2, 1.17.1 S2: quotation diagnostics and the shape of a non-JSON answer stay in the
+        // private record (covered by its sha256) and are never repeated in the report; every other
+        // field must match exactly.
+        const { quotation_diagnostics: _private, answer_shape: _shape, ...bound } = stored;
         demand(JSON.stringify(bound) === JSON.stringify(expected) && stored.run_id === runId && stored.input_sha256 === report.input_sha256, 'attempt source or report binding mismatch');
         demand(stored.piece === 'whole' ? !report.split : report.split?.pieces.some(p => p.id === stored.piece), 'attempt belongs to unknown piece');
         return evidence;
