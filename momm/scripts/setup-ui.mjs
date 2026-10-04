@@ -2456,6 +2456,11 @@ function staleNoticeRegression() {
 }
 
 async function selfTest() {
+  // The fixtures below keep their evidence in their own temporary projects. A caller's MOMM_EVIDENCE_HOME
+  // would point every read of them, and the writes after it, at the caller's home instead: the usage check
+  // found no reports there and the regression stopped (found on the released 1.17.1). This process runs
+  // the self-test and nothing else, so the setting is dropped here; the evidence-home check sets its own.
+  delete process.env.MOMM_EVIDENCE_HOME;
   // A child that outlives its budget must be reported as timed out — the
   // listener-order regression this guards against was found by momm review.
   const timedOutProbe = await runCommand(process.execPath, ["-e", "setTimeout(() => {}, 3000)"], { timeoutMs: 100 });

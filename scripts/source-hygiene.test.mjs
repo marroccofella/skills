@@ -12,6 +12,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { resolveGit } from '../momm/scripts/governor.mjs';
 import { realTempDir } from './private-test-fixture.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 // The two checks assess different contents on purpose: control bytes are checked in the WORKING
 // TREE, because that is what a contributor is about to commit, while binary classification is
@@ -209,5 +210,59 @@ check('realTempDir leaves no folder behind when the real path cannot be read', (
   const left = fs.readdirSync(os.tmpdir()).filter(name => name.startsWith(prefix));
   for (const name of left) fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
   assert.deepEqual(left, [], 'the folder made before the failure was removed');
+});
+
+// Found on the released 1.17.1: a tester had MOMM_EVIDENCE_HOME set, as the documentation invites. Suites
+// that build a fixture project with its own .ensemble_reviews then failed (the product looked under the
+// tester's home, 23 of 97 commands), and others passed while leaving fixture evidence in that home. Which
+// suites reach the evidence resolver cannot be read off their text (some only start the dispatcher), so
+// the rule is the same for every suite: its first statement after the imports drops the variable, and a
+// suite that tests the evidence home sets its own afterwards. It is a statement in the suite, never a
+// module that does it on import: ledger.mjs imports the test-support module, and a product command
+// must not lose the user's setting that way.
+const ISOLATED = /^delete process\.env\.MOMM_EVIDENCE_HOME;/;
+// The first top-level line that is a statement other than a static import. Comments are skipped.
+function firstStatement(text) {
+  // An import ends on the line that names its module, with or without a semicolon.
+  const ended = (line) => /(?:\bfrom\s*|^import\s*)(['"])[^'"]+\1\s*;?\s*(?:\/\/.*)?$/.test(line);
+  let comment = false, importing = false;
+  for (const [index, raw] of text.split('\n').entries()) {
+    const line = raw.replace(/\r$/, '');
+    if (comment) { comment = !line.includes('*/'); continue; }
+    if (importing) { importing = !ended(line); continue; }
+    if (!line.trim() || line.startsWith('//') || (index === 0 && line.startsWith('#!'))) continue;
+    if (line.startsWith('/*')) { comment = !line.includes('*/'); continue; }
+    if (/^import[\s{'"*]/.test(line)) { importing = !ended(line); continue; }
+    return { line: index + 1, text: line };
+  }
+  return null;
+}
+const isolated = (text) => ISOLATED.test(firstStatement(text)?.text ?? '');
+// Commands the workflow runs that are not suites: they report on the user's own setup or on the site, so
+// they follow the user's setting. Any other file the workflow runs is a suite, whatever it is named.
+const NOT_SUITES = ['momm/scripts/multi-review.mjs', 'momm/scripts/setup-ui.mjs', 'scripts/render-momm-site.mjs', 'scripts/check-momm-site.mjs'];
+const drop = 'delete process.env.MOMM_EVIDENCE_HOME;';
+check('a suite whose first statement does not drop the evidence home is reported', () => {
+  const imports = "#!/usr/bin/env node\n// header\nimport fs from 'node:fs';\nimport {\n  a,\n  b } from './x.mjs'; // two lines\n/* block\n   comment */\nimport './side-effect.mjs';\nimport os from \"node:os\"\n";
+  for (const good of [imports + drop + '\nconst x = 1;\n', imports + '\n// why\n' + drop + ' // and why\nconst x = 1;\n', drop + '\nconst { y } = await import("./y.mjs");\n',
+    imports + drop + "\nconst GIT = find();\nimport later from './later.mjs';\n"])
+    assert.equal(isolated(good), true, good.slice(-60));
+  for (const bad of [imports + 'const x = 1;\n' + drop + '\n', imports + 'const previous = process.env.X;\ntry { run(); } finally { ' + drop + ' }\n', imports + '  ' + drop + '\n', imports + '// ' + drop + '\nconst x = 1;\n',
+    imports + "process.env.MOMM_EVIDENCE_HOME = '';\n", imports + 'const { y } = await import("./y.mjs");\n' + drop + '\n', imports, ''])
+    assert.equal(isolated(bad), false, bad.slice(-60));
+  assert.deepEqual(firstStatement(imports + 'const x = 1;\n'), { line: 11, text: 'const x = 1;' });
+});
+check('every suite drops the caller\'s evidence home before anything else', () => {
+  const listed = spawnSync(process.execPath, [path.join(root, 'scripts/run-ci-suites.mjs'), '--list'], { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 30_000 });
+  assert.equal(listed.status, 0, listed.stderr);
+  const run = listed.stdout.trimEnd().split('\n').map(command => command.split(' ')[0]);
+  assert(run.length > 80 && NOT_SUITES.every(f => run.includes(f)), 'the workflow list was found');
+  const suites = [...new Set([...scanned.filter(f => f.endsWith('.test.mjs')), ...run.filter(f => !NOT_SUITES.includes(f))])];
+  const bad = [];
+  for (const rel of suites) {
+    let text; try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    if (!isolated(text)) bad.push(`${rel}:${firstStatement(text)?.line ?? 1}`);
+  }
+  assert.deepEqual(bad, [], `the first statement after the imports must be: ${drop} A suite that tests the evidence home sets its own value afterwards`);
 });
 console.log(JSON.stringify({ passed: results.every(r => r.passed), files: files.length, scanned: scanned.length, results }, null, 2));

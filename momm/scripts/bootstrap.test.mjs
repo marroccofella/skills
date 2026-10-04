@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readiness, inspectExisting, trustedEnv, prepare, parse, packageHash, SIGNER, ISSUER, REMOTE, VERIFIER_FLAGS, errorReport, execute } from './bootstrap.mjs';
 import { treeHash, SIGNER as UPDATER_SIGNER, ISSUER as UPDATER_ISSUER, REMOTE as UPDATER_REMOTE } from './update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-bootstrap-tests-'));
 const results = {};
 async function test(name, fn) { try { await fn(); results[name] = true; } catch(error) { results[name]={failure:error.message};process.exitCode=1; } }

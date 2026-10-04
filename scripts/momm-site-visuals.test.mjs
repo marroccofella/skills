@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {chartSeries,evidenceVisuals,releasePanel,releaseChecks,tourSection} from './momm-site-visuals.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const fixture={generated:'2026-01-01T00:00:00Z',reports:{a:{report:{input_bytes:1024,reviewers:[{agent:'codex',status:'self_excluded'},{agent:'claude',status:'success',verdict:'MODIFY',duration_ms:1500},{agent:'grok',status:'timeout'}]}},b:{report:{input_bytes:2048,reviewers:[{agent:'claude',status:'invalid_output'}]}},c:{report:{input_bytes:2048,reviewers:[]}}}};
 const series=chartSeries(fixture),claude=series.routes.find(r=>r.route==='claude');
 assert.equal(claude.external_results,2);assert.equal(claude.completed,1);assert.deepEqual(claude.failures,{invalid_output:1});assert.equal(claude.verdicts.MODIFY,1);

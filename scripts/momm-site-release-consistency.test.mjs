@@ -4,6 +4,7 @@ import { improvementBody } from './momm-site-community.mjs';
 import { releasePages } from './momm-release-pages.mjs';
 import { releaseStatus, releaseStatusHtml, releaseStatusMarkdown, readmeStatusBlock } from './momm-site-home.mjs';
 import { fileURLToPath } from 'node:url';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => fs.readFileSync(new URL('../' + name, import.meta.url), 'utf8');

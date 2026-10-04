@@ -14,6 +14,7 @@ import { privateTestFixture } from './private-test-fixture.mjs';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
 import { attemptRecord, persistAttempt } from './attempts.mjs';
 import * as contract from './review-contract.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const source = fs.readFileSync(fileURLToPath(new URL('./multi-review.mjs', import.meta.url)), 'utf8');
 const sha = (text) => createHash('sha256').update(text).digest('hex');

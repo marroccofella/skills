@@ -5,6 +5,7 @@ import os from 'node:os';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as reviewAnswer from '../momm/scripts/review-answer.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const mode = process.argv[2];
 const read = p => fs.readFileSync(p, 'utf8');
 if (mode === 'envelope' || mode === 'rejection') {

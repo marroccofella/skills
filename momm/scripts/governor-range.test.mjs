@@ -11,6 +11,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { captureSourceSnapshot, inspectCompletion } from './governor.mjs';
 import { resolveGit as resolveGitForTest } from './governor.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 

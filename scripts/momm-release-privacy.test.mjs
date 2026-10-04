@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = new URL('../', import.meta.url);
 // Recursively cover public guides and references, including newly added files.
 // This focused regression supplements, never replaces, the publication scanner.

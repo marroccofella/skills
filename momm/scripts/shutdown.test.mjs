@@ -9,6 +9,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {parse as parseUpdateOptions} from './update.mjs';
 import {evidenceRefusal} from './evidence-location.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source = fs.readFileSync(new URL('./multi-review.mjs', import.meta.url), 'utf8');
 const start = source.lastIndexOf('main().catch(');
 assert(start > 0, 'production finalizer boundary moved');

@@ -7,6 +7,7 @@ import { preparePrivateEvidence } from './evidence-permissions.mjs';
 import { recordCheck } from './checks.mjs';
 import { digest } from './governor.mjs';
 import { auditAttempts } from './attempt-audit.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = privateTestFixture('momm-attempts-');
 try {
   for (const [status, expected] of [['success', 'succeeded'], ['timeout','timeout'], ['quota','quota'], ['authentication_required','authentication_required'], ['ineligible_tier','ineligible_tier'], ['invalid_output','invalid_output'], ['empty','empty'], ['cancelled','cancelled'], ['provider_unavailable','provider_unavailable'], ['error','failed'], ['self_excluded','not_dispatched']]) { assert.equal(outcomeFor({ status }), expected); assert(OUTCOMES.includes(expected)); }

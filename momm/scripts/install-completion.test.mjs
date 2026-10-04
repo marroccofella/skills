@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import {replayResult} from './update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const result = body => ({status:1,stdout:JSON.stringify(body)});
 const good={results:[{target:'codex',status:'already_linked'}],inventory:{upgrade:{complete:false}}};
 assert.equal(replayResult(result(good))[0].status,'already_linked');

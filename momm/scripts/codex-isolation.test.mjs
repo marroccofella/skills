@@ -11,6 +11,7 @@ import {assemblePrompt} from './guidance.mjs';
 import * as isolation from './route-isolation.mjs';
 import * as reviewAnswer from './review-answer.mjs';
 import {createHash} from 'node:crypto';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>0&&end>start,'adapter extraction boundaries moved');

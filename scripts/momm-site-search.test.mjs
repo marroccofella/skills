@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {SITE,PROMPTUS,BIO_SOURCE,UNLV_SOURCE,canonicalUrl,pageMetadata,enhanceSearch,addAttribution,evidenceBenefits,answers,definition} from './momm-site-search.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const catalogue=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json')));

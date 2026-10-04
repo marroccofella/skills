@@ -1,6 +1,7 @@
 // Synthetic export fixtures only. No private ledgers or network services.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import vm from 'node:vm';import {fileURLToPath} from 'node:url';import {spawnSync} from 'node:child_process';
 import {renderPublic} from './render-momm-site.mjs';import {releaseStatus,releaseStatusMarkdown,readmeStatusBlock} from './momm-site-home.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-public-export-')),results=[];
 function test(name,fn){try{fn();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:e.message});}}
 function fixture(name){const dir=path.join(temp,name);fs.mkdirSync(path.join(dir,'docs/evidence'),{recursive:true});fs.cpSync(path.join(root,'momm/references'),path.join(dir,'momm/references'),{recursive:true});fs.copyFileSync(path.join(root,'versions.json'),path.join(dir,'versions.json'));

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {homeCinema,homeDiagrams,releaseStatus,releaseStatusHtml,releaseStatusMarkdown,readmeStatusBlock,withReleaseStatus,homeWithReleaseStatus} from './momm-site-home.mjs';
 import {bindHomePlayers} from '../docs/momm/home-player.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const tour=JSON.parse(fs.readFileSync(new URL('../docs/momm/tour.json',import.meta.url)));
 const data=JSON.parse(fs.readFileSync(new URL('../docs/evidence/momm-evidence.json',import.meta.url)));
 const stats=JSON.parse(fs.readFileSync(new URL('../docs/momm/data/public-stats.json',import.meta.url)));

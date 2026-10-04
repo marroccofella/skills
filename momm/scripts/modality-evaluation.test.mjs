@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {run,plan} from './modality.mjs';
 import {effective,loadBaseline} from './capabilities.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const matrix=effective({baseline:loadBaseline(),overlay:{entries:[],invalidated:[],stale:[]}});
 const {privateTestFixture}=await import('./private-test-fixture.mjs');
 process.umask(0o077);

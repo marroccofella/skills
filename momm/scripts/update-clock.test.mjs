@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import * as UC from "./update-clock.mjs";
 import { createUpdateClock, applyUpdates, readSettings, writeSettings, DEFAULT_SETTINGS, skillSource, npmSource, grokSource, antigravitySource, modelsSource, timerCommand, installTimer, parseSet, cliMain, UPDATE_COMMANDS, CLIS, readState, writeState, defaultFetcher, defaultExec, defaultRunUpdater } from "./update-clock.mjs";
 import { MANIFEST_URL } from "./update.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const defaultApplyDeps = (...a) => UC.defaultApplyDeps(...a);
 
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "momm-update-clock-"));

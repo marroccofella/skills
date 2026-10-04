@@ -1,4 +1,5 @@
 import fs from 'node:fs';import vm from 'node:vm';import path from 'node:path';import assert from 'node:assert/strict';import{fileURLToPath}from'node:url';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const script=new URL('preview-momm-site.mjs',import.meta.url),source=fs.readFileSync(script,'utf8').replace(/^#![^\n]*\n/,'').replace(/^import .+;\r?\n/gm,'').replaceAll('import.meta.url',JSON.stringify(script.href));let handler;
 vm.runInNewContext(source,{http:{createServer(fn){handler=fn;return{listen(){}};}},fs,path,fileURLToPath,process:{argv:['node','fixture','8858'],stdout:{write(){}}},URL});
 for(const url of ['/momm/home-player.mjs','/momm/stacking-model.mjs']){

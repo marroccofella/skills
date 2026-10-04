@@ -9,6 +9,7 @@ import * as contract from '../momm/scripts/review-contract.mjs';
 import * as media from '../momm/scripts/media-bytes.mjs';
 import { JPEG } from '../momm/scripts/media-fixtures.mjs';
 import { syntheticPng } from '../momm/scripts/probes.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-media-contract-'));
 process.on('exit', () => fs.rmSync(scratch, { recursive: true, force: true }));
 const source = fs.readFileSync(new URL('../momm/scripts/multi-review.mjs', import.meta.url), 'utf8');

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { harvest } from './probes.mjs';
 import { resolveGit } from './governor.mjs';
 import { identifyMedia } from './media-bytes.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=', 'base64');
 const temp = (name) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), name));

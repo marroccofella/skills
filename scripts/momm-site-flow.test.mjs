@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import {steps,routes,governors,scenarios,stateAt,draftTotal,fixedTotal,fixture} from '../docs/momm/workflow-data.mjs';
 import {bindWorkflow} from '../docs/momm/workflow.mjs';
 import {homeWorkflow} from './momm-site-flow.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const values=[12,8,5],original=[...values];
 assert(Number.isNaN(draftTotal(values)));assert.equal(fixedTotal(values),25);assert.deepEqual(values,original);
 assert.equal(fixedTotal([]),0);assert.equal(fixedTotal([9]),9);assert.deepEqual(fixture(),{input:[12,8,5],expected:25,draft:'NaN',fixed:25,unchanged:true,empty:0});

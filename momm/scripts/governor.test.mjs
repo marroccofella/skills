@@ -13,6 +13,7 @@ import { resolveGit as resolveGitForTest } from './governor.mjs';
 import { pathEntryOutside, executableOutside } from './process-scope.mjs';
 import { classifyStyleChange, STYLE_DIRECTIVES, STYLE_CLASSIFIER_VERSION } from "./style-classifier.mjs";
 import { commandShapeSha256 } from "./route-isolation.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";

@@ -7,6 +7,7 @@ import path from 'node:path';
 import {isolateReply,runModalityProbes} from '../momm/scripts/probes.mjs';
 import * as modality from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const {privateTestFixture}=await import('./private-test-fixture.mjs');
 process.umask(0o077);

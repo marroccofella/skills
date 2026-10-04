@@ -15,6 +15,7 @@ import { grokIsolationEnv } from "./route-isolation.mjs";
 import * as reviewAnswer from "./review-answer.mjs";
 import { captureSourceSnapshot, resolveGit, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(scripts, "../..");

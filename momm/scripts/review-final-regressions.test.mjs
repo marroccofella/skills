@@ -5,12 +5,13 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const mode=process.argv[2]??'all';
 if(mode==='all'||mode==='deadline') {
   const file=path.join(root,'momm/scripts/review-workflow.test.mjs');
   const code=fs.readFileSync(file,'utf8').replace(/^import .*;\r?\n/gm,'').replaceAll('import.meta.url',JSON.stringify(new URL('./review-workflow.test.mjs',import.meta.url).href));
-  const execute=limit=>vm.runInNewContext(code,{path,assert,fileURLToPath,console:{log(){}},fs:{...fs,readFileSync(name,...args){
+  const execute=limit=>vm.runInNewContext(code,{path,assert,fileURLToPath,process:{env:{}},console:{log(){}},fs:{...fs,readFileSync(name,...args){
     const value=fs.readFileSync(name,...args);
     return String(name).endsWith('self-test.yml')?value.replace(/timeout-minutes: 2[ \t]*\r?$/gm,`timeout-minutes: ${limit}`):value;
   }}});

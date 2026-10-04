@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { captureSourceSnapshot, inspectCompletion, digest } from "./governor.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];

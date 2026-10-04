@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { windowsTool, windowsChildEnv } from './process-scope.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = 'C:\\project', trusted = 'C:\\trusted';
 for (const alias of ['C:\\junction', 'C:\\symlink', 'C:\\PROJEC~1']) {
   const files = { statSync: () => ({isFile:()=>true}), realpathSync: { native: p => p.replace(alias, root) } };
