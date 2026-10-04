@@ -80,6 +80,14 @@ in the private attempt record only. `momm/scripts/adapter-matrix.test.mjs` (R2) 
 expecting the status in the `expected.json` beside it: Copilot 1.0.85 and 1.0.91 shapes, Grok 1.0.41 (the
 recorded capture and error cases) and the Antigravity stream. Adding a CLI version is adding a folder; a
 stray file, an unlisted case, an unknown route or a fixture holding a credential-looking string fails.
+`momm/scripts/compatibility.test.mjs` (R1) proves a CLI/model compatibility failure is
+remembered per machine with route, CLI version, configured model and time, is shown by preflight (route
+not ready, update command) while both stand, stops applying when either changes, is removed by a later
+success, never writes the Codex configuration, and never steals its lock. `momm/scripts/run-notices.test.mjs`
+covers the repeated-status notice (S3: three recorded runs with the same failure, read through the
+evidence resolver; excluded and undispatched rows do not count) and the gate-review guard (S4: an
+untracked diff file given as `--input` gets a notice naming `--range`; the review runs as before), with
+real provider-free dispatcher runs.
 
 - `momm/scripts/review-claims.test.mjs`
 - `momm/scripts/review-workflow.test.mjs`
@@ -92,6 +100,7 @@ stray file, an unlisted case, an unknown route or a fixture holding a credential
 - `momm/scripts/bootstrap.test.mjs`
 - `momm/scripts/capabilities.test.mjs`
 - `momm/scripts/codex-isolation.test.mjs`
+- `momm/scripts/compatibility.test.mjs`
 - `momm/scripts/copilot-transport.test.mjs`
 - `momm/scripts/cover.test.mjs`
 - `momm/scripts/entrypoint.test.mjs`
@@ -117,6 +126,7 @@ stray file, an unlisted case, an unknown route or a fixture holding a credential
 - `momm/scripts/quotation-diagnostics.test.mjs`
 - `momm/scripts/review-answer.test.mjs`
 - `momm/scripts/roles.test.mjs`
+- `momm/scripts/run-notices.test.mjs`
 - `momm/scripts/scheduler.test.mjs`
 - `momm/scripts/scorecard-roster.test.mjs`
 - `momm/scripts/scorecard.test.mjs`

@@ -436,7 +436,8 @@ async function modelStatus(routes) {
   return Promise.all(Object.keys(providers).map(async (agent) => {
     const route = routeMap.get(agent);
     if (!route || route.installed === false) return { agent, status: "missing", models: [] };
-    if (!route.ready) return { agent, status: "login_required", models: [] };
+    // 1.17.1 R1: not ready for a remembered CLI/model mismatch is an update, never a sign-in.
+    if (!route.ready) return { agent, status: route.compatibility ? "update_required" : "login_required", models: [] };
     if (!["antigravity", "grok"].includes(agent)) return { agent, status: "interactive_selector", models: [] };
     const command = agent === "antigravity" ? "agy" : "grok";
     const result = await runCommand(command, ["models"], { timeoutMs: 20_000 });
