@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "429105c916215ca8821a7b1fa1afa4223f93e105b61fd592b18e7b0436a3963d"
+      "sha256": "a562d8a7d858c7fc31319769f8c5197fe88c7bcd24b7fe12cd8cbefde5a88995"
     },
     {
       "path": "COMPATIBILITY.md",
@@ -168,7 +168,7 @@
     },
     {
       "path": "tests/windows-privacy.cjs",
-      "sha256": "7ce3664c598a4cda5d5c0801483a6877b87a6daa011abec706793284309450b3"
+      "sha256": "3785445e6816f0896846c87ae4c06796d9af96da8bde25aec69c176d7957a1a3"
     }
   ]
 }
