@@ -7,6 +7,8 @@
 //   node scripts/run-ci-suites.mjs --list     print the commands only
 //   node scripts/run-ci-suites.mjs --grep ledger   run the suites whose path contains "ledger"
 //   node scripts/run-ci-suites.mjs --save-report --commit <full SHA>   also keep a private report of the run
+//                                             (in MOMM's evidence folder; --evidence-home <dir> or
+//                                             MOMM_EVIDENCE_HOME places it outside the checkout)
 //   node scripts/run-ci-suites.mjs --recover-report <run folder> --to <private dir>
 //                                             complete a report whose final save failed; runs no suite
 // Anything else on the command line is refused and nothing runs. A run ends with three lines, one fact
@@ -23,9 +25,9 @@ const commands = [...new Set([...workflow.matchAll(/node ((?:momm\/scripts|scrip
   .map((m) => [m[1], ...m[2].trim().split(/\s+/).filter(Boolean)].join(' ')))];
 // Strict options (1.17.1 R6): `--grpe --list` used to list every suite and exit 0, and `--grpe` alone
 // ran them all. true marks an option that takes a value.
-const OPTIONS = { '--list': false, '--grep': true, '--save-report': false, '--commit': true, '--recover-report': true, '--to': true };
+const OPTIONS = { '--list': false, '--grep': true, '--save-report': false, '--commit': true, '--evidence-home': true, '--recover-report': true, '--to': true };
 const usage = (message) => {
-  process.stderr.write(`${message} Nothing was run.\nOptions: --list | --grep <part of a suite path> | --save-report --commit <full SHA> | --recover-report <run folder> --to <private dir>\n`);
+  process.stderr.write(`${message} Nothing was run.\nOptions: --list | --grep <part of a suite path> | --save-report --commit <full SHA> [--evidence-home <dir>] | --recover-report <run folder> --to <private dir>\n`);
   process.exit(2);
 };
 const printable = (text) => String(text).replace(/[^\x20-\x7e]/g, '?').slice(0, 80);
@@ -65,23 +67,38 @@ if (given.has('--commit') && !save) {
 if (save && !/^[a-f0-9]{40}$/.test(commit ?? '')) {
   process.stderr.write('--save-report requires --commit <full SHA>; this is caller-supplied identity, not automatic Git verification.\n'); process.exit(2);
 }
+// The option the evidence refusals name (1.17.1 R7). As in multi-review.mjs it is applied to the
+// environment, so every module in this run, and every suite, resolves the same evidence home.
+if (given.has('--evidence-home')) {
+  if (!save) usage('--evidence-home is only used with --save-report.');
+  if (!given.get('--evidence-home')) usage('--evidence-home needs a directory: --evidence-home <dir>.');
+  process.env.MOMM_EVIDENCE_HOME = path.resolve(given.get('--evidence-home'));
+}
 // A filter that names nothing, or matches nothing, is an error: "0 of 0 suites passed" is not a pass.
 if (given.has('--grep') && !grep) { process.stderr.write('--grep needs a value: part of a suite path, such as --grep ledger\n'); process.exit(2); }
 const selected = commands.filter((c) => !grep || c.includes(grep));
 if (!selected.length) { process.stderr.write(`no suite in .github/workflows/self-test.yml matches ${JSON.stringify(grep)}; nothing was run\n`); process.exit(1); }
 if (given.has('--list')) { process.stdout.write(selected.join('\n') + '\n'); process.exit(0); }
-let reportDir = null, checkout = null, recheck = () => {};
+let reportDir = null, checkout = null, recheck = () => {}, evidenceRefusal = () => null;
 const runId = randomUUID();
+// What a storage failure says, in one line: the library's own sentence for a refused evidence location or
+// folder (1.17.1 R7), or the call that failed for a file-system error. null means the error is neither;
+// a defect is rethrown, never dressed as a refusal.
+const storageFailure = (error) => evidenceRefusal(error) ?? (error?.syscall ? `the report folder could not be written (${error.code} on ${error.syscall}).` : null);
 // Storage precheck (1.17.1 R3): private permissions here, write access just below, both before the first
-// RUN line. A refusal is one plain reason, not a stack trace.
+// RUN line. A refusal is one plain line, not a stack trace.
 const storageRefused = (error) => {
-  process.stderr.write(`Report storage refused before any suite ran: ${String(error?.message ?? error).split('\n')[0]}\nNothing was run.${reportDir ? ` An unused run folder may remain: ${shown(reportDir)}` : ''}\n`);
+  const failure = storageFailure(error);
+  if (!failure) throw error;
+  process.stderr.write(`Report storage refused before any suite ran: ${failure}${reportDir ? ` An unused run folder may remain: ${shown(reportDir)}` : ''}\n`);
   process.exit(1);
 };
 if (save) {
+  const { evidenceLocation, recordEvidenceProject, evidenceRefusal: refusalOf } = await import('../momm/scripts/evidence-location.mjs');
+  evidenceRefusal = refusalOf;
   try {
     const { preparePrivateEvidence, requirePrivateEvidence } = await import('../momm/scripts/evidence-permissions.mjs');
-    const { evidenceLocation, recordEvidenceProject } = await import('../momm/scripts/evidence-location.mjs');
+    // The resolver every MOMM command uses: the project's .ensemble_reviews, or the evidence home.
     const location = evidenceLocation({ cwd: root });
     const home = location.dir;
     preparePrivateEvidence(home);
@@ -149,13 +166,13 @@ for (const [index, command] of selected.entries()) {
       process.stdout.write(`      captured failure output saved${entry.capture_incomplete ? ' (suite stopped; capture may be incomplete)' : ''}: ${path.relative(root, path.join(reportDir, entry.stdout_file))} and ${path.relative(root, path.join(reportDir, entry.stderr_file))} (private; inspect before sharing)\n`);
     }
     persist();
-  } catch (error) { saveError = error; break; }
+  } catch (error) { if (!storageFailure(error)) throw error; saveError = error; break; }
 }
 const ran = report.results.length;
 if (!saveError) {
   report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed;
   // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
-  try { if (reportDir) { recheck(); persist(); } } catch (error) { saveError = error; }
+  try { if (reportDir) { recheck(); persist(); } } catch (error) { if (!storageFailure(error)) throw error; saveError = error; }
 }
 // Failed-save recovery (1.17.1 R4). The attempt is left exactly as it is: no retry, no repair, nothing
 // removed. The lines below say where the results are and how to complete the record somewhere else.
@@ -166,6 +183,7 @@ if (saveError) {
   const complete = saveError.pending && ran === selected.length ? saveError.pending : null;
   const kept = fs.existsSync(path.join(reportDir, 'report.json')) && stored >= 0;
   process.stdout.write(`The report could not be saved (${reasonOf(saveError)}). The run folder was left as it is: nothing was retried, repaired or removed.\n`);
+  if (evidenceRefusal(saveError)) process.stdout.write(evidenceRefusal(saveError) + '\n');
   if (ran < selected.length) process.stdout.write(`The run stopped after suite ${ran} of ${selected.length}; the other ${selected.length - ran} were not run.\n`);
   if (complete) process.stdout.write(`Complete results: ${shown(complete)}\n`);
   else if (kept) process.stdout.write(`Saved so far: report.json in the run folder holds the results of ${stored} of ${selected.length} suites${stored === selected.length ? ', without the totals and the finish time' : ''}.\n`);
@@ -243,8 +261,9 @@ async function recoverReport(source, target) {
   };
   const inside = (base, candidate) => { const relative = path.relative(base.toLowerCase(), candidate.toLowerCase()); return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)); };
   if ([target, resolved(target)].some((candidate) => inside(source, candidate) || inside(resolved(source), candidate))) refuse('--to must be outside the run folder; the original attempt is never changed.');
+  const { evidenceRefusal: refusalOf } = await import('../momm/scripts/evidence-location.mjs');
   try { (await import('../momm/scripts/evidence-permissions.mjs')).preparePrivateEvidence(target); }
-  catch (error) { refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); }
+  catch (error) { if (!refusalOf(error) && !error?.syscall) throw error; refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); }
   const file = path.join(target, `ci-${chosen.value.run_id}-recovered.json`);
   const body = JSON.stringify({ ...chosen.value, passed, failed, recovery: { schema: 'momm-ci-recovery/1', recovered_at: new Date().toISOString(),
     source_folder: source, source_file: chosen.name, source_sha256: createHash('sha256').update(chosen.bytes).digest('hex'),

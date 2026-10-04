@@ -17,6 +17,7 @@ const item = (name, body) => { try { body(); } catch (error) { failures.push(nam
 // macOS), so a printed path is compared by what it resolves to, never as text.
 const same = (a, b) => fs.realpathSync.native(a) === fs.realpathSync.native(b);
 const lastLines = (r, n = 3) => r.stdout.trimEnd().split(/\r?\n/).slice(-n);
+const oneLine = (r) => assert.equal(r.stderr.trimEnd().split(/\r?\n/).length, 1, 'one plain line: ' + r.stderr);
 const noTrace = (r) => assert.doesNotMatch(r.stderr + r.stdout, /^\s+at |node:internal/m, 'a refusal is a plain message, never a stack trace');
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const snapshot = (dir) => Object.fromEntries(fs.readdirSync(dir).sort().map((name) => {
@@ -123,6 +124,25 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(path.join(externalProject,'project.json'),'utf8')).schema,'momm-evidence-home/1');
   assert.equal(fs.readdirSync(externalProject).filter(n=>n.startsWith('ci-')).length,1);
   assert.equal(fs.readdirSync(path.join(root,'.ensemble_reviews')).filter(n=>n.startsWith('ci-')).length,2,'external saving must not allocate in the checkout');
+  // 1.17.1 R7 hand-off: evidenceLocation's refusals reach the user as the library's one line, and the
+  // remedy that line names (--evidence-home) is one this command takes.
+  item('R7 a refused evidence home is one plain line before any suite, and --evidence-home is honoured', () => {
+    const ran = okRuns(), before = folders();
+    const withHome = (value, ...args) => spawnSync(process.execPath, [runner, '--save-report', '--commit', sha, '--grep', 'ok', ...args], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:value} });
+    for (const [r, why] of [[withHome(path.join(root, 'home-inside')), /The evidence home must lie outside the project/], [withHome('relative-home'), /must be an absolute path/],
+      [withHome('', '--evidence-home', path.join(root, 'home-inside')), /The evidence home must lie outside the project/]]) {
+      assert.equal(r.status, 1, r.stderr); noTrace(r); oneLine(r); assert.doesNotMatch(r.stdout, /RUN|PASS/); assert.match(r.stderr, why);
+    }
+    assert.equal(fs.existsSync(path.join(root, 'home-inside')), false); assert.equal(okRuns(), ran, 'no suite ran');
+    const flagHome = path.join(externalHome, 'named-by-flag');
+    const flagged = withHome('', '--evidence-home', flagHome);
+    assert.equal(flagged.status, 0, flagged.stderr);
+    const project = fs.readdirSync(flagHome); assert.equal(project.length, 1);
+    const saved = lastLines(flagged)[1].match(/^Report saved: yes, (.+report\.json) /);
+    assert(saved && same(path.dirname(path.dirname(saved[1])), path.join(flagHome, project[0])), 'the report is where --evidence-home says');
+    assert.deepEqual(folders(), before, 'nothing was saved in the checkout');
+    for (const usage of [['--evidence-home'], ['--evidence-home', flagHome], ['--evidence-home', flagHome, '--list']]) { const r = run(...usage); assert.equal(r.status, 2, usage.join(' ')); assert.equal(r.stdout, ''); }
+  });
   put('scripts/remove-sink.mjs', "import fs from 'node:fs'; import path from 'node:path'; const home=path.join(process.cwd(),'.ensemble_reviews'); for(const n of fs.readdirSync(home)) if(n.startsWith('ci-')) fs.rmSync(path.join(home,n),{recursive:true,force:true}); console.log('SINK-REMOVAL-FAILURE'); process.exitCode=1;");
   put('.github/workflows/self-test.yml','run: node scripts/remove-sink.mjs\n');
   const lostSink=run('--save-report','--commit',sha);
@@ -134,10 +154,10 @@ try {
     assert.match(suites, /^0 of 1 suites passed on /); assert.match(saved, /^Report saved: no \(/); assert.equal(exit, 'Exit status: 1');
   });
   put('.github/workflows/self-test.yml', 'run: node scripts/ok.mjs\nrun: node scripts/bad.mjs\n');
-  put('momm/scripts/evidence-permissions.mjs', "export function requirePrivateEvidence(){throw new Error('permission inspection refused');} export function preparePrivateEvidence(){throw new Error('permission inspection refused');}");
+  put('momm/scripts/evidence-permissions.mjs', "const refusal=()=>Object.assign(new Error('permission inspection refused'),{code:'MOMM_EVIDENCE_PERMISSIONS'}); export function requirePrivateEvidence(){throw refusal();} export function preparePrivateEvidence(){throw refusal();}");
   const refused=run('--save-report','--commit',sha); assert.notEqual(refused.status,0);
   assert.doesNotMatch(refused.stdout,/RUN|PASS/);
-  put('momm/scripts/evidence-permissions.mjs', "import path from 'node:path'; import fs from 'node:fs'; export function requirePrivateEvidence(){} export function preparePrivateEvidence(p){if(path.basename(p).startsWith('ci-')) throw new Error('per-run refusal'); fs.mkdirSync(p,{recursive:true,mode:0o700});}");
+  put('momm/scripts/evidence-permissions.mjs', "import path from 'node:path'; import fs from 'node:fs'; export function requirePrivateEvidence(){} export function preparePrivateEvidence(p){if(path.basename(p).startsWith('ci-')) throw Object.assign(new Error('per-run refusal'),{code:'MOMM_EVIDENCE_PERMISSIONS'}); fs.mkdirSync(p,{recursive:true,mode:0o700});}");
   const runRefused=run('--save-report','--commit',sha);
   assert.notEqual(runRefused.status,0); assert.match(runRefused.stderr,/per-run refusal/);
   assert.doesNotMatch(runRefused.stdout,/RUN|PASS/);
@@ -156,14 +176,19 @@ if(pending&&(mode==='every-write'||(mode==='final-write'&&String(data).includes(
 
   // 1.17.1 R3: the reason is printed plainly, before any RUN line.
   item('R3 report storage is checked before the first suite', () => {
-    for (const r of [refused, runRefused]) { noTrace(r); assert.match(r.stderr, /Report storage refused before any suite ran/); }
+    for (const r of [refused, runRefused]) { noTrace(r); oneLine(r); assert.match(r.stderr, /Report storage refused before any suite ran/); }
     assert.match(refused.stderr, /permission inspection refused/);
     put('momm/scripts/evidence-permissions.mjs', permissive);
     const ran = okRuns();
     const unwritable = faulty('every-write', '--save-report', '--commit', sha);
     assert.equal(unwritable.status, 1); noTrace(unwritable);
     assert.doesNotMatch(unwritable.stdout, /RUN|PASS/);
-    assert.match(unwritable.stderr, /Report storage refused before any suite ran: .*EACCES/);
+    assert.match(unwritable.stderr, /Report storage refused before any suite ran: .*EACCES/); oneLine(unwritable);
+    // Only a refusal is printed as one: an error that is neither the library's nor the file system's is a defect.
+    put('momm/scripts/evidence-permissions.mjs', "export function requirePrivateEvidence(){} export function preparePrivateEvidence(){throw new TypeError('not a refusal');}");
+    const defect = run('--save-report', '--commit', sha);
+    assert.notEqual(defect.status, 0); assert.doesNotMatch(defect.stdout, /RUN|PASS/);
+    assert.match(defect.stderr, /TypeError: not a refusal/); assert.doesNotMatch(defect.stderr, /Report storage refused/);
     assert.equal(okRuns(), ran, 'no suite ran');
   });
   put('momm/scripts/evidence-permissions.mjs', permissive);
@@ -176,7 +201,7 @@ if(pending&&(mode==='every-write'||(mode==='final-write'&&String(data).includes(
     put('scripts/deny.mjs', "import fs from 'node:fs'; fs.writeFileSync(new URL('../deny-now', import.meta.url), 'x');");
     put('.github/workflows/self-test.yml', 'run: node scripts/deny.mjs\n');
     put('momm/scripts/evidence-permissions.mjs', `import fs from 'node:fs'; import path from 'node:path';
-export function requirePrivateEvidence(p){ if(path.basename(p).startsWith('ci-') && fs.existsSync(${JSON.stringify(marker)})) throw Object.assign(new Error('storage changed during the run'),{reason:'additional_principal'}); }
+export function requirePrivateEvidence(p){ if(path.basename(p).startsWith('ci-') && fs.existsSync(${JSON.stringify(marker)})) throw Object.assign(new Error('storage changed during the run'),{code:'MOMM_EVIDENCE_PERMISSIONS',reason:'additional_principal'}); }
 export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0o700}); requirePrivateEvidence(p); }`);
     try {
       const before = folders();

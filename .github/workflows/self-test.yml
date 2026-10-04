@@ -71,9 +71,11 @@ jobs:
         timeout-minutes: 2
         run: node momm/scripts/quotation-diagnostics.test.mjs
       - name: One answer rule for every route and private answer shape (1.17.1 S1, S2)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-answer.test.mjs
       - name: Versioned adapter regression matrix (1.17.1 R2)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/adapter-matrix.test.mjs
       - name: Fail-closed Windows PATH identity
@@ -189,12 +191,15 @@ jobs:
         timeout-minutes: 2
         run: node momm/scripts/probes.test.mjs
       - name: remembered CLI/model compatibility, repeated-status notice and gate-review guard (1.17.1 R1, S3, S4)
-        # bash on every OS, so the first failing suite fails the step.
+        if: ${{ !cancelled() }}
+        # bash on every OS; both suites run, and the step fails if either failed (see the list below).
         shell: bash
         timeout-minutes: 4
         run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
           node momm/scripts/compatibility.test.mjs
           node momm/scripts/run-notices.test.mjs
+          exit $failed
       - name: governor split/rating/direct rules (1.16)
         if: ${{ !cancelled() }}
         timeout-minutes: 2
