@@ -10,7 +10,8 @@ function assertNoLinks(dir){let part=path.resolve(dir);while(true){if(fs.existsS
 // The Windows ACL check runs on every call: no marker file or in-process memory stands in for it,
 // because ACLs can change without changing anything a cache could compare. Each caller checks once
 // per run (speak, status --recover, support bundle, watcher start), so this costs one PowerShell
-// launch per playback. Failure reasons are typed; no path or raw PowerShell output is reported.
+// launch per playback. POSIX modes are also checked on every call. Failure reasons are typed; no
+// path or raw PowerShell output is reported.
 function privacyFailure(result,timeoutMs){
  if(result.error&&result.error.code==='ETIMEDOUT')return 'Windows permission check timed out after '+Math.round(timeoutMs/1000)+' s';
  if(result.error)return 'Windows permission check could not start ('+(result.error.code||'error')+')';

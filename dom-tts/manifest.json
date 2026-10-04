@@ -72,7 +72,7 @@
     },
     {
       "path": "scripts/runtime.js",
-      "sha256": "28fa44786b9f22c7a93c3a944323f42091170715c50e57416cf3ca4a92c56d83"
+      "sha256": "8cee8917159a71915a2172bd6080290e3e126b1e520f2701721d5192232d2f50"
     },
     {
       "path": "scripts/self-test.js",
