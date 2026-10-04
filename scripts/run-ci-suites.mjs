@@ -118,13 +118,23 @@ const report = { schema: 'momm-ci-suites/1', run_id: runId, commit,
   platform: process.platform, arch: process.arch, node: process.version,
   started_at: new Date().toISOString(), filter: grep, selected: selected.length, results: [] };
 let stored = -1; // how many suite results report.json holds; -1 until it has been written once
-const persist = () => {
-  if (!reportDir) return;
+// A rename refused with one of these is often a file held for a moment by a sync client or a scanner
+// (EPERM on the final rename of report.json in a OneDrive-synced checkout, 4 October 2026).
+const TRANSIENT = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const pause = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+// Returns how many retries the rename needed. Only the rename is repeated, on the text already written.
+const persist = ({ retries = 0 } = {}) => {
+  if (!reportDir) return 0;
   const temporary = path.join(reportDir, `report-${randomUUID()}.tmp`);
   fs.writeFileSync(temporary, JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-  // A failed rename leaves the text it could not move where it was written; --recover-report reads it there.
-  try { fs.renameSync(temporary, path.join(reportDir, 'report.json')); } catch (error) { error.pending = temporary; throw error; }
-  stored = report.results.length;
+  for (let retried = 0; ; retried++) {
+    try { fs.renameSync(temporary, path.join(reportDir, 'report.json')); stored = report.results.length; return retried; }
+    catch (error) {
+      if (retried < retries && TRANSIENT.has(error?.code)) { pause(250); continue; }
+      // A failed rename leaves the text it could not move where it was written; --recover-report reads it there.
+      error.pending = temporary; error.retried = retried; throw error;
+    }
+  }
 };
 // Twice: the second save replaces the first, which is the step every later save repeats.
 try { persist(); persist(); } catch (error) { storageRefused(error); }
@@ -169,20 +179,36 @@ for (const [index, command] of selected.entries()) {
   } catch (error) { if (!storageFailure(error)) throw error; saveError = error; break; }
 }
 const ran = report.results.length;
+let saveRetries = 0, countUnwritten = false;
 if (!saveError) {
   report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed;
-  // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
-  try { if (reportDir) { recheck(); persist(); } } catch (error) { if (!storageFailure(error)) throw error; saveError = error; }
+  report.save_retries = 0;
+  try {
+    if (reportDir) {
+      // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
+      recheck();
+      // The final rename gets three more tries, a quarter of a second apart, before the save is called failed.
+      saveRetries = persist({ retries: 3 });
+      // The report is saved. A count above 0 is written into it with one more save; if that one fails the
+      // file still says 0, and the outcome line says the count is not in the file.
+      if (saveRetries) {
+        report.save_retries = saveRetries;
+        try { persist({ retries: 3 }); } catch (error) { if (!storageFailure(error)) throw error; countUnwritten = true; }
+      }
+    }
+  } catch (error) { if (!storageFailure(error)) throw error; saveError = error; }
 }
-// Failed-save recovery (1.17.1 R4). The attempt is left exactly as it is: no retry, no repair, nothing
-// removed. The lines below say where the results are and how to complete the record somewhere else.
+// Failed-save recovery (1.17.1 R4). Beyond the retried rename the attempt is left exactly as it is: no
+// repair, nothing removed. The lines below say where the results are and how to complete the record
+// somewhere else.
+const afterRetries = !saveRetries ? '' : `after ${saveRetries} ${saveRetries === 1 ? 'retry' : 'retries'}${countUnwritten ? ', not recorded in the file: writing the count failed' : ''}; `;
 let reportSaved = !reportDir ? 'not requested (add --save-report --commit <full SHA> to keep a private report)'
-  : `yes, ${shown(path.join(reportDir, 'report.json'))} (private; inspect before sharing)`;
+  : `yes, ${shown(path.join(reportDir, 'report.json'))} (${afterRetries}private; inspect before sharing)`;
 if (saveError) {
   // A rename that failed after the last suite left every result in the file it could not move.
   const complete = saveError.pending && ran === selected.length ? saveError.pending : null;
   const kept = fs.existsSync(path.join(reportDir, 'report.json')) && stored >= 0;
-  process.stdout.write(`The report could not be saved (${reasonOf(saveError)}). The run folder was left as it is: nothing was retried, repaired or removed.\n`);
+  process.stdout.write(`The report could not be saved (${reasonOf(saveError)}).${saveError.retried ? ` The final rename was retried ${saveError.retried} times.` : ''} The run folder was left as it is: nothing was repaired or removed.\n`);
   if (evidenceRefusal(saveError)) process.stdout.write(evidenceRefusal(saveError) + '\n');
   if (ran < selected.length) process.stdout.write(`The run stopped after suite ${ran} of ${selected.length}; the other ${selected.length - ran} were not run.\n`);
   if (complete) process.stdout.write(`Complete results: ${shown(complete)}\n`);
@@ -265,7 +291,8 @@ async function recoverReport(source, target) {
   try { (await import('../momm/scripts/evidence-permissions.mjs')).preparePrivateEvidence(target); }
   catch (error) { if (!refusalOf(error) && !error?.syscall) throw error; refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); }
   const file = path.join(target, `ci-${chosen.value.run_id}-recovered.json`);
-  const body = JSON.stringify({ ...chosen.value, passed, failed, recovery: { schema: 'momm-ci-recovery/1', recovered_at: new Date().toISOString(),
+  // A file its save never moved into place states no retry count of that save.
+  const body = JSON.stringify({ ...chosen.value, ...(chosen.name !== 'report.json' && 'save_retries' in chosen.value ? { save_retries: null } : {}), passed, failed, recovery: { schema: 'momm-ci-recovery/1', recovered_at: new Date().toISOString(),
     source_folder: source, source_file: chosen.name, source_sha256: createHash('sha256').update(chosen.bytes).digest('hex'),
     totals: recorded ? 'recorded by the run' : 'derived from the saved results', suites_rerun: false } }, null, 2) + '\n';
   // Written once, never over an existing file, and without the rename that failed in the original folder.
