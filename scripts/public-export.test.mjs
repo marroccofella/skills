@@ -52,7 +52,11 @@ try{
      renderPublic({root:dir});assert.equal(fs.readFileSync(readme,'utf8'),spelled(current),'the renderer rewrites the line and keeps the line endings');
      renderPublic({root:dir,check:true});
    }
-   fs.writeFileSync(readme,'# fixture\n');assert.throws(()=>renderPublic({root:dir}),/exactly one momm-release-status block/);assert.equal(fs.readFileSync(readme,'utf8'),'# fixture\n','a README without the block is refused before anything is written');
+   // Closing review of 1.17.1: the README alone could not show "before anything is written". Another output is
+   // made stale first; a renderer that wrote its outputs and then refused would have rendered it again.
+   const home=path.join(dir,'docs/momm/index.html');assert(fs.readFileSync(home,'utf8').length>100,'the renderer wrote the home page above');fs.writeFileSync(home,'stale');
+   fs.writeFileSync(readme,'# fixture\n');assert.throws(()=>renderPublic({root:dir}),/exactly one momm-release-status block/);assert.equal(fs.readFileSync(readme,'utf8'),'# fixture\n','a README without the block is left as it was');
+   assert.equal(fs.readFileSync(home,'utf8'),'stale','and it is refused before anything is written');
  });
  test('preview accepts an aliased docs root but not outside files',()=>{
    const dir=path.join(temp,'alias-preview'),real=path.join(temp,'real-docs'),outside=path.join(temp,'outside');fs.mkdirSync(dir);fs.mkdirSync(real);fs.mkdirSync(outside);fs.writeFileSync(path.join(real,'index.html'),'inside');fs.writeFileSync(path.join(outside,'index.html'),'outside');

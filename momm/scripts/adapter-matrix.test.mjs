@@ -151,6 +151,20 @@ try {
       assert(of.some((one) => one.expect.status !== 'success'), `${route}: no refusal case`);
     }
   });
+  // Closing review of 1.17.1: the 1.0.91 description gave narrated-fenced-success as "the shape of refused
+  // pieces of a real review", beside a case that expects success. A description may say that a shape was
+  // refused once; the sentence that names a case expected to succeed then also says it is accepted.
+  const misdescribed = (described, names) => String(described).split(/(?<=\.)\s+/).flatMap((sentence) => names.filter((name) =>
+    new RegExp(`(?<![\\w-])${name.replace(/\.jsonl?$/, '')}(?![\\w-])`).test(sentence) && /\brefused\b/.test(sentence) && !/\baccepted\b/.test(sentence)));
+  await check('a description never leaves a case that is expected to succeed described as refused', () => {
+    for (const folder of new Set(live.cases.map((one) => `${one.route}/${one.version}`))) {
+      const expected = JSON.parse(fs.readFileSync(path.join(FIXTURES, folder, 'expected.json'), 'utf8'));
+      const succeed = live.cases.filter((one) => `${one.route}/${one.version}` === folder && one.expect.status === 'success').map((one) => one.name);
+      assert.deepEqual(misdescribed(expected.shape_from, succeed), [], `${folder}: say that the shape is accepted now, or do not call it refused`);
+    }
+    assert.deepEqual(misdescribed('a-success is the shape of refused pieces of a review. not-json stays refused.', ['a-success.jsonl', 'success.jsonl']), ['a-success.jsonl']);
+    assert.deepEqual(misdescribed('a-success was refused in a review and is accepted now.', ['a-success.jsonl']), []);
+  });
   await check('the Grok capture in the matrix is the recorded 1.0.41 capture, byte for byte', () => {
     const recorded = fs.readFileSync(path.join(scripts, 'fixtures', 'grok-streaming-json-1.0.41.jsonl'));
     assert(recorded.equals(fs.readFileSync(path.join(FIXTURES, 'grok', '1.0.41', 'capture-declined.jsonl'))));
