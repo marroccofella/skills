@@ -1,0 +1,61 @@
+{
+  "defaultProvider": "edge",
+  "fallbackProvider": "sapi",
+  "profiles": {
+    "concise": {
+      "speed": 1.15,
+      "mode": "summary",
+      "maxChunkChars": 650
+    },
+    "engineering": {
+      "speed": 0.95,
+      "mode": "full",
+      "maxChunkChars": 520
+    },
+    "conversational": {
+      "speed": 1.0,
+      "mode": "summary",
+      "maxChunkChars": 420
+    }
+  },
+  "providers": {
+    "edge": {
+      "voice": "en-US-AriaNeural",
+      "rate": "+0%"
+    },
+    "sapi": {
+      "voice": "",
+      "rate": 0
+    },
+    "piper": {
+      "executable": "piper",
+      "voiceModel": ""
+    }
+  },
+  "voiceChoices": [
+    {
+      "label": "Aria - US English",
+      "value": "en-US-AriaNeural"
+    },
+    {
+      "label": "Jenny - US English",
+      "value": "en-US-JennyNeural"
+    },
+    {
+      "label": "Guy - US English",
+      "value": "en-US-GuyNeural"
+    },
+    {
+      "label": "Sonia - UK English",
+      "value": "en-GB-SoniaNeural"
+    },
+    {
+      "label": "Ryan - UK English",
+      "value": "en-GB-RyanNeural"
+    },
+    {
+      "label": "Steffan - Cat US English",
+      "value": "en-US-SteffanNeural"
+    }
+  ]
+}

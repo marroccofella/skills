@@ -1,0 +1,9 @@
+{
+  "runtime": { "mode": "standard", "standardModeEnabled": true, "duplexModeEnabled": false },
+  "privacy": { "localOnly": true, "retainAudio": false },
+  "wake": { "defaultPhrase": "Hey Dom", "mode": "manual", "hotkey": "Ctrl+Alt+Space" },
+  "audio": { "captureDevice": "" },
+  "stt": { "whisperPath": "", "modelPath": "" },
+  "agents": {},
+  "models": {}
+}
