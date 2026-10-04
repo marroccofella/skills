@@ -51,7 +51,8 @@ node scripts/run-ci-suites.mjs
 ```
 
 It runs every suite the CI workflow runs, prints `PASS` or `FAIL` for each with its time, and ends with
-"N of N suites passed". Report the last line and any `FAIL` lines with their output. To re-run a subset:
+"N of N suites passed", then `Report saved: …` and `Exit status: N` (since 1.17.1). Report those three
+lines and any `FAIL` lines with their output. To re-run a subset:
 `node scripts/run-ci-suites.mjs --grep split`.
 
 For a private original-run report and captured failed-suite output, use:
@@ -60,8 +61,9 @@ For a private original-run report and captured failed-suite output, use:
 node scripts/run-ci-suites.mjs --save-report --commit <PINNED_SHA>
 ```
 
-The runner prints `RUN i/N` before each suite. The SHA label is caller-supplied,
-not automatically verified: record HEAD and clean status before and after the run.
+The runner prints `RUN i/N` before each suite. The SHA label is caller-supplied. Since 1.17.1 the
+report also records the actual `HEAD` and whether the tree was clean, and says when the label differs;
+still record HEAD and clean status yourself before and after the run.
 Reports use private `.ensemble_reviews/` by default, or the project-specific folder
 under `MOMM_EVIDENCE_HOME` when configured. Existing permissions are inspected, never
 repaired; refusal stops before suites launch. Each invocation preserves its own

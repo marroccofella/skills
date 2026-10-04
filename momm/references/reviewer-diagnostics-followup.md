@@ -17,6 +17,7 @@ installed skills or account settings.
   report. Results do not automatically classify failures as environmental.
 - Commit identity is caller-supplied, explicitly labelled as such. Verify
   `git rev-parse HEAD` and `git status --porcelain` separately before and after.
+  (Since 1.17.1 the report also records the actual `HEAD` and tree state beside the label.)
 - Existing permission inspection is reused; inaccessible or non-private evidence
   storage refuses before suites launch. Existing ACLs are never repaired.
 

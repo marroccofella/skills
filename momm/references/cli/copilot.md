@@ -59,9 +59,9 @@ the refusal names up to three unrecognised event types (plain lower-case names o
 counted, never echoed), so the next change is visible without a capture.
 
 The same day, Copilot answered a real 10 KB review twice with its whole answer inside one Markdown
-code fence, against the contract's "no markdown fences", and was refused as "not strict JSON". Every
-other route already extracts the object from such an answer. Since 1.17.1 an answer that is exactly one
-fenced block (three backticks, optionally `json`) is unwrapped and its inside parsed as strictly as
+code fence, against the contract's "no markdown fences", and was refused as "not strict JSON". Claude,
+Codex, Gemini and Grok already extract the object from such an answer; Antigravity, like Copilot, did not. Since 1.17.1 an answer that is exactly one
+fenced block, on Copilot and Antigravity alike (one rule, `scripts/review-answer.mjs`), (three backticks, optionally `json`) is unwrapped and its inside parsed as strictly as
 before (the `json` tag in any case). Nothing is repaired: prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside
 is still refused.
 

@@ -7,9 +7,13 @@
       "version": "1.17.1",
       "tag": "momm-1.17.1",
       "changes": [
-        "Copilot reviews work again on recent Copilot CLI versions (captured on 1.0.91; 1.0.90 failed the same way): MOMM 1.17.0 refused every Copilot answer because those CLIs add two events (session.warning, model.call_final_result) to the output it reads. Older Copilot CLIs and other routes were not affected.",
-        "Copilot sometimes returns its whole answer inside one Markdown code fence; that answer is now unwrapped and checked as strictly as before, instead of being refused. When a reviewer CLI adds an event in future, the refusal names the unrecognised event types; a model call that does not report success is refused.",
-        "No other behaviour changes. If Codex reports a CLI/model compatibility error, update the Codex CLI; MOMM never changes your Codex settings."
+        "Copilot reviews work again on recent Copilot CLI versions (captured on 1.0.91; 1.0.90 failed the same way): 1.17.0 refused every Copilot answer because those CLIs add two events to the output MOMM reads. Older Copilot CLIs and other routes were not affected.",
+        "An answer returned inside one Markdown code fence is unwrapped and checked as strictly as before, on Copilot and Antigravity, by one shared rule; nothing is repaired.",
+        "A reviewer CLI that is too old for its configured model is flagged at preflight, before allowance is spent; MOMM makes no model call to find out and never changes your CLI settings.",
+        "Failures explain themselves: refusals name an unrecognised CLI event; a non-JSON answer leaves a private shape record; three identical failures in a row produce a notice; a refused evidence location prints one plain line with a safe remedy.",
+        "Updates stop before changing anything when a Git lock is present, and never remove it; a protocol change is summarised before the full diff; a Setup Center left running across an update says so.",
+        "The suite runner refuses unknown options, checks report storage first, ends with suites passed, report saved and exit status as three separate lines, and can recover a report that failed to save.",
+        "A fixture matrix runs each reviewer adapter against supported CLI versions; the local hygiene suite catches machine paths and credential-looking literals; the README and site carry one generated stable/candidate status line."
       ]
     },
     {
