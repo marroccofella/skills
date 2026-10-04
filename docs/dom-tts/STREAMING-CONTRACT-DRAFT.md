@@ -183,3 +183,12 @@ neither restores source access. Acknowledged means that hook completed, not nati
 process exit or acoustic silence unless the hook itself supplies those guarantees.
 Hooks must settle; no timeout, durable retry or native-stop guarantee is implemented.
 Regranting a reader does not restore a revoked queue's session selection.
+
+The experimental SegmentStream composes an explicit injected source grant, JSONL
+framing and stable-segment queue admission. One pump reads a bounded chunk without
+awaiting playback. Valid prefix records are admitted before a later framing error;
+refused admission retains pending records and blocks further reads for explicit
+reconciliation. Syntactic byte progress and admitted/duplicate counts are separate;
+there is no durable source-offset acknowledgement. Revocation clears pending/carry
+and revokes source plus queue. This is not a filesystem tailer, delta converter,
+native player, consent UI or real harness. Failed streams are not auto-reset/replayed.

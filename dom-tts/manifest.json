@@ -51,6 +51,10 @@
       "sha256": "a0d8e54d856c20ed648a9c0587cdb09675e6c6c167c26770e5c1a0073a8515d9"
     },
     {
+      "path": "scripts/experimental/segment-stream.js",
+      "sha256": "087d2c9e00e1a0486bce6d0cd32de987ffbeaa2c534faa23db7f53bd2bd2f369"
+    },
+    {
       "path": "scripts/experimental/source-reader.js",
       "sha256": "7658ad378e1bc49648ff4611c5bfe8eab345a4b626e8b29c8d329d7d72c2a1d3"
     },
@@ -161,6 +165,10 @@
     {
       "path": "tests/recovery-checks.cjs",
       "sha256": "20d4d839fed3dcc0a5c31468fbb9e20cafe5cebd18a367aa7da56244133dea75"
+    },
+    {
+      "path": "tests/segment-stream-checks.cjs",
+      "sha256": "726b2dfd3412549d3e8c89ea69dbabc43edd90828dfcac0d4a1ed9bc9b5ce293"
     },
     {
       "path": "tests/source-reader-checks.cjs",
