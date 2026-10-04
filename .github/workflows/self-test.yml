@@ -305,12 +305,17 @@ jobs:
         run: node momm/scripts/setup-maintenance.test.mjs
       - name: Setup Center JavaScript syntax
         if: ${{ !cancelled() }}
+        # bash on every OS, as for the suite lists: under the Windows default (PowerShell) only the last
+        # check's exit code counted. Every check runs, and the step fails if any failed.
+        shell: bash
         run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
           node --check momm/scripts/setup-ui.mjs
           node --check momm/scripts/ledger.mjs
           node --check momm/scripts/multi-review.mjs
           node --check momm/assets/setup-ui/app.js
           node --check myskills/scripts/health-contract-test.mjs
+          exit $failed
       - name: myrepo offline safety self-test
         if: ${{ !cancelled() }}
         run: node myrepo/scripts/publish.mjs --self-test

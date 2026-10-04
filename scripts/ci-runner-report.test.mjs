@@ -166,12 +166,16 @@ try {
   put('fault.cjs', `const fs=require('node:fs'),path=require('node:path');const mode=process.env.MOMM_TEST_FAULT;
 const deny=(code,call,file)=>Object.assign(new Error(code+': operation not permitted, '+call+" '"+file+"'"),{code,syscall:call,path:file});
 const final=(file)=>{try{return fs.readFileSync(file,'utf8').includes('"finished_at"');}catch{return false;}};
-const rename=fs.renameSync,write=fs.writeFileSync;
-fs.renameSync=function(from,to){if(mode==='final-rename'&&path.basename(String(to))==='report.json'&&final(from))throw deny('EPERM','rename',String(from));return rename.apply(this,arguments);};
+const rename=fs.renameSync,write=fs.writeFileSync;let finals=0;
+fs.renameSync=function(from,to){if(path.basename(String(to))==='report.json'&&final(from)){finals++;fs.appendFileSync(process.env.MOMM_TEST_RENAMES,'x');
+const code=mode==='final-rename'?'EPERM':mode==='final-rename-twice'&&finals<=2?'EPERM':mode==='final-rename-recount'&&finals!==3?'EBUSY':mode==='final-rename-enospc'?'ENOSPC':null;
+if(code)throw deny(code,'rename',String(from));}return rename.apply(this,arguments);};
 fs.writeFileSync=function(file,data){const pending=/^report-.*\\.tmp$/.test(path.basename(String(file)));
 if(pending&&(mode==='every-write'||(mode==='final-write'&&String(data).includes('"finished_at"'))))throw deny('EACCES','open',String(file));return write.apply(this,arguments);};
 `);
-  const faulty = (fault, ...args) => spawnSync(process.execPath, ['--require', path.join(root, 'fault.cjs'), runner, ...args], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:'',MOMM_TEST_FAULT:fault} });
+  const faulty = (fault, ...args) => spawnSync(process.execPath, ['--require', path.join(root, 'fault.cjs'), runner, ...args], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:'',MOMM_TEST_FAULT:fault,MOMM_TEST_RENAMES:path.join(root,'final-renames.log')} });
+  // How many times the final rename was attempted since this was last asked.
+  const finalRenames = () => { const log = path.join(root, 'final-renames.log'); const tried = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').length : 0; fs.rmSync(log, { force: true }); return tried; };
   const pendingIn = (dir) => fs.readdirSync(dir).filter(n => /^report-.*\.tmp$/.test(n));
 
   // 1.17.1 R3: the reason is printed plainly, before any RUN line.
@@ -225,9 +229,12 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
   // in a OneDrive-synced checkout and the process exited 1 with a stack trace.
   let lostFolder = null;
   item('R4 a failed final rename keeps the attempt and says where the results are', () => {
-    const before = folders();
-    const lost = faulty('final-rename', '--save-report', '--commit', sha);
+    const before = folders(); finalRenames();
+    const began = Date.now(), lost = faulty('final-rename', '--save-report', '--commit', sha);
     assert.equal(lost.status, 1); noTrace(lost);
+    // 1.17.1 follow-up: the rename is retried before the save is called failed, and then nothing else changes.
+    assert.equal(finalRenames(), 4, 'one try and three retries'); assert(Date.now() - began >= 700, 'the retries are spaced out');
+    assert.match(lost.stdout, /The final rename was retried 3 times\./);
     assert.match(lost.stdout, /PASS\s+0 .*scripts\/ok/);
     const [suites, saved, exit] = lastLines(lost);
     assert.match(suites, /^1 of 1 suites passed on \S+ \S+, Node v\d+\.\d+\.\d+$/);
@@ -242,6 +249,25 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     assert(where && same(where[1], path.join(lostFolder, pending[0])), 'the output names the file that holds the complete results');
     const named = lost.stdout.match(/^Run folder: (.+)$/m);
     assert(named && same(named[1], lostFolder)); assert.match(lost.stdout, /--recover-report <run folder> --to <private dir>/);
+  });
+  item('R4 a final rename that fails briefly is retried, and the report says so', () => {
+    const outcome = (fault) => { const before = folders(); finalRenames(); const r = fault ? faulty(fault, '--save-report', '--commit', sha) : run('--save-report', '--commit', sha); noTrace(r); const folder = newest(before); return { r, folder, saved: lastLines(r)[1], exit: lastLines(r)[2], report: readJson(path.join(folder, 'report.json')) }; };
+    const eased = outcome('final-rename-twice');
+    assert.equal(eased.r.status, 0, eased.r.stderr); assert.equal(eased.exit, 'Exit status: 0');
+    assert.match(eased.saved, /^Report saved: yes, .+report\.json \(after 2 retries; private; inspect before sharing\)$/);
+    assert.equal(eased.report.save_retries, 2); assert.equal(typeof eased.report.finished_at, 'string'); assert.equal(eased.report.passed, 1);
+    assert.deepEqual(pendingIn(eased.folder), [], 'nothing is left behind by a save that succeeded');
+    assert.equal(finalRenames(), 4, 'three for the save, one to record the count');
+    const first = outcome(null);
+    assert.equal(first.r.status, 0); assert.equal(first.report.save_retries, 0); assert.doesNotMatch(first.saved, /retr/);
+    // Only a failure that may pass is retried.
+    const full = outcome('final-rename-enospc');
+    assert.equal(full.r.status, 1); assert.equal(finalRenames(), 1); assert.match(full.saved, /^Report saved: no \(ENOSPC on rename\)/);
+    assert.doesNotMatch(full.r.stdout, /retried/);
+    // The report is saved, but writing the count into it failed: the output says the file's count is not right.
+    const uncounted = outcome('final-rename-recount');
+    assert.equal(uncounted.r.status, 0, uncounted.r.stderr); assert.equal(typeof uncounted.report.finished_at, 'string');
+    assert.match(uncounted.saved, /^Report saved: yes, .+report\.json \(after 2 retries, not recorded in the file: writing the count failed; private; inspect before sharing\)$/);
   });
   item('R4 --recover-report completes the record elsewhere', () => {
     assert(lostFolder, 'needs the run folder of the failed save');
@@ -263,6 +289,7 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     assert.equal(done.run_id, kept.run_id); assert.equal(done.commit, sha); assert.deepEqual(done.results, kept.results);
     assert.equal(done.recovery.source_file, pending); assert.equal(done.recovery.suites_rerun, false);
     assert.equal(done.recovery.totals, 'recorded by the run');
+    assert.equal(done.save_retries, null, 'a save that never completed has no retry count to repeat');
     assert.equal(done.recovery.source_sha256, digest(fs.readFileSync(path.join(lostFolder, pending))));
     assert.deepEqual(snapshot(lostFolder), frozen, 'recovery never modifies the original folder');
     assert.equal(okRuns(), ran, 'recovery reruns nothing');
@@ -431,7 +458,7 @@ export function preparePrivateEvidence(p){ requirePrivateEvidence(p); fs.mkdirSy
   const keepGoing = `failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e`;
   const lists = steps.filter(s => /^ {8}shell: bash$/m.test(s) && /^ {8}run: \|$/m.test(s))
     .map(s => s.split('\n').filter(l => l.startsWith(' '.repeat(10))).map(l => l.slice(10)))
-    .filter(lines => lines.filter(l => /^node \S+\.mjs/.test(l)).length > 1);
+    .filter(lines => lines.filter(l => l.startsWith('node ')).length > 1);
   item('S9 the listed commands are what they were: a file and plain flags', () => {
     const listed = spawnSync(process.execPath, [fileURLToPath(new URL('./run-ci-suites.mjs', import.meta.url)), '--list'], { encoding: 'utf8', timeout: 30000, windowsHide: true });
     assert.equal(listed.status, 0, listed.stderr);
@@ -452,29 +479,35 @@ export function preparePrivateEvidence(p){ requirePrivateEvidence(p); fs.mkdirSy
   });
   item('S9 a step that lists suites runs all of them and fails if any failed', () => {
     assert(lists.length >= 2, 'the suite-list steps were found');
+    // The syntax checks are a list too: under the Windows default shell only the last one's exit code counted.
+    for (const name of ['Setup Center JavaScript syntax']) {
+      const step = steps.find(s => s.startsWith('name: ' + name + '\n'));
+      assert(step && /^ {8}shell: bash$/m.test(step), `${name} must run under bash`);
+      assert(lists.some(lines => step.includes('\n          ' + lines[1] + '\n')), `${name} must be held to the list rule`);
+    }
     for (const lines of lists) {
       assert.equal(lines[0], keepGoing); assert.equal(lines.at(-1), 'exit $failed');
-      for (const line of lines.slice(1, -1)) assert.match(line, /^node [\w./-]+\.mjs( --[a-z-]+)*$/, `unexpected line in a suite list: ${line}`);
+      for (const line of lines.slice(1, -1)) assert.match(line, /^node( --check)? [\w./-]+\.m?js( --[a-z-]+)*$/, `unexpected line in a suite list: ${line}`);
     }
     if (process.platform === 'win32' || !fs.existsSync('/bin/bash')) return;
     // The step's own text, run the way GitHub runs `shell: bash`, with a stand-in for node.
     const bin = path.join(externalHome, 'bin'), log = path.join(externalHome, 'stub.log');
-    put('bin/node', '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$STUB_LOG"\ncase " $STUB_FAIL " in *" $1 "*) echo "stub failure in $1"; exit 1;; esac\nexit 0\n', externalHome);
+    put('bin/node', '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$STUB_LOG"\ncase "|$STUB_FAIL|" in *"|$*|"*) echo "stub failure in $*"; exit 1;; esac\nexit 0\n', externalHome);
     fs.chmodSync(path.join(bin, 'node'), 0o755);
     for (const [index, lines] of lists.entries()) {
       const script = path.join(externalHome, `step-${index}.sh`), suites = lines.slice(1, -1).map(l => l.slice(5));
       fs.writeFileSync(script, lines.join('\n') + '\n');
       const step = (failing) => {
         fs.rmSync(log, { force: true });
-        const r = spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', script], { encoding: 'utf8', timeout: 30000, env: { PATH: `${bin}:/usr/bin:/bin`, STUB_LOG: log, STUB_FAIL: failing.map(s => s.split(' ')[0]).join(' ') } });
+        const r = spawnSync('/bin/bash', ['--noprofile', '--norc', '-eo', 'pipefail', script], { encoding: 'utf8', timeout: 30000, env: { PATH: `${bin}:/usr/bin:/bin`, STUB_LOG: log, STUB_FAIL: failing.join('|') } });
         assert.deepEqual(fs.readFileSync(log, 'utf8').trimEnd().split('\n'), suites, 'every suite ran, in order');
         return r;
       };
       assert.equal(step([]).status, 0);
-      const failing = [suites[1], suites.at(-2)], r = step(failing);
+      const failing = [...new Set([suites[1], suites.at(-2)])], r = step(failing);
       assert.equal(r.status, 1, 'a failure in the middle fails the step even though the last suite passed');
       for (const suite of failing) assert(r.stdout.includes(`::error::Suite failed: node ${suite}`), `the failing suite is named: ${suite}`);
-      assert.equal(r.stdout.match(/::error::/g).length, 2);
+      assert.equal(r.stdout.match(/::error::/g).length, failing.length);
     }
   });
 
