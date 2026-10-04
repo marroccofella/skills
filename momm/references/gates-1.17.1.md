@@ -104,7 +104,7 @@ that refusal.
 | R7 | A refused evidence location prints one plain line with the reason and a safe remedy | `evidence-location.test.mjs`, `shutdown.test.mjs` |
 | R8 | An update stops on a Git lock before any change; the lock is never removed | `update.test.mjs`, `stabilisation.test.mjs`, `update-claim.test.mjs` |
 | R9 | A saved report records the actual `HEAD` and tree state beside the supplied label | `scripts/ci-runner-report.test.mjs` |
-| R10 | A Setup Center running an older version than the installed one says so, names the control that stops it, and after a refresh that fails without the version check keeps the notice, marked as not checked again | `setup-maintenance.test.mjs` |
+| R10 | A Setup Center running a different version from the installed one says so, names the control that stops it, and after a refresh that fails without the version check keeps the notice, marked as not checked again | `setup-maintenance.test.mjs` |
 | S1 | One fence-unwrapping rule for Copilot and Antigravity; the extracting routes are unchanged | `review-answer.test.mjs` |
 | S2 | A non-JSON answer leaves a private shape record: its first 80 characters after redaction, and no more of the answer | `review-answer.test.mjs` |
 | S3 | Three recorded runs with the same failure produce a notice | `run-notices.test.mjs` |
@@ -131,9 +131,10 @@ that refusal.
 
 Gate 3 is met only when every range review of the 1.17.1 changes is listed here with a complete
 receipt. Listed: the two reviews of the Copilot fix, the three range reviews of the whole delta (R1 to
-R10 and S1 to S10) and the two closing reviews of the changes made in triage. The final review of the
-changes made in closing triage is added when its receipt is complete; until it is listed, gate 3 is
-open.
+R10 and S1 to S10), the two closing reviews of the changes made in triage, and the final review of the
+changes made in closing triage. One last review, of the single change made in final triage and of the
+entries this record gained after the closing reviews, is added when its receipt is complete; until it
+is listed, gate 3 is open.
 
 - `rev_20261004062357_5e1763ad52ff` — the Copilot event fix. Codex, Antigravity and Grok ACCEPT, no
   findings; Copilot `invalid_output` (the fenced answer, finding 1). Six suggestions ruled, three
@@ -241,6 +242,23 @@ twelve pieces no Copilot answer was refused as not strict JSON.
 One suggestion that the records packet of the first closing review had declined as outside its files
 is recorded as applied, because the product packet made that change under a finding of the same review.
 
+- `rev_20261004130329_38fbda81466d` — the final review: everything changed in closing triage, product,
+  records and tests (five pieces). Codex and Antigravity ACCEPT, Copilot and Grok MODIFY. Each of the
+  four routes returned valid reviews, and quorum was met on all five pieces. Antigravity's answer on
+  piece 1 was refused on both attempts as not strict JSON (it was bare JSON that does not parse, so
+  nothing could be unwrapped), Copilot's on piece 5 was refused on both attempts because a quote did
+  not match the diff, and Grok timed out on piece 5 (one attempt); none of the three gave a valid
+  review of that piece. Three answers were refused once and accepted on a retry: Copilot's on piece 2
+  (an invalid finding), Antigravity's and Grok's on piece 3 (a quote that did not match). 6 WARNING
+  and 5 NITPICK: one real and fixed, ten shown not to hold. 30 suggestions ruled, none applied.
+  Receipt complete. The real finding was in this record: the entry above said "one real and fixed" and
+  then listed two fixes without saying that the second came from a suggestion. No product source,
+  fixture or release note changed. Two reviewers said the mark on a stale Setup Center notice uses the
+  wrong counter; every ordering of two and of three overlapping refreshes was run through the page's
+  own code and compared with what the mark's sentence says, and it held in each: the mark is shown
+  when the refresh asked for last, among those asked for after the last verified answer arrived,
+  failed without the version check.
+
 ## Found in triage and carried forward
 
 - The capability overlay (`momm/scripts/capabilities.mjs`, outside this release's reviewed range) still
@@ -257,6 +275,15 @@ is recorded as applied, because the product packet made that change under a find
   check repeats on whatever Git runs the suite.
 - The third refused Copilot answer of the gate review had a shape the record could not tell apart
   (neither starting nor ending with a fence); if it recurs, the shape record will show it again.
+- The strict answer rule treats text beside the one fenced block as a second answer only when that
+  text as a whole is JSON. A sentence followed by a bare object, a fence inside a blockquote or an
+  inline code span beside the block is narration, and the fenced block is read and held to the full
+  contract. Whether the two strict routes should refuse those too is a design decision for 1.18.
+- A refresh that was already under way when a stale Setup Center notice was verified does not set the
+  "not checked again" mark by failing later; its failure is shown in its own card. The committed suite
+  pins this for a request sent before the verified one; the case of a request sent after it, but
+  before its answer arrived, is walked by the triage probe only. A committed test is a candidate for
+  1.18.
 
 ## Still required before the tag
 

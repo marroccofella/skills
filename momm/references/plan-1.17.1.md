@@ -12,9 +12,10 @@ weakened; no setting of the user's is changed. Every item has failing-first test
 
 - **F1.** Copilot CLI events `session.warning` and `model.call_final_result` are recognised; a model
   call that does not report success is refused.
-- **F2.** An answer that holds exactly one fenced block is unwrapped and parsed strictly; narration before or
-  after that one block is ignored, and text there that is itself JSON is refused. (The second half was added on 4 October after the gate review of
-  this release showed Copilot writing a sentence before the fence.)
+- **F2.** An answer that holds exactly one fenced block is unwrapped and parsed strictly; narration
+  before or after that one block is ignored, and text there that is itself JSON is refused. (The second
+  half was added on 4 October after the gate review of this release showed Copilot writing a sentence
+  before the fence; its last clause followed the closing review the same day.)
 - **F3.** A refusal for an unrecognised event names it (plain names only).
 
 ## Reliability items proposed on 4 October (R1 to R10)
