@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { ensurePrivate, powershell, psQuote, safeEnv, verifiedDirs } = require('../scripts/runtime');
+const { ensurePrivate, powershell, psQuote, safeEnv } = require('../scripts/runtime');
 if (process.platform !== 'win32') { console.log('SKIP: native Windows ACL checks'); process.exit(0); }
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'dt-acl-'));
 function ps(command) {
@@ -23,8 +23,8 @@ try {
   const link = path.join(fixture, 'junction'); fs.symlinkSync(fresh, link, 'junction');
   assert.throws(() => ensurePrivate(link), /must not contain links/);
   fs.unlinkSync(link);
-  // Alter a previously verified ACL, then simulate the next process.
+  // Alter a previously verified ACL; the same process must see the change on its next check.
   ps('$dir=' + psQuote(fresh) + "; $acl=[IO.Directory]::GetAccessControl($dir,[System.Security.AccessControl.AccessControlSections]::Access); $sid=New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545'); $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'ReadAndExecute','ContainerInherit,ObjectInherit','None','Allow'))); [IO.Directory]::SetAccessControl($dir,$acl)");
-  verifiedDirs.clear(); assert.throws(() => ensurePrivate(fresh), /grants access/);
-  console.log('PASS: broad-parent new state, broad-existing refusal, junction refusal and fresh-process ACL revalidation');
-} finally { verifiedDirs.clear(); fs.rmSync(fixture, { recursive: true, force: true }); }
+  assert.throws(() => ensurePrivate(fresh), /grants access/);
+  console.log('PASS: broad-parent new state, broad-existing refusal, junction refusal and same-process ACL revalidation');
+} finally { fs.rmSync(fixture, { recursive: true, force: true }); }

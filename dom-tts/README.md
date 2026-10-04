@@ -107,10 +107,12 @@ XDG_STATE_HOME/dom-tts (or ~/.local/state/dom-tts) on POSIX.
 DOM_TTS_STATE_DIR selects an isolated test directory. Existing state directories
 must already be private. New Windows state directories allow only the user,
 SYSTEM and Administrators; POSIX directories use owner-only permissions.
-On Windows the permission check runs once per process and folder (up to 60 seconds,
-for slow PowerShell starts). A `.private-verified` marker binds the folder identity
-for reuse within that process; a new process always checks the ACL again. POSIX
-permissions are checked on every call. A failed check names its cause (timeout,
+On Windows the permission check runs on every call (up to 60 seconds, for slow
+PowerShell starts); nothing is cached in memory or on disk, because ACLs can change
+without changing anything a cache could compare. Each command checks once per run,
+so playback costs one PowerShell launch for the check. Markers left by earlier
+development builds are removed after a successful check. POSIX permissions are
+also checked on every call. A failed check names its cause (timeout,
 could not start, folder open to other accounts, or exit code) without paths.
 
 Persistent status holds enums and counters, not speech text, transcript paths
