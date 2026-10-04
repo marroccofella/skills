@@ -76,7 +76,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "b1bcf5728ccd24524dbe9ccffb76077269886d832c5d5c4bf4b94ed6a1cd18ea"
+      "sha256": "5c388d463acee5055d8849534151188ceacd16946081ca61b9dfc36090ebd9d6"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -157,6 +157,10 @@
     {
       "path": "tests/native-boundary.cjs",
       "sha256": "a55d4861003ef7bfd302078643042efa014df8e1dadc4805ff2e75811a3b3765"
+    },
+    {
+      "path": "tests/native-timeout-check.cjs",
+      "sha256": "f965fe511c86a3e0d80a323552758401e9513f5fd3d35bdadf45cb2a640188ea"
     },
     {
       "path": "tests/permission-cache-checks.cjs",

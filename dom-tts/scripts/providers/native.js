@@ -36,14 +36,15 @@ function runChild(command,input,context,onProgress){
   if(context.stopped())return resolve();
   const child=fork(path.join(__dirname,'native-worker.js'),[],{windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],env:safeEnv(),execArgv:[]});
   const cancel=()=>{if(child.connected)child.send({action:'stop'},()=>{});};context.setChild({kill:cancel});
-  let done=false,stderr='',buffer='';
-  let timer=setTimeout(()=>{cancel();finish(new Error('Native speech chunk exceeded 120 seconds'));},120000);
+  let done=false,timedOut=false,stderr='',buffer='';
+  const timeout=()=>{if(done)return;timedOut=true;cancel();};
+  let timer=setTimeout(timeout,120000);
   function finish(error){if(done)return;done=true;clearTimeout(timer);context.setChild(null);error&&!context.stopped()?reject(error):resolve();}
   child.send({action:'start',command,input:input||''},error=>{if(error)finish(new Error('Native speech IPC failed'));});
   child.stderr.on('data',data=>{stderr=(stderr+data).slice(-4096);});
-  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match){clearTimeout(timer);timer=setTimeout(()=>{cancel();finish(new Error('Native speech chunk exceeded 120 seconds'));},120000);onProgress(Number(match[1]));}}});
+  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!timedOut){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
   child.on('error',error=>finish(new Error(error.code==='ENOENT'?'Native speech executable is missing':'Native speech could not start')));
-  child.on('exit',code=>finish(code===0?null:new Error(failureMessage(stderr))));
+  child.on('exit',code=>finish(timedOut?new Error('Native speech chunk exceeded 120 seconds'):code===0?null:new Error(failureMessage(stderr))));
  });
 }
 async function play(chunks,options,context){

@@ -141,3 +141,16 @@ and agent-in-loop scoring. Windows ARM64 is unverified. No global session watche
 tray, microphone, cloud provider or Duplex feature was added. Default spoken replies
 remain a separately configured host preference. Do not merge or tag as stable until
 the evidence gates and owner's release decision are satisfied.
+# Native timeout completion correction — draft
+
+Legion reproduced a native.runChild boundary at a16403b with a harmless owned Node
+stand-in and the120s timer shortened to1s only inside an isolated test process.
+Timeout rejection occurred before worker exit and cleared the owned handle.
+The correction requests stop at timeout but retains ownership until worker exit;
+only then does it report the timeout. Late chunk progress cannot restart the timer.
+New regression fails before/passes after;9903 common Windows assertions/six POSIX
+skips and real-worker environment/stop stand-in checks pass. This is process evidence,
+not acoustic stop, an explanation of the earlier short-reply timeout, or listening
+certification. A non-settling worker/cancellation channel remains a containment gate;
+the implementation does not fabricate successful cleanup on a watchdog deadline.
+Exact-candidate CI and independent review remain pending for this draft correction.
