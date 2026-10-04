@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/source-reader-checks.cjs",
-      "sha256": "40474e0f468e41bdbf0a2ecac81225be3e99859e2a9b8b55b55b88dab39ec1ac"
+      "sha256": "5ba629f1136d5586a54c4eb112cce8207fbabb801500340dc7ef546f7450af32"
     },
     {
       "path": "tests/windows-check.cjs",
