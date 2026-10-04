@@ -201,3 +201,11 @@ The stream owns its direct queue cancellation; an independently supplied source
 hook may also cancel that queue and therefore must be idempotent. Actual
 NarrationQueue.revokeSession is idempotent. Never-settling hooks remain pending;
 there is no fabricated timeout success or native/acoustic guarantee.
+
+The experimental createNativePlayer adapter calls existing prepare/playback with
+explicit bounded options and AbortSignal. It retains private state, playback lock,
+authenticated stop and existing native provider selection; it introduces no shell
+text interpolation or new command option. Saved settings are not read implicitly.
+Its composed regression exercises the actual playback lock/status/cancellation
+path with an injected engine. Actual native queue-stream execution, human listening,
+device timing and all real harness/source adapters remain unverified.
