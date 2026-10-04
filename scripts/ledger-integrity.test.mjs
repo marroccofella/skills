@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {privateTestFixture} from './private-test-fixture.mjs';
@@ -64,5 +64,32 @@ try {
   for (const line of calls) assert.match(line, /^try \{ requirePrivateEvidence\(er\); \}/, 'unguarded permission check: ' + line.trim());
   tests.push({ scenario: 'permission-refusals-are-messages', passed: true });
 } catch (error) { tests.push({ scenario: 'permission-refusals-are-messages', passed: false, error: error.message }); }
+// Found on the released 1.17.1, beside the same defect in the Setup Center self-test: `ledger.mjs
+// --self-test` builds fixture projects with their own .ensemble_reviews and starts the ledger in them.
+// Those children inherited the caller's MOMM_EVIDENCE_HOME, looked under that home, and two checks failed.
+// No workflow step runs that self-test, so this holds it to one thing only: the caller's setting changes
+// nothing. The run without the setting is the control; what it reports, the run with it must report too.
+{
+  const scenario = 'self-test-ignores-the-callers-evidence-home';
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-ledger-selftest-home-'));
+  try {
+    // The two runs share nothing (each makes its own fixtures), so they run side by side.
+    const selfTest = (env) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(root, 'momm/scripts/ledger.mjs'), '--self-test'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 120000, windowsHide: true, env: { ...process.env, NO_UPDATE_CHECK: '1', ...env } });
+      let stdout = ''; child.stdout.setEncoding('utf8').on('data', (text) => { stdout += text; });
+      child.on('error', () => resolve({ status: null, checks: null, failing: null }));
+      child.on('close', (status) => {
+        let report = null; try { report = JSON.parse(stdout); } catch { /* compared as it is */ }
+        resolve({ status, checks: report && Object.keys(report.tests).length, failing: report && Object.entries(report.tests).filter(([, ok]) => ok !== true).map(([name]) => name) });
+      });
+    });
+    const [control, homed] = await Promise.all([selfTest({}), selfTest({ MOMM_EVIDENCE_HOME: home })]);
+    assert(control.checks > 10, `the self-test printed no report (exit ${control.status})`);
+    assert.deepEqual(homed, control, 'the self-test reports the same with the caller\'s evidence home set');
+    assert.deepEqual(fs.readdirSync(home), [], 'nothing was written into the caller\'s evidence home');
+    tests.push({ scenario, passed: true });
+  } catch (error) { tests.push({ scenario, passed: false, error: error.message }); }
+  finally { fs.rmSync(home, { recursive: true, force: true }); }
+}
 console.log(JSON.stringify({ passed: tests.every(t => t.passed), tests }, null, 2));
 if (tests.some(t => !t.passed)) process.exitCode = 1;
