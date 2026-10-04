@@ -10,7 +10,7 @@ import { evidenceVisuals, releasePanel, releaseChecks, chartSeries } from "./mom
 import { definition, answerSection, enhanceSearch, projectStory, evidenceBenefits, addAttribution } from "./momm-site-search.mjs";
 import { watchOutputs } from './momm-site-videos.mjs';
 import {technicalBody, brandBadge, ensembleObservations} from './momm-site-technical.mjs';
-import {homeCinema,homeDiagrams} from './momm-site-home.mjs';
+import {homeCinema,homeDiagrams,releaseStatus,releaseStatusHtml,withReleaseStatus} from './momm-site-home.mjs';
 import {mediaBody, improvementBody, normalizeNavigation, navigationLinks} from './momm-site-community.mjs';
 import {llmsText} from './momm-site-discovery.mjs';
 
@@ -158,6 +158,8 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const films = JSON.parse(fs.readFileSync(path.join(root, 'docs/momm/films.json'), 'utf8'));
   const catalogue = JSON.parse(fs.readFileSync(path.join(root, 'momm/references/release-history.json'), 'utf8'));
   const published = catalogue.some(r => r.version === version && r.kind === 'release' && r.tag && r.published_date);
+  // Stable version and any candidate under test, in one line for the home page and the README (1.17.1 S10).
+  const status = releaseStatus(manifest, catalogue);
   if (Object.values(s.decisions).reduce((a, b) => a + b, 0) !== s.dispositions) throw new Error("Disposition buckets do not reconcile");
   for (const key of Object.keys(s.decisions)) if (s.routes.reduce((n, r) => n + r[key], 0) + s.coalition[key] !== s.decisions[key]) throw new Error(`Attribution buckets do not reconcile: ${key}`);
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
@@ -179,6 +181,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
       .replace('</head>', `<link rel="icon" type="image/svg+xml" href="${prefix}favicon.svg"></head>`);
   }
   output['docs/momm/index.html'] = output['docs/momm/index.html']
+    .replace('<h1>Give your AI agent', () => releaseStatusHtml(status) + '<h1>Give your AI agent')
     .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
     .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
     .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
@@ -272,6 +275,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const videoByUrl=new Map(videoEntries.map(entry=>[entry.match(/<loc>(.*?)<\/loc>/)[1],entry.match(/<video:video>[\s\S]*?<\/video:video>/)[0]]));
   output['docs/sitemap.xml'] = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">\n'
     + [...new Set(urls)].map(url => `  <url><loc>${esc(url)}</loc>${videoByUrl.get(url)||''}</url>`).join('\n') + '\n</urlset>\n';
+  // The root README carries the same status line between two markers, so --check reports a stale one.
+  // A partial tree without a README (an export fixture) has no second copy to keep in step.
+  const readme = path.join(root, 'README.md');
+  if (fs.existsSync(readme)) output['README.md'] = withReleaseStatus(fs.readFileSync(readme, 'utf8'), status);
   const stale = [];
   for (const [file, text] of Object.entries(output)) {
     const dest = path.join(root, file);

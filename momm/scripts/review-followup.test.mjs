@@ -6,11 +6,12 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import * as score from './scorecard.mjs';
 import { recordCheck } from './checks.mjs';
 import { digest } from './governor.mjs';
-import { privateTestFixture } from './private-test-fixture.mjs';
+import { privateTestFixture, realTempDir } from './private-test-fixture.mjs';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
 import { evidenceLocation } from './evidence-location.mjs';
 if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
@@ -91,8 +92,15 @@ tests.permissions = () => {
 tests.hygiene = () => {
   const code=source('scripts/source-hygiene.test.mjs').replace(/^import .*;\r?\n/gm,'').replaceAll('import.meta.url',JSON.stringify(new URL('../../scripts/source-hygiene.test.mjs',import.meta.url).href));
   const processStub={exitCode:0};let report;
-  vm.runInNewContext(code,{fs:{readFileSync(){throw Object.assign(Error('synthetic unreadable'),{code:'EACCES'});}},path,assert,fileURLToPath,resolveGit:()=>'/synthetic/git',process:processStub,console:{log(text){report=JSON.parse(text);}},spawnSync(_cmd,args){return {status:0,stdout:args[0]==='ls-files'?Array.from({length:60},(_,i)=>`f${i}.mjs`).join('\0'):'',stderr:''};}});
+  vm.runInNewContext(code,{fs:{readFileSync(){throw Object.assign(Error('synthetic unreadable'),{code:'EACCES'});}},path,os,assert,fileURLToPath,pathToFileURL,createHash,realTempDir,resolveGit:()=>'/synthetic/git',process:processStub,console:{log(text){report=JSON.parse(text);}},spawnSync(_cmd,args){return {status:0,stdout:args[0]==='ls-files'?[...Array.from({length:60},(_,i)=>`f${i}.mjs`),'f.test.mjs'].join('\0'):'',stderr:''};}});
   assert.equal(report.results.find(x=>/raw control byte/.test(x.name)).passed,false,'unreadable source is not clean source');
+  // 1.17.1 S5/S6: the same holds for the home-path, credential and temp-folder rules.
+  for(const rule of [/no tracked text file contains a machine home path/,/no tracked test compares the unresolved temp folder/]){
+    const result=report.results.find(x=>rule.test(x.name));
+    assert(result&&result.passed===false&&/synthetic unreadable/.test(result.error),`unreadable source must fail: ${rule}`);
+  }
+  // The detectors themselves do not read files, so they still pass on synthetic text.
+  assert.equal(report.results.find(x=>/four literals/.test(x.name)).passed,true);
 };
 const failures=[];
 for(const [name,fn] of Object.entries(tests))if(mode==='all'||mode===name){try{await fn();console.log(`PASS ${name}`);}catch(e){failures.push(name);console.error(`FAIL ${name}: ${e.message}`);}}
