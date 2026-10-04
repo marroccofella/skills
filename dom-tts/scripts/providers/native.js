@@ -35,7 +35,8 @@ function runChild(command,input,context,onProgress){
  return new Promise((resolve,reject)=>{
   if(context.stopped())return resolve();
   const child=fork(path.join(__dirname,'native-worker.js'),[],{windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],env:safeEnv(),execArgv:[]});
-  const cancel=()=>{if(child.connected)child.send({action:'stop'},()=>{});};context.setChild({kill:cancel});
+  const disconnect=()=>{try{if(child.connected)child.disconnect();}catch{}};
+  const cancel=()=>{if(!child.connected)return;try{child.send({action:'stop'},error=>{if(error)disconnect();});}catch{disconnect();}};context.setChild({kill:cancel});
   let done=false,timedOut=false,ipcError=null,stderr='',buffer='';
   const timeout=()=>{if(done)return;timedOut=true;cancel();};
   let timer=setTimeout(timeout,120000);

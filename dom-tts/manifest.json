@@ -92,7 +92,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "4e90f5c53001bf1db1650a4649ebd061af6435713282dab3ae24e90781cf7316"
+      "sha256": "3bd48100c8bc3c3b9c45e735f0ca5aa9ff6de5d984487f979cd20f025b43c0d7"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -205,6 +205,10 @@
     {
       "path": "tests/native-spawn-check.cjs",
       "sha256": "c58925bf2ed38e049901d735b61dd1dfdbd29b82561f84292a14548974f4ee6a"
+    },
+    {
+      "path": "tests/native-stop-send-check.cjs",
+      "sha256": "0d4731e6ef0b324921fc2d4dedf50e053f18b8759040f0accb055c757993d9ed"
     },
     {
       "path": "tests/native-timeout-check.cjs",
