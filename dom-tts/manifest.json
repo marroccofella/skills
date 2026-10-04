@@ -128,7 +128,7 @@
     },
     {
       "path": "tests/install-check.cjs",
-      "sha256": "6576c35b88dfb9b0eb0c3da41f02415470ea79612b9163e439f560bdd25b4ea2"
+      "sha256": "c6092bc32a702a739d3e0bd009fe32cc00b5c6aec652ab592e1751ee3ac3d706"
     },
     {
       "path": "tests/native-boundary.cjs",
