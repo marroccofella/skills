@@ -237,4 +237,50 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   for (const name of ['momm/references/release-1.17.1.md', 'momm/references/plan-1.17.1.md', 'momm/ROADMAP.md'])
     assert(!/every reviewer usable/i.test(read(name)), name + ' must not claim that every reviewer is usable');
 }
+// 1.17.1 closing review rev_20261004111650_5ab46e76a382 (records packet).
+{
+  const flatText = (t) => t.replace(/\s+/g, ' ');
+  const lf = (name) => read(name).replace(/\r\n/g, '\n');
+  const gates = lf('momm/references/gates-1.17.1.md'), plan = lf('momm/references/plan-1.17.1.md');
+  // gate5-false-all-routes-valid: gate 5 said each route returned valid reviews in all three range
+  // reviews, above an entry that recorded Copilot refused on both attempts on one piece. An entry that
+  // records a route with no valid review of a piece does not call all four routes valid, and while one
+  // does the gate 5 status says that validity was not on every piece (or that the gate is open).
+  const reviews = gates.split('\n## Reviews\n')[1].split('\n## ')[0];
+  const entries = reviews.split(/\n(?=- `rev_)/).filter((block) => block.startsWith('- `rev_')).map((block) => flatText(block.split('\n\n')[0]));
+  const missed = entries.filter((text) => /both attempts|timed out/.test(text));
+  for (const text of missed) assert(!/All four routes valid/.test(text), 'a review entry must not call all four routes valid while it records a route that gave no valid review of a piece: ' + text.slice(0, 36));
+  const gate5 = (gates.split('\n').find((line) => line.startsWith('| 5. ')) ?? '').split('|').slice(-2)[0].trim();
+  if (missed.length) assert(/^open\b/.test(gate5) || /not (?:of|on|for) (?:every|each) piece|no valid review/.test(gate5), 'gate 5 must say that a route gave no valid review of some piece while the Reviews section records one');
+  // lock-repeat-does-not-name-rest: updating.md said that repeating the command names the locks the
+  // message does not show. The updater decides: ten locks in a throwaway clone, asked twice.
+  const os = (await import('node:os')).default, updater = await import('../momm/scripts/update.mjs');
+  const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-doc-locks-'));
+  try {
+    updater.git(clone, 'init', '--quiet');
+    const names = Array.from({ length: 10 }, (_, i) => `doc-${i}.lock`);
+    for (const name of names) fs.writeFileSync(path.join(clone, '.git', 'refs', 'heads', name), '');
+    const named = () => { try { updater.refuseGitLocks(clone, 'Then repeat the command.'); } catch (error) { return names.filter((name) => String(error.message).includes(name)); } return assert.fail('ten Git locks must stop the update'); };
+    const first = named(), again = named();
+    const paragraph = flatText(lf('momm/references/updating.md').split('\n\n').find((block) => /Git lock file/.test(block)) ?? '');
+    assert.equal(/names at most eight locks/.test(paragraph), first.length === 8, 'updating.md and refuseGitLocks must agree on how many locks the message names');
+    if (first.length < names.length && !again.some((name) => !first.includes(name))) {
+      const unconditional = paragraph.split(/(?<=[.:]) /).find((sentence) => /repeat/i.test(sentence) && /names (?:them|the rest|the others)/.test(sentence) && !/same|only|once|after/.test(sentence));
+      assert(!unconditional, 'updating.md must not say that repeating the command names the hidden locks: the same locks give the same names');
+      assert(/names the same/.test(paragraph), 'updating.md must say what repeating the command does while the same locks exist');
+    }
+  } finally { fs.rmSync(clone, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  // r10-acceptance-criteria-gap: R10 came to promise three things while its "Done when" still covered the
+  // first. The "Done when" covers each and names the suite that tests them; and every record that mentions
+  // the mark says when the page adds it (app.js staleNoticeAfterFailure: a failed refresh whose answer
+  // carries the version check verifies the notice again and adds no mark).
+  const done = flatText(plan.split('\n- **R10. ')[1].split('\n- **')[0].split('\n## ')[0]).split('Done when:')[1] ?? '';
+  const stale = read('momm/scripts/setup-maintenance.test.mjs');
+  assert(/control/.test(done) && /not checked again/.test(done) && /setup-maintenance\.test\.mjs/.test(done), 'plan R10: the "Done when" must cover the named control and the mark after a failed refresh, and name the suite');
+  assert(/not checked again/.test(stale) && /Close Setup Center/.test(stale), 'setup-maintenance.test.mjs must test what plan R10 says it tests');
+  for (const name of ['momm/references/plan-1.17.1.md', 'momm/references/gates-1.17.1.md', 'momm/references/release-1.17.1.md']) {
+    const text = flatText(read(name)), at = text.indexOf('not checked again');
+    assert(at > 0 && /fails without/.test(text.slice(Math.max(0, at - 220), at)), name + ' must say that the notice is marked after a refresh that fails without the version check');
+  }
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

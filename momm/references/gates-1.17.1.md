@@ -103,7 +103,7 @@ that refusal.
 | R7 | A refused evidence location prints one plain line with the reason and a safe remedy | `evidence-location.test.mjs`, `shutdown.test.mjs` |
 | R8 | An update stops on a Git lock before any change; the lock is never removed | `update.test.mjs`, `stabilisation.test.mjs`, `update-claim.test.mjs` |
 | R9 | A saved report records the actual `HEAD` and tree state beside the supplied label | `scripts/ci-runner-report.test.mjs` |
-| R10 | A Setup Center running an older version than the installed one says so, names the control that stops it, and after a failed refresh keeps the notice marked as not checked again | `setup-maintenance.test.mjs` |
+| R10 | A Setup Center running an older version than the installed one says so, names the control that stops it, and after a refresh that fails without the version check keeps the notice, marked as not checked again | `setup-maintenance.test.mjs` |
 | S1 | One fence-unwrapping rule for Copilot and Antigravity; the extracting routes are unchanged | `review-answer.test.mjs` |
 | S2 | A non-JSON answer leaves a private shape record: its first 80 characters after redaction, and no more of the answer | `review-answer.test.mjs` |
 | S3 | Three recorded runs with the same failure produce a notice | `run-notices.test.mjs` |
@@ -123,7 +123,7 @@ that refusal.
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.0 and 1.16.1 | Six hosted cells | after the merge |
 | 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
-| 5. Live review with every installed reviewer route valid | Report | passed: Codex, Antigravity, Copilot and Grok each returned valid reviews in all three range reviews of the whole delta; refused and retried pieces are listed below |
+| 5. Live review with every installed reviewer route valid | Report | passed: in `rev_20261004085003_77d89c336993` Codex, Antigravity, Copilot and Grok each returned a valid review of every piece at the first attempt. In the other two range reviews of the whole delta each of the four returned valid reviews, but not of every piece: Grok timed out on one piece of one review, and Copilot was refused on both attempts on one piece of the other. Both are listed by route and piece under Reviews, with the answers that were refused once and accepted on a retry |
 | 6. Signed tag `momm-1.17.1` | Release workflow run | approved by the owner's instruction of 4 October 2026, if every gate above passes on the final sealed commit |
 
 ## Reviews
@@ -144,15 +144,19 @@ complete; until it is listed, gate 3 is open.
 
 The three range reviews below cover everything between the Copilot fix and the integrated twenty items.
 Each reviewer saw the diff in pieces of at most 20 KB; quorum (two valid reviews) was met on every piece.
+A route that gave no valid review of a piece does not undo that piece's quorum: the review stands on
+the routes that did, and the entry names the route and the piece as a status, not as a finding.
 Every WARNING and CRITICAL was either reproduced with a check that fails on the reviewed commit and
 passes after the fix, or rejected with a probe that runs the real code path; a green suite alone was
 not accepted as a rejection. Every suggestion has a recorded decision. Each receipt records
 `stale: dispatcher_sha256` because the fixes changed the dispatcher.
 
 - `rev_20261004083921_b12f1d0fd3bf` — dispatcher, answers, compatibility record, notices and evidence
-  location (five pieces). All four routes valid. Statuses kept apart from quorum: Grok timed out on one
-  piece; one Copilot answer was refused for an invalid finding and accepted on its retry. 13 WARNING:
-  five real and fixed, eight shown not to hold. 52 suggestions ruled, 12 applied. Receipt complete.
+  location (five pieces). Each of the four routes returned valid reviews, and quorum was met on all
+  five pieces. Grok timed out on piece 3 (one attempt), so it gave no valid review of that piece.
+  Copilot's answer on piece 2 was refused once for an invalid finding and accepted on its retry.
+  13 WARNING: five real and fixed, eight shown not to hold. 52 suggestions ruled, 12 applied.
+  Receipt complete.
   Fixed: the compatibility record was written through a temporary file with a predictable name, so an
   entry planted there was written through and moved into the record's place (now a random name,
   created exclusively); a removal planned before the record's lock could erase an entry another run
@@ -160,7 +164,8 @@ not accepted as a rejection. Every suggestion has a recorded decision. Each rece
   a compatibility failure in the same run; a damaged last line of the review log could be counted as a
   run; and three comments denied that any answer text is kept, beside the code that keeps a redacted
   prefix.
-- `rev_20261004085003_77d89c336993` — updater and Setup Center (three pieces). All four routes valid.
+- `rev_20261004085003_77d89c336993` — updater and Setup Center (three pieces). All four routes
+  returned a valid review of every piece at the first attempt.
   8 WARNING and 4 NITPICK: six real and fixed, six shown not to hold. 35 suggestions ruled, 13
   applied. Receipt complete. Fixed: the protocol summary at the consent gate read a fence closer with
   an info string as a closer, reported a file whose sections had only changed places as "none added,
@@ -169,8 +174,10 @@ not accepted as a rejection. Every suggestion has a recorded decision. Each rece
   reviewer whose card reads "CLI update needed"; a console that cannot be written to no longer fails
   a refresh.
 - `rev_20261004085941_a8b4e58041e1` — suite runner, hygiene suite, records and site status line (seven
-  pieces). All four routes valid. Statuses kept apart from quorum: Copilot was refused on one piece on
-  both attempts and on another on its first attempt (finding 1, third cause). 4 CRITICAL, 18 WARNING
+  pieces). Each of the four routes returned valid reviews, and quorum was met on all seven pieces.
+  Copilot's answers were refused as not strict JSON on two pieces (finding 1, third cause): on piece 2
+  on both attempts, so it gave no valid review of that piece, and on piece 6 once, accepted on its
+  retry. Every other route and piece was valid. 4 CRITICAL, 18 WARNING
   and 6 NITPICK: twenty real and fixed, eight shown not to hold. 62 suggestions ruled, 19 applied.
   Receipt complete. None of the four CRITICAL findings held: three said a function was undefined or a
   Windows tool was called on every platform, one said an import path was invalid, and each was

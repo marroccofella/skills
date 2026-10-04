@@ -47,9 +47,9 @@ One writer, read-only reviewers, account logins only and automatic updates off: 
 - When a release changes the protocol, the updater prints a short summary (files, and the headings
   that changed in `SKILL.md`) before the full diff. `--accept-protocol` is still required.
 - A Setup Center left running across an update says which version it is running and which is now
-  installed, and asks you to choose Close Setup Center and start it again. If a later refresh fails,
-  the notice stays and says it was not checked again. Quick Setup no longer verifies a reviewer whose
-  card reads "CLI update needed".
+  installed, and asks you to choose Close Setup Center and start it again. If a later refresh fails
+  without checking the versions again, the notice stays and says it was not checked again. Quick Setup
+  no longer verifies a reviewer whose card reads "CLI update needed".
 
 **Testing MOMM itself**
 - `scripts/run-ci-suites.mjs` refuses an unknown or misspelled option, checks report storage before

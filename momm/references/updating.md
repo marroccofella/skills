@@ -102,9 +102,10 @@ From 1.17.1, `--dry-run` and `--apply` first look for a Git lock file in the clo
 Git directory (`index.lock`, `HEAD.lock`, `config.lock`, `shallow.lock`,
 `packed-refs.lock` and any `*.lock` under `refs`) and stop before the first request
 if one exists. The message names the lock and its age, and gives the command that
-lists running Git processes. It names at most eight locks: when there are more it
-says how many are not shown, and repeating the command names them. The age does
-not prove a lock is stale, and the
+lists running Git processes. It names at most eight locks, and when there are more
+it says how many are not shown. Repeating the command while the same locks exist
+names the same eight: the others are named only once locks named before them are
+gone. The age does not prove a lock is stale, and the
 updater never removes one: close editors and Git tools that use the clone, confirm
 that no Git process is running, remove that one file yourself, then repeat the
 command. `--rollback` checks only `index.lock` and `HEAD.lock`, which its checkout
