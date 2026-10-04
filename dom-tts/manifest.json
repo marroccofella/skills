@@ -4,7 +4,7 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "66932333de8a76ff388064afd32318ef8eec8044216c15939dde3538b883e850"
+      "sha256": "429105c916215ca8821a7b1fa1afa4223f93e105b61fd592b18e7b0436a3963d"
     },
     {
       "path": "COMPATIBILITY.md",
@@ -12,7 +12,7 @@
     },
     {
       "path": "EVOLUTION.md",
-      "sha256": "4a21f78616bbb6aa749f96c9a5c6c3830e7bb930edab497ac424a890bd34412f"
+      "sha256": "85a403ce154f8401f195df2789458747d76eb13e87b5a648c9f4890676fababe"
     },
     {
       "path": "LICENSE",
@@ -20,7 +20,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "519a1081abaa0f00b4636d7406ec1af631c8043fee01af08c7fb626b32b02302"
+      "sha256": "bc6ba7c2ef2bb6845b3eaf44188bd134de0c398851605f299e9be5af7b8fa7ce"
     },
     {
       "path": "SKILL.md",
@@ -44,7 +44,7 @@
     },
     {
       "path": "scripts/install.js",
-      "sha256": "e2c2afb4b956781f52d99d55f5093937c46948c7ef4a61e768b3fd663da7470b"
+      "sha256": "8508fef0bcb8c435497a8016e530c59264c603e06de8408a5fc4d636035d7941"
     },
     {
       "path": "scripts/lock.js",
@@ -72,11 +72,11 @@
     },
     {
       "path": "scripts/runtime.js",
-      "sha256": "d9fb93a83e77306560a2e87d528beb6bfd112b02ffcd9a23883d3d175dee520d"
+      "sha256": "5e9a1a4c67a94ac4aad9f6ab66c0dea9c1cc2517e0bb8577ecec3434463bd409"
     },
     {
       "path": "scripts/self-test.js",
-      "sha256": "096d76aa1c6750a693981a290f5e931f806112b2160f5d28879c86dbb969aa90"
+      "sha256": "4d8405f30b37c8997ab10bfedd7e8c211be96896f869ea332ea31bc9cc4182b1"
     },
     {
       "path": "scripts/speak.js",
@@ -124,7 +124,7 @@
     },
     {
       "path": "tests/evolution-checks.cjs",
-      "sha256": "e5465dc0252c7335b664e85ab2927eb1dc6735ef57656b103d44609c495509c0"
+      "sha256": "6bb0ab17610a2962ec934140f0ff1e3bf962abbb024aa424d20eb992997001db"
     },
     {
       "path": "tests/install-check.cjs",
@@ -140,7 +140,7 @@
     },
     {
       "path": "tests/recovery-checks.cjs",
-      "sha256": "adab1cc58a822c7e3746f0990d70e11498c4eb63205487170ff1b54137f74c32"
+      "sha256": "20d4d839fed3dcc0a5c31468fbb9e20cafe5cebd18a367aa7da56244133dea75"
     },
     {
       "path": "tests/windows-check.cjs",
@@ -148,7 +148,7 @@
     },
     {
       "path": "tests/windows-privacy.cjs",
-      "sha256": "84b41601d1c0135e797f69b408d5fa03357ad250c3cd45211915a805156bb692"
+      "sha256": "7ce3664c598a4cda5d5c0801483a6877b87a6daa011abec706793284309450b3"
     }
   ]
 }

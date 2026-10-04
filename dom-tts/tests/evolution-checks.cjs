@@ -39,21 +39,18 @@ function run(check = fn => fn()) {
     ['persistent markers cannot skip a fresh ACL check', () => {
       const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dte-')));
       try {
-        runtime.verifiedDirs.clear();
         runtime.ensurePrivate(dir, { platform: 'win32', run: () => ({ status: 0 }) });
-        runtime.verifiedDirs.clear();
         assert.throws(() => runtime.ensurePrivate(dir, { platform: 'win32', run: () => ({ status: 3, stderr: 'DOM_TTS_NOT_PRIVATE' }) }), /grants access/);
-      } finally { runtime.verifiedDirs.clear(); fs.rmSync(dir, { recursive: true, force: true }); }
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
     }],
     ['POSIX permission changes are rechecked', () => {
-      if (process.platform === 'win32') return;
       const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dte-')));
       try {
         runtime.ensurePrivate(dir);
         fs.chmodSync(dir, 0o755);
         assert.throws(() => runtime.ensurePrivate(dir), /owner-only/);
-      } finally { runtime.verifiedDirs.clear(); fs.rmSync(dir, { recursive: true, force: true }); }
-    }],
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    }, 'posix'],
     ['policy failure is actionable without bypass', () => {
       const modulePath = require.resolve('../scripts/providers/native');
       const childCode = "console.error('File cannot be loaded because running scripts is disabled. PSSecurityException');process.exit(1)";
@@ -90,8 +87,12 @@ function run(check = fn => fn()) {
     }],
   ];
   let failed = 0;
-  for (const [name, test] of tests) {
-    try { check(test); }
+  for (const [name, test, platform] of tests) {
+    try {
+      if (!platform) check(test);
+      else if (check.on) check.on(platform, test);
+      else if ((platform === 'windows') === (process.platform === 'win32')) check(test);
+    }
     catch (error) { failed++; console.error(`FAIL: ${name}: ${error.message}`); }
   }
   if (failed) throw new Error(`${failed} evolution regressions failed`);

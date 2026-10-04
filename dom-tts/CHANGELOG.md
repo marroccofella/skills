@@ -11,6 +11,16 @@ See EVOLUTION.md for migration and open release gates.
 
 # Changes
 
+## 0.5.0-dev.1 follow-up: permission cache removed
+
+- The Windows ACL check runs on every call. The in-process cache and the
+  `.private-verified` marker are removed (legacy markers are deleted after a
+  successful check). An ACL change on the same folder in the same process, or a
+  folder replaced at a checked path, is now refused instead of skipped.
+- tests/permission-cache-checks.cjs adds the regression tests; tests/windows-privacy.cjs
+  changes a real ACL and rechecks in the same process.
+- The self-test reports shared, POSIX-only and Windows-only assertion counts separately.
+
 ## 0.4.0-dev.2
 
 - Windows permission check: 60-second limit, typed failure reasons, and a folder-bound

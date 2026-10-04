@@ -22,7 +22,7 @@ into cloud voices, microphones, Duplex, global transcript discovery or a tray ap
 | Failure hidden by terminal-summary | Fixed: errors precede warnings/progress; FAILED, failure and fatal share a diagnostic matcher. |
 | Retained settings ignored | Fixed: inclusion flags, profile/mode/provider inherit settings; explicit CLI values win, including false. |
 | Git status list lost | Fixed for filename/path status records; ordinary prose remains prose. |
-| Persistent permission marker trusted | Fixed: revalidate Windows ACLs in each process; POSIX modes on every call. Windows checks retain the 60-second bound. |
+| Persistent permission marker trusted | Fixed: no marker or in-process cache; Windows ACLs and POSIX modes are checked on every call. Windows checks retain the 60-second bound. |
 | Recovery/new-playback race | Cleanup holds the same exclusive playback lock; tests require ownership during cleanup. |
 | PATH shadowing | Reject relative and project-local entries and links resolving into the project. Other absolute PATH entries remain user-trusted; package-managed scripts/symlinks are supported. |
 | PowerShell execution policy | Report a specific sanitized blocked-policy error. Keep -File; do not silently bypass policy or adopt unreviewed inline execution. Restricted-policy audible compatibility remains open. |
