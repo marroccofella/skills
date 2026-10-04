@@ -97,6 +97,27 @@ await test('known package-manager native shims are not self-updating installatio
     assert.notEqual(c.detect('codex',{PATH:'/fixture/bin'},'linux').kind,'native',resolved);
   }
 });
+// 1.17.1 R10: the production version watch, sliced from setup-ui.mjs and bound to a fixture dispatcher
+// (`<staleRoot>/<name>/scripts/multi-review.mjs`). `lines` collects what the server would print.
+const staleRoot=fs.mkdtempSync(path.join(os.tmpdir(),'momm-stale-notice-'));
+process.on('exit',()=>fs.rmSync(staleRoot,{recursive:true,force:true}));
+function staleDispatcher(name,version,prefix=''){
+  const file=path.join(staleRoot,name,'scripts','multi-review.mjs');
+  fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,`${prefix}const MOMM_VERSION = "${version}";\n`);
+  return file;
+}
+function staleSlice(){
+  const a=source.indexOf('// --- Stale Setup Center notice'),b=source.indexOf('\nfunction createServer(',a);
+  assert(a>=0&&b>a,'the stale-notice section must sit directly before createServer in setup-ui.mjs');
+  return source.slice(a,b);
+}
+function versionWatch(file){
+  const lines=[];
+  const c=vm.createContext({fs,Buffer,Math,String,dispatcherScript:file,process:{stderr:{write:text=>{lines.push(String(text));}}}});
+  vm.runInContext(staleSlice()+';this.check=setupCenterVersion;this.read=installedDispatcherVersion;',c);
+  return {check:c.check,read:c.read,lines};
+}
+let defaultWatch=null;
 function handler(body,token=true,extra={},bootstrap={status:'prerequisites_missing',installation:{route:'legacy_bootstrap'}}) {
   const a=source.indexOf('function createServer('),b=source.indexOf('// The dispatcher',a);assert(a>=0&&b>a);
   let launched=0;
@@ -113,7 +134,9 @@ function handler(body,token=true,extra={},bootstrap={status:'prerequisites_missi
     capabilitiesSnapshot:async()=>({status:200,value:{routes:{codex:{}},blockers:[]}}),handleCapabilities:async(body)=>({status:body?.op==='probe'&&body.generate&&body.consent!==true?409:200,value:{op:body?.op}}),
     // bootstrap hardening: the skills update route asks the separately trusted helper before launching anything.
     bootstrapStatus:async()=>bootstrap,fs:{existsSync:()=>true},path:{join:(...a)=>a.join('/')},skillsRoot:'.',runCommand:async()=>({code:0,stdout:''}),
-    maintenanceReport:async()=>({cli_updates:[]}),triggerClock:()=>Promise.resolve(null),maintenanceCache:null},...extra});
+    maintenanceReport:async()=>({cli_updates:[]}),triggerClock:()=>Promise.resolve(null),maintenanceCache:null,
+    // 1.17.1 R10: the status and maintenance routes call the production version watch, on a fixture dispatcher.
+    setupCenterVersion:(defaultWatch??=versionWatch(staleDispatcher('default','1.17.1'))).check},...extra});
   const serve=vm.runInContext(source.slice(a,b)+';createServer()',context);
   return {serve,launches:()=>launched};
 }
@@ -559,7 +582,7 @@ function ui(extra={}) {
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
   const optional=name=>`${name}:typeof ${name}==='function'?${name}:null`;
-  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities','clockAction'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);const toastLog=this.toasts=[];showToast=m=>{toastLog.push(String(m));};`,context);
+  vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities','clockAction','renderStaleNotice'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);const toastLog=this.toasts=[];showToast=m=>{toastLog.push(String(m));};`,context);
   return context;
 }
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
@@ -1213,6 +1236,105 @@ await test('a failed matrix refresh clears the pipelines sentence along with the
   c.setApi(async()=>{throw new Error('registry unavailable');});
   assert.equal(typeof c.core.loadCapabilities,'function');await c.core.loadCapabilities();
   assert.match(c.node('#capabilities-summary').textContent,/registry unavailable/);assert.equal(c.node('#capabilities-grid').innerHTML,'');assert.equal(c.node('#capabilities-pipelines').textContent,'');
+});
+// --- 1.17.1 R10: stale Setup Center notice ----------------------------------------------------
+// The server is long-running: an update replaces the files under it and the process keeps the code
+// and the version it started with. The watch below is the production one, sliced from setup-ui.mjs
+// and bound to a fixture dispatcher whose declared version the test changes under it.
+const STALE_SENTENCE=/Setup Center is running 1\.17\.1; 1\.17\.2 is now installed\. Close this window and start the Setup Center again\./;
+await test('a server started on one version reports the version now installed, prints one console line, and never runs the dispatcher',()=>{
+  const marker=path.join(staleRoot,'executed.txt'),file=staleDispatcher('detect','1.17.1',`import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(marker)}, "x");\n`);
+  const w=versionWatch(file);
+  same(w.check(),{running_version:'1.17.1',installed_version:'1.17.1',stale:false});assert.equal(w.lines.length,0,'no line while the versions agree');
+  staleDispatcher('detect','1.17.2');
+  same(w.check(),{running_version:'1.17.1',installed_version:'1.17.2',stale:true},'the answer carries two versions and one flag, nothing else');
+  assert.equal(w.lines.length,1);assert.match(w.lines[0],/Setup Center is running 1\.17\.1; 1\.17\.2 is now installed\./);
+  assert.match(w.lines[0],/^[^\n]+\n$/,'exactly one line');assert.match(w.lines[0],/start it again/,'the line names the next action');
+  assert.equal(w.check().stale,true);assert.equal(w.check().stale,true);assert.equal(w.lines.length,1,'the console line is printed when the difference is first seen, not on every refresh');
+  staleDispatcher('detect','1.17.1');
+  assert.equal(w.check().stale,false,'a rollback to the running version withdraws the notice');
+  assert.equal(fs.existsSync(marker),false,'the installed dispatcher is read, never imported or executed');
+});
+await test('an installed version that cannot be read is unknown, never a difference',()=>{
+  const file=staleDispatcher('unknown','1.17.1'),w=versionWatch(file);
+  fs.rmSync(file);same(w.check(),{running_version:'1.17.1',installed_version:null,stale:false},'a dispatcher missing mid-update raises nothing');
+  fs.mkdirSync(file);assert.equal(w.check().stale,false,'a directory at the dispatcher path');fs.rmdirSync(file);
+  for(const text of ['const MOMM_VERSION = "not a version";\n','const MOMM_VERSION = "1.17.2'+String.fromCharCode(27)+'[31m";\n','// const MOMM_VERSION = "9.9.9";\nconst NOTE = `const MOMM_VERSION = "8.8.8";`;\nconst MOMM_VERSION = "1.17.1";\n']){
+    fs.writeFileSync(file,text);assert.equal(w.check().stale,false,JSON.stringify(text));
+  }
+  assert.equal(w.read(file),'1.17.1','a commented or quoted decoy is not the declaration');
+  assert.equal(w.lines.length,0);
+  // A server that could not read its own version at start has nothing to compare with.
+  const late=path.join(staleRoot,'late','scripts','multi-review.mjs'),blind=versionWatch(late);
+  staleDispatcher('late','1.17.2');
+  same(blind.check(),{running_version:null,installed_version:'1.17.2',stale:false});assert.equal(blind.lines.length,0);
+});
+await test('the version is read with the installations inventory\'s own pattern, and the notice code can only read',()=>{
+  const inventory=fs.readFileSync(new URL('./installations.mjs',import.meta.url),'utf8');
+  const line=(text,name)=>new RegExp(`^const ${name} = .*$`,'m').exec(text)?.[0];
+  for(const name of ['SEMVER','VERSION_LINE']){assert(line(inventory,name),`installations.mjs declares ${name}`);assert.equal(line(staleSlice(),name),line(inventory,name),`${name} must not drift from installations.mjs`);}
+  // Security posture: a notice only. No child process, no import of the new code, no restart, no terminal.
+  // (`VERSION_LINE.exec` is the pattern match, hence the lookbehind.)
+  assert.doesNotMatch(staleSlice(),/spawn|import\s*\(|(?<!\.)\bexec|process\.exit|launchTerminal|runNode|runCommand|openBrowser|writeFileSync|\.listen\(/);
+});
+await test('status and maintenance answers carry the version check; it needs the session token and adds no route',async()=>{
+  const file=staleDispatcher('routes','1.17.1'),w=versionWatch(file),report={cli_updates:[]};
+  const extra={setupCenterVersion:w.check,maintenanceReport:async()=>report};
+  const get=(h,url)=>h.serve({method:'GET',url,socket:{}},{}),post=(h,url)=>h.serve({method:'POST',url,socket:{}},{});
+  const current=await get(handler({},true,extra),'/api/status?governor=codex');
+  assert.equal(current.status,200);same(current.value.setup_center,{running_version:'1.17.1',installed_version:'1.17.1',stale:false});
+  staleDispatcher('routes','1.17.2');
+  const stale=await get(handler({},true,extra),'/api/status?governor=codex');
+  same(stale.value.setup_center,{running_version:'1.17.1',installed_version:'1.17.2',stale:true});same(stale.value.routes,[],'the readiness report is still served: a notice refuses nothing');
+  const maintained=await post(handler({governor:'codex'},true,extra),'/api/maintenance');
+  assert.equal(maintained.status,200);same(maintained.value.setup_center,{running_version:'1.17.1',installed_version:'1.17.2',stale:true});same(maintained.value.cli_updates,[]);
+  assert.equal('setup_center' in report,false,'the ten-minute maintenance cache must never hold a version check');
+  assert.equal(w.lines.length,1,'one console line across both routes');
+  for(const denied of [await get(handler({},false,extra),'/api/status?governor=codex'),await post(handler({governor:'codex'},false,extra),'/api/maintenance')]){
+    assert.equal(denied.status,403);assert.doesNotMatch(JSON.stringify(denied),/setup_center|1\.17\./,'no version is disclosed without the session token');
+  }
+  for(const url of ['/api/restart','/api/setup-center','/api/version'])for(const call of [get,post])assert.equal((await call(handler({},true,extra),url)).status,404,`${url} must not exist`);
+});
+await test('the page shows the restart notice from a status or maintenance answer, escaped, and withdraws it when the versions agree',async()=>{
+  const c=ui();c.init({platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);
+  assert.equal(typeof c.core.renderStaleNotice,'function','the page must render the notice');
+  const region=c.node('#stale-notice');let writes=0,html='';
+  Object.defineProperty(region,'innerHTML',{get:()=>html,set(value){writes++;html=String(value);}});
+  const status=setup_center=>({routes:[{agent:'codex',role:'reviewer',installed:true,ready:true}],...(setup_center===undefined?{}:{setup_center})});
+  const answer=async value=>{c.setApi(async()=>value);await c.core.refresh();};
+  await answer(status({running_version:'1.17.1',installed_version:'1.17.1',stale:false}));assert.equal(html,'','no notice while the versions agree');
+  await answer(status({running_version:'1.17.1',installed_version:'1.17.2',stale:true}));
+  assert.match(html,STALE_SENTENCE);assert.equal(writes,1);
+  await answer(status({running_version:'1.17.1',installed_version:'1.17.2',stale:true}));
+  assert.equal(writes,1,'an unchanged notice is not written again, so a screen reader does not repeat it on every refresh');
+  await answer(status(undefined));assert.match(html,STALE_SENTENCE,'an answer without the field changes nothing');
+  await answer(status({running_version:'1.17.1',installed_version:'1.17.1',stale:false}));assert.equal(html,'','versions agree again: the notice is withdrawn');
+  // Only two plain version numbers and the literal flag make a notice; nothing else reaches the markup.
+  const hostile='"><img src=x onerror=alert(1)>';
+  for(const bad of [{running_version:hostile,installed_version:'1.17.2',stale:true},{running_version:'1.17.1',installed_version:hostile,stale:true},{running_version:'1.17.1',installed_version:'1.17.2',stale:'true'},{running_version:'1.17.1',installed_version:null,stale:true},{running_version:'1.17.2',installed_version:'1.17.2',stale:true},'stale',null]){
+    await answer(status(bad));assert.equal(html,'',JSON.stringify(bad));
+  }
+  // The maintenance refresh ("Check everything", and the refresh that follows an applied update) shows it too.
+  const good={cli_updates:[],models:[],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:new Date().toISOString()};
+  c.setApi(async(url)=>url==='/api/maintenance'?{...good,setup_center:{running_version:'1.17.1',installed_version:'1.17.2',stale:true}}:{});
+  await c.core.loadMaintenance(true);await flush();
+  assert.match(html,STALE_SENTENCE);assert.doesNotMatch(html,/<(?!\/?p\b)/,'the notice is text in a paragraph: no control, no link, no script');
+});
+await test('the notice region is a polite live region that is always in the page, above the content',()=>{
+  const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
+  const region=/<div id="stale-notice"([^>]*)><\/div>/.exec(page);
+  assert(region,'index.html carries an empty #stale-notice region');
+  assert.match(region[1],/\brole="status"/);assert.match(region[1],/\baria-live="polite"/);assert.match(region[1],/\baria-atomic="true"/);
+  assert.doesNotMatch(region[1],/\bhidden\b|aria-hidden/,'a hidden region is not announced when its text arrives');
+  assert(page.indexOf('id="stale-notice"')>page.indexOf('</header>')&&page.indexOf('id="stale-notice"')<page.indexOf('<main'),'the notice sits between the topbar and the page content');
+});
+await test('the notice is readable text on its surface in every palette, and is never hidden or dimmed',()=>{
+  const notice=block('.stale-notice {'),fg=colourVar(notice,'color'),bg=colourVar(notice,'background');
+  for(const name of palettes){const palette=block(name,theme),ratio=contrast(token(palette,fg),token(palette,bg));assert(ratio>=4.5,`${fg} on ${bg} in ${name} is ${ratio.toFixed(2)}:1`);}
+  assert.doesNotMatch(notice,/opacity|display:\s*none|visibility/);
+  const size=/font-size:\s*(\d+)px/.exec(notice);assert(size&&Number(size[1])>=14,'body-size text, not a footnote');
+  assert.doesNotMatch(block('.stale-notice-region {'),/display:\s*none|visibility|opacity/,'the live region itself stays rendered while empty');
+  assert(!/--[\w-]+\s*:/.test(notice),'the notice declares no colour of its own: tokens only');
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;
