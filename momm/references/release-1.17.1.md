@@ -17,7 +17,8 @@ Nothing else about reviews, roles, evidence or updates changes.
 - **A fenced answer is unwrapped, not refused.** Copilot sometimes returns its whole answer inside one
   Markdown code fence. Every other route already copes with that; the Copilot route refused it as "not
   strict JSON". An answer that is exactly one fenced block is now unwrapped and checked as strictly as
-  before. Prose beside the fence, a second block or broken JSON inside is still refused.
+  before. Still refused: prose beside the fence, a second fenced block, a line inside that starts with a
+  fence, another language tag, or broken JSON inside.
 - **The refusal now says what it did not recognise.** When a reviewer CLI adds an event in future, the
   message names up to three unrecognised event types (plain names only), so the cause is visible at once.
 

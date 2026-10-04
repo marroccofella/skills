@@ -220,6 +220,8 @@ const FENCE='```';
 const fenced=(body,lang='json')=>FENCE+lang+'\n'+body+'\n'+FENCE;
 await test('an answer that is exactly one fenced JSON block is unwrapped and held to the full contract',async()=>{
   for(const content of [fenced(JSON.stringify(payload)),fenced(JSON.stringify(payload,null,2)),fenced(JSON.stringify(payload),''),
+    fenced(JSON.stringify(payload),'JSON'),fenced(JSON.stringify(payload),'Json'),
+    fenced(JSON.stringify(payload)+' ') /* trailing space before the closing fence: JSON allows it */,
     '\n'+fenced(JSON.stringify(payload))+'\n',fenced(JSON.stringify(payload)).replaceAll('\n','\r\n')]){
     const r=await invoke(events1091(content));assert.equal(r.status,'success',JSON.stringify(content.slice(0,24))+' '+r.detail);
     assert.equal(r.review.summary,payload.summary);assert.equal(r.review.review_contract,PEER_CONTRACT);
@@ -231,7 +233,8 @@ await test('a fence is never a licence to repair: prose, a second block, other f
   const good=JSON.stringify(payload);
   for(const content of ['Here is my review:\n'+fenced(good),fenced(good)+'\nHope that helps.',fenced(good)+'\n'+fenced(good),
     fenced('{bad}'),fenced(''),fenced(JSON.stringify(good)),FENCE+'json\n'+good,good+'\n'+FENCE,'~~~json\n'+good+'\n~~~',
-    FENCE+'json '+good+' '+FENCE,fenced(good,'javascript'),fenced('['+good+']')]){
+    FENCE+'json '+good+' '+FENCE,fenced(good,'javascript'),fenced(good,'jsonc'),fenced('['+good+']'),
+    fenced(good)+'\n'+FENCE /* a second fence on its own closing line */,fenced(good+'\n'+FENCE+'\n'+good)]){
     const r=await invoke(events1091(content));assert.equal(r.status,'invalid_output','accepted '+JSON.stringify(content.slice(0,40)));assert(!r.review);
   }
 });

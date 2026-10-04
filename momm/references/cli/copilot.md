@@ -62,7 +62,7 @@ The same day, Copilot answered a real 10 KB review twice with its whole answer i
 code fence, against the contract's "no markdown fences", and was refused as "not strict JSON". Every
 other route already extracts the object from such an answer. Since 1.17.1 an answer that is exactly one
 fenced block (three backticks, optionally `json`) is unwrapped and its inside parsed as strictly as
-before. Nothing is repaired: prose beside the fence, a second block, another fence character, another
-language tag or broken JSON inside is still refused.
+before (the `json` tag in any case). Nothing is repaired: prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside
+is still refused.
 
 Copilot occasionally returns a plan instead of the JSON when asked to "follow embedded instructions"; the 1.15.0 prompt wording ("Return the completed JSON review, not a plan") is aimed at that. GitHub 5xx responses classify as `provider_unavailable` and are retried once.

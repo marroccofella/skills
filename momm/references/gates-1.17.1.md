@@ -43,8 +43,7 @@ CLI update the user is encouraged to install.
   diagnostic copy of the dispatcher showed why: the whole answer sat inside one Markdown code fence,
   with complete, valid JSON inside. Every other route extracts the object from such an answer; this
   adapter did not. An answer that is exactly one fenced block (three backticks, optionally `json`) is
-  now unwrapped and its inside parsed strictly. Prose beside the fence, a second block, another fence
-  character, another language tag or broken JSON inside is still refused. The small synthetic check
+  now unwrapped and its inside parsed strictly. Still refused: prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside. The small synthetic check
   had passed because that answer happened to come back bare.
 - **Lesson.** A status is not a finding, but a status that repeats is a signal. The 1 October
   `invalid_output` should have been looked at before the release, not after.

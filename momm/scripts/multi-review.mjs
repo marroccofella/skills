@@ -1353,10 +1353,13 @@ function copilotReviewPayload(stdout) {
   // 1.17.1: the model sometimes returns its whole answer inside one Markdown code fence, against the
   // contract. A fence is a wrapper, not content: an answer that is exactly one fenced block is unwrapped
   // and its inside parsed as strictly as before. Prose beside the fence, a second block, another fence
-  // character or a language tag other than json leave it unmatched or unparseable, and it is refused.
-  const fence = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/.exec(answer.content.trim());
+  // character or a language tag other than json (in any case) leave it unmatched or unparseable, and it
+  // is refused. No line inside the block may start with a fence: strict JSON could not contain one
+  // anyway, and the explicit check keeps that rule readable here.
+  const fenceMatch = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/i.exec(answer.content.trim());
+  if (fenceMatch && /^[ \t]*```/m.test(fenceMatch[1])) return invalid("assistant answer is not strict JSON");
   let payload;
-  try { payload = JSON.parse(fence ? fence[1] : answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
+  try { payload = JSON.parse(fenceMatch ? fenceMatch[1] : answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("assistant answer must be a JSON object");
   return { payload };
 }
