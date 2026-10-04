@@ -166,9 +166,12 @@ try {
   put('fault.cjs', `const fs=require('node:fs'),path=require('node:path');const mode=process.env.MOMM_TEST_FAULT;
 const deny=(code,call,file)=>Object.assign(new Error(code+': operation not permitted, '+call+" '"+file+"'"),{code,syscall:call,path:file});
 const final=(file)=>{try{return fs.readFileSync(file,'utf8').includes('"finished_at"');}catch{return false;}};
-const rename=fs.renameSync,write=fs.writeFileSync;let finals=0;
+const rename=fs.renameSync,write=fs.writeFileSync;let finals=0,earlier=0;
 fs.renameSync=function(from,to){if(path.basename(String(to))==='report.json'&&final(from)){finals++;fs.appendFileSync(process.env.MOMM_TEST_RENAMES,'x');
 const code=mode==='final-rename'?'EPERM':mode==='final-rename-twice'&&finals<=2?'EPERM':mode==='final-rename-recount'&&finals!==3?'EBUSY':mode==='final-rename-enospc'?'ENOSPC':null;
+if(code)throw deny(code,'rename',String(from));}
+else if(path.basename(String(to))==='report.json'&&/^(precheck|suite)-/.test(mode)){earlier++;fs.appendFileSync(process.env.MOMM_TEST_RENAMES,'e');
+const code=mode==='precheck-rename-once'&&earlier===2?'EPERM':mode==='precheck-rename'&&earlier>=2?'EBUSY':mode==='suite-rename-once'&&earlier===3?'EBUSY':null;
 if(code)throw deny(code,'rename',String(from));}return rename.apply(this,arguments);};
 fs.writeFileSync=function(file,data){const pending=/^report-.*\\.tmp$/.test(path.basename(String(file)));
 if(pending&&(mode==='every-write'||(mode==='final-write'&&String(data).includes('"finished_at"'))))throw deny('EACCES','open',String(file));return write.apply(this,arguments);};
@@ -234,7 +237,7 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     assert.equal(lost.status, 1); noTrace(lost);
     // 1.17.1 follow-up: the rename is retried before the save is called failed, and then nothing else changes.
     assert.equal(finalRenames(), 4, 'one try and three retries'); assert(Date.now() - began >= 700, 'the retries are spaced out');
-    assert.match(lost.stdout, /The final rename was retried 3 times\./);
+    assert.match(lost.stdout, /The rename was retried 3 times\./);
     assert.match(lost.stdout, /PASS\s+0 .*scripts\/ok/);
     const [suites, saved, exit] = lastLines(lost);
     assert.match(suites, /^1 of 1 suites passed on \S+ \S+, Node v\d+\.\d+\.\d+$/);
@@ -268,6 +271,27 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     const uncounted = outcome('final-rename-recount');
     assert.equal(uncounted.r.status, 0, uncounted.r.stderr); assert.equal(typeof uncounted.report.finished_at, 'string');
     assert.match(uncounted.saved, /^Report saved: yes, .+report\.json \(after 2 retries, not recorded in the file: writing the count failed; private; inspect before sharing\)$/);
+  });
+  // 1.17.1 gate review: only the final save was retried. The precheck's replacing rename and the save after
+  // each suite are the same rename; refused once, the first ended the command before any suite and the
+  // second stopped the run.
+  item('R3/R4 a rename that fails briefly before the final save is retried too', () => {
+    const attempt = (fault) => { const before = folders(), ran = okRuns(); finalRenames(); const r = faulty(fault, '--save-report', '--commit', sha); noTrace(r); return { r, before, ran }; };
+    for (const fault of ['precheck-rename-once', 'suite-rename-once']) {
+      const { r, before, ran } = attempt(fault);
+      assert.equal(r.status, 0, `${fault}: ${r.stdout}${r.stderr}`); assert.equal(okRuns(), ran + 1, `${fault}: the suite ran`);
+      const folder = newest(before), report = readJson(path.join(folder, 'report.json'));
+      assert.equal(typeof report.finished_at, 'string'); assert.equal(report.passed, 1); assert.equal(report.save_retries, 1, `${fault}: the report says a save was retried`);
+      assert.match(lastLines(r)[1], /^Report saved: yes, .+report\.json \(after 1 retry; private; inspect before sharing\)$/);
+      assert.deepEqual(pendingIn(folder), [], 'nothing is left behind by a save that succeeded');
+      assert.equal(finalRenames(), 5, `${fault}: two precheck saves, one after the suite, the final one, and one retry`);
+    }
+    // A refusal that does not pass is still a refusal before any suite, and it says the rename was retried.
+    const { r, ran } = attempt('precheck-rename');
+    assert.equal(r.status, 1); assert.doesNotMatch(r.stdout, /RUN|PASS/); oneLine(r);
+    assert.match(r.stderr, /Report storage refused before any suite ran: .*\(EBUSY on rename\)\. The rename was retried 3 times\. An unused run folder may remain/);
+    assert.equal(finalRenames(), 5, 'the first precheck save, then one try and three retries of the second');
+    assert.equal(okRuns(), ran, 'no suite ran');
   });
   item('R4 --recover-report completes the record elsewhere', () => {
     assert(lostFolder, 'needs the run folder of the failed save');
@@ -339,6 +363,62 @@ export function preparePrivateEvidence(p){ requirePrivateEvidence(p); fs.mkdirSy
       assert.equal(fs.existsSync(path.join(home, 'recovered-here')), false);
       assert.deepEqual(snapshot(lostFolder), frozen); assert.equal(okRuns(), ran);
     } finally { put('momm/scripts/evidence-permissions.mjs', permissive); }
+  });
+  // 1.17.1 gate review of the recovery command. A finished report written by hand, so each case is its own.
+  const whole = (overrides = {}) => JSON.stringify({ schema: 'momm-ci-suites/1', run_id: randomUUID(), commit: sha, selected: 1, results: [{ command: 'scripts/ok.mjs', status: 'passed' }],
+    finished_at: new Date(0).toISOString(), passed: 1, failed: 0, ...overrides });
+  item('R4 only a report this runner could have written is recovered', () => {
+    // 36 hyphens or 36 hex digits passed as a run id, and a run of no suites was reported as "0 of 0 suites passed".
+    for (const [index, overrides] of [{ run_id: '-'.repeat(36) }, { run_id: 'a'.repeat(36) }, { selected: 0, results: [], passed: 0 }, { selected: -1, results: [], passed: 0 }].entries()) {
+      const from = path.join(externalHome, `not-a-run-${index}`), to = path.join(externalHome, `not-a-run-out-${index}`);
+      put('report.json', whole(overrides), from);
+      const r = run('--recover-report', from, '--to', to);
+      assert.equal(r.status, 1, JSON.stringify(overrides)); noTrace(r); assert.match(r.stderr, /holds no readable run report/); assert.equal(fs.existsSync(to), false);
+    }
+    const misnamed = path.join(externalHome, 'not-a-run-name');
+    put(`report-${'-'.repeat(36)}.tmp`, whole(), misnamed);
+    const skipped = run('--recover-report', misnamed, '--to', path.join(externalHome, 'not-a-run-out-name'));
+    assert.equal(skipped.status, 1); assert.match(skipped.stderr, /holds no readable run report/);
+    const leftover = path.join(externalHome, 'a-run-leftover');
+    put(`report-${randomUUID()}.tmp`, whole(), leftover);
+    assert.equal(run('--recover-report', leftover, '--to', path.join(externalHome, 'a-run-leftover-out')).status, 0, 'a real leftover is still recovered');
+  });
+  item('R4 the destination is compared the way the platform compares names', () => {
+    // Both paths were lower-cased on every platform, so where case tells folders apart a destination
+    // outside the run folder was refused as inside it.
+    const area = path.join(externalHome, 'case'), from = path.join(area, 'Case-Run'), to = path.join(area, 'case-run', 'out');
+    put('report.json', whole(), from);
+    const frozen = snapshot(from), oneFolder = fs.existsSync(path.join(area, 'case-run'));
+    const r = run('--recover-report', from, '--to', to); noTrace(r);
+    if (oneFolder || process.platform === 'darwin') {
+      // The same folder under another spelling; on macOS a volume may tell them apart, and refusing is the safe side.
+      assert.equal(r.status, 1, r.stdout); assert.match(r.stderr, /outside the run folder/);
+    } else {
+      assert.equal(r.status, 0, r.stderr); assert.equal(fs.readdirSync(to).length, 1, 'the other folder received the report');
+    }
+    assert.deepEqual(snapshot(from), frozen, 'the run folder is unchanged either way');
+  });
+  item('R4 a destination that becomes a link after it was checked is not written through', () => {
+    // The destination was checked before it existed and then written through the name as typed. The
+    // stand-in below creates the folder and then, as another process could, puts a link in its place.
+    const from = path.join(externalHome, 'swap-run'), elsewhere = path.join(externalHome, 'elsewhere');
+    put('report.json', whole(), from); fs.mkdirSync(elsewhere);
+    const frozen = snapshot(from);
+    put('momm/scripts/evidence-permissions.mjs', `import fs from 'node:fs'; import path from 'node:path';
+export function requirePrivateEvidence(p){ if(path.basename(String(p))==='elsewhere') throw Object.assign(new Error('not verified'),{code:'MOMM_EVIDENCE_PERMISSIONS',reason:'additional_principal'}); if(!fs.statSync(p).isDirectory()) throw new Error('not a directory'); }
+export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0o700}); requirePrivateEvidence(p); fs.rmdirSync(p); fs.symlinkSync(process.env.MOMM_TEST_SWAP_TO,p,'junction'); }`);
+    try {
+      const swapped = (name, leads) => spawnSync(process.execPath, [runner, '--recover-report', from, '--to', path.join(externalHome, name)], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:'',MOMM_TEST_SWAP_TO:leads} });
+      const intoRun = swapped('swapped-into-run', from);
+      assert.equal(intoRun.status, 1, intoRun.stdout); noTrace(intoRun); assert.match(intoRun.stderr, /outside the run folder/);
+      assert.deepEqual(snapshot(from), frozen, 'nothing was written into the run folder');
+      // A link to any other folder leads to one that was never verified private: it is verified as it now is.
+      const away = swapped('swapped-away', elsewhere);
+      assert.equal(away.status, 1, away.stdout); noTrace(away); assert.match(away.stderr, /not verified private \(additional_principal\)/);
+      assert.deepEqual(fs.readdirSync(elsewhere), [], 'nothing was written to a folder that was not verified');
+    } finally { put('momm/scripts/evidence-permissions.mjs', permissive); }
+    const plain = run('--recover-report', from, '--to', path.join(externalHome, 'not-swapped'));
+    assert.equal(plain.status, 0, plain.stderr); assert.deepEqual(snapshot(from), frozen);
   });
 
   // Real native seam, not a stub: both creation and existing-directory inspection.

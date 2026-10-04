@@ -85,12 +85,14 @@ const runId = randomUUID();
 // folder (1.17.1 R7), or the call that failed for a file-system error. null means the error is neither;
 // a defect is rethrown, never dressed as a refusal.
 const storageFailure = (error) => evidenceRefusal(error) ?? (error?.syscall ? `the report folder could not be written (${error.code} on ${error.syscall}).` : null);
+// A save that was refused after its rename was retried says so, wherever in the run it failed.
+const retriedNote = (error) => (error?.retried ? ` The rename was retried ${error.retried === 1 ? 'once' : `${error.retried} times`}.` : '');
 // Storage precheck (1.17.1 R3): private permissions here, write access just below, both before the first
 // RUN line. A refusal is one plain line, not a stack trace.
 const storageRefused = (error) => {
   const failure = storageFailure(error);
   if (!failure) throw error;
-  process.stderr.write(`Report storage refused before any suite ran: ${failure}${reportDir ? ` An unused run folder may remain: ${shown(reportDir)}` : ''}\n`);
+  process.stderr.write(`Report storage refused before any suite ran: ${failure}${retriedNote(error)}${reportDir ? ` An unused run folder may remain: ${shown(reportDir)}` : ''}\n`);
   process.exit(1);
 };
 if (save) {
@@ -123,21 +125,26 @@ let stored = -1; // how many suite results report.json holds; -1 until it has be
 const TRANSIENT = new Set(['EPERM', 'EBUSY', 'EACCES']);
 const pause = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 // Returns how many retries the rename needed. Only the rename is repeated, on the text already written.
-const persist = ({ retries = 0 } = {}) => {
+// Every save gets the same three more tries, a quarter of a second apart: the precheck, the save after
+// each suite and the final one. With none, a brief refusal before the end refused the run or stopped it
+// with suites not run (1.17.1 gate review).
+const RETRIES = 3;
+const persist = () => {
   if (!reportDir) return 0;
   const temporary = path.join(reportDir, `report-${randomUUID()}.tmp`);
   fs.writeFileSync(temporary, JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
   for (let retried = 0; ; retried++) {
     try { fs.renameSync(temporary, path.join(reportDir, 'report.json')); stored = report.results.length; return retried; }
     catch (error) {
-      if (retried < retries && TRANSIENT.has(error?.code)) { pause(250); continue; }
+      if (retried < RETRIES && TRANSIENT.has(error?.code)) { pause(250); continue; }
       // A failed rename leaves the text it could not move where it was written; --recover-report reads it there.
       error.pending = temporary; error.retried = retried; throw error;
     }
   }
 };
 // Twice: the second save replaces the first, which is the step every later save repeats.
-try { persist(); persist(); } catch (error) { storageRefused(error); }
+let saveRetries = 0; // renames retried by the saves of this run, the precheck's included
+try { saveRetries += persist(); saveRetries += persist(); } catch (error) { storageRefused(error); }
 const checkoutLine = !checkout ? null
   : !checkout.available ? `Checkout: Git could not confirm this checkout (${checkout.reason}); HEAD and the tree state are recorded as unknown, and the --commit label is unverified.`
     : `Checkout: HEAD ${checkout.head}, ${checkout.clean === null ? 'tree state unknown' : checkout.clean ? 'clean tree' : 'tree has uncommitted or untracked changes'}; the --commit label ${checkout.head === commit ? 'matches.' : `${commit} does not match HEAD.`}`;
@@ -175,25 +182,26 @@ for (const [index, command] of selected.entries()) {
       entry.capture_incomplete = Boolean(r.error || r.signal);
       process.stdout.write(`      captured failure output saved${entry.capture_incomplete ? ' (suite stopped; capture may be incomplete)' : ''}: ${path.relative(root, path.join(reportDir, entry.stdout_file))} and ${path.relative(root, path.join(reportDir, entry.stderr_file))} (private; inspect before sharing)\n`);
     }
-    persist();
+    saveRetries += persist();
   } catch (error) { if (!storageFailure(error)) throw error; saveError = error; break; }
 }
 const ran = report.results.length;
-let saveRetries = 0, countUnwritten = false;
+let countUnwritten = false;
 if (!saveError) {
   report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed;
-  report.save_retries = 0;
+  // What the earlier saves of this run needed; the final save's own retries are added below.
+  report.save_retries = saveRetries;
   try {
     if (reportDir) {
       // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
       recheck();
-      // The final rename gets three more tries, a quarter of a second apart, before the save is called failed.
-      saveRetries = persist({ retries: 3 });
-      // The report is saved. A count above 0 is written into it with one more save; if that one fails the
-      // file still says 0, and the outcome line says the count is not in the file.
-      if (saveRetries) {
-        report.save_retries = saveRetries;
-        try { persist({ retries: 3 }); } catch (error) { if (!storageFailure(error)) throw error; countUnwritten = true; }
+      // The final rename gets the same three more tries before the save is called failed.
+      const last = persist();
+      // The report is saved. Retries of this last save are written into it with one more save; if that one
+      // fails the file still holds the earlier count, and the outcome line says the count is not in the file.
+      if (last) {
+        saveRetries += last; report.save_retries = saveRetries;
+        try { persist(); } catch (error) { if (!storageFailure(error)) throw error; countUnwritten = true; }
       }
     }
   } catch (error) { if (!storageFailure(error)) throw error; saveError = error; }
@@ -208,7 +216,7 @@ if (saveError) {
   // A rename that failed after the last suite left every result in the file it could not move.
   const complete = saveError.pending && ran === selected.length ? saveError.pending : null;
   const kept = fs.existsSync(path.join(reportDir, 'report.json')) && stored >= 0;
-  process.stdout.write(`The report could not be saved (${reasonOf(saveError)}).${saveError.retried ? ` The final rename was retried ${saveError.retried} times.` : ''} The run folder was left as it is: nothing was repaired or removed.\n`);
+  process.stdout.write(`The report could not be saved (${reasonOf(saveError)}).${retriedNote(saveError)} The run folder was left as it is: nothing was repaired or removed.\n`);
   if (evidenceRefusal(saveError)) process.stdout.write(evidenceRefusal(saveError) + '\n');
   if (ran < selected.length) process.stdout.write(`The run stopped after suite ${ran} of ${selected.length}; the other ${selected.length - ran} were not run.\n`);
   if (complete) process.stdout.write(`Complete results: ${shown(complete)}\n`);
@@ -257,18 +265,21 @@ async function recoverReport(source, target) {
   let names;
   try { if (!fs.statSync(source).isDirectory()) throw new Error('not a directory'); names = fs.readdirSync(source); }
   catch { refuse(`${shown(source)} is not a readable run folder.`); }
+  // A run id is what randomUUID() gives, not any 36 hex digits and hyphens; and the runner never saves a
+  // run of no suites ("0 of 0 suites passed" is not a pass), so a report of one is not this runner's.
+  const uuid = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', isRunId = new RegExp(`^${uuid}$`), leftover = new RegExp(`^report-${uuid}\\.tmp$`);
   const read = (name) => {
     try {
       const file = path.join(source, name), st = fs.lstatSync(file);
       if (!st.isFile() || st.isSymbolicLink() || st.size > 64 * 1024 * 1024) return null;
       const bytes = fs.readFileSync(file), value = JSON.parse(bytes.toString('utf8'));
-      const sound = value?.schema === 'momm-ci-suites/1' && /^[0-9a-f-]{36}$/.test(value.run_id) && Number.isInteger(value.selected)
+      const sound = value?.schema === 'momm-ci-suites/1' && typeof value.run_id === 'string' && isRunId.test(value.run_id) && Number.isInteger(value.selected) && value.selected > 0
         && Array.isArray(value.results) && value.results.every((entry) => entry?.status === 'passed' || entry?.status === 'failed');
       return sound ? { name, bytes, value } : null;
     } catch { return null; }
   };
   // report.json first, then anything a failed rename left behind; a file that is not a whole report is skipped.
-  const found = ['report.json', ...names.filter((name) => /^report-[0-9a-f-]{36}\.tmp$/.test(name)).sort()].map(read).filter(Boolean);
+  const found = ['report.json', ...names.filter((name) => leftover.test(name)).sort()].map(read).filter(Boolean);
   if (!found.length) refuse(`${shown(source)} holds no readable run report.`);
   if (new Set(found.map((entry) => entry.value.run_id)).size > 1) refuse(`${shown(source)} holds reports of more than one run.`);
   const whole = found.filter((entry) => entry.value.results.length === entry.value.selected);
@@ -285,12 +296,36 @@ async function recoverReport(source, target) {
       catch { const parent = path.dirname(cursor); if (parent === cursor) return folder; tail.unshift(path.basename(cursor)); cursor = parent; }
     }
   };
-  const inside = (base, candidate) => { const relative = path.relative(base.toLowerCase(), candidate.toLowerCase()); return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)); };
-  if ([target, resolved(target)].some((candidate) => inside(source, candidate) || inside(resolved(source), candidate))) refuse('--to must be outside the run folder; the original attempt is never changed.');
+  // Case is folded where the platform's volumes fold it: Windows, and macOS, where a volume may keep case
+  // apart and refusing is then the safe side. Elsewhere two names that differ only in case are two folders,
+  // and folding them refused a destination that was outside the run folder (1.17.1 gate review).
+  const fold = (text) => (process.platform === 'win32' || process.platform === 'darwin' ? text.toLowerCase() : text);
+  const inside = (base, candidate) => { const relative = path.relative(fold(base), fold(candidate)); return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)); };
+  // What the file system says a folder is. It sees through a spelling the text cannot: a volume that ignores
+  // case where the platform does not, or a second name for the same place. It can only refuse more.
+  const identity = (folder) => { try { const st = fs.statSync(folder, { bigint: true }); return st.ino ? `${st.dev}:${st.ino}` : null; } catch { return null; } };
+  const run = identity(source);
+  const within = (folder) => {
+    if ([folder, resolved(folder)].some((candidate) => inside(source, candidate) || inside(resolved(source), candidate))) return true;
+    for (let cursor = folder; run; cursor = path.dirname(cursor)) { if (identity(cursor) === run) return true; if (path.dirname(cursor) === cursor) break; }
+    return false;
+  };
+  const outside = '--to must be outside the run folder; the original attempt is never changed.';
+  if (within(target)) refuse(outside);
+  const expected = resolved(target);
   const { evidenceRefusal: refusalOf } = await import('../momm/scripts/evidence-location.mjs');
-  try { (await import('../momm/scripts/evidence-permissions.mjs')).preparePrivateEvidence(target); }
-  catch (error) { if (!refusalOf(error) && !error?.syscall) throw error; refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); }
-  const file = path.join(target, `ci-${chosen.value.run_id}-recovered.json`);
+  const permissions = await import('../momm/scripts/evidence-permissions.mjs');
+  const unusable = (error) => { if (!refusalOf(error) && !error?.syscall) throw error; refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); };
+  // Checked again where the file will go (1.17.1 gate review). The first check ran before the folder
+  // existed and the file was then written through the name as typed, so a link put in that name's place
+  // in between was followed. The folder's real path is now taken once it exists: it must be outside the
+  // run folder, it must be the folder that was verified private (or is verified again, as it now is),
+  // and the file is written to that real path, not to the name.
+  let real;
+  try { permissions.preparePrivateEvidence(target); real = fs.realpathSync.native(target); } catch (error) { unusable(error); }
+  if (within(real)) refuse(outside);
+  if (real !== expected) { try { permissions.requirePrivateEvidence(real); } catch (error) { unusable(error); } }
+  const file = path.join(real, `ci-${chosen.value.run_id}-recovered.json`);
   // A file its save never moved into place states no retry count of that save.
   const body = JSON.stringify({ ...chosen.value, ...(chosen.name !== 'report.json' && 'save_retries' in chosen.value ? { save_retries: null } : {}), passed, failed, recovery: { schema: 'momm-ci-recovery/1', recovered_at: new Date().toISOString(),
     source_folder: source, source_file: chosen.name, source_sha256: createHash('sha256').update(chosen.bytes).digest('hex'),
