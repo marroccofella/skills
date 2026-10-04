@@ -1,0 +1,53 @@
+{
+  "schema": "momm-adapter-fixtures/1",
+  "route": "grok",
+  "cli_version": "1.0.41",
+  "shape_from": "momm/scripts/fixtures/grok-streaming-json-1.0.41.jsonl (capture of 29 September 2026, copied byte for byte as capture-declined.jsonl) and momm/scripts/grok-stream.test.mjs. Other cases are synthetic lines in the capture's shape.",
+  "cases": {
+    "capture-declined.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "no JSON object in the final message"
+      }
+    },
+    "success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "fenced-success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "error.jsonl": {
+      "expect": {
+        "status": "error",
+        "detail": "Grok returned an error in its event stream"
+      }
+    },
+    "cancelled.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "stopReason cancelled"
+      }
+    },
+    "unknown-event.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "timeout-truncated.jsonl": {
+      "process": {
+        "exit_code": null,
+        "timed_out": true
+      },
+      "expect": {
+        "status": "timeout"
+      }
+    }
+  }
+}

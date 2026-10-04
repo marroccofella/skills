@@ -1,0 +1,53 @@
+{
+  "schema": "momm-adapter-fixtures/1",
+  "route": "copilot",
+  "cli_version": "1.0.91",
+  "shape_from": "momm/scripts/copilot-transport.test.mjs events1091(), the stream of Copilot CLI 1.0.91 with session.warning and model.call_final_result; quota event from the dispatcher self-test. Synthetic content.",
+  "cases": {
+    "success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "fenced-success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "session-error.jsonl": {
+      "expect": {
+        "status": "error",
+        "detail": "terminal failure event"
+      }
+    },
+    "quota-error.jsonl": {
+      "process": {
+        "exit_code": 1
+      },
+      "expect": {
+        "status": "quota",
+        "detail": "HTTP 402"
+      }
+    },
+    "unknown-event.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "unrecognized event type (model.call_retry)"
+      }
+    },
+    "failed-model-call.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "a model call did not report success"
+      }
+    },
+    "not-json.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "assistant answer is not strict JSON"
+      }
+    }
+  }
+}

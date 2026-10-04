@@ -16,6 +16,7 @@ import { commandShapeSha256 } from "./route-isolation.mjs";
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
+import * as reviewAnswer from "./review-answer.mjs";
 import { evidenceLocation } from "./evidence-location.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
 const scripts = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,8 @@ const core = vm.runInNewContext(source.slice(source.indexOf("function extractJso
   + source.slice(source.indexOf("function fingerprint("), source.indexOf("function buildInsights("))
   + "\n({unwrapReviewPayload,normalizeReview,rationalize,buildOutstanding})", {
     PEER_CONTRACT, VALID_VERDICTS: new Set(["ACCEPT", "MODIFY", "REJECT"]), VALID_SEVERITIES: new Set(["CRITICAL", "WARNING", "NITPICK"]), fs, os, path, evidenceLocation, process,
+    // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+    ...reviewAnswer,
   });
 const passed = [];
 const test = (name, fn) => { fn(); passed.push(name); };

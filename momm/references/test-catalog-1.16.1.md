@@ -70,10 +70,22 @@ and attempts, checks, governor, ledger, scorecard and `evidence --status` all fo
 quotation rule leaves its failing quote's hash, length and redacted 80-character prefix in the private
 attempt record only.
 
+1.17.1 additions: `momm/scripts/review-answer.test.mjs` (S1, S2) runs one matrix of answers (bare, fenced,
+fenced with prose, two blocks, tilde fence, other language tag, broken JSON) against every route's parser.
+Copilot and Antigravity read one answer string by the rule in `momm/scripts/review-answer.mjs`; Claude,
+Codex, Gemini and Grok extract the last review object from text, unchanged. It also proves that an answer
+refused as not JSON leaves its length, fence flags, parser error position and redacted 80-character prefix
+in the private attempt record only. `momm/scripts/adapter-matrix.test.mjs` (R2) walks
+`momm/scripts/fixtures/adapters/<route>/<cli-version>/` and runs every case file through the real adapter,
+expecting the status in the `expected.json` beside it: Copilot 1.0.85 and 1.0.91 shapes, Grok 1.0.41 (the
+recorded capture and error cases) and the Antigravity stream. Adding a CLI version is adding a folder; a
+stray file, an unlisted case, an unknown route or a fixture holding a credential-looking string fails.
+
 - `momm/scripts/review-claims.test.mjs`
 - `momm/scripts/review-workflow.test.mjs`
 
 - `momm/scripts/adapter-cleanup.test.mjs`
+- `momm/scripts/adapter-matrix.test.mjs`
 - `momm/scripts/antigravity-transport.test.mjs`
 - `momm/scripts/attachment-cleanup.test.mjs`
 - `momm/scripts/attempts.test.mjs`
@@ -103,6 +115,7 @@ attempt record only.
 - `momm/scripts/probes.test.mjs`
 - `momm/scripts/process-scope.test.mjs`
 - `momm/scripts/quotation-diagnostics.test.mjs`
+- `momm/scripts/review-answer.test.mjs`
 - `momm/scripts/roles.test.mjs`
 - `momm/scripts/scheduler.test.mjs`
 - `momm/scripts/scorecard-roster.test.mjs`

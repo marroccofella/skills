@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {PEER_CONTRACT,reviewProblem} from './review-contract.mjs';
 import {assemblePrompt} from './guidance.mjs';
 import * as isolation from './route-isolation.mjs';
+import * as reviewAnswer from './review-answer.mjs';
 import {createHash} from 'node:crypto';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
@@ -146,7 +147,9 @@ try{
       attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
       agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({...env}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},
       sanitizeText:s=>({value:s}),clipped:(s,n)=>String(s).slice(0,n),antigravityCommand:()=> 'agy',grokCommand:()=> 'grok',REVIEW_JSON_SCHEMA:{type:'object'},
-      grokIsolationEnv:isolation.grokIsolationEnv,codexIsolationArgs:isolation.codexIsolationArgs,codexReviewArgs:isolation.codexReviewArgs,...grokStream});
+      grokIsolationEnv:isolation.grokIsolationEnv,codexIsolationArgs:isolation.codexIsolationArgs,codexReviewArgs:isolation.codexReviewArgs,...grokStream,
+      // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+      ...reviewAnswer});
     vm.runInContext(source.slice(start,end)+';this.invoke=invokeReviewer;',ctx);
     return ctx;
   }

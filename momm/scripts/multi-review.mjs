@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import { codexIsolationArgs, codexReviewArgs, grokIsolationEnv } from "./route-isolation.mjs";
 import { grokStreamProgress, grokStreamReview } from "./grok-stream.mjs";
+import { strictAnswer, answerShape, envelopeAnswer } from "./review-answer.mjs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -1299,6 +1300,13 @@ function unwrapReviewPayload(stdout, nesting = 0) {
   return null;
 }
 
+// 1.17.1 S2: an answer refused as not JSON carries its shape, for the private attempt record only:
+// length, a fence at either end, the parser's error position and the first 80 characters after
+// sanitizeText. Never the answer. invokeWithRetry strips it before the result goes anywhere else.
+function answerShapeEvidence(answer) {
+  return { answer_shape: answerShape(answer, { redact: (text) => sanitizeText(text).value }) };
+}
+
 // Copilot's human text renderer can wrap lines and remove JSON quote escaping.
 // Consume its JSONL transport instead, never repair the model's answer. Only a
 // completed assistant turn followed by the single final zero-exit result counts.
@@ -1350,17 +1358,11 @@ function copilotReviewPayload(stdout) {
   }
   if (!completed || typeof answer?.content !== "string" || !answer.content.trim()
     || !Array.isArray(answer.toolRequests) || answer.toolRequests.length) return invalid("no completed tool-free assistant answer");
-  // 1.17.1: the model sometimes returns its whole answer inside one Markdown code fence, against the
-  // contract. A fence is a wrapper, not content: an answer that is exactly one fenced block is unwrapped
-  // and its inside parsed as strictly as before. Prose beside the fence, a second block, another fence
-  // character or a language tag other than json (in any case) leave it unmatched or unparseable, and it
-  // is refused. No line inside the block may start with a fence: strict JSON could not contain one
-  // anyway, and the explicit check keeps that rule readable here.
-  const fenceMatch = /^```(?:json)?[ \t]*\r?\n([\s\S]*)\r?\n```$/i.exec(answer.content.trim());
-  if (fenceMatch && /^[ \t]*```/m.test(fenceMatch[1])) return invalid("assistant answer is not strict JSON");
-  let payload;
-  try { payload = JSON.parse(fenceMatch ? fenceMatch[1] : answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("assistant answer must be a JSON object");
+  // 1.17.1: an answer that is exactly one fenced block is unwrapped and its inside parsed as strictly
+  // as a bare answer. The rule is strictAnswer (review-answer.mjs), shared with Antigravity.
+  const { payload, problem } = strictAnswer(answer.content);
+  if (problem === "not_json") return { ...invalid("assistant answer is not strict JSON"), ...answerShapeEvidence(answer.content) };
+  if (problem) return invalid("assistant answer must be a JSON object");
   return { payload };
 }
 
@@ -1380,9 +1382,9 @@ function antigravityStreamPayload(stdout, stream = true) {
   if (results.length !== 1 || events.at(-1).event !== "result" || results[0].result?.status !== "SUCCESS") return invalid("one final SUCCESS result is required");
   const result = results[0].result;
   if (typeof result.response !== "string" || !result.response.trim()) return invalid("terminal response is empty or incomplete");
-  let payload;
-  try { payload = JSON.parse(result.response); } catch { return invalid("terminal answer is not strict JSON"); }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("terminal answer must be a JSON object");
+  const { payload, problem } = strictAnswer(result.response);
+  if (problem === "not_json") return { ...invalid("terminal answer is not strict JSON"), ...answerShapeEvidence(result.response) };
+  if (problem) return invalid("terminal answer must be a JSON object");
   return { payload };
 }
 
@@ -1893,7 +1895,8 @@ async function dispatchReviewer(agent, artifact, options, settings) {
   }
   const transportOutput = agent === "copilot" ? copilotReviewPayload(result.stdout)
     : agent === "antigravity" ? antigravityStreamPayload(result.stdout, !attachments.length) : null;
-  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout) };
+  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout),
+    ...(transportOutput.answer_shape && !options.replyContract ? { answer_shape: transportOutput.answer_shape } : {}) };
   // Grok's stream is rebuilt into the envelope json mode printed; a failed tool call inside it is an
   // event, not a terminal error, so only the stream's own verdict decides that.
   const grokStream = agent === "grok" ? grokStreamReview(result.stdout) : null;
@@ -1919,12 +1922,16 @@ async function dispatchReviewer(agent, artifact, options, settings) {
     const shape = !out.trim() ? "empty stdout" : grokStream?.problem ? grokStream.problem
       : answerText !== null ? (extractJsonObjects(answerText).length ? "final message has JSON but no findings[] object" : "no JSON object in the final message")
         : extractJsonObjects(out).length ? "JSON present but no findings[] object" : "no JSON object in stdout";
+    // 1.17.1 S2: the answer is Grok's final message, the answer field of a JSON envelope, or stdout
+    // itself. When it holds no JSON object at all, its shape goes to the private attempt record.
+    const printed = stripAnsi(out), refused = grokStream ? answerText : envelopeAnswer(extractJsonObjects(printed)) ?? printed;
     return {
       agent,
       status: "invalid_output",
       progress: result.progress,
       usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`),
       detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
+      ...(typeof refused === "string" && refused.trim() && !options.replyContract && !extractJsonObjects(refused).length ? answerShapeEvidence(refused) : {}),
     };
   }
   const problem = result.outputLimited ? "output limit hit; review may be truncated" : options.replyContract ? options.replyContract.problem(payload, artifact) : reviewProblem(payload, artifact, { attachments });
@@ -2441,8 +2448,9 @@ async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep
   }
   // An invalid-output retry is disclosed on the result: what was rejected first, and why.
   const disclosed = first?.status === "invalid_output" ? { retried_after: first.status, first_attempt_detail: first.detail ?? null } : {};
-  // Quotation diagnostics went to the private attempt record (onAttempt), and never go further.
-  const { quotation_diagnostics: _privateQuotes, ...returned } = result;
+  // Quotation diagnostics and the shape of a non-JSON answer went to the private attempt record
+  // (onAttempt), and never go further.
+  const { answer_shape: _privateShape, quotation_diagnostics: _privateQuotes, ...returned } = result;
   return { ...returned, attempts, attempt_history: history, ...disclosed };
 }
 
@@ -3631,8 +3639,8 @@ async function main() {
       onAttempt: row => {
         const record = {...attemptRecord(row, { runId, piece: pieceId ?? "whole", inputHash: createHash("sha256").update(sanitized.value).digest("hex"), pieceHash: createHash("sha256").update(artifactText).digest("hex"), ordinal: row.ordinal, durationMs: row.duration_ms, startedAt: row.started_at, attemptId:row.attempt_start?.attempt_id }),...coverFields,start:row.attempt_start};
         const reference = persistAttempt(process.cwd(), record);
-        // The stored record (bound by its sha256) keeps any quotation diagnostics; the report does not.
-        const { quotation_diagnostics: _privateQuotes, ...bound } = record;
+        // The stored record (bound by its sha256) keeps any quotation diagnostics and answer shape; the report does not.
+        const { answer_shape: _privateShape, quotation_diagnostics: _privateQuotes, ...bound } = record;
         attemptEvidence.push({ ...bound, evidence: reference });
       },
       onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...tag, ...progress }) },
