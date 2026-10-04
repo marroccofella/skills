@@ -541,9 +541,13 @@ export function policySummary(root, from, to) {
   const capped = (rows, limit) => [...rows.slice(0, limit), ...(rows.length > limit ? [`    ... and ${rows.length - limit} more (see the full diff)`] : [])];
   const lines = ["Protocol change summary (a reading aid; the full diff follows):", `  Protocol files changed: ${files.length}`,
     ...capped(files.map(f => `    ${f.state.padEnd(8)} ${label(f.path)}`), 30)];
-  if (files.some(f => f.path === "momm/SKILL.md")) {
-    const blob = ref => { try { return run("git", ["show", `${ref}:momm/SKILL.md`], root); } catch { return ""; } }; // absent on one side: all added or all removed
-    const h = headingChanges(blob(from), blob(to));
+  const skill = files.find(f => f.path === "momm/SKILL.md");
+  if (skill) {
+    // Read only where the diff says the file exists (gate review of 1.17.1). The side it is absent from is
+    // empty: all added, or all removed. A side that exists and cannot be read stops the command; a failed
+    // read used to count as an empty file, and two of them as "none added, removed or changed".
+    const blob = (ref, absent) => absent ? "" : run("git", ["show", `${ref}:momm/SKILL.md`], root);
+    const h = headingChanges(blob(from, skill.state === "added"), blob(to, skill.state === "removed"));
     const rows = ["added", "removed", "changed"].flatMap(kind => h[kind].map(text => `    ${kind.padEnd(8)} ${label(text)}`));
     lines.push("  momm/SKILL.md headings (changed: the text under the heading differs):", ...(rows.length ? capped(rows, 40) : ["    none added, removed or changed"]));
   } else lines.push("  momm/SKILL.md: not changed.");

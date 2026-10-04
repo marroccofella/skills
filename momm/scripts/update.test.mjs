@@ -187,6 +187,28 @@ try {
     assert.match(moved, /^ {4}changed {2}\(order of sections\)$/m); assert(!moved.includes("none added, removed or changed"), "a reordered file is never summarised as unchanged");
     assert(updater.policySummary(repo, two, two.slice(0, 12)).includes("momm/SKILL.md: not changed."), "an unchanged file still says so");
   });
+  // Gate review of 1.17.1: momm/SKILL.md is read only on a side where the diff says it exists. A failed read
+  // used to count as an empty file, so a file that could not be read on either side was summarised as "none
+  // added, removed or changed". Here it is a Git link to a commit that is not there: listed, never readable.
+  await test("protocol_summary_stops_when_the_skill_file_cannot_be_read_and_reads_no_absent_side", () => {
+    const identity = ["-c", "user.name=MOMM test", "-c", "user.email=momm-test@example.invalid", "-c", "commit.gpgsign=false"];
+    const repo = path.join(fixture, "summary-unreadable"); fs.mkdirSync(repo); git(repo, "init");
+    write(repo, "a.txt", "a\n"); const base = commit(repo, "base");
+    const link = digit => { git(repo, "update-index", "--add", "--cacheinfo", `160000,${digit.repeat(base.length)},momm/SKILL.md`); git(repo, ...identity, "commit", "-m", `link ${digit}`); return git(repo, "rev-parse", "HEAD"); };
+    const one = link("1"), two = link("2");
+    for (const [from, to, what] of [[one, two, "both sides"], [base, one, "the new side"], [one, base, "the old side"]]) {
+      let summary = null, error;
+      try { summary = updater.policySummary(repo, from, to); } catch (e) { error = e; }
+      assert.equal(summary, null, `unreadable on ${what}: no summary may be printed, least of all "none added, removed or changed"`);
+      assert.equal(error?.code, "command_failed", `unreadable on ${what}: the command stops on Git's own error`);
+    }
+    const plain = path.join(fixture, "summary-absent"); fs.mkdirSync(plain); git(plain, "init");
+    write(plain, "a.txt", "a\n"); const without = commit(plain, "without");
+    write(plain, "momm/SKILL.md", "# T\n\ntext\n\n## U\n\nmore\n"); const withFile = commit(plain, "with");
+    const rows = (from, to) => updater.policySummary(plain, from, to).split("\n").slice(2).map(row => row.trim().replace(/ +/g, " "));
+    assert.deepEqual(rows(without, withFile), ["added momm/SKILL.md", "momm/SKILL.md headings (changed: the text under the heading differs):", "added # T", "added ## U"], "a new file: every heading added");
+    assert.deepEqual(rows(withFile, without), ["removed momm/SKILL.md", "momm/SKILL.md headings (changed: the text under the heading differs):", "removed # T", "removed ## U"], "a deleted file: every heading removed");
+  });
   // R8 (1.17.1; field report of 3 October 2026): installing 1.17.0 failed at the checkout on a leftover
   // .git/index.lock (empty, six days old, no Git process running), after the transaction had been staged.
   // A Git lock is now reported before anything starts. It is never removed, and its age is shown, not judged.
