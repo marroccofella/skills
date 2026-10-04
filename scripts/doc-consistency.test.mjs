@@ -177,4 +177,62 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   assert(grokStreamReview(`{"data":"x"}\n${end}\n`).envelope === null && grokStreamReview(`${end}\n${end}\n`).envelope === null && grokStreamReview('{"type":"end","stopReason":"max_turns"}\n').envelope === null, 'grok-stream.mjs must refuse what grok.md says it refuses');
   assert(grokStreamReview(`${end}\n{"type":"error"}\n`).status === 'error' && grokStreamReview(`{"type":"mystery"}\n${end}\n`).envelope !== null && grokStreamReview(`${end}\n{"type":"mystery"}\n`).envelope === null, 'grok-stream.mjs must decide a line after the end as grok.md says');
 }
+// 1.17.1 gate review rev_20261004085941_a8b4e58041e1 (records packet). The plan, the gate record and the
+// release notes are held to each other and, where that is cheap, to the code they describe.
+{
+  const flatText = (t) => t.replace(/\s+/g, ' ');
+  const lf = (name) => read(name).replace(/\r\n/g, '\n');
+  const plan = lf('momm/references/plan-1.17.1.md'), gates = lf('momm/references/gates-1.17.1.md'), notes = lf('momm/references/release-1.17.1.md');
+  const item = (id) => flatText(plan.split('\n- **' + id + '. ')[1].split('\n- **')[0].split('\n## ')[0]);
+  const part = (text, heading) => text.split('\n## ' + heading + '\n')[1].split('\n## ')[0];
+  // runner-outcome-contract: plan R5 quoted "93 of 93 passed; report not saved; exit 1", which the runner
+  // never prints. It names the runner's three closing lines, as the reviewer pack does.
+  const runner = read('scripts/run-ci-suites.mjs');
+  assert(!plan.includes('93 of 93 passed; report not saved; exit 1'), 'plan R5 must not quote an outcome line the runner does not print');
+  for (const [said, printed] of [['suites passed on', 'suites passed on '], ['`Report saved: no', 'Report saved: '], ['`Exit status: 1`', 'Exit status: '], ['`Report saved: not requested', 'not requested (']])
+    assert(item('R5').includes(said) && runner.includes(printed), 'plan R5 and run-ci-suites.mjs must name the same outcome line: ' + said);
+  assert(flatText(read('momm/references/third-party-test-plan-1.17.md')).includes('`Report saved: …` (`not requested` unless you add `--save-report`) and `Exit status: N`'), 'the reviewer pack must name the same closing lines, and what the second says without --save-report');
+  // unwrap-rule-scope: S1 said "for every route"; the fence rule is used by the two strict routes only, as
+  // the test catalogue and review-answer.mjs say.
+  assert(!/for every route/i.test(item('S1')) && /Copilot and Antigravity/.test(item('S1')) && /Claude, Codex, Gemini and Grok extract/.test(item('S1')), 'plan S1 must give the fence rule to Copilot and Antigravity and leave the extracting routes unchanged');
+  assert(/Copilot and Antigravity read one answer string by the rule in `momm\/scripts\/review-answer\.mjs`; Claude, Codex, Gemini and Grok extract/.test(flatText(read('momm/references/test-catalog-1.16.1.md'))), 'the test catalogue must state the same scope as plan S1');
+  // evidence-dropped-pass-confirmation: the evidence for the Copilot fix says the suite passes with the
+  // fence change, with its count.
+  assert(/\*\*Evidence\.\*\*.*?the suite had \d+ checks, all passing/.test(flatText(gates.split('- **Lesson.**')[0])), 'the gate record must say that the Copilot suite passes with the fence change, with its count');
+  // owner-approval-gate-dropped: the list of what is still required says where the owner's approval is
+  // and what it depends on.
+  const still = flatText(part(gates, 'Still required before the tag'));
+  assert(/owner's approval for the signed tag/.test(still) && still.includes('4 October 2026') && /every gate passes on the final sealed commit/.test(still), 'the gate record must state the owner approval for the tag and its condition');
+  // gate3-receipts-partial: gate 3 covers every change. While it is open the record says so; it cannot
+  // read as recorded while only the two reviews of the Copilot fix are listed.
+  const gate3 = gates.split('\n').find((line) => line.startsWith('| 3. MOMM range reviews')) ?? '';
+  const listed = part(gates, 'Reviews').split('\n').filter((line) => /^- `rev_\d{14}_[0-9a-f]{12}`/.test(line)).length;
+  assert(/Gate 3 is met only when every range review of the 1\.17\.1 changes is listed here with a complete receipt/.test(flatText(part(gates, 'Reviews'))), 'the Reviews section must say what meets gate 3');
+  if (/when complete/.test(gate3)) assert(/Gate 3/.test(still), 'while gate 3 is open, the list of what is still required must name it');
+  else assert(listed > 2, 'gate 3 cannot read as recorded while only the two reviews of the Copilot fix are listed');
+  // answer-prefix-vs-never: the notes said a prefix of a refused answer is kept and then "Never the
+  // answer". The records say what answerShape keeps, whatever that is.
+  const { answerShape, strictAnswer } = await import('../momm/scripts/review-answer.mjs');
+  const kept = answerShape('x'.repeat(200)).prefix;
+  for (const [name, text] of [['plan-1.17.1.md', plan], ['gates-1.17.1.md', gates], ['release-1.17.1.md', notes]]) {
+    if (typeof kept === 'string' && kept.length) {
+      assert(!/never\s+the\s+answer/i.test(text), name + ' must not say the answer is never kept while the shape record keeps a prefix of it');
+      assert(flatText(text).includes(`first ${kept.length} characters`), name + ' must say how much of a refused answer the shape record keeps');
+    } else assert(!/first \d+ characters|character prefix/.test(flatText(text)), name + ' must not say a prefix is kept when answerShape keeps none');
+  }
+  // tilde-fence-dropped, and one list everywhere: what is still refused, in the gate record, the release
+  // notes and both adapter notes, and true of the rule itself.
+  const refusedList = 'prose beside the fence, a second fenced block, a line inside that starts with a fence, a tilde fence, another language tag or broken json inside';
+  for (const name of ['momm/references/gates-1.17.1.md', 'momm/references/release-1.17.1.md', 'momm/references/cli/copilot.md', 'momm/references/cli/antigravity.md'])
+    assert(flatText(read(name)).toLowerCase().includes(refusedList), name + ' must give the whole list of fenced answers that are still refused');
+  const fence = '`'.repeat(3), tilde = '~'.repeat(3), answer = '{"findings":[]}';
+  assert.deepEqual(strictAnswer(`${fence}json\n${answer}\n${fence}`).payload, { findings: [] }, 'one fenced block is unwrapped');
+  for (const refusedAnswer of [`Here it is:\n${fence}json\n${answer}\n${fence}`, `${fence}json\n${answer}\n${fence}\n${fence}json\n${answer}\n${fence}`, `${fence}\n${fence}\n${answer}\n${fence}`,
+    `${tilde}json\n${answer}\n${tilde}`, `${fence}js\n${answer}\n${fence}`, `${fence}json\n{"findings":[\n${fence}`])
+    assert.equal(strictAnswer(refusedAnswer).payload, null, 'review-answer.mjs must refuse what the records say is still refused');
+  // every-reviewer-lede: the release repairs Copilot and flags a CLI that is too old; it does not make
+  // every route work, and the records do not say so.
+  for (const name of ['momm/references/release-1.17.1.md', 'momm/references/plan-1.17.1.md', 'momm/ROADMAP.md'])
+    assert(!/every reviewer usable/i.test(read(name)), name + ' must not claim that every reviewer is usable');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

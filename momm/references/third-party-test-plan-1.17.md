@@ -51,8 +51,9 @@ node scripts/run-ci-suites.mjs
 ```
 
 It runs every suite the CI workflow runs, prints `PASS` or `FAIL` for each with its time, and ends with
-"N of N suites passed", then `Report saved: …` and `Exit status: N` (since 1.17.1). Report those three
-lines and any `FAIL` lines with their output. To re-run a subset:
+"N of N suites passed", then `Report saved: …` (`not requested` unless you add `--save-report`) and
+`Exit status: N` (since 1.17.1). Report those three lines and any `FAIL` lines with their output. To
+re-run a subset:
 `node scripts/run-ci-suites.mjs --grep split`.
 
 For a private original-run report and captured failed-suite output, use:

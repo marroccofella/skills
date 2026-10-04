@@ -63,7 +63,8 @@ check('immutable 1.17 evidence links', () => {
 // It is never a second truth: it must be exactly what versions.json and the release catalogue give today.
 check('one generated release status line', () => {
   const manifest = JSON.parse(read('versions.json')), catalogue = JSON.parse(read('momm/references/release-history.json'));
-  const status = releaseStatus(manifest, catalogue), line = releaseStatusMarkdown(status), readme = read('README.md');
+  // The renderer keeps a CRLF README's line endings, so the comparison here is of lines, not of line endings.
+  const status = releaseStatus(manifest, catalogue), line = releaseStatusMarkdown(status), readme = read('README.md').replace(/\r\n/g, '\n');
   const stale = 'README.md disagrees with versions.json and the release catalogue: run node scripts/render-momm-site.mjs';
   assert.equal(readme.split(readmeStatusBlock(status)).length - 1, 1, stale);
   assert.deepEqual(readme.split('\n').filter(text => /Stable: |Candidate under test/.test(text)), [line], 'README.md must state the release status once, in the generated line');

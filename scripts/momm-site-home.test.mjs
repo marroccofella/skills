@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {homeCinema,homeDiagrams,releaseStatus,releaseStatusHtml,releaseStatusMarkdown,readmeStatusBlock,withReleaseStatus} from './momm-site-home.mjs';
+import {homeCinema,homeDiagrams,releaseStatus,releaseStatusHtml,releaseStatusMarkdown,readmeStatusBlock,withReleaseStatus,homeWithReleaseStatus} from './momm-site-home.mjs';
 import {bindHomePlayers} from '../docs/momm/home-player.mjs';
 const tour=JSON.parse(fs.readFileSync(new URL('../docs/momm/tour.json',import.meta.url)));
 const data=JSON.parse(fs.readFileSync(new URL('../docs/evidence/momm-evidence.json',import.meta.url)));
@@ -62,9 +62,17 @@ assert.equal((homeCinema(tour,tour.version,films.map(f=>({...f,status:'pending'}
   assert.throws(()=>releaseStatus(manifestFor('1.17.0'),[stableRow,notesRow]),/versions\.json says 1\.17\.0/,'the manifest must name the candidate while one is under test');
   assert.throws(()=>releaseStatus(manifestFor('1.17.2'),[stableRow,publishedRow]),/versions\.json says 1\.17\.2/,'the manifest must name the stable release when nothing is under test');
   assert.throws(()=>releaseStatus(manifestFor('1.17.1'),[notesRow]),/no published release/i);
-  assert.throws(()=>releaseStatus(manifestFor('1.16.9'),[stableRow,{version:'1.16.9',kind:'version-notes'}]),/not newer than the stable release/,'a candidate cannot be older than the stable release');
+  assert.throws(()=>releaseStatus(manifestFor('1.16.9'),[stableRow,{version:'1.16.9',kind:'version-notes'}]),/ascending version order/,'a candidate cannot be older than the stable release');
   assert.throws(()=>releaseStatus(manifestFor('1.17.1'),[]),/catalogue/i);
   assert.throws(()=>releaseStatus(manifestFor('<b>'),[stableRow,{...notesRow,version:'<b>'}]),/version/i,'a version is three numbers, never markup');
+  // Gate review rev_20261004085941_a8b4e58041e1 (unsorted-catalogue-newest-assumption): the newest entry and the
+  // stable release are read by position, so the order is checked, never assumed. A catalogue that is not in
+  // ascending version order is refused: the line is not rendered from a guess.
+  assert.throws(()=>releaseStatus(manifestFor('1.17.1'),[notesRow,stableRow]),/ascending version order/,'a candidate listed before the stable release is refused');
+  assert.throws(()=>releaseStatus(manifestFor('1.17.0'),[{...notesRow,version:'1.18.0',notes_path:'momm/references/release-1.18.0.md'},stableRow]),/ascending version order/,'a newer candidate that is not last must not vanish from the line');
+  assert.throws(()=>releaseStatus(manifestFor('1.17.0'),[publishedRow,stableRow]),/ascending version order/,'an older release listed last must not be shown as the stable one');
+  assert.throws(()=>releaseStatus(manifestFor('1.17.1'),[stableRow,stableRow,notesRow]),/ascending version order/,'the same version twice is refused');
+  assert.equal(releaseStatus(manifestFor('1.10.0'),[{version:'1.9.1',kind:'tag',tag:'momm-1.9.1'},{version:'1.10.0',kind:'release',tag:'momm-1.10.0',published_date:'2026-08-23T21:19:21Z'}]).stable.version,'1.10.0','versions are compared as numbers: 1.10.0 follows 1.9.1');
   // "Signed" is read from the manifest, never assumed; a note without its own file links to its site page.
   const legacy=releaseStatus(manifestFor('1.14.1'),[{version:'1.14.1',kind:'release',tag:'momm-1.14.1',published_date:'2026-09-04T15:59:07Z'}]);
   assert.equal(plain(releaseStatusHtml(legacy)),'Stable: 1.14.1 (tag, not signed)');
@@ -76,6 +84,17 @@ assert.equal((homeCinema(tour,tour.version,films.map(f=>({...f,status:'pending'}
   assert(readmeStatusBlock(testing).split('\n').length===3&&readmeStatusBlock(testing).split('\n')[1]===releaseStatusMarkdown(testing));
   assert.throws(()=>withReleaseStatus('# skills\n',released),/exactly one/);
   assert.throws(()=>withReleaseStatus(stale+stale,released),/exactly one/);
+  // Gate review rev_20261004085941_a8b4e58041e1 (readme-status-crlf, readme-status-rejects-crlf): a README saved
+  // with CRLF line endings carries the same block. It is found, replaced, and keeps its own line endings.
+  const crlf=text=>text.replace(/\n/g,'\r\n');
+  assert.equal(withReleaseStatus(crlf(stale),released),crlf(`# skills\n\n${readmeStatusBlock(released)}\n\nText.\n`));
+  assert.equal(withReleaseStatus(crlf(stale),testing),crlf(stale),'an up-to-date CRLF README is left byte for byte');
+  assert.throws(()=>withReleaseStatus(crlf(stale+stale),released),/exactly one/);
+  assert.throws(()=>withReleaseStatus(crlf('# skills\n'),released),/exactly one/);
+  // The home page is never rendered without the line: a template that lost its headline, or repeats it, is refused.
+  assert.equal(homeWithReleaseStatus('<a class="release-pill"></a><h1>Give your AI agent<br></h1>',testing),'<a class="release-pill"></a>'+releaseStatusHtml(testing)+'<h1>Give your AI agent<br></h1>');
+  assert.throws(()=>homeWithReleaseStatus('<h1>Another headline</h1>',testing),/headline exactly once/);
+  assert.throws(()=>homeWithReleaseStatus('<h1>Give your AI agent</h1><h1>Give your AI agent</h1>',testing),/headline exactly once/);
   // The published home page carries today's line exactly once, directly under the version pill.
   const manifestNow=JSON.parse(fs.readFileSync(new URL('../versions.json',import.meta.url),'utf8'));
   const catalogueNow=JSON.parse(fs.readFileSync(new URL('../momm/references/release-history.json',import.meta.url),'utf8'));

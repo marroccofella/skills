@@ -1,4 +1,4 @@
-# MOMM 1.17.1 plan: every reviewer usable, and failures that explain themselves
+# MOMM 1.17.1 plan: reviewers that work, and failures that explain themselves
 
 Status: **in build, not released.** The current release is 1.17.0 (signed tag `momm-1.17.0`,
 3 October 2026). Owner instruction, 4 October 2026: fix the Copilot route, release it as 1.17.1, and
@@ -35,8 +35,10 @@ weakened; no setting of the user's is changed. Every item has failing-first test
   named recovery file in a private location the user approves, without rerunning suites and without
   touching the original attempt. Done when: an injected final-rename failure leaves the original
   report untouched and a `--recover-report` command completes the record elsewhere.
-- **R5. Three-part outcome.** The runner's last lines state separately: suites passed, report saved,
-  process exit status. Done when: "93 of 93 passed; report not saved; exit 1" is one unambiguous block.
+- **R5. Three-part outcome.** The runner's last three lines state separately: suites passed, report
+  saved, process exit status. Done when: a run in which every suite passed and the report could not be
+  saved ends with `N of N suites passed on …`, `Report saved: no (…)` and `Exit status: 1`, one fact a
+  line. Without `--save-report` the second line is `Report saved: not requested (…)`.
 - **R6. Strict option validation.** An unknown or misspelled runner option is refused with the nearest
   valid option, exit 2, nothing run. Done when: `--grpe` is refused and suggests `--grep`.
 - **R7. Friendly evidence-location errors.** A refused evidence home says why and gives a safe remedy,
@@ -55,11 +57,15 @@ weakened; no setting of the user's is changed. Every item has failing-first test
 
 ## Items from this release's own failures (S1 to S10)
 
-- **S1. One answer-unwrapping rule for every route.** The whole-answer fence rule lives in one place
-  and each adapter's tests use the same matrix. No adapter repairs content.
+- **S1. One fence-unwrapping rule for the two strict routes.** The whole-answer fence rule lives in one
+  place (`scripts/review-answer.mjs`) and is used by Copilot and Antigravity, the two routes that read
+  one answer string strictly. Claude, Codex, Gemini and Grok extract the last review object from text
+  and are unchanged. One matrix of answers runs against every route's parser. No adapter repairs
+  content.
 - **S2. Private shape diagnostics for a non-JSON answer.** When an answer is refused as not JSON, the
   private attempt record keeps its length, whether it starts or ends with a fence, the parser's error
-  position and a redacted 80-character prefix. Never the answer.
+  position and the first 80 characters of the answer after redaction. The shape record holds no more
+  of the answer than that.
 - **S3. Repeated-status notice.** When a route has returned the same non-success status in its last
   three recorded runs in this project, the report's notices say so and name the likely class (CLI
   change, quota, login). A notice only; nothing is routed on it.
@@ -92,4 +98,5 @@ beyond S10, and anything that needs a provider call to decide.
 3. MOMM range reviews of every change, with per-piece quorum and completion receipts.
 4. Privacy and history scan before every push.
 5. A live review with every installed reviewer route returning a valid review.
-6. Signed tag `momm-1.17.1`, on the owner's instruction of 4 October 2026 to complete and release.
+6. Signed tag `momm-1.17.1`, on the owner's instruction of 4 October 2026 to complete and release,
+   which holds only if every gate above passes on the final sealed commit.

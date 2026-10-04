@@ -32,9 +32,9 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17.1 sealed candidate, publication pending.** Every reviewer usable again (Copilot events and
-  fenced answers; a CLI too old for its model shown at preflight) and twenty reliability improvements so
-  failures explain themselves: [plan](references/plan-1.17.1.md),
+- **Now: 1.17.1 sealed candidate, publication pending.** Copilot reviews work again on recent Copilot
+  CLI versions (new events and fenced answers), a CLI too old for its model is shown at preflight, and
+  twenty reliability improvements make failures explain themselves: [plan](references/plan-1.17.1.md),
   [gate record and findings](references/gates-1.17.1.md).
 - **1.17 released.** The reviewed plan is
   [references/plan-1.17.md](references/plan-1.17.md); its leading theme is role-preserving review.

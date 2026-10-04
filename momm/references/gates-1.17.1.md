@@ -45,9 +45,10 @@ released as 1.17.1 and that twenty reliability improvements go into the same ver
   line inside that starts with a fence, a tilde fence, another language tag or broken JSON inside. The
   small synthetic check had passed because that answer happened to come back bare.
 - **Evidence.** `copilot-transport.test.mjs` passed 22 of 25 checks on the 1.17.0 code and 25 of 25
-  with the event change; the fence check failed first with the production error. A live review of a
-  synthetic diff with the patched dispatcher returned valid reviews from Copilot, Codex, Antigravity
-  and Grok. The second review of the fix (`rev_20261004063546_38c3f0e783cb`) had all four routes valid.
+  with the event change; the fence check failed first with the production error. With the fence change
+  and the review's test suggestions the suite had 29 checks, all passing. A live review of a synthetic
+  diff with the patched dispatcher returned valid reviews from Copilot, Codex, Antigravity and Grok.
+  The second review of the fix (`rev_20261004063546_38c3f0e783cb`) had all four routes valid.
 - **Lesson.** A status is not a finding, but a status that repeats is a signal. The 1 October
   `invalid_output` should have been looked at before the release, not after. Item S3 now makes MOMM
   say so itself.
@@ -91,7 +92,7 @@ that refusal.
 | R9 | A saved report records the actual `HEAD` and tree state beside the supplied label | `scripts/ci-runner-report.test.mjs` |
 | R10 | A Setup Center running an older version than the installed one says so | `setup-maintenance.test.mjs` |
 | S1 | One fence-unwrapping rule for Copilot and Antigravity; the extracting routes are unchanged | `review-answer.test.mjs` |
-| S2 | A non-JSON answer leaves a private shape record, never the answer | `review-answer.test.mjs` |
+| S2 | A non-JSON answer leaves a private shape record: its first 80 characters after redaction, and no more of the answer | `review-answer.test.mjs` |
 | S3 | Three recorded runs with the same failure produce a notice | `run-notices.test.mjs` |
 | S4 | A diff file given as `--input` gets a notice naming `--range` | `run-notices.test.mjs` |
 | S5 | A real-temp-path helper for tests, and a narrow lint rule | `scripts/source-hygiene.test.mjs` |
@@ -107,12 +108,16 @@ that refusal.
 | --- | --- | --- |
 | 1. Local suites and the OS by Node matrix on the sealed commit | Job logs | named in the pull request |
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.0 and 1.16.1 | Six hosted cells | after the merge |
-| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below |
+| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
 | 5. Live review with every installed reviewer route valid | Report | passed on the Copilot fix (finding 1) |
-| 6. Signed tag `momm-1.17.1` | Release workflow run | owner's instruction of 4 October 2026 |
+| 6. Signed tag `momm-1.17.1` | Release workflow run | approved by the owner's instruction of 4 October 2026, if every gate above passes on the final sealed commit |
 
 ## Reviews
+
+Gate 3 is met only when every range review of the 1.17.1 changes is listed here with a complete
+receipt. The two reviews of the Copilot fix are listed. The range reviews of the whole delta (R1 to
+R10 and S1 to S10) are added when their triage is complete; until they are listed, gate 3 is open.
 
 - `rev_20261004062357_5e1763ad52ff` — the Copilot event fix. Codex, Antigravity and Grok ACCEPT, no
   findings; Copilot `invalid_output` (the fenced answer, finding 1). Six suggestions ruled, three
@@ -125,7 +130,13 @@ that refusal.
 
 ## Still required before the tag
 
-1. The matrix green on the sealed commit.
-2. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
-3. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
-4. The signed tag, then the publication record.
+Owner approval. On 4 October 2026 the owner instructed that 1.17.1 be completed and released with the
+Copilot fix and all twenty improvements. That instruction is the owner's approval for the signed tag,
+on condition that every gate passes on the final sealed commit. If a gate does not pass, the tag is
+not made and the decision goes back to the owner.
+
+1. Gate 3 met: every range review listed under Reviews, each with a complete receipt.
+2. The matrix green on the sealed commit.
+3. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
+4. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
+5. The signed tag, then the publication record.
