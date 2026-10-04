@@ -29,11 +29,14 @@ class SourceReader {
       return Buffer.from(bytes);
     } finally { grant.busy = false; }
   }
-  revoke(token) {
-    const grant = this.grants.get(token); if (!grant) return false;
+  async revoke(token) {
+    const grant = this.grants.get(token); if (!grant) return { revoked: false, downstream: 'not-requested' };
     this.grants.delete(token); this.sessions.delete(grant.sessionId);
     grant.controller.abort(); grant.read = null;
-    this.revokeSession(grant.sessionId); return true;
+    try {
+      await this.revokeSession(grant.sessionId);
+      return { revoked: true, downstream: 'acknowledged' };
+    } catch { return { revoked: true, downstream: 'failed' }; }
   }
 }
 module.exports = { SourceReader };

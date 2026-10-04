@@ -12,8 +12,8 @@ module.exports = async function() {
   assert.throws(() => gate.grant({ sessionId: 'selected', read() {} }), /duplicate/);
   const pending = gate.read(token, 'selected');
   await assert.rejects(gate.read(token, 'selected'), /already active/);
-  assert.equal(gate.revoke(token), true); assert.equal(signal.aborted, true);
-  assert.deepEqual(revoked, ['selected']); assert.equal(gate.revoke(token), false);
+  assert.deepEqual(await gate.revoke(token), { revoked: true, downstream: 'acknowledged' }); assert.equal(signal.aborted, true);
+  assert.deepEqual(revoked, ['selected']); assert.deepEqual(await gate.revoke(token), { revoked: false, downstream: 'not-requested' });
   release(Buffer.from('text')); await assert.rejects(pending, /revoked/);
   await assert.rejects(gate.read(token, 'selected'), /not authorized/);
   const other = gate.grant({ sessionId: 'other', read: async () => Buffer.from('hello') });
@@ -40,12 +40,26 @@ module.exports = async function() {
   await new Promise(resolve => setImmediate(resolve));
   queue.accept(segment('wired', 1, 'pending'));
   queue.accept(segment('independent', 0, 'other'));
-  wiredGate.revoke(wired);
+  await wiredGate.revoke(wired);
   assert.equal(playerSignal.aborted, true);
   assert.throws(() => queue.accept(segment('wired', 2, 'late')), /not selected/);
   assert.equal(queue.delivery(segment('wired', 1, 'pending')).state, 'cancelled');
   finishPlayer(); await queue.idle();
   assert.deepEqual(played, ['active', 'other']); assert.equal(queue.status().bytes, 0);
+  let acknowledge;
+  const asyncGate = new SourceReader({ revokeSession: () => new Promise(resolve => { acknowledge = resolve; }) });
+  const asyncToken = asyncGate.grant({ sessionId: 'async', read: async () => Buffer.from('data') });
+  let acknowledged = false;
+  const acknowledgement = asyncGate.revoke(asyncToken).then(result => { acknowledged = true; return result; });
+  await assert.rejects(asyncGate.read(asyncToken, 'async'), /not authorized/);
+  assert.equal(acknowledged, false);
+  acknowledge(); assert.deepEqual(await acknowledgement, { revoked: true, downstream: 'acknowledged' });
+  for (const revokeSession of [() => { throw new Error('private-path'); }, async () => { throw new Error('private-path'); }]) {
+    const failedGate = new SourceReader({ revokeSession });
+    const failedToken = failedGate.grant({ sessionId: 'failed-hook', read: async () => Buffer.from('data') });
+    assert.deepEqual(await failedGate.revoke(failedToken), { revoked: true, downstream: 'failed' });
+    await assert.rejects(failedGate.read(failedToken, 'failed-hook'), /not authorized/);
+  }
   console.log('PASS: source capability identity, foreign-session refusal, concurrent read, revocation, bounds and selected-reader isolation');
 };
 if (require.main === module) module.exports().catch(() => { console.error('Source gate checks failed'); process.exitCode = 1; });

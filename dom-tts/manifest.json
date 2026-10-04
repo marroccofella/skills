@@ -52,7 +52,7 @@
     },
     {
       "path": "scripts/experimental/source-reader.js",
-      "sha256": "f7c23fc8e3c8c899f344e768a3e5ea627b98d2e39177002bfa4ee90545417d62"
+      "sha256": "7658ad378e1bc49648ff4611c5bfe8eab345a4b626e8b29c8d329d7d72c2a1d3"
     },
     {
       "path": "scripts/install.js",
@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/source-reader-checks.cjs",
-      "sha256": "5ba629f1136d5586a54c4eb112cce8207fbabb801500340dc7ef546f7450af32"
+      "sha256": "e427f83bb83b918da504a1bd6ceebeb432b56bc76c7c1322458a8aacb1ac397b"
     },
     {
       "path": "tests/windows-check.cjs",

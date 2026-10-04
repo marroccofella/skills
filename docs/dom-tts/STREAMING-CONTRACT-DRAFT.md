@@ -174,3 +174,12 @@ prototype. Readers must honor AbortSignal; arbitrary injected code cannot be
 forcibly stopped or its external buffers erased. Bounds apply to accepted results,
 not allocations performed by an injected reader. Tests use injected promises,
 not private transcripts or live harnesses; CI runs them separately from9903 totals.
+
+SourceReader.revoke invalidates read authority and aborts its signal immediately,
+then returns a promise for the supplied downstream hook. Await the structured
+result: revoked and downstream acknowledged/failed/not-requested are distinct.
+Synchronous throws and asynchronous rejection become sanitized failed results;
+neither restores source access. Acknowledged means that hook completed, not native
+process exit or acoustic silence unless the hook itself supplies those guarantees.
+Hooks must settle; no timeout, durable retry or native-stop guarantee is implemented.
+Regranting a reader does not restore a revoked queue's session selection.
