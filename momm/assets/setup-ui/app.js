@@ -109,30 +109,40 @@ function showToast(message) {
 // started on and the one now installed. Closing this window does not stop the server,
 // so the notice names the control that does (the footer button's label).
 // Only two plain version numbers and the literal flag make a notice;
-// a successful answer without the field changes nothing. The region is a live region,
+// a successful answer without the field leaves its sentence as it is. The region is a live region,
 // so an unchanged notice is not written again.
+// Status and maintenance refreshes overlap, so each is numbered when it is asked for. An answer that
+// carries the version check always counts: the server makes the check as it answers. An outcome without
+// it counts only if it was asked for after everything already heard, so a request that fails late does
+// not mark a notice that a newer answer has verified since (closing review of 1.17.1).
 const plainVersion = (value) => typeof value === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(value);
 const STALE_UNCHECKED = " The last refresh failed, so this was not checked again; it is what the last successful check found.";
-let staleNoticeShown = "", staleNoticeVerified = "";
+let staleNoticeShown = "", staleNoticeVerified = "", staleNoticeAsked = 0, staleNoticeHeard = 0;
 function writeStaleNotice(unchecked) {
   const html = staleNoticeVerified ? `<p class="stale-notice">${staleNoticeVerified}${unchecked ? STALE_UNCHECKED : ""}</p>` : "";
   if (html === staleNoticeShown) return;
   staleNoticeShown = html;
   staleNotice.innerHTML = html;
 }
-function renderStaleNotice(check) {
-  if (!staleNotice || !check || typeof check !== "object") return;
+function renderStaleNotice(check, asked) {
+  if (!staleNotice) return;
+  if (!check || typeof check !== "object") {
+    // Nothing was verified, so the sentence stays; this refresh did not fail, so the mark does not.
+    if (asked > staleNoticeHeard) { staleNoticeHeard = asked; writeStaleNotice(false); }
+    return;
+  }
   const running = check.running_version, installed = check.installed_version;
   const stale = check.stale === true && plainVersion(running) && plainVersion(installed) && running !== installed;
   staleNoticeVerified = stale ? `Setup Center is running ${escapeHtml(running)}; ${escapeHtml(installed)} is now installed. Choose Close Setup Center, then start it again.` : "";
+  staleNoticeHeard = staleNoticeAsked;
   writeStaleNotice(false);
 }
 // A failed refresh whose answer carries the version check verified the notice again. One without it
 // (or no answer at all) verified nothing: a notice already shown stays and says so; none is invented.
-function staleNoticeAfterFailure(error) {
+function staleNoticeAfterFailure(error, asked) {
   if (!staleNotice) return;
   if (error?.setup_center && typeof error.setup_center === "object") return renderStaleNotice(error.setup_center);
-  writeStaleNotice(true);
+  if (asked > staleNoticeHeard) { staleNoticeHeard = asked; writeStaleNotice(true); }
 }
 
 async function api(path, options = {}) {
@@ -402,6 +412,7 @@ function renderMaintenance() {
 async function loadMaintenance(force = false) {
   maintenanceRefreshButton.disabled = true;
   maintenanceSummary.textContent = "Checking published skills, reviewer CLIs, models, runtimes, and environment names…";
+  const asked = ++staleNoticeAsked;
   try {
     const fresh = await api("/api/maintenance", { method: "POST", body: JSON.stringify({ governor: governorSelect.value, force }) });
     // Refuse incomplete server responses before touching the last good display
@@ -435,10 +446,10 @@ async function loadMaintenance(force = false) {
     }
     renderMaintenance();
     render();
-    renderStaleNotice(fresh.setup_center); // this is the refresh that follows an applied update
+    renderStaleNotice(fresh.setup_center, asked); // this is the refresh that follows an applied update
     loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
   } catch (error) {
-    staleNoticeAfterFailure(error);
+    staleNoticeAfterFailure(error, asked);
     maintenanceSummary.textContent = "The maintenance check could not finish. Your reviewer setup is unaffected.";
     showToast(error.message);
   } finally { maintenanceRefreshButton.disabled = false; }
@@ -452,11 +463,12 @@ async function refresh() {
   refreshEpoch = governorEpoch;
   refreshButton.disabled = true;
   summary.textContent = "Checking this computer…";
+  const asked = ++staleNoticeAsked;
   try {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
     if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
     report = fresh;
-    renderStaleNotice(fresh.setup_center);
+    renderStaleNotice(fresh.setup_center, asked);
     // The topbar pill links to /ledger on this origin; its tooltip names the
     // file on disk once the ledger exists, so the page can also be opened directly.
     const ledgerLink = document.querySelector("#ledger-link");
@@ -467,7 +479,7 @@ async function refresh() {
     for (const route of report.routes || []) if (route.ready !== true && liveResults.get(route.agent)?.status === "success") liveResults.delete(route.agent);
     render();
   } catch (error) {
-    staleNoticeAfterFailure(error); // about the server, not the governor: shown whichever is selected
+    staleNoticeAfterFailure(error, asked); // about the server, not the governor: shown whichever is selected
     if (refreshEpoch === governorEpoch) {
       summary.textContent = "We could not check the local reviewers.";
       showToast(error.message);

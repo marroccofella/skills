@@ -43,13 +43,17 @@ function logTail(file) {
     fd = fs.openSync(file, "r");
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) return "";
-    const start = Math.max(0, stat.size - LOG_TAIL_BYTES), buffer = Buffer.alloc(stat.size - start);
+    // The byte before the tail is read with it: it says whether the tail starts at the start of a line.
+    const start = Math.max(0, stat.size - LOG_TAIL_BYTES - 1), buffer = Buffer.alloc(stat.size - start);
     let offset = 0;
     while (offset < buffer.length) { const read = fs.readSync(fd, buffer, offset, buffer.length - offset, start + offset); if (!read) break; offset += read; }
     const text = buffer.subarray(0, offset).toString("utf8");
     if (start === 0) return text;
-    // The tail starts inside a line: it is read from the end of that line. With no line end in it at
-    // all it holds no whole line (one line longer than the tail), and a fragment is never a row.
+    // The text is read from its first line end. When that is the byte before the tail, the tail starts
+    // with a whole line and all of it is kept (closing review of 1.17.1: a row that began exactly there
+    // was dropped). Otherwise the tail starts inside a line and is read from the end of that line; with
+    // no line end at all it holds no whole line (one line longer than the tail), and a fragment is
+    // never a row.
     const cut = text.indexOf("\n");
     return cut === -1 ? "" : text.slice(cut + 1);
   } catch { return ""; } finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* read-only handle */ } } }

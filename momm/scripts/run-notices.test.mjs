@@ -105,6 +105,22 @@ try {
     fs.writeFileSync(log, `${row('')}\n`);
     assert.equal(need('repeatedStatusNotices')(now).length, 1);
   });
+  // Closing review of 1.17.1 (tail-exact-line-dropped): a row that begins exactly where the tail begins
+  // is a whole line (the byte before it ends the previous line). It was dropped up to its own line end,
+  // or altogether when it had none.
+  await test('S3: a row that begins exactly where the tail begins is a whole line and is counted', () => {
+    const tail = 1024 * 1024, row = (bytes) => { const empty = logLine('2026-10-03T09:00:00.000Z', { codex: 'quota' }, { pad: '' }), sized = logLine('2026-10-03T09:00:00.000Z', { codex: 'quota' }, { pad: 'a'.repeat(bytes - Buffer.byteLength(empty)) }); assert.equal(Buffer.byteLength(sized), bytes); return sized; };
+    const dir = folder('evidence'), log = path.join(dir, 'review-log.jsonl'), now = { dir, results: [{ agent: 'codex', status: 'quota' }], governor: 'claude', runs: 2 };
+    // The line before it holds another status, so only the row at the start of the tail can make the notice.
+    const before = logLine('2026-10-02T09:00:00.000Z', { codex: 'timeout' });
+    fs.writeFileSync(log, `${before}\n${row(tail)}`);
+    assert.equal(need('repeatedStatusNotices')(now).length, 1, 'a last row of exactly the tail, with no line end of its own');
+    fs.writeFileSync(log, `${before}\n${row(tail - 1)}\n`);
+    assert.equal(need('repeatedStatusNotices')(now).length, 1, 'a last row that fills the tail with its line end');
+    // Control: one byte longer and the tail starts inside the row, which is then a fragment.
+    fs.writeFileSync(log, `${before}\n${row(tail + 1)}`);
+    assert.deepEqual(need('repeatedStatusNotices')(now), []);
+  });
   // Two real runs in one project, shared by the S3 and S4 checks below (each takes several seconds on
   // Windows): an ordinary file first, then a diff file. Between them the first run's own log line is
   // appended again one minute later, so the second run is the route's third recorded failure.

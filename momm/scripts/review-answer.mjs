@@ -25,16 +25,22 @@
 // wrapper, not content, and narration is not the answer. An answer that holds exactly one fenced block
 // (three backticks at the start of a line, optionally the tag json in any case, closed by three
 // backticks alone on a line) is unwrapped and the inside parsed as strictly as a bare answer; text
-// before or after that one block is ignored. There is exactly one candidate or none: a second block,
-// any other line that starts with a fence (an indented one included), an unclosed fence, a tilde
-// fence or another language tag leave it unmatched, and the answer is then parsed as it stands and
-// refused. Narration around a bare answer is refused too: nothing is searched for.
-const FENCE_LINE = /^[ \t]*```/, FENCE_OPEN = /^```(?:json)?[ \t]*$/i, FENCE_CLOSE = /^```[ \t]*$/;
-// The inside of the one fenced block, or null when the answer does not hold exactly one.
+// before or after that one block is narration and is ignored. There is exactly one candidate or none:
+// a second block, any other line that starts with a fence of either mark, backticks or tildes (an
+// indented one included), an unclosed fence, a tilde fence or another language tag leave it unmatched,
+// and so does text before or after the block that is itself JSON, which is a second answer. The answer
+// is then parsed as it stands and refused. (Closing review of 1.17.1: only backtick lines were counted,
+// so a tilde-fenced block beside the backtick one, or the answer written bare and again fenced, was
+// passed over as narration and one of the two was chosen.) Narration around a bare answer is refused
+// too: nothing is searched for, so prose that mentions braces or quotes JSON is still narration.
+const FENCE_LINE = /^[ \t]*(?:```|~~~)/, FENCE_OPEN = /^```(?:json)?[ \t]*$/i, FENCE_CLOSE = /^```[ \t]*$/;
+const isJson = (text) => { if (!text.trim()) return false; try { JSON.parse(text); return true; } catch { return false; } };
+// The inside of the one fenced block, or null when the answer does not hold exactly one candidate.
 function fencedBlock(answer) {
   const lines = answer.split(/\r?\n/), fences = [];
   for (let k = 0; k < lines.length; k++) if (FENCE_LINE.test(lines[k])) fences.push(k);
   if (fences.length !== 2 || !FENCE_OPEN.test(lines[fences[0]]) || !FENCE_CLOSE.test(lines[fences[1]])) return null;
+  if (isJson(lines.slice(0, fences[0]).join("\n")) || isJson(lines.slice(fences[1] + 1).join("\n"))) return null;
   return lines.slice(fences[0] + 1, fences[1]).join("\n");
 }
 // V8 names an offset for some syntax errors and none for others ("Unexpected end of JSON input", or a

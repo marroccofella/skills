@@ -186,7 +186,7 @@ for (const [index, command] of selected.entries()) {
   } catch (error) { if (!storageFailure(error)) throw error; saveError = error; break; }
 }
 const ran = report.results.length;
-let countUnwritten = false;
+let countUnwritten = null; // why the file does not hold the count the outcome line gives, when it does not
 if (!saveError) {
   report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed;
   // What the earlier saves of this run needed; the final save's own retries are added below.
@@ -196,12 +196,16 @@ if (!saveError) {
       // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
       recheck();
       // The final rename gets the same three more tries before the save is called failed.
-      const last = persist();
-      // The report is saved. Retries of this last save are written into it with one more save; if that one
-      // fails the file still holds the earlier count, and the outcome line says the count is not in the file.
-      if (last) {
+      let last = persist();
+      // The report is saved. A save cannot state its own retries, so those of this last save are written
+      // into the file with one more save, and that save's with another, until one needs none (closing review
+      // of 1.17.1: the retries of the save that wrote the count were dropped). RETRIES more saves at most.
+      // If one fails, or the last of them was itself retried, the file still holds an earlier count, and
+      // the outcome line gives the count and says it is not in the file.
+      for (let more = 0; last; more++) {
         saveRetries += last; report.save_retries = saveRetries;
-        try { persist(); } catch (error) { if (!storageFailure(error)) throw error; countUnwritten = true; }
+        if (more === RETRIES) { countUnwritten = 'each save of the count was retried too'; break; }
+        try { last = persist(); } catch (error) { if (!storageFailure(error)) throw error; countUnwritten = 'writing the count failed'; break; }
       }
     }
   } catch (error) { if (!storageFailure(error)) throw error; saveError = error; }
@@ -209,7 +213,7 @@ if (!saveError) {
 // Failed-save recovery (1.17.1 R4). Beyond the retried rename the attempt is left exactly as it is: no
 // repair, nothing removed. The lines below say where the results are and how to complete the record
 // somewhere else.
-const afterRetries = !saveRetries ? '' : `after ${saveRetries} ${saveRetries === 1 ? 'retry' : 'retries'}${countUnwritten ? ', not recorded in the file: writing the count failed' : ''}; `;
+const afterRetries = !saveRetries ? '' : `after ${saveRetries} ${saveRetries === 1 ? 'retry' : 'retries'}${countUnwritten ? `, not recorded in the file: ${countUnwritten}` : ''}; `;
 let reportSaved = !reportDir ? 'not requested (add --save-report --commit <full SHA> to keep a private report)'
   : `yes, ${shown(path.join(reportDir, 'report.json'))} (${afterRetries}private; inspect before sharing)`;
 if (saveError) {

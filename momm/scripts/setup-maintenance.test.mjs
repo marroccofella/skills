@@ -1389,6 +1389,56 @@ await test('a refresh that fails without the version check keeps a verified noti
   assert.equal(html,'','a successful check that finds the versions agree withdraws the notice and the mark');
   answer=failed;await c.core.refresh();assert.equal(html,'','and a later failure does not bring it back');
 });
+// Closing review of 1.17.1 (stale-unchecked-survives-newer-check). The mark says "The last refresh
+// failed": it stayed after a refresh that succeeded without the version check, and a request that was
+// asked for before the last verified answer and failed after it stamped it on that verified notice.
+await test('the failed-refresh mark goes when a refresh succeeds without the version check; the verified sentence stays',async()=>{
+  const check={running_version:'1.17.1',installed_version:'1.17.2',stale:true},UNCHECKED=/The last refresh failed, so this was not checked again/;
+  const good={routes:[{agent:'codex',role:'reviewer',installed:true,ready:true}]};
+  let answer=()=>({ok:true,status:200,json:async()=>({...good,setup_center:check})});
+  const c=ui({fetch:async()=>answer()});
+  c.init({token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);
+  const region=c.node('#stale-notice');
+  await c.core.refresh();
+  answer=()=>({ok:false,status:500,json:async()=>({error:'Readiness check failed'})});await c.core.refresh();
+  assert.match(region.innerHTML,STALE_SENTENCE);assert.match(region.innerHTML,UNCHECKED,'control: the failure marks the verified notice');
+  answer=()=>({ok:true,status:200,json:async()=>good});await c.core.refresh();
+  assert.match(region.innerHTML,STALE_SENTENCE,'nothing was verified, so the last verified sentence stays');
+  assert.doesNotMatch(region.innerHTML,UNCHECKED,'the last refresh did not fail, so the notice must not say that it did');
+  assert.doesNotMatch(c.node('#summary').textContent,/could not check/,'the refresh itself succeeded');
+});
+await test('a refresh that was asked for before the last verified answer and fails after it does not mark the notice',async()=>{
+  const check={running_version:'1.17.1',installed_version:'1.17.2',stale:true},UNCHECKED=/The last refresh failed, so this was not checked again/;
+  const status={routes:[{agent:'codex',role:'reviewer',installed:true,ready:true}],setup_center:check};
+  const maintained={cli_updates:[],models:[],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:new Date().toISOString(),setup_center:check};
+  const start=()=>{const c=ui(),wire=deferredApi();c.init({token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);c.setApi(wire.stub);return {c,wire,region:c.node('#stale-notice')};};
+  // "Check everything" is still running when "Check again" is asked for and answered.
+  const one=start(),slow=one.c.core.loadMaintenance(true),quick=one.c.core.refresh();
+  one.wire.find('/api/status')[0].resolve(status);await quick;await flush();
+  assert.match(one.region.innerHTML,STALE_SENTENCE);assert.doesNotMatch(one.region.innerHTML,UNCHECKED);
+  one.wire.find('/api/maintenance')[0].reject(new Error('Failed to fetch'));await slow;await flush();
+  assert.match(one.region.innerHTML,STALE_SENTENCE,'the verified notice is never lost on a failure');
+  assert.doesNotMatch(one.region.innerHTML,UNCHECKED,'the failed request is older than the check that verified the notice');
+  assert.match(one.c.node('#maintenance-summary').textContent,/could not finish/,'the failure itself is still shown');
+  // The other way round: a status refresh is in flight when the maintenance check is asked for and verifies the notice.
+  const two=start(),first=two.c.core.refresh(),second=two.c.core.loadMaintenance(true);
+  two.wire.find('/api/maintenance')[0].resolve(maintained);await second;await flush();
+  assert.match(two.region.innerHTML,STALE_SENTENCE);
+  two.wire.find('/api/status')[0].reject(new Error('Failed to fetch'));await first;await flush();
+  assert.doesNotMatch(two.region.innerHTML,UNCHECKED,'an older status refresh that fails late does not mark it either');
+  // Control: a refresh asked for after the verified answer, and failing, still marks the notice.
+  two.c.setApi(async()=>{throw new Error('Failed to fetch');});await two.c.core.refresh();
+  assert.match(two.region.innerHTML,STALE_SENTENCE);assert.match(two.region.innerHTML,UNCHECKED);
+  // And an older success without the check does not take away the mark a newer failure left.
+  const three=start();three.c.setApi(async()=>status);await three.c.core.refresh();
+  three.c.setApi(three.wire.stub);
+  const older=three.c.core.loadMaintenance(true),newer=three.c.core.refresh();
+  three.wire.find('/api/status')[0].reject(new Error('Failed to fetch'));await newer;await flush();
+  assert.match(three.region.innerHTML,UNCHECKED,'control: the newer failure marks the notice');
+  const {setup_center:_none,...withoutCheck}=maintained;
+  three.wire.find('/api/maintenance')[0].resolve(withoutCheck);await older;await flush();
+  assert.match(three.region.innerHTML,UNCHECKED,'the newest refresh is the one that failed');
+});
 await test('the banner names the control that stops the server, by its label on the page',()=>{
   const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
   const label=/<button id="close-server"[^>]*>([^<]+)<\/button>/.exec(page)?.[1];

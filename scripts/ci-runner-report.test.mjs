@@ -293,6 +293,41 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     assert.equal(finalRenames(), 5, 'the first precheck save, then one try and three retries of the second');
     assert.equal(okRuns(), ran, 'no suite ran');
   });
+  // Closing review of 1.17.1 (retry-count-save-omitted): the save that writes the final save's retry count
+  // into the file can be retried too, and those retries were dropped from the file and from the outcome
+  // line. Here the first try of the rename of each of the first N finished saves is refused once.
+  item('R4 retries of the save that writes the retry count are counted too', () => {
+    put('fault-count.cjs', `const fs=require('node:fs'),path=require('node:path');
+const limit=Number(process.env.MOMM_TEST_RETRIED_SAVES),rename=fs.renameSync,seen=new Set();
+const final=(file)=>{try{return fs.readFileSync(file,'utf8').includes('"finished_at"');}catch{return false;}};
+fs.renameSync=function(from,to){if(path.basename(String(to))==='report.json'&&final(from)&&!seen.has(String(from))){seen.add(String(from));fs.appendFileSync(process.env.MOMM_TEST_RENAMES,'s');
+if(seen.size<=limit)throw Object.assign(new Error("EPERM: operation not permitted, rename '"+from+"'"),{code:'EPERM',syscall:'rename',path:String(from)});}
+return rename.apply(this,arguments);};
+`);
+    const outcome = (retriedSaves) => {
+      const before = folders(); finalRenames();
+      const r = spawnSync(process.execPath, ['--require', path.join(root, 'fault-count.cjs'), runner, '--save-report', '--commit', sha], { encoding:'utf8', timeout:30000, windowsHide:true, env:{...process.env,MOMM_EVIDENCE_HOME:'',MOMM_TEST_RETRIED_SAVES:String(retriedSaves),MOMM_TEST_RENAMES:path.join(root,'final-renames.log')} });
+      noTrace(r); const folder = newest(before);
+      return { r, folder, saved: lastLines(r)[1], report: readJson(path.join(folder, 'report.json')), finishedSaves: finalRenames() };
+    };
+    // The final save and the save of its count are each retried once; the next save needs no retry and holds both.
+    const twice = outcome(2);
+    assert.equal(twice.r.status, 0, twice.r.stderr); assert.equal(twice.finishedSaves, 3, 'the final save, and two saves of the count');
+    assert.equal(twice.report.save_retries, 2, 'the file counts the retry of the save that wrote the count');
+    assert.match(twice.saved, /^Report saved: yes, .+report\.json \(after 2 retries; private; inspect before sharing\)$/);
+    assert.deepEqual(pendingIn(twice.folder), [], 'nothing is left behind by saves that succeeded');
+    // Control: with only the final save retried, one more save records it, as before.
+    const once = outcome(1);
+    assert.equal(once.r.status, 0, once.r.stderr); assert.equal(once.finishedSaves, 2); assert.equal(once.report.save_retries, 1);
+    assert.match(once.saved, /\(after 1 retry; private; inspect before sharing\)$/);
+    // It ends: when every save of the count is retried too, three more saves are made and the outcome line
+    // gives the whole count and says the file holds an earlier one.
+    const every = outcome(99);
+    assert.equal(every.r.status, 0, every.r.stderr); assert.equal(every.finishedSaves, 4, 'the final save and three more');
+    assert.equal(every.report.save_retries, 3, 'the last save that succeeded holds the count before its own retry');
+    assert.match(every.saved, /^Report saved: yes, .+report\.json \(after 4 retries, not recorded in the file: each save of the count was retried too; private; inspect before sharing\)$/);
+    assert.equal(typeof every.report.finished_at, 'string'); assert.deepEqual(pendingIn(every.folder), []);
+  });
   item('R4 --recover-report completes the record elsewhere', () => {
     assert(lostFolder, 'needs the run folder of the failed save');
     const kept = readJson(path.join(lostFolder, 'report.json')), pending = pendingIn(lostFolder)[0];
