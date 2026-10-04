@@ -80,7 +80,7 @@ Hermes Agent; the owner's "Agent" and "Open Claude" identities remain unresolved
 No newly named harness compatibility is certified. Do not await playback completion
 on the text-rendering path. Distinguish complete-message narration from token deltas.
 
-Experimental progress: an injected-player stable-segment queue now has 39 deterministic
+Experimental progress: an injected-player stable-segment queue now has 45 deterministic
 checks for nonblocking admission, bounded memory/history, fair selected-session service,
 failure ordering, replay, retry and cancellation.
 Selected-session revocation clears retained queue text and refuses later admission;

@@ -20,10 +20,19 @@ is bounded and admission refuses when full; no persistence, exactly-once acousti
 guarantee, reconnect transport, revision reconciliation or automatic eviction exists.
 Status contains counts only, not speech, raw provider errors or identifiers.
 
-39 deterministic assertions exercise unresolved-player admission, sequence/replay
+45 deterministic assertions exercise unresolved-player admission, sequence/replay
 refusal, explicit session/role boundaries, retries, generation cancellation, limits,
 three-session fairness, failed-message ordering and selected-session revocation. These use injected promises;
 they are not native audio, acoustic latency or real-harness streaming receipts.
+
+Message lifecycle refinement: admission of a new message in a session/turn/generation
+seals append admission to the previous message. Later new segments for that predecessor
+are visibly refused and require adapter reconciliation; existing segments and explicit
+failed-segment retries remain eligible, and exact replay stays idempotent. Rejected
+new-message admission does not advance the cursor. delivery exposes messageSealed.
+This is an arrival-order rule, not proof of provider message ordinals or an end-to-end
+reconnect/rewrite solution. Cross-generation lifecycle must be enforced by the adapter.
+The reproduced A0,B0,A1 fixture now refuses A1; adapters must not silently discard it.
 
 The kernel's segment and total retained-text limits are UTF-8 bytes (Buffer.byteLength),
 not JavaScript character counts. It has no text-range fields yet; the delta/revision

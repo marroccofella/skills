@@ -13,6 +13,7 @@ class NarrationQueue {
     this.sessions = new Set(selectedSessions); this.play = play;
     this.maxTracked = maxTracked; this.maxBytes = maxBytes;
     this.jobs = new Map(); this.groups = new Map(); this.cancelled = new Set();
+    this.messageCursor = new Map(); this.sealedMessages = new Set();
     this.bytes = 0; this.active = null; this.scheduled = false; this.waiters = []; this.lastGroup = null;
   }
   validate(event) {
@@ -38,11 +39,17 @@ class NarrationQueue {
     if (this.cancelled.has(ids.generation)) throw new Error('generation cancelled');
     const old = this.jobs.get(ids.job);
     if (old) { if (old.hash !== hash) throw new Error('conflicting replay'); return { state: 'duplicate', playbackState: old.state }; }
+    if (this.sealedMessages.has(ids.group)) throw new Error('message sealed; late text requires adapter reconciliation');
     if (this.jobs.size >= this.maxTracked) throw new Error('history limit reached; create a new explicitly selected queue');
     const bytes = Buffer.byteLength(event.text, 'utf8');
     if (bytes > this.maxBytes || this.bytes + bytes > this.maxBytes) throw new Error('queue byte limit reached');
     const group = this.groups.get(ids.group) || [];
     if (event.sequence !== group.length) throw new Error('sequence gap or conflicting sequence');
+    // Admission of a new message closes append admission to its predecessor in this
+    // generation. Existing queued segments/retries still run; exact replay stays idempotent.
+    const previous = this.messageCursor.get(ids.generation);
+    if (previous && previous !== ids.group) this.sealedMessages.add(previous);
+    this.messageCursor.set(ids.generation, ids.group);
     const job = { ...ids, hash, event, bytes, state: 'queued', controller: null };
     group.push(job); this.groups.set(ids.group, group); this.jobs.set(ids.job, job); this.bytes += bytes;
     this.schedule(); return { state: 'queued' };
@@ -133,7 +140,7 @@ class NarrationQueue {
       if (typeof input[field]!=='string' || !/^[\w.-]{1,128}$/.test(input[field])) throw new Error('invalid delivery identity');
     const job=this.jobs.get(this.identities(input).job);
     if (!job) return {state:'unknown',terminal:false};
-    return {state:job.state,terminal:['completed','failed','cancelled'].includes(job.state),
+    return {state:job.state,terminal:['completed','failed','cancelled'].includes(job.state),messageSealed:this.sealedMessages.has(job.group),
       ...(job.state==='failed'?{error:'playback-failed'}:{})};
   }
 }

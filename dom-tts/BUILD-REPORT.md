@@ -4,14 +4,19 @@
 
 Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
 stable-segment kernel with an injected player, not a production watcher/engine path.
-39 deterministic queue assertions pass: admission during unresolved playback,
+45 deterministic queue assertions pass: admission during unresolved playback,
 duplicate/conflicting replay, sequence gaps, selected-session/role boundaries,
 retry, cancellation, bounded history/bytes, round-robin service and failure ordering.
 Selected-session revocation and UTF-8 byte limits also have deterministic checks.
 The bounded JSONL framer adds 152 assertions: every two-part Unicode byte split,
 incomplete data, strict UTF-8, malformed JSON/record shape and size/count limits.
 The queue exposes typed per-segment delivery states, without raw speech/provider errors.
-The full Windows Node 22.16.0 suite now reports 9,897 common assertions, with six
+Reviewer ordering finding (PR43 comment5977260726) reproduced locally as A0,B0,A1
+with late A1 admitted/completed. Its failing-before fixture was then repaired by
+sealing a predecessor when a new message is admitted in the same generation. New
+late text is refused for adapter reconciliation; exact replay and retained retries
+remain supported. Cross-generation/provider ordinals are not implemented.
+The full Windows Node 22.16.0 suite now reports 9,903 common assertions, with six
 POSIX checks skipped. No new native speech, real harness or acoustic receipt exists.
 The first test invocation failed because the new module did not yet exist; this is
 new-feature red/green evidence, not a reproduced defect in the former queue.

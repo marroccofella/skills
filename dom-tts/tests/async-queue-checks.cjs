@@ -95,6 +95,20 @@ module.exports = async function(check = fn => fn()) {
   check(() => assert.throws(() => unicode.accept(event('s0','😀x')), /byte limit/));
   unicode.accept(event('s0','😀')); await unicode.idle();
   check(() => assert.equal(unicode.status().completed, 1));
+  const closedOrder = [];
+  const closed = new NarrationQueue({ selectedSessions: ['selected'], play: async text => { closedOrder.push(text); } });
+  const message = (messageId, sequence, text) => event('s'+sequence,text,{messageId});
+  closed.accept(message('A',0,'A0')); await closed.idle();
+  closed.accept(message('B',0,'B0')); await closed.idle();
+  check(() => assert.throws(() => closed.accept(message('A',1,'A1')), /message sealed/));
+  check(() => assert.deepEqual(closedOrder,['A0','B0']));
+  check(() => assert.equal(closed.accept(message('A',0,'A0')).state,'duplicate'));
+  check(() => assert.equal(closed.delivery(message('A',0,'A0')).messageSealed,true));
+  const noAdvance = new NarrationQueue({ selectedSessions:['selected'],play:async()=>{} });
+  noAdvance.accept(message('A',0,'A0'));
+  check(() => assert.throws(() => noAdvance.accept(message('B',1,'B1')),/sequence gap/));
+  check(() => assert.equal(noAdvance.accept(message('A',1,'A1')).state,'queued'));
+  await noAdvance.idle();
 };
 if (require.main === module) { let count = 0; module.exports(fn => { fn(); count++; })
   .then(() => console.log('PASS: ' + count + ' experimental queue assertions; injected playback, no native audio'))
