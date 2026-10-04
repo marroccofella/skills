@@ -92,7 +92,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "f9dcec63f37ece69a0680c1a7b819b7d146ae91d0544b4e1e8eaf30e678e38f8"
+      "sha256": "4e90f5c53001bf1db1650a4649ebd061af6435713282dab3ae24e90781cf7316"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -188,11 +188,15 @@
     },
     {
       "path": "tests/native-ipc-check.cjs",
-      "sha256": "1ff4a74eccdeb81dc4ec37818cbc435474e8a871ac2fe187593b34809ae25656"
+      "sha256": "a160175d5651789826197534760b4a3f183c6d0a0df0cd18b51c5a405acadbb8"
     },
     {
       "path": "tests/native-player-check.cjs",
       "sha256": "ee242610d60adb97cf83b299c344e9b7f8a18c3234e3f81c82870646b1520961"
+    },
+    {
+      "path": "tests/native-spawn-check.cjs",
+      "sha256": "c58925bf2ed38e049901d735b61dd1dfdbd29b82561f84292a14548974f4ee6a"
     },
     {
       "path": "tests/native-timeout-check.cjs",

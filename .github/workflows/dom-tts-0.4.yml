@@ -34,6 +34,8 @@ jobs:
       - run: node tests/native-ipc-check.cjs
       - run: node tests/native-ipc-check.cjs --synchronous
       - run: node tests/native-ipc-check.cjs --late-progress
+      - run: node tests/native-ipc-check.cjs --child-error
+      - run: node tests/native-spawn-check.cjs
       - run: node tests/playback-abort-check.cjs
       - run: node tests/native-player-check.cjs
       - run: node tests/isolated-player-check.cjs
