@@ -3,6 +3,28 @@
 Legion, 4 October 2026. Design for the owner-authorized programme, not implemented
 capability or a release claim. Existing final-message readers remain supported.
 
+## Experimental implementation status
+
+scripts/experimental/narration-queue.js implements an in-memory stable-segment kernel
+with an injected player, explicit selected sessions, synchronous admission, bounded
+history/text, per-session ordering, round-robin scheduling, retry and cancellation.
+Its dom-tts-segment/1 input is a deliberately smaller interface than the full event
+contract below. It is not invoked by speak.js or the watcher, and receives no real
+harness events or token deltas. No native playback/stop integration is claimed.
+
+The injected player must reject on playback failure and honour AbortSignal while
+containing its own child process. Cancellation remains 'cancelling' until that player
+settles; an ignored signal does not imply stopped audio. idle() means no active or
+runnable work, not all speech completed: failed messages may remain pending. History
+is bounded and admission refuses when full; no persistence, exactly-once acoustic
+guarantee, reconnect transport, revision reconciliation or automatic eviction exists.
+Status contains counts only, not speech, raw provider errors or identifiers.
+
+28 deterministic assertions exercise unresolved-player admission, sequence/replay
+refusal, explicit session/role boundaries, retries, generation cancellation, limits,
+three-session fairness and failed-message ordering. These use injected promises;
+they are not native audio, acoustic latency or real-harness streaming receipts.
+
 ## Boundaries
 
 Host rendering and speech are independent consumers. The host displays its text

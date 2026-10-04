@@ -2,6 +2,17 @@
 
 ## Legion integration receipt — 4 October 2026
 
+Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
+stable-segment kernel with an injected player, not a production watcher/engine path.
+28 deterministic queue assertions pass: admission during unresolved playback,
+duplicate/conflicting replay, sequence gaps, selected-session/role boundaries,
+retry, cancellation, bounded history/bytes, round-robin service and failure ordering.
+The full Windows Node 22.16.0 suite now reports 9,734 common assertions, with six
+POSIX checks skipped. No new native speech, real harness or acoustic receipt exists.
+The first test invocation failed because the new module did not yet exist; this is
+new-feature red/green evidence, not a reproduced defect in the former queue.
+Specific MOMM sharing approval/quorum remain pending; this implementation is draft.
+
 Integration branch codex/dom-tts-0.5-programme starts at PR #41's exact head
 1337e670536161475b6070510232231932109923. Legion independently ran self-test
 on Windows x64 / Node 22.16.0: 9,706 common assertions passed, six POSIX-only

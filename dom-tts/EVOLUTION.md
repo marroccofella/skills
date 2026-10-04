@@ -80,5 +80,11 @@ Hermes Agent; the owner's "Agent" and "Open Claude" identities remain unresolved
 No newly named harness compatibility is certified. Do not await playback completion
 on the text-rendering path. Distinguish complete-message narration from token deltas.
 
+Experimental progress: an injected-player stable-segment queue now has 28 deterministic
+checks for nonblocking admission, bounded memory/history, fair selected-session service,
+failure ordering, replay, retry and cancellation. It is not wired to production speech
+or watchers; UTF-8/event transport, delta segmentation, native cancellation and real
+harness certification are still future increments. The production API is unchanged.
+
 Coordination evidence:
 https://github.com/marroccofella/skills/discussions/38#discussioncomment-18739772

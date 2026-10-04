@@ -12,7 +12,7 @@
     },
     {
       "path": "EVOLUTION.md",
-      "sha256": "3e4c71decd033a09ce9eac9236749ec7327465a0c84ef3609d7fafb612b6473c"
+      "sha256": "f0cc36df274ba61a7c506fa25ade00980a171838eb9bc9fca3c439036d4ae439"
     },
     {
       "path": "LICENSE",
@@ -41,6 +41,10 @@
     {
       "path": "scripts/doctor.js",
       "sha256": "2b7f2f75329c97aa5eae35be90c4b3fd0ed7fdecfaee9188fe6e644b2e3dda03"
+    },
+    {
+      "path": "scripts/experimental/narration-queue.js",
+      "sha256": "4c877496f238ed553226116c75a7ea4618a76b125ec34cb02f1a367fa4205700"
     },
     {
       "path": "scripts/install.js",
@@ -76,7 +80,7 @@
     },
     {
       "path": "scripts/self-test.js",
-      "sha256": "4d8405f30b37c8997ab10bfedd7e8c211be96896f869ea332ea31bc9cc4182b1"
+      "sha256": "238c438507cf5cdfe86aab719f520ad60d6ef75000a4b07e4ba2394a20a43d2e"
     },
     {
       "path": "scripts/speak.js",
@@ -113,6 +117,10 @@
     {
       "path": "scripts/watch-codex.js",
       "sha256": "811e7701d4ba0189f22c037ca5ed138592a50d0b856d2db58b67b53b1114c3ff"
+    },
+    {
+      "path": "tests/async-queue-checks.cjs",
+      "sha256": "fece1e2f0b50abbc173b9d535b6ec571ae88f925e059a63a00f84a61c7d778b5"
     },
     {
       "path": "tests/corpus/golden.json",
