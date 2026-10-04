@@ -144,6 +144,13 @@ jobs:
       - name: probes module (1.16)
         timeout-minutes: 2
         run: node momm/scripts/probes.test.mjs
+      - name: remembered CLI/model compatibility, repeated-status notice and gate-review guard (1.17.1 R1, S3, S4)
+        # bash on every OS, so the first failing suite fails the step.
+        shell: bash
+        timeout-minutes: 4
+        run: |
+          node momm/scripts/compatibility.test.mjs
+          node momm/scripts/run-notices.test.mjs
       - name: governor split/rating/direct rules (1.16)
         timeout-minutes: 2
         run: node momm/scripts/governor-split.test.mjs

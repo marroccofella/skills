@@ -3,6 +3,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { knownIncompatibility } from '../momm/scripts/compatibility.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'momm/scripts/multi-review.mjs'), 'utf8');
 const a = source.indexOf('async function commandVersion('), b = source.indexOf('// Presence-only', a);
@@ -44,6 +45,7 @@ await check('inconclusive preflight never infers auth or suggests installation',
   const preflight = vm.runInNewContext(source.slice(start, end) + ';preflightCheck', {
     commandVersion: async () => ({ installed: null, version: null, version_status: 'timeout' }),
     authEvidence: () => { throw new Error('Must not infer auth after failed discovery'); },
+    knownIncompatibility, // 1.17.1 R1: the real lookup; an unread version never reaches it
   });
   const [route] = await preflight(['copilot'], 'codex');
   assert.equal(route.installed, null);

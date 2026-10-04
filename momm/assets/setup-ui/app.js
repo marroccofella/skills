@@ -138,6 +138,9 @@ function routeState(route) {
   if (route.ready) return "detected";
   if (route.installed === false) return "install";
   if (route.installed === null || route.version_status === "timeout" || route.version_status === "error") return "unknown";
+  // 1.17.1 R1: a remembered CLI/model mismatch is not a sign-in problem. The card shows the route's
+  // note, which names what failed and the update command.
+  if (route.compatibility) return "unknown";
   return "login";
 }
 

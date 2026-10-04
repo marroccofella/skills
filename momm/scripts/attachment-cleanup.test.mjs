@@ -10,6 +10,8 @@ import {fileURLToPath} from 'node:url';
 import {privateTestFixture} from './private-test-fixture.mjs';
 import {readMedia} from './media-bytes.mjs';
 import {takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject} from './evidence-location.mjs';
+import {settleCompatibility,rememberedNotice} from './compatibility.mjs';
+import {repeatedStatusNotices,diffInputNotice} from './run-notices.mjs';
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');
@@ -158,6 +160,8 @@ try{
       preparePrivateEvidence:()=>({verified:true}),resolveDispatchCapabilities:async()=>({capabilities:null,registry:null}),
       // 1.17 A7: the real resolver (default mode here: no MOMM_EVIDENCE_HOME in this stub process).
       takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject,
+      // 1.17.1 R1, S3, S4: the real notice functions (no --input here, and dispatch never completes).
+      diffInputNotice,repeatedStatusNotices,settleCompatibility,rememberedNotice,
       clockTrigger(){},personaFor:()=>null,resolveGuidance:()=>({routes:{},notices:[]}),loadAllRoles:()=>({}),staleBriefNotices:()=>[],
       createUi:()=>({start(){},preflight(){order.push('preflight-shown');},stop(){}}),emitEvent(){},
       preflightCheck:async()=>{order.push('preflight-start');await new Promise(r=>setTimeout(r,50));order.push('preflight-end');return [];},
@@ -182,6 +186,8 @@ try{
       preparePrivateEvidence:()=>({verified:true}),
       // 1.17 A7: the real resolver (default mode here: no MOMM_EVIDENCE_HOME in this stub process).
       takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject,
+      // 1.17.1 R1, S3, S4: the real notice functions (no --input here, and dispatch never completes).
+      diffInputNotice,repeatedStatusNotices,settleCompatibility,rememberedNotice,
       resolveDispatchCapabilities:boundary==='capabilities'?fail:async()=>({capabilities:null,registry:null}),
       clockTrigger(){},personaFor:()=>null,resolveGuidance:boundary==='guidance'?fail:()=>({routes:{},notices:[]}),loadAllRoles:()=>({}),staleBriefNotices:()=>[],
       createUi:()=>({start(){},preflight(){},stop(){}}),emitEvent(){},preflightCheck:async()=>[],

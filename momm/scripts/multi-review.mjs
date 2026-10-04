@@ -25,6 +25,8 @@ import { runSecondLook } from "./second-look.mjs";
 import { createUpdateClock, maybeUpdateNotice } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
 import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, EVIDENCE_FOLDER } from "./evidence-location.mjs";
+import { knownIncompatibility, settleCompatibility, rememberedNotice } from "./compatibility.mjs";
+import { repeatedStatusNotices, diffInputNotice } from "./run-notices.mjs";
 
 // Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
 // cmd.exe and libuv's own shell:false lookup try the WORKING DIRECTORY before
@@ -858,7 +860,9 @@ function usage() {
   node scripts/multi-review.mjs --self-test
 
 Options:
-  --input, --patch <file>    Review a file instead of git diff HEAD/stdin
+  --input, --patch <file>    Review a file instead of git diff HEAD/stdin. A diff file given here is itself the
+                             reviewed source, so findings that cite project files cannot receive a completion
+                             receipt (the run says so): for a gate review use --range
   --range <base>..<head>     Review a COMMITTED range. MOMM takes the diff itself and binds the report (and any
                              completion receipt) to both full commit ids. A diff on stdin must be identical.
                              A two-tip diff (git diff base head), not merge-base: pick a base head descends from.
@@ -888,7 +892,9 @@ Options:
                             other reviewer's claims; it is reported under covers[] with covering_for,
                             and adds a quorum vote only for a known model family new to that piece
   --stream                  Emit NDJSON progress events on stderr while reviewers run
-  --preflight               Check every route (install + auth evidence) and exit; zero model calls
+  --preflight               Check every route (install + auth evidence) and exit; zero model calls. A route whose
+                            CLI version and configured model failed together on this machine is shown not ready,
+                            with the update command, until either changes or the route succeeds
   --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
                             for shareable demos; by default only its sha256 is stored)
   --label <text>            Human subject for this run (e.g. "auth refactor"), carried in the
@@ -2385,6 +2391,14 @@ async function preflightCheck(reviewers, governor) {
       entry.note = "deprecated route: individual Code Assist tiers were retired 2026-06-18, so this fails closed on individual accounts (enterprise Code Assist only). For Gemini models under an account login, route through antigravity. The route is not being removed.";
     }
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
+    // 1.17.1 R1: this machine saw this CLI version fail with this configured model (compatibility.mjs).
+    // The route reads not ready, with the reason and the official update command. Nothing is asked
+    // of a model and no CLI setting is changed.
+    const known = knownIncompatibility({ route: agent, cliVersion: version.version });
+    if (known) {
+      Object.assign(entry, { ready: false, compatibility: { cli_version: known.cli_version, model: known.model, at: known.at, notice: known.notice }, update_hint: known.update_command });
+      entry.note = entry.note ? `${known.notice} ${entry.note}` : known.notice;
+    }
     return entry;
   }));
 }
@@ -2521,8 +2535,9 @@ function createUi(enabled, outStream = process.stderr) {
         // Candidate routes (auth is not the problem) render their note, not a
         // misleading auth label; real routes render install/auth state.
         const isCandidate = e.auth === "n/a" && e.note;
-        const reason = isCandidate ? e.note : e.installed === false ? "not installed" : `auth ${e.auth}`;
-        const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
+        // 1.17.1 R1: a remembered CLI/model mismatch reads as that, with the update command, never as a login.
+        const reason = isCandidate ? e.note : e.installed === false ? "not installed" : e.compatibility ? `CLI/model compatibility error on ${e.compatibility.at.slice(0, 10)}; same CLI and model` : `auth ${e.auth}`;
+        const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.compatibility ? e.update_hint : e.login_hint;
         const hint = fix ? `  ${color(ANSI.bold, "→")} ${fix}` : "";
         return `  ${color(isCandidate ? ANSI.dim : ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${color(isCandidate ? ANSI.dim : ANSI.yellow, reason)}${hint}`;
       });
@@ -3484,11 +3499,13 @@ async function main() {
         if (e.role === "governor") process.stderr.write(`  ${color(ANSI.dim, "⊘")} ${e.agent.padEnd(12)} ${color(ANSI.dim, e.note)}\n`);
         else if (e.ready) process.stderr.write(`  ${color(ANSI.green, "✓")} ${e.agent.padEnd(12)} ${color(ANSI.dim, `${e.version ?? ""} · auth ${e.auth}`)}\n`);
         else {
-          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
-          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
+          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.compatibility ? e.update_hint : e.login_hint;
+          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : e.compatibility ? "CLI and model did not work together" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note && !e.compatibility ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
         }
       }
     }
+    // 1.17.1 R1: said in full whether or not stderr is a terminal, so a harness relays it too.
+    if (!options.stream) for (const e of entries) if (e.compatibility) process.stderr.write(`momm compatibility: ${e.compatibility.notice}\n`);
     { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
     return;
   }
@@ -3506,6 +3523,13 @@ async function main() {
   const rawArtifact = await collectArtifact(options);
   const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input, options.range ?? null);
   if (options.range && !sourceSnapshot.complete) throw new Error(`--range could not be bound to the repository: ${sourceSnapshot.reason}`);
+  // 1.17.1 S4: a diff file given as --input is its own source snapshot. Said before anything is sent;
+  // a notice, never a refusal.
+  const inputNotice = diffInputNotice({ cwd: process.cwd(), input: options.input, range: options.range ?? null, artifact: rawArtifact });
+  if (inputNotice) {
+    emitEvent(options.stream, { event: "input.notice", notice: inputNotice });
+    if (!options.stream) process.stderr.write(`momm input: ${inputNotice}\n`);
+  }
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.
@@ -3577,7 +3601,8 @@ async function main() {
     if (!options.stream) process.stderr.write(`Governor guidance (sha256 ${resolvedGuidance.governor.sha256.slice(0, 12)}):\n${sanitizeText(resolvedGuidance.governor.text).value}\n\n`);
   }
   // --stream owns stderr for machines; the live UI owns it for humans. Never both.
-  const ui = createUi(!options.stream && (options.ui === true || (options.ui !== false && process.stderr.isTTY)));
+  const liveUi = !options.stream && (options.ui === true || (options.ui !== false && process.stderr.isTTY));
+  const ui = createUi(liveUi);
   emitEvent(options.stream, {
     event: "dispatch", governor: options.governor, reviewers: uniqueReviewers, input_bytes: byteLength,
     ...(options.staging.attachments.length ? { attachments: options.staging.attachments.map(({ name, modality, bytes, sha256, metadata_stripped, width, height }) => ({ name, modality, bytes, sha256, metadata_stripped, ...(Number.isInteger(width) && Number.isInteger(height) ? { width, height } : {}) })) } : {}),
@@ -3590,6 +3615,13 @@ async function main() {
   const preflightFirst = await preflightCheck(uniqueReviewers, options.governor);
   for (const entry of preflightFirst) emitEvent(options.stream, { event: "preflight", ...entry });
   ui.preflight(preflightFirst);
+  // 1.17.1 R1: a remembered CLI/model mismatch is said before any route is asked. The route still
+  // runs. The live display shows it in its preflight row, so the full sentence waits for the end there.
+  const compatibilityNotices = preflightFirst.filter((entry) => entry.compatibility).map((entry) => entry.compatibility.notice);
+  for (const notice of compatibilityNotices) {
+    emitEvent(options.stream, { event: "compatibility.notice", notice });
+    if (!options.stream && !liveUi) process.stderr.write(`momm compatibility: ${notice}\n`);
+  }
   const preflightPromise = Promise.resolve(preflightFirst);
   // 1.16 splitting: a large diff becomes pieces packed at file/hunk boundaries;
   // every route reviews every piece through one bounded scheduler; quorum is
@@ -3717,6 +3749,21 @@ async function main() {
       else process.stderr.write(`momm guidance: sidecar not written (${guidanceSidecar.error})\n`);
     }
   }
+  // 1.17.1 R1: settle this machine's record from what each route just returned (every piece of a
+  // split run, and covers): a success clears it, a compatibility failure is remembered with the CLI
+  // version preflight read and the model the route was given. A failure to write is a notice.
+  const compatibilityMemory = settleCompatibility({ results: [...(pieceResults ? pieceResults.flatMap((piece) => piece.results) : results), ...coverResults.map((c) => c.result)],
+    versions: Object.fromEntries(preflightEntries.map((entry) => [entry.agent, entry.version ?? null])), governor: options.governor });
+  const memoryNotices = [
+    ...compatibilityMemory.recorded.filter((route) => !preflightEntries.some((entry) => entry.agent === route && entry.compatibility)).map(rememberedNotice),
+    ...(compatibilityMemory.error ? [`the compatibility record on this machine was not updated: ${compatibilityMemory.error}`] : []),
+  ];
+  for (const notice of memoryNotices) emitEvent(options.stream, { event: "compatibility.notice", notice });
+  // 1.17.1 S3: the same failure in a route's last three recorded runs here (this run included) is
+  // named with its likely class. A notice only: nothing is routed on it.
+  const statusNotices = repeatedStatusNotices({ dir: evidenceAt.dir, results, governor: options.governor });
+  for (const notice of statusNotices) emitEvent(options.stream, { event: "status.notice", notice });
+  const runNotices = [...roleNotices, ...(inputNotice ? [inputNotice] : []), ...compatibilityNotices, ...memoryNotices, ...statusNotices];
   const report = {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
@@ -3764,8 +3811,9 @@ async function main() {
     timeout_ms: options.timeoutMs,
     project_rules_applied: Boolean(options.projectRulesApplied),
     ...guidanceReportFields(resolvedGuidance),
-    // Visible, never a refusal: role briefs (or checklists) past their review date (1.17 B1).
-    ...(roleNotices.length ? { notices: roleNotices } : {}),
+    // Visible, never a refusal: role briefs (or checklists) past their review date (1.17 B1), a diff
+    // file given as --input (S4), a remembered CLI/model mismatch (R1) and a repeated status (S3).
+    ...(runNotices.length ? { notices: runNotices } : {}),
     preflight: preflightEntries,
     reviewers: results.map((result) => ({
       agent: result.agent,
@@ -3928,6 +3976,11 @@ async function main() {
   ui.finish(report, evidence.ledger_url);
   if (evidence.error && !options.stream) {
     process.stderr.write(`WARNING: evidence persistence failed (${evidence.failed_stage}) — ${evidence.error}\n`);
+  }
+  // 1.17.1: the notices this run's outcome raised, in full, once the live display has finished.
+  if (!options.stream) {
+    for (const notice of [...(liveUi ? compatibilityNotices : []), ...memoryNotices]) process.stderr.write(`momm compatibility: ${notice}\n`);
+    for (const notice of statusNotices) process.stderr.write(`momm routes: ${notice}\n`);
   }
   // The governor's remaining half of the protocol, stated plainly. Printed
   // even when the UI rendered, because silently-skipped triage is the single
