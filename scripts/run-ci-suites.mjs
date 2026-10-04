@@ -6,6 +6,11 @@
 //   node scripts/run-ci-suites.mjs            run all
 //   node scripts/run-ci-suites.mjs --list     print the commands only
 //   node scripts/run-ci-suites.mjs --grep ledger   run the suites whose path contains "ledger"
+//   node scripts/run-ci-suites.mjs --save-report --commit <full SHA>   also keep a private report of the run
+//   node scripts/run-ci-suites.mjs --recover-report <run folder> --to <private dir>
+//                                             complete a report whose final save failed; runs no suite
+// Anything else on the command line is refused and nothing runs. A run ends with three lines, one fact
+// each: suites passed, whether the report was saved, and the exit status.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -16,50 +21,104 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflow = fs.readFileSync(path.join(root, '.github/workflows/self-test.yml'), 'utf8');
 const commands = [...new Set([...workflow.matchAll(/node ((?:momm\/scripts|scripts)\/[A-Za-z0-9_./-]+\.mjs)([^\n"]*)/g)]
   .map((m) => [m[1], ...m[2].trim().split(/\s+/).filter(Boolean)].join(' ')))];
-const args = process.argv.slice(2), grep = args.includes('--grep') ? args[args.indexOf('--grep') + 1] : null;
-const save = args.includes('--save-report');
-const commit = args.includes('--commit') ? args[args.indexOf('--commit') + 1] : null;
-if (args.includes('--commit') && !save) {
+// Strict options (1.17.1 R6): `--grpe --list` used to list every suite and exit 0, and `--grpe` alone
+// ran them all. true marks an option that takes a value.
+const OPTIONS = { '--list': false, '--grep': true, '--save-report': false, '--commit': true, '--recover-report': true, '--to': true };
+const usage = (message) => {
+  process.stderr.write(`${message} Nothing was run.\nOptions: --list | --grep <part of a suite path> | --save-report --commit <full SHA> | --recover-report <run folder> --to <private dir>\n`);
+  process.exit(2);
+};
+const printable = (text) => String(text).replace(/[^\x20-\x7e]/g, '?').slice(0, 80);
+const distance = (a, b) => {
+  const row = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0]; row[0] = i;
+    for (let j = 1; j <= b.length; j++) { const above = row[j]; row[j] = Math.min(above + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1)); diagonal = above; }
+  }
+  return row[b.length];
+};
+// An option typed short (--recover) is nearer to the one it begins than to any other spelling.
+const nearest = (typed) => Object.keys(OPTIONS).map((name) => [name.startsWith(typed) ? 0 : distance(typed, name), name]).sort((x, y) => x[0] - y[0])[0][1];
+const args = process.argv.slice(2), given = new Map();
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (!Object.hasOwn(OPTIONS, arg)) usage(arg.startsWith('-') ? `Unknown option ${printable(arg)}. Nearest valid option: ${nearest(arg.split('=')[0])}.` : `Unexpected argument ${printable(arg)}. To run part of the list, use --grep <part of a suite path>.`);
+  if (given.has(arg)) usage(`${arg} was given more than once.`);
+  // A value that is itself an option is a missing value; each option says so in its own words below.
+  given.set(arg, OPTIONS[arg] ? (args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? args[++i] : null) : true);
+}
+const grep = given.get('--grep') ?? null;
+const save = given.has('--save-report');
+const commit = given.get('--commit') ?? null;
+// Paths are shown relative to where the command was typed when they lie inside it, so they can be typed back.
+const shown = (target) => { const relative = path.relative(process.cwd(), target); return !relative || relative.startsWith('..') || path.isAbsolute(relative) ? target : relative; };
+const reasonOf = (error) => (error?.reason ? `not verified private: ${error.reason}` : error?.syscall ? `${error.code} on ${error.syscall}` : String(error?.message ?? error).split('\n')[0].slice(0, 300));
+if (given.has('--recover-report') || given.has('--to')) {
+  const others = [...given.keys()].filter((name) => name !== '--recover-report' && name !== '--to');
+  if (others.length) usage(`--recover-report takes only --to; ${others.join(' and ')} cannot be combined with it.`);
+  if (!given.get('--recover-report') || !given.get('--to')) usage('Recovery needs both: --recover-report <run folder> --to <private dir>.');
+  await recoverReport(path.resolve(given.get('--recover-report')), path.resolve(given.get('--to')));
+}
+if (given.has('--commit') && !save) {
   process.stderr.write('--commit requires --save-report; otherwise no commit-bound report is saved.\n'); process.exit(2);
 }
 if (save && !/^[a-f0-9]{40}$/.test(commit ?? '')) {
   process.stderr.write('--save-report requires --commit <full SHA>; this is caller-supplied identity, not automatic Git verification.\n'); process.exit(2);
 }
 // A filter that names nothing, or matches nothing, is an error: "0 of 0 suites passed" is not a pass.
-if (args.includes('--grep') && (!grep || grep.startsWith('--'))) { process.stderr.write('--grep needs a value: part of a suite path, such as --grep ledger\n'); process.exit(2); }
+if (given.has('--grep') && !grep) { process.stderr.write('--grep needs a value: part of a suite path, such as --grep ledger\n'); process.exit(2); }
 const selected = commands.filter((c) => !grep || c.includes(grep));
 if (!selected.length) { process.stderr.write(`no suite in .github/workflows/self-test.yml matches ${JSON.stringify(grep)}; nothing was run\n`); process.exit(1); }
-if (args.includes('--list')) { process.stdout.write(selected.join('\n') + '\n'); process.exit(0); }
-let reportDir = null;
+if (given.has('--list')) { process.stdout.write(selected.join('\n') + '\n'); process.exit(0); }
+let reportDir = null, checkout = null, recheck = () => {};
 const runId = randomUUID();
+// Storage precheck (1.17.1 R3): private permissions here, write access just below, both before the first
+// RUN line. A refusal is one plain reason, not a stack trace.
+const storageRefused = (error) => {
+  process.stderr.write(`Report storage refused before any suite ran: ${String(error?.message ?? error).split('\n')[0]}\nNothing was run.${reportDir ? ` An unused run folder may remain: ${shown(reportDir)}` : ''}\n`);
+  process.exit(1);
+};
 if (save) {
-  const { preparePrivateEvidence } = await import('../momm/scripts/evidence-permissions.mjs');
-  const { evidenceLocation, recordEvidenceProject } = await import('../momm/scripts/evidence-location.mjs');
-  const location = evidenceLocation({ cwd: root });
-  const home = location.dir;
-  preparePrivateEvidence(home);
-  recordEvidenceProject(location);
-  reportDir = path.join(home, `ci-${runId}`);
-  fs.mkdirSync(reportDir, { mode: 0o700 });
-  preparePrivateEvidence(reportDir);
+  try {
+    const { preparePrivateEvidence, requirePrivateEvidence } = await import('../momm/scripts/evidence-permissions.mjs');
+    const { evidenceLocation, recordEvidenceProject } = await import('../momm/scripts/evidence-location.mjs');
+    const location = evidenceLocation({ cwd: root });
+    const home = location.dir;
+    preparePrivateEvidence(home);
+    recordEvidenceProject(location);
+    reportDir = path.join(home, `ci-${runId}`);
+    fs.mkdirSync(reportDir, { mode: 0o700 });
+    preparePrivateEvidence(reportDir);
+    recheck = () => requirePrivateEvidence(reportDir);
+    checkout = readCheckout(await import('../momm/scripts/process-scope.mjs'));
+  } catch (error) { storageRefused(error); }
 }
 const report = { schema: 'momm-ci-suites/1', run_id: runId, commit,
-  commit_basis: commit ? 'caller supplied; verify HEAD and clean tree separately' : 'not supplied',
+  commit_basis: commit ? 'caller supplied label; checkout.head is what Git reported for this checkout' : 'not supplied',
+  checkout, label_matches_head: checkout?.head ? checkout.head === commit : null,
   runner_sha256: createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url))).digest('hex'),
   workflow_sha256: createHash('sha256').update(workflow).digest('hex'),
   platform: process.platform, arch: process.arch, node: process.version,
   started_at: new Date().toISOString(), filter: grep, selected: selected.length, results: [] };
+let stored = -1; // how many suite results report.json holds; -1 until it has been written once
 const persist = () => {
   if (!reportDir) return;
   const temporary = path.join(reportDir, `report-${randomUUID()}.tmp`);
   fs.writeFileSync(temporary, JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-  fs.renameSync(temporary, path.join(reportDir, 'report.json'));
+  // A failed rename leaves the text it could not move where it was written; --recover-report reads it there.
+  try { fs.renameSync(temporary, path.join(reportDir, 'report.json')); } catch (error) { error.pending = temporary; throw error; }
+  stored = report.results.length;
 };
-persist();
+// Twice: the second save replaces the first, which is the step every later save repeats.
+try { persist(); persist(); } catch (error) { storageRefused(error); }
+const checkoutLine = !checkout ? null
+  : !checkout.available ? `Checkout: Git could not confirm this checkout (${checkout.reason}); HEAD and the tree state are recorded as unknown, and the --commit label is unverified.`
+    : `Checkout: HEAD ${checkout.head}, ${checkout.clean === null ? 'tree state unknown' : checkout.clean ? 'clean tree' : 'tree has uncommitted or untracked changes'}; the --commit label ${checkout.head === commit ? 'matches.' : `${commit} does not match HEAD.`}`;
+if (checkoutLine) process.stdout.write(checkoutLine + '\n');
 // Same launch guard the workflow relies on; the security suites unset it themselves where they must.
 const env = { ...process.env, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1' };
 delete env.NoDefaultCurrentDirectoryInExePath;
-let failed = 0;
+let failed = 0, saveError = null;
 for (const [index, command] of selected.entries()) {
   process.stdout.write(`RUN ${index + 1}/${selected.length} ${command}\n`);
   const [file, ...rest] = command.split(' ');
@@ -78,18 +137,121 @@ for (const [index, command] of selected.entries()) {
   const tail = (text, label) => { const lines = String(text ?? '').trimEnd().split('\n').filter((l) => l.trim()).slice(-8); if (lines.length) process.stdout.write(`      ${label}:\n` + lines.map((l) => '      ' + l).join('\n') + '\n'); };
   if (code !== 0 && r.error) process.stdout.write(`      spawn error: ${r.error.code ?? 'unknown'} (${String(r.error.message).split('\n')[0]})\n`);
   if (code !== 0) { tail(r.stdout, 'stdout (last lines)'); tail(r.stderr, 'stderr (last lines)'); }
-  if (reportDir && code !== 0) {
-    entry.stdout_file = `${index + 1}.stdout.txt`; entry.stderr_file = `${index + 1}.stderr.txt`;
-    fs.writeFileSync(path.join(reportDir, entry.stdout_file), r.stdout ?? '', { mode: 0o600 });
-    fs.writeFileSync(path.join(reportDir, entry.stderr_file), r.stderr ?? '', { mode: 0o600 });
-    entry.stdout_sha256 = createHash('sha256').update(r.stdout ?? '').digest('hex');
-    entry.stderr_sha256 = createHash('sha256').update(r.stderr ?? '').digest('hex');
-    entry.capture_incomplete = Boolean(r.error || r.signal);
-    process.stdout.write(`      captured failure output saved${entry.capture_incomplete ? ' (suite stopped; capture may be incomplete)' : ''}: ${path.relative(root, path.join(reportDir, entry.stdout_file))} and ${path.relative(root, path.join(reportDir, entry.stderr_file))} (private; inspect before sharing)\n`);
-  }
-  report.results.push(entry); persist();
+  report.results.push(entry);
+  try {
+    if (reportDir && code !== 0) {
+      entry.stdout_file = `${index + 1}.stdout.txt`; entry.stderr_file = `${index + 1}.stderr.txt`;
+      fs.writeFileSync(path.join(reportDir, entry.stdout_file), r.stdout ?? '', { mode: 0o600 });
+      fs.writeFileSync(path.join(reportDir, entry.stderr_file), r.stderr ?? '', { mode: 0o600 });
+      entry.stdout_sha256 = createHash('sha256').update(r.stdout ?? '').digest('hex');
+      entry.stderr_sha256 = createHash('sha256').update(r.stderr ?? '').digest('hex');
+      entry.capture_incomplete = Boolean(r.error || r.signal);
+      process.stdout.write(`      captured failure output saved${entry.capture_incomplete ? ' (suite stopped; capture may be incomplete)' : ''}: ${path.relative(root, path.join(reportDir, entry.stdout_file))} and ${path.relative(root, path.join(reportDir, entry.stderr_file))} (private; inspect before sharing)\n`);
+    }
+    persist();
+  } catch (error) { saveError = error; break; }
 }
-process.stdout.write(`${selected.length - failed} of ${selected.length} suites passed on ${process.platform} ${process.arch}, Node ${process.version}\n`);
-report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed; persist();
-if (reportDir) process.stdout.write(`Private original-run report: ${path.relative(root, reportDir)}/report.json\n`);
-process.exitCode = failed ? 1 : 0;
+const ran = report.results.length;
+if (!saveError) {
+  report.finished_at = new Date().toISOString(); report.passed = selected.length - failed; report.failed = failed;
+  // Checked again when saving (1.17.1 R3): storage that stopped being private is not written to again.
+  try { if (reportDir) { recheck(); persist(); } } catch (error) { saveError = error; }
+}
+// Failed-save recovery (1.17.1 R4). The attempt is left exactly as it is: no retry, no repair, nothing
+// removed. The lines below say where the results are and how to complete the record somewhere else.
+let reportSaved = !reportDir ? 'not requested (add --save-report --commit <full SHA> to keep a private report)'
+  : `yes, ${shown(path.join(reportDir, 'report.json'))} (private; inspect before sharing)`;
+if (saveError) {
+  // A rename that failed after the last suite left every result in the file it could not move.
+  const complete = saveError.pending && ran === selected.length ? saveError.pending : null;
+  const kept = fs.existsSync(path.join(reportDir, 'report.json')) && stored >= 0;
+  process.stdout.write(`The report could not be saved (${reasonOf(saveError)}). The run folder was left as it is: nothing was retried, repaired or removed.\n`);
+  if (ran < selected.length) process.stdout.write(`The run stopped after suite ${ran} of ${selected.length}; the other ${selected.length - ran} were not run.\n`);
+  if (complete) process.stdout.write(`Complete results: ${shown(complete)}\n`);
+  else if (kept) process.stdout.write(`Saved so far: report.json in the run folder holds the results of ${stored} of ${selected.length} suites${stored === selected.length ? ', without the totals and the finish time' : ''}.\n`);
+  else process.stdout.write('No saved copy remains; the results are the lines above.\n');
+  process.stdout.write(`Run folder: ${shown(reportDir)}\n`);
+  if (complete || (kept && stored === selected.length)) process.stdout.write('To complete the record without rerunning any suite, name a private folder outside the run folder:\n  node scripts/run-ci-suites.mjs --recover-report <run folder> --to <private dir>\n');
+  reportSaved = `no (${reasonOf(saveError)}); ${complete ? `complete results: ${shown(complete)}` : kept ? `${stored} of ${selected.length} suite results are in ${shown(path.join(reportDir, 'report.json'))}` : 'no saved copy remains'}`;
+}
+const exitStatus = failed || saveError ? 1 : 0;
+if (checkoutLine) process.stdout.write(checkoutLine + '\n');
+// The outcome, one fact a line (1.17.1 R5). The first is the line reviewers and the test plan already quote.
+process.stdout.write(`${ran - failed} of ${selected.length} suites passed on ${process.platform} ${process.arch}, Node ${process.version}\n`);
+process.stdout.write(`Report saved: ${reportSaved}\n`);
+process.stdout.write(`Exit status: ${exitStatus}\n`);
+process.exitCode = exitStatus;
+
+// Verified checkout identity (1.17.1 R9). --commit is a label the caller typed; this is what Git says the
+// checkout is. Git is resolved the way reviews resolve it (process-scope.mjs: an absolute PATH entry outside
+// this checkout, never a file the checkout supplies), is asked about this folder whatever GIT_DIR says,
+// and takes no optional lock. When it cannot answer, the report says so; nothing is inferred from the label.
+function readCheckout(scope) {
+  const unknown = (reason) => ({ source: 'git', available: false, reason, head: null, clean: null });
+  const base = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^GIT_/i.test(name)));
+  const where = { cwd: root, project: root };
+  const gitEnv = (process.platform === 'win32' ? scope.windowsChildEnv : scope.posixChildEnv)({ ...base, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }, where);
+  let tool;
+  try { tool = scope.windowsTool('git', { ...where, env: gitEnv }); } catch { return unknown('git_not_found'); }
+  const git = (...rest) => spawnSync(tool, ['-c', 'core.fsmonitor=false', ...rest], { cwd: root, env: gitEnv, encoding: 'utf8', timeout: 30_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  // An empty prefix means this folder is the top of a work tree, not a folder inside someone else's.
+  const top = git('rev-parse', '--show-prefix');
+  if (top.error?.code === 'ENOENT') return unknown('git_not_found');
+  if (top.status !== 0 || top.stdout.trim() !== '') return unknown('not_a_git_checkout');
+  const head = git('rev-parse', '--verify', 'HEAD^{commit}'), sha = String(head.stdout ?? '').trim();
+  if (head.status !== 0 || !/^[a-f0-9]{40,64}$/.test(sha)) return unknown('head_unreadable');
+  const status = git('status', '--porcelain', '--untracked-files=normal');
+  return { source: 'git', available: true, head: sha, clean: status.status === 0 ? status.stdout.trim() === '' : null };
+}
+
+// Failed-save recovery, the other half (1.17.1 R4). In the case this was written for, the synced files
+// then carried reparse-point attributes, and the permission audit refused that evidence folder from then
+// on (linked_entry). So the run folder is only read, as plain files and without that audit, and nothing
+// in it is written, renamed or removed. One new file goes into a private folder the user names.
+async function recoverReport(source, target) {
+  const refuse = (message) => { process.stderr.write(`Recovery refused: ${message} No report was written and no suite was run.\n`); process.exit(1); };
+  let names;
+  try { if (!fs.statSync(source).isDirectory()) throw new Error('not a directory'); names = fs.readdirSync(source); }
+  catch { refuse(`${shown(source)} is not a readable run folder.`); }
+  const read = (name) => {
+    try {
+      const file = path.join(source, name), st = fs.lstatSync(file);
+      if (!st.isFile() || st.isSymbolicLink() || st.size > 64 * 1024 * 1024) return null;
+      const bytes = fs.readFileSync(file), value = JSON.parse(bytes.toString('utf8'));
+      const sound = value?.schema === 'momm-ci-suites/1' && /^[0-9a-f-]{36}$/.test(value.run_id) && Number.isInteger(value.selected)
+        && Array.isArray(value.results) && value.results.every((entry) => entry?.status === 'passed' || entry?.status === 'failed');
+      return sound ? { name, bytes, value } : null;
+    } catch { return null; }
+  };
+  // report.json first, then anything a failed rename left behind; a file that is not a whole report is skipped.
+  const found = ['report.json', ...names.filter((name) => /^report-[0-9a-f-]{36}\.tmp$/.test(name)).sort()].map(read).filter(Boolean);
+  if (!found.length) refuse(`${shown(source)} holds no readable run report.`);
+  if (new Set(found.map((entry) => entry.value.run_id)).size > 1) refuse(`${shown(source)} holds reports of more than one run.`);
+  const whole = found.filter((entry) => entry.value.results.length === entry.value.selected);
+  const chosen = whole.find((entry) => typeof entry.value.finished_at === 'string') ?? whole[0];
+  if (!chosen) refuse(`that run did not finish: the fullest saved report has results for ${Math.max(...found.map((entry) => entry.value.results.length))} of ${found[0].value.selected} suites.`);
+  const passed = chosen.value.results.filter((entry) => entry.status === 'passed').length, failed = chosen.value.results.length - passed;
+  const recorded = Number.isInteger(chosen.value.passed) && Number.isInteger(chosen.value.failed);
+  if (recorded && (chosen.value.passed !== passed || chosen.value.failed !== failed)) refuse(`${chosen.name} states totals that its own results do not add up to.`);
+  // The deepest existing folder is resolved, so a link cannot place the new file inside the run folder.
+  const resolved = (folder) => {
+    const tail = [];
+    for (let cursor = folder; ;) {
+      try { return path.join(fs.realpathSync.native(cursor), ...tail); }
+      catch { const parent = path.dirname(cursor); if (parent === cursor) return folder; tail.unshift(path.basename(cursor)); cursor = parent; }
+    }
+  };
+  const inside = (base, candidate) => { const relative = path.relative(base.toLowerCase(), candidate.toLowerCase()); return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)); };
+  if ([target, resolved(target)].some((candidate) => inside(source, candidate) || inside(resolved(source), candidate))) refuse('--to must be outside the run folder; the original attempt is never changed.');
+  try { (await import('../momm/scripts/evidence-permissions.mjs')).preparePrivateEvidence(target); }
+  catch (error) { refuse(`the folder named with --to is ${error?.reason ? `not verified private (${error.reason})` : `not usable (${reasonOf(error)})`}. Name a new folder, which is created private, or one only your account can open.`); }
+  const file = path.join(target, `ci-${chosen.value.run_id}-recovered.json`);
+  const body = JSON.stringify({ ...chosen.value, passed, failed, recovery: { schema: 'momm-ci-recovery/1', recovered_at: new Date().toISOString(),
+    source_folder: source, source_file: chosen.name, source_sha256: createHash('sha256').update(chosen.bytes).digest('hex'),
+    totals: recorded ? 'recorded by the run' : 'derived from the saved results', suites_rerun: false } }, null, 2) + '\n';
+  // Written once, never over an existing file, and without the rename that failed in the original folder.
+  try { fs.writeFileSync(file, body, { mode: 0o600, flag: 'wx' }); }
+  catch (error) { refuse(error?.code === 'EEXIST' ? `${shown(file)} already exists; it was left as it is.` : `${shown(file)} could not be written (${reasonOf(error)}).`); }
+  process.stdout.write(`Recovered report: ${shown(file)}\n${passed} of ${chosen.value.selected} suites passed in the recovered run (${recorded ? 'totals recorded by the run' : 'totals derived from the saved results; the finish time was not saved'}).\nSource: ${chosen.name} in ${shown(source)}, read only. The run folder was not changed and no suite was rerun.\n`);
+  process.exit(0);
+}
