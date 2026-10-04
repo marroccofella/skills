@@ -122,7 +122,7 @@ that refusal.
 | --- | --- | --- |
 | 1. Local suites and the OS by Node matrix on the sealed commit | Job logs | named in the pull request |
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.0 and 1.16.1 | Six hosted cells | after the merge |
-| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
+| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below: nine reviews, each with a complete receipt; what the last of them could not cover is said under it |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
 | 5. Live review with every installed reviewer route valid | Report | passed: in `rev_20261004085003_77d89c336993` Codex, Antigravity, Copilot and Grok each returned a valid review of every piece at the first attempt. In the other two range reviews of the whole delta each of the four returned valid reviews, but not of every piece: Grok timed out on one piece of one review, and Copilot was refused on both attempts on one piece of the other. Both are listed by route and piece under Reviews, with the answers that were refused once and accepted on a retry |
 | 6. Signed tag `momm-1.17.1` | Release workflow run | approved by the owner's instruction of 4 October 2026, if every gate above passes on the final sealed commit |
@@ -131,10 +131,9 @@ that refusal.
 
 Gate 3 is met only when every range review of the 1.17.1 changes is listed here with a complete
 receipt. Listed: the two reviews of the Copilot fix, the three range reviews of the whole delta (R1 to
-R10 and S1 to S10), the two closing reviews of the changes made in triage, and the final review of the
-changes made in closing triage. One last review, of the single change made in final triage and of the
-entries this record gained after the closing reviews, is added when its receipt is complete; until it
-is listed, gate 3 is open.
+R10 and S1 to S10), the two closing reviews of the changes made in triage, the final review of the
+changes made in closing triage, and one last review of the single change made in final triage and of
+the entries this record gained after the closing reviews.
 
 - `rev_20261004062357_5e1763ad52ff` — the Copilot event fix. Codex, Antigravity and Grok ACCEPT, no
   findings; Copilot `invalid_output` (the fenced answer, finding 1). Six suggestions ruled, three
@@ -251,14 +250,33 @@ is recorded as applied, because the product packet made that change under a find
   (all but Antigravity's) and piece 5 had two (Codex's and Antigravity's), which is the quorum; the
   other three pieces had four. Three answers were refused once and accepted on a retry: Copilot's on piece 2
   (an invalid finding), Antigravity's and Grok's on piece 3 (a quote that did not match). 6 WARNING
-  and 5 NITPICK: one real and fixed, ten shown not to hold. 30 suggestions ruled, none applied.
-  Receipt complete. The real finding was in this record: the entry above said "one real and fixed" and
-  then listed two fixes without saying that the second came from a suggestion. No product source,
-  fixture or release note changed. Two reviewers said the mark on a stale Setup Center notice uses the
+  and 5 NITPICK: two real and fixed, nine shown not to hold. 30 suggestions ruled, none applied.
+  Receipt complete. One real finding was in this record: the entry above said "one real and fixed" and
+  then listed two fixes without saying that the second came from a suggestion. The other was a note in
+  the plan that was true but incomplete (which review added the last clause of F2); triage offered the
+  exact wording and the governor used it. No product source, fixture or release note changed. Two reviewers said the mark on a stale Setup Center notice uses the
   wrong counter; every ordering of two and of three overlapping refreshes was run through the page's
   own code and compared with what the mark's sentence says, and it held in each: the mark is shown
   when the refresh asked for last, among those asked for after the last verified answer arrived,
   failed without the version check.
+- `rev_20261004140004_37cfc29e0951` — the last review: the one change of final triage and the entries
+  this record gained after the closing reviews (one piece). Codex and Antigravity ACCEPT, Copilot and
+  Grok MODIFY. All four routes returned a valid review; one Copilot answer was refused once (a summary
+  that was missing or too long) and accepted on its retry. 2 WARNING: one real and fixed, one shown
+  not to hold. Six suggestions ruled, one applied (the same change as the real finding). Receipt
+  complete. The real finding was again in this record: the entry above said quorum was met on all five
+  pieces and then that "none of the three" routes it had named gave a valid review of "that piece",
+  though they had failed on two different pieces; it now says how many valid reviews each of those
+  pieces had. The other finding said the R10 row had been broadened from an older version to a
+  different one; the version watch was run both ways and answers for any difference, as the plan says.
+
+Nothing was reviewed after the last review. What changed after it is in this record only: the
+correction it asked for, its own entry, the status of gate 3 and the list below. A record cannot carry
+the review of its own last lines; they are for the reader to check against the receipts. The receipts
+of the three range reviews, the first closing review, the final review and the last review were
+recorded again on the final tree, with their checks run on the final bytes. The two reviews of the
+Copilot fix keep the receipts recorded when they were made, and the receipt of
+`rev_20261004112834_a8bab82d9d93` stays on the tree of its own fixes for the reason given in its entry.
 
 ## Found in triage and carried forward
 
@@ -293,8 +311,7 @@ Copilot fix and all twenty improvements. That instruction is the owner's approva
 on condition that every gate passes on the final sealed commit. If a gate does not pass, the tag is
 not made and the decision goes back to the owner.
 
-1. Gate 3 met: every range review listed under Reviews, each with a complete receipt.
-2. The matrix green on the sealed commit.
-3. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
-4. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
-5. The signed tag, then the publication record.
+1. The matrix green on the sealed commit.
+2. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
+3. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
+4. The signed tag, then the publication record.
