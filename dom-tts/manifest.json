@@ -96,7 +96,7 @@
     },
     {
       "path": "scripts/speak.js",
-      "sha256": "a2e16ce4c86ee8beee9ece11398e4df51254f35b710e3c04ecd53a6387a30413"
+      "sha256": "f879d800438cfb0dc16ff617d33de96908ac295d0389f9fec6b798a07fbbe057"
     },
     {
       "path": "scripts/status.js",
