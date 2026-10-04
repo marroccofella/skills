@@ -37,7 +37,7 @@ assert.equal(sparse.rows[1].stored_external_results,1);
 const html=read('docs/momm/technical.html');
 assert.equal((html.match(/<figure /g)||[]).length,7);
 assert(html.includes('not a measured MOMM result')||html.includes('Neither figure is a measured MOMM result'));
-assert(html.includes('1.15.1'));assert(html.includes('not describe unreleased 1.16 features'));
+assert(html.includes('1.15.1'));assert(html.includes('not describe later 1.16 or 1.17 features'));
 assert(html.includes('independently defined oracle'));assert(html.includes('existing CLI account routes'));
 const future=technicalBody(data,s,'9.9.9');assert(future.includes('current catalogue version: 9.9.9'));assert(future.includes('Architecture baseline: released MOMM 1.15.1'));
 for(const [,file] of html.matchAll(/https:\/\/github\.com\/marroccofella\/skills\/blob\/momm-1\.15\.1\/([^"#]+)/g))assert(fs.existsSync(path.join(root,file)),'source link missing: '+file);

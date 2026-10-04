@@ -139,6 +139,7 @@ attempt record only.
 - `scripts/momm-release-regressions.test.mjs`
 - `scripts/momm-site-home.test.mjs`
 - `scripts/momm-site-regression.test.mjs`
+- `scripts/momm-site-release-consistency.test.mjs`
 - `scripts/momm-site-search.test.mjs`
 - `scripts/momm-site-technical.test.mjs`
 - `scripts/momm-site-videos.test.mjs`

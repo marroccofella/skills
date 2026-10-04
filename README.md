@@ -41,6 +41,20 @@ Links every skill in this repo into the harness you name (`claude`, `codex`, `ge
 
 **MOMM information:** [Overview](https://marroccofella.github.io/skills/momm/) · [Get started](https://marroccofella.github.io/skills/momm/start.html) · [Update safely](https://marroccofella.github.io/skills/momm/updates.html) · [Evidence](https://marroccofella.github.io/skills/momm/evidence.html) · [Reference](https://marroccofella.github.io/skills/momm/reference.html)
 
+## Development checkout — unsigned
+
+For contributors only: the default branch can contain unreleased work. This route does not
+verify a signed release. Inspect and trust its code separately before running even the preview;
+use the signed installation guide above for ordinary MOMM installation.
+
+```bash
+git clone https://github.com/marroccofella/skills
+cd skills
+node install.mjs --target claude --dry-run
+```
+
+This previews every skill for the named harness. Applying requires a separate decision.
+
 | Skill | What it does |
 |-------|--------------|
 | [mytravel](mytravel/SKILL.md) | **My Travel** — compare complete journeys and reservations using available tools, loyalty value, mixed cabins, stopovers and ground links; verify the exact booking and usable benefits. |
@@ -154,10 +168,13 @@ This is **not** a multi-agent coding system. Reviewers never write code, run you
 
 ### Quick start
 
+Use the signed installation guide above first. Run these commands only from the verified
+permanent clone; review the preview and explicitly approve installation before continuing.
+
 ```bash
-# 1. Link the skill into your harness so you can invoke $momm afterwards
-#    (once per machine; --target is required — name the harness).
-node install.mjs --target claude
+# 1. Preview MOMM alone for the harness you name. Apply only after approval,
+#    using the signed guide; this preview does not install anything.
+node momm/scripts/install.mjs --target claude --dry-run
 
 # 2. Open the local Setup Center. Its unified provider cards show CLI, account,
 #    and model status; Quick Setup verifies detected sessions in sequence.
