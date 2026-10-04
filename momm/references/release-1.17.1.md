@@ -1,7 +1,21 @@
 # MOMM 1.17.1 — release notes
 
-**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.17.1` is
-published, the current signed release remains 1.17.0. Do not install an unsigned branch as a signed release.
+**Released 4 October 2026.** The signed tag [momm-1.17.1](https://github.com/marroccofella/skills/releases/tag/momm-1.17.1)
+names commit `06e8d5ad7be9748928a6e8159106bfb86afa582a`, the exact sealed candidate tree
+squash-merged from pull request 44. Do not install an unsigned branch as a signed release.
+
+The immutable signed tag retains the pre-publication notes (publication pending) and
+the `version-notes` history entry that were sealed before release. This post-release
+document and the live release page are the publication record; the signed payload is
+not retagged or resealed merely to change its historical notes.
+
+Release evidence: [exact-main CI, 15/15](https://github.com/marroccofella/skills/actions/runs/37215795740),
+[signed checkpoint](https://github.com/marroccofella/skills/actions/runs/37216655780),
+[six hosted lifecycle cells, 13/13 steps each](https://github.com/marroccofella/skills/actions/runs/37217057197),
+and [stable signing and update smoke](https://github.com/marroccofella/skills/actions/runs/37217970225).
+Every lifecycle cell exercised recovery from interrupted upgrades from both 1.17.0 and 1.16.1.
+Fresh-clone verification validated the Git signature, Rekor entry, expected certificate claims
+and sealed payload; an intentionally wrong signing identity was refused.
 
 1.17.1 makes Copilot reviews work again on recent Copilot CLI versions and makes failures explain
 themselves. It does not make every route work: a reviewer CLI that is too old for its configured model
