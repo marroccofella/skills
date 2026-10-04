@@ -40,6 +40,14 @@ is recorded as a proposal, not a fix. ACL inheritance, destination validation,
 replacement/race boundaries and launch savings require review and tests before use.
 Do not infer cold-start causation solely from the observed helper timeout.
 
+The timeout also occurred at0841b23 on hosted Windows Node22.23.3 in
+run37184057862/job111382217450. Failure-only diagnostics then passed with
+33414ms new-child and23371ms existing-child checks. Thus the failure is not
+confined to Node18; its internal cause remains open. The diagnostic now measures
+command-body time and approximate launch/exit overhead separately. Missing timing
+on timeout remains null; no raw helper output or directory path is published.
+These measurements instrument the diagnostic only, not production permissions.
+
 ## Independent receipts and remaining acceptance
 
 At e630232, Bob BHB reports Windows x64/Node24.19.0,42 manifest hashes,

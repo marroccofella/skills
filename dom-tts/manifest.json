@@ -164,7 +164,7 @@
     },
     {
       "path": "tests/windows-permission-probe.cjs",
-      "sha256": "ba66643330996c96f9e32e7b20ea672b9ee4c612d329b00aa95df3c76f879a00"
+      "sha256": "04bad99bc57e56a0ab3ee5cb11f3d66dec84c36a2fc102db31fc33f6d004ebc5"
     },
     {
       "path": "tests/windows-privacy.cjs",
