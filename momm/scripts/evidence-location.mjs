@@ -20,7 +20,13 @@ export const EVIDENCE_HOME_ENV = 'MOMM_EVIDENCE_HOME';
 export const PROJECT_MARKER = 'project.json';
 export const MARKER_SCHEMA = 'momm-evidence-home/1';
 
-const fail = (message) => { const error = new Error(message); error.code = 'MOMM_EVIDENCE_LOCATION'; return error; };
+// Every refusal is one plain sentence a command can print as it is (1.17.1 R7): what was refused and
+// why, then what to do instead. reason names the case for callers and tests.
+const fail = (message, reason) => { const error = new Error(message); error.code = 'MOMM_EVIDENCE_LOCATION'; error.reason = reason; return error; };
+const REMEDY = `Choose a private folder outside the project, for example one under your user profile (--evidence-home <dir> or ${EVIDENCE_HOME_ENV}=<dir>), or leave the setting out to keep the evidence in the project's ${EVIDENCE_FOLDER}. Nothing was read or sent.`;
+// The printable line of a refused evidence location or folder, or null for any other error. A command
+// prints it and exits 1; it never lets the refusal escape as a stack trace, and rethrows the rest.
+export const evidenceRefusal = (error) => ((error?.code === 'MOMM_EVIDENCE_LOCATION' || error?.code === 'MOMM_EVIDENCE_PERMISSIONS') && typeof error.message === 'string' ? error.message : null);
 // Windows: the native call returns the canonical spelling (case, 8.3 names), so a project reached as
 // d:\app or D:\App keeps one folder. POSIX: the ordinary real path.
 const realOf = (p, win) => String(win ? fs.realpathSync.native(p) : fs.realpathSync(p));
@@ -55,16 +61,16 @@ export function evidenceLocation({ cwd = process.cwd(), env = process.env, home 
   const chosen = home ?? env?.[EVIDENCE_HOME_ENV];
   if (chosen === undefined || chosen === null || chosen === '') return { dir: path.join(project, EVIDENCE_FOLDER), home: null, project: null };
   const win = process.platform === 'win32';
-  if (typeof chosen !== 'string' || !path.isAbsolute(chosen)) throw fail(`${EVIDENCE_HOME_ENV} must be an absolute path (got ${JSON.stringify(String(chosen)).slice(0, 200)}). Nothing was read or sent.`);
+  if (typeof chosen !== 'string' || !path.isAbsolute(chosen)) throw fail(`${EVIDENCE_HOME_ENV} must be an absolute path (got ${JSON.stringify(String(chosen)).slice(0, 200)}). ${REMEDY}`, 'not_absolute');
   let projectReal;
   try { projectReal = realOf(project, win); }
-  catch { throw fail(`The project path ${project} could not be resolved, so its evidence home cannot be named. Nothing was read or sent.`); }
+  catch { throw fail(`The project path ${project} could not be resolved, so its evidence home cannot be named. Run the command from the project's folder. Nothing was read or sent.`, 'project_unresolvable'); }
   const base = path.resolve(chosen);
   const dir = path.join(base, projectKey(projectReal));
   const dirReal = realLocation(dir, win);
-  if (!dirReal) throw fail(`The evidence home ${dir} could not be resolved (a link that leads nowhere?). Nothing was read or sent.`);
+  if (!dirReal) throw fail(`The evidence home ${dir} could not be resolved: a link on that path leads nowhere, or the folder cannot be reached. ${REMEDY}`, 'unresolvable');
   if ([project, projectReal].some((p) => within(p, dir, win) || within(p, dirReal, win))) {
-    throw fail(`The evidence home must lie outside the project: ${dir}${dirReal !== dir ? ` (real path ${dirReal})` : ''} is inside the project ${project}${projectReal !== project ? ` (real path ${projectReal})` : ''}. Choose a folder outside the project, for example under your user profile. Nothing was read or sent.`);
+    throw fail(`The evidence home must lie outside the project: ${dir}${dirReal !== dir ? ` (real path ${dirReal})` : ''} is inside the project ${project}${projectReal !== project ? ` (real path ${projectReal})` : ''}. ${REMEDY}`, 'inside_project');
   }
   return { dir, home: base, project: projectReal };
 }
@@ -90,9 +96,9 @@ export function recordEvidenceProject(location) {
   const file = path.join(location.dir, PROJECT_MARKER);
   const body = `${JSON.stringify({ schema: MARKER_SCHEMA, project: location.project, key: path.basename(location.dir) }, null, 2)}\n`;
   try { fs.writeFileSync(file, body, { flag: 'wx', mode: 0o600 }); return { path: file, created: true }; }
-  catch (error) { if (error?.code !== 'EEXIST') throw fail(`The evidence home marker ${file} could not be written (${error?.code ?? 'error'}). Nothing was read or sent.`); }
+  catch (error) { if (error?.code !== 'EEXIST') throw fail(`The evidence home marker ${file} could not be written (${error?.code ?? 'error'}). ${REMEDY}`, 'marker_unwritable'); }
   const recorded = readEvidenceProject(location.dir);
-  if (recorded !== location.project) throw fail(`The evidence folder ${location.dir} belongs to ${recorded === null ? 'an unreadable or foreign marker' : `another project (${recorded})`}, not ${location.project}. Nothing was read or sent.`);
+  if (recorded !== location.project) throw fail(`The evidence folder ${location.dir} belongs to ${recorded === null ? 'an unreadable or foreign marker' : `another project (${recorded})`}, not ${location.project}. MOMM never shares or clears it: choose another evidence home (--evidence-home <dir> or ${EVIDENCE_HOME_ENV}=<dir>). Nothing was read or sent.`, 'foreign_marker');
   return { path: file, created: false };
 }
 export function readEvidenceProject(dir) {
@@ -115,14 +121,14 @@ export function takeEvidenceHomeOption(argv, env = process.env) {
     if (arg === '--evidence-home') {
       value = argv[i + 1];
       // Any option-shaped value (-v, --json) is the next flag, not a directory (gate-3 review of 1.17.0).
-      if (typeof value !== 'string' || value === '' || value.startsWith('-')) throw fail('--evidence-home needs a directory: --evidence-home <dir>');
+      if (typeof value !== 'string' || value === '' || value.startsWith('-')) throw fail('--evidence-home needs a directory: --evidence-home <dir>', 'usage');
       argv.splice(i, 2);
     } else if (typeof arg === 'string' && arg.startsWith('--evidence-home=')) {
       value = arg.slice('--evidence-home='.length);
-      if (!value) throw fail('--evidence-home needs a directory: --evidence-home <dir>');
+      if (!value) throw fail('--evidence-home needs a directory: --evidence-home <dir>', 'usage');
       argv.splice(i, 1);
     } else continue;
-    if (seen) throw fail('--evidence-home was given more than once');
+    if (seen) throw fail('--evidence-home was given more than once', 'usage');
     seen = true;
     env[EVIDENCE_HOME_ENV] = path.resolve(value);
     i -= 1;

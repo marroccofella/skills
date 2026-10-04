@@ -186,6 +186,131 @@ try {
     assert.equal(fs.existsSync(inside), false);
     assert.equal(fs.existsSync(path.join(projectA, '.ensemble_reviews')), false);
   });
+  // 1.17.1 R7: a refused evidence home is one plain line on stderr that says why and what to do
+  // instead. No JSON wrapper (it doubles every backslash and escapes the quotes of a printed command),
+  // no stack frames, exit 1, nothing on stdout. The checks that refuse are the same checks.
+  const dispatcherFile = path.join(scripts, 'multi-review.mjs');
+  const review = ['--governor', 'codex', '--reviewers', 'codex', '--input', 'missing-synthetic-input.txt', '--no-ui'];
+  const plainRefusal = (run) => {
+    assert.equal(run.status, 1, String(run.stderr).slice(0, 300));
+    assert.equal(run.stdout.trim(), '', 'nothing on stdout');
+    const lines = run.stderr.split(/\r?\n/).filter((line) => line.trim());
+    assert.equal(lines.length, 1, `one message, got ${lines.length}: ${run.stderr.slice(0, 300)}`);
+    assert.doesNotMatch(lines[0], /^\s*[{[]/, `a plain sentence, not a JSON wrapper: ${lines[0].slice(0, 160)}`);
+    assert.doesNotMatch(run.stderr, /^\s+at |node:internal|Node\.js v\d/m, 'no stack trace');
+    assert.doesNotMatch(lines[0], /missing-synthetic-input/, 'refused before the input is read');
+    return lines[0];
+  };
+  const safeRemedy = /Choose a private folder outside the project, for example one under your user profile \(--evidence-home <dir> or MOMM_EVIDENCE_HOME=<dir>\), or leave the setting out/;
+  const broaden = (dir) => {
+    if (!win) { fs.chmodSync(dir, 0o755); return; }
+    const grant = spawnSync(path.join(process.env.SystemRoot, 'System32', 'icacls.exe'), [dir, '/grant', '*S-1-5-32-545:(OI)(CI)RX'], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    assert.equal(grant.status, 0, 'disposable broad fixture preparation failed');
+  };
+  await check('R7: an evidence home inside the project (literal path) is one plain line with the reason and a safe remedy, on every command', () => {
+    const inside = path.join(projectA, 'ev-inside');
+    const runs = [['evidence', '--status'], ['evidence', '--protect'], review].map((args) => node([dispatcherFile, ...args, '--evidence-home', inside], projectA));
+    runs.push(node([dispatcherFile, ...review], projectA, { MOMM_EVIDENCE_HOME: inside }));
+    for (const run of runs) {
+      const line = plainRefusal(run);
+      assert(line.includes(`${inside}${path.sep}`), `names the folder as it was typed: ${line}`);
+      assert.match(line, /must lie outside the project/); assert.match(line, safeRemedy); assert.match(line, /Nothing was read or sent\.$/);
+    }
+    assert.equal(fs.existsSync(inside), false, 'nothing is created');
+    assert.equal(fs.existsSync(path.join(projectA, '.ensemble_reviews')), false);
+  });
+  await check('R7: an evidence home inside the project by its real path says so in the same plain form', () => {
+    const link = path.join(root, 'alias-r7');
+    fs.symlinkSync(path.join(root, 'one'), link, win ? 'junction' : 'dir');
+    const aliasHome = path.join(link, 'app', 'ev-alias');
+    for (const args of [['evidence', '--status'], review]) {
+      const line = plainRefusal(node([dispatcherFile, ...args, '--evidence-home', aliasHome], projectA));
+      assert(line.includes(`${aliasHome}${path.sep}`), `names the folder as it was typed: ${line}`);
+      assert.match(line, /\(real path /); assert.match(line, /must lie outside the project/); assert.match(line, safeRemedy);
+    }
+    assert.equal(fs.existsSync(path.join(projectA, 'ev-alias')), false, 'nothing is created');
+  });
+  await check('R7: a non-private evidence home is one plain line with the reason and the exact, unescaped command', () => {
+    const homeN = path.join(root, 'home-broad');
+    const location = need('evidenceLocation')({ cwd: projectB, env: { MOMM_EVIDENCE_HOME: homeN } });
+    preparePrivateEvidence(location.dir); need('recordEvidenceProject')(location);
+    broaden(location.dir);
+    const line = plainRefusal(node([dispatcherFile, ...review, '--evidence-home', homeN], projectB));
+    assert.match(line, /MOMM cannot verify private evidence-folder permissions \((additional_principal|permissions_not_private)\)/);
+    assert.match(line, /No permission changes were made/);
+    const quoted = `'${homeN.replaceAll("'", win ? "''" : "'\\''")}'`;
+    assert(line.includes(`node "<installed-momm>/scripts/multi-review.mjs" evidence --evidence-home ${quoted} --protect`), line);
+    // evidence --status answers with its status document: the same reason and command, exit 1, no trace.
+    const status = node([dispatcherFile, 'evidence', '--status', '--evidence-home', homeN], projectB);
+    assert.equal(status.status, 1); assert.equal(status.stderr.trim(), '');
+    const body = JSON.parse(status.stdout);
+    assert.equal(body.verified, false);
+    assert(body.remediation.includes(`evidence --evidence-home ${quoted} --protect`), body.remediation);
+    assert.equal(inspectEvidencePermissions(location.dir).verified, false, 'the refusal changes no permissions');
+  });
+  await check('R7: an evidence home reached through a link is one plain line that says so, and nothing is written through the link', () => {
+    const elsewhere = mk('elsewhere');
+    // The project's folder under the home is itself a link or junction.
+    const homeL = mk('home-linked');
+    fs.symlinkSync(elsewhere, expectedDir(homeL, projectB), win ? 'junction' : 'dir');
+    const folder = plainRefusal(node([dispatcherFile, ...review, '--evidence-home', homeL], projectB));
+    assert.match(folder, /not a plain directory/); assert.match(folder, /Remove or rename/);
+    assert.doesNotMatch(folder, /Run node/, 'evidence --protect refuses a link, so it is not offered as the remedy');
+    // A link or junction inside an otherwise private folder.
+    const homeC = path.join(root, 'home-holds-link');
+    const location = need('evidenceLocation')({ cwd: projectB, env: { MOMM_EVIDENCE_HOME: homeC } });
+    preparePrivateEvidence(location.dir); need('recordEvidenceProject')(location);
+    fs.symlinkSync(elsewhere, path.join(location.dir, 'zz-link'), win ? 'junction' : 'dir');
+    const holds = plainRefusal(node([dispatcherFile, ...review, '--evidence-home', homeC], projectB));
+    assert.match(holds, /\((linked_entry|linked_or_special_entry)\)/); assert.match(holds, /Remove the link/);
+    assert.doesNotMatch(holds, /Run node/);
+    const status = node([dispatcherFile, 'evidence', '--status', '--evidence-home', homeC], projectB);
+    assert.equal(status.status, 1);
+    assert.match(JSON.parse(status.stdout).remediation, /^Remove the link/);
+    // The home is a link that leads nowhere.
+    const gone = mk('gone'), dangling = path.join(root, 'home-dangling');
+    fs.symlinkSync(gone, dangling, win ? 'junction' : 'dir'); fs.rmdirSync(gone);
+    for (const args of [['evidence', '--status'], review]) {
+      const line = plainRefusal(node([dispatcherFile, ...args, '--evidence-home', dangling], projectB));
+      assert.match(line, /could not be resolved/); assert.match(line, safeRemedy);
+    }
+    assert.deepEqual(fs.readdirSync(elsewhere), [], 'the link target is untouched');
+  });
+  await check('R7: --stream keeps stderr as JSON lines for a refused evidence home', () => {
+    const run = node([dispatcherFile, ...review, '--stream', '--evidence-home', path.join(projectA, 'ev-inside')], projectA);
+    assert.equal(run.status, 1); assert.equal(run.stdout.trim(), '');
+    const events = run.stderr.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+    assert(events.some((event) => typeof event.error === 'string' && /must lie outside the project/.test(event.error)));
+  });
+  // What a command that saves evidence does (scripts/run-ci-suites.mjs --save-report resolves the
+  // location, prepares it and records the project): each refusal reaches the caller as one printable
+  // line through evidenceRefusal(), so it can print that and exit 1 instead of a stack trace.
+  await check('R7: every refusal reaches a caller as one printable line through evidenceRefusal(), with its reason', () => {
+    const refusal = need('evidenceRefusal'), locate = need('evidenceLocation');
+    const caught = (fn) => { try { fn(); } catch (error) { return error; } return assert.fail('expected a refusal'); };
+    const nowhere = path.join(root, 'home-dangling-library'), gone = mk('gone-library');
+    fs.symlinkSync(gone, nowhere, win ? 'junction' : 'dir'); fs.rmdirSync(gone);
+    for (const [reason, value] of [['inside_project', path.join(projectA, 'ev-inside')], ['inside_project', projectA], ['not_absolute', 'relative-evidence'], ['unresolvable', nowhere]]) {
+      const error = caught(() => locate({ cwd: projectA, env: { MOMM_EVIDENCE_HOME: value } }));
+      assert.equal(error.code, 'MOMM_EVIDENCE_LOCATION'); assert.equal(error.reason, reason, value);
+      const line = refusal(error);
+      assert.equal(line, error.message); assert.doesNotMatch(line, /[\r\n]/);
+      assert.match(line, safeRemedy); assert.match(line, /Nothing was read or sent\.$/);
+    }
+    const homeB = path.join(root, 'home-broad-library');
+    const location = locate({ cwd: projectA, env: { MOMM_EVIDENCE_HOME: homeB } });
+    preparePrivateEvidence(location.dir); need('recordEvidenceProject')(location); broaden(location.dir);
+    const broad = caught(() => preparePrivateEvidence(location.dir));
+    assert.equal(broad.code, 'MOMM_EVIDENCE_PERMISSIONS');
+    assert.equal(refusal(broad), broad.message); assert.doesNotMatch(refusal(broad), /[\r\n]/);
+    const homeK = mk('home-linked-library');
+    fs.symlinkSync(mk('elsewhere-library'), expectedDir(homeK, projectA), win ? 'junction' : 'dir');
+    const linked = caught(() => preparePrivateEvidence(locate({ cwd: projectA, env: { MOMM_EVIDENCE_HOME: homeK } }).dir));
+    assert.equal(linked.code, 'MOMM_EVIDENCE_PERMISSIONS'); assert.equal(linked.reason, 'invalid_root');
+    assert.match(refusal(linked), /not a plain directory/); assert.match(refusal(linked), /Remove or rename/);
+    // Anything else is not a refusal: the caller rethrows it.
+    for (const other of [new Error('synthetic'), Object.assign(new Error('synthetic'), { code: 'ENOENT' }), { code: 'MOMM_EVIDENCE_LOCATION' }, null, undefined, 'text']) assert.equal(refusal(other), null);
+  });
   await check('evidence --protect accepts a marked evidence-home folder and still refuses any other folder', () => {
     const privateStat = { isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false, uid: 1, mode: 0o40700, nlink: 1 };
     const markerStat = { ...privateStat, isDirectory: () => false, isFile: () => true, mode: 0o100600 };
