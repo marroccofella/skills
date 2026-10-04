@@ -31,6 +31,12 @@ requires interactive confirmation; `--yes` is available for deliberate scripts.
 It cannot bypass the separate `--accept-protocol` gate. An agent must not initiate
 an update without the user's authorization.
 
+From 1.17.1, when the protocol changes, a short summary is printed before the full
+diff: the protocol files added, removed or changed, and the `momm/SKILL.md` headings
+added, removed or changed (changed means the text under the heading differs; a
+renamed heading shows as one removed and one added). It is a reading aid. The full
+diff still follows and the gate is the same: nothing is accepted automatically.
+
 In 1.16, the separate update clock can apply updates only after the user enables
 its off-by-default automation setting. Automatic protocol acceptance is a second,
 independent setting, also off by default. Do not enable either setting on an agent's
@@ -88,6 +94,16 @@ before checkout: move those files outside this clone yourself before retrying.
 A journal, exclusive process lock and retained Git reference keep the
 previous hashed state recoverable. The updater verifies the commit, version,
 clean tree and each saved scope after relinking before declaring success.
+
+From 1.17.1, `--dry-run` and `--apply` first look for a Git lock file in the clone's
+Git directory (`index.lock`, `HEAD.lock`, `config.lock`, `shallow.lock`,
+`packed-refs.lock` and any `*.lock` under `refs`) and stop before the first request
+if one exists. The message names the lock and its age, and gives the command that
+lists running Git processes. The age does not prove a lock is stale, and the
+updater never removes one: close editors and Git tools that use the clone, confirm
+that no Git process is running, remove that one file yourself, then repeat the
+command. `--rollback` checks only `index.lock` and `HEAD.lock`, which its checkout
+needs, before it changes anything; a pending transaction is kept for the retry.
 
 ```text
 node momm/scripts/multi-review.mjs update --rollback

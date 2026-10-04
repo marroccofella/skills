@@ -126,6 +126,27 @@ try {
     fs.unlinkSync(claim); untouched();
   });
 
+  // R8 (1.17.1): the Git lock check belongs to updates and to the rollback checkout. Releasing a claim uses
+  // neither the index nor a ref, so a Git lock never holds it up, and it never touches the lock.
+  await test('a Git lock does not block the claim release and is left exactly as it was', async () => {
+    const gitLock = path.join(path.resolve(temp, git(temp, 'rev-parse', '--git-dir')), 'index.lock'), old = new Date(Date.now() - 6 * 864e5);
+    fs.writeFileSync(gitLock, ''); fs.utimesSync(gitLock, old, old);
+    const stamp = fs.statSync(gitLock).mtimeMs;
+    try {
+      stale();
+      const { out } = await release(TOKEN);
+      assert.equal(fs.existsSync(claim), false, 'claim still present'); assert.match(out, /Released update claim/);
+      assert.equal(fs.statSync(gitLock).size, 0); assert.equal(fs.statSync(gitLock).mtimeMs, stamp, 'the Git lock changed');
+      // The check itself sees it, and names it, without removing it.
+      assert.equal(typeof updater.gitLocks, 'function', 'update.mjs must export gitLocks');
+      const found = updater.gitLocks(temp);
+      assert.equal(found.length, 1); assert.equal(fs.realpathSync.native(found[0].file), fs.realpathSync.native(gitLock)); assert.equal(found[0].modified, stamp);
+      assert(fs.existsSync(gitLock));
+    } finally { fs.unlinkSync(gitLock); fs.rmSync(claim, { force: true }); }
+    assert.deepEqual(updater.gitLocks(temp), []);
+    untouched();
+  });
+
   // Final review of 1.17.0 (release-claim-unlink-toctou): the claim was compared, then unlinked by path, so a
   // claim that replaced it in between was removed. The race is forced: immediately before any call that takes
   // update.active away from its path, another updater's claim takes its place.

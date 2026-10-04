@@ -3,6 +3,8 @@ import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
+// The update() slice names these (1.17.1: R8 lock check, S8 protocol summary); its context gets the real functions.
+import {refuseGitLocks, policySummary} from './update.mjs';
 const source = fs.readFileSync(path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 'momm/scripts/update.mjs'), 'utf8');
 const results=[];
 async function test(name,run){try{await run();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:e.message});}}
@@ -22,7 +24,7 @@ const updateSource=source.slice(source.indexOf('export async function update('),
 await test('channel change reads latest receipt inside exclusive claim',async()=>{
  let receipt={schema:'momm-lock/1',current:{commit:'old',version:'1.15.0'},previous:{current:{commit:'restored'}}};
  const restored={schema:'momm-lock/1',current:{commit:'restored',version:'1.14.1'},previous:null};
- const c={parse:()=>({channel:'pinned'}),process:{stdout:{write(){}}},ENTRY:'/repo/momm/scripts/update.mjs',path,fs:{existsSync:()=>false},repoRoot:()=>'/repo',stateDir:()=>'/repo/.git/momm',readLock:()=>structuredClone(receipt),writeJSON(_file,value){receipt=value;},exclusive:async(_dir,action)=>{receipt=structuredClone(restored);return action();},safeText:String,reinstall(){},regular:()=>false};
+ const c={parse:()=>({channel:'pinned'}),process:{stdout:{write(){}}},ENTRY:'/repo/momm/scripts/update.mjs',path,fs:{existsSync:()=>false},repoRoot:()=>'/repo',stateDir:()=>'/repo/.git/momm',readLock:()=>structuredClone(receipt),writeJSON(_file,value){receipt=value;},exclusive:async(_dir,action)=>{receipt=structuredClone(restored);return action();},safeText:String,reinstall(){},regular:()=>false,refuseGitLocks,policySummary};
  vm.createContext(c);vm.runInContext(updateSource,c);await c.update([]);
  assert.equal(receipt.current.commit,'restored');assert.equal(receipt.previous,null);assert.equal(receipt.channel,'pinned');
 });
