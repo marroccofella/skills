@@ -1,8 +1,11 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { createIsolatedNativePlayer } = require('../scripts/experimental/isolated-native-player');
 (async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dt-isolated-'));
-  const dir = path.join(root, 'private-state');
+  // macOS temporary paths can contain /var -> /private/var. Keep the existing
+  // no-link state policy: canonicalize our owned fixture, never weaken playback.
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'dti-'));
+  const root = fs.realpathSync(temporary);
+  const dir = path.join(root, 's');
   try {
     assert.throws(() => createIsolatedNativePlayer({ options: { command: 'unsafe' } }), /configuration/);
     assert.throws(() => createIsolatedNativePlayer({ options: { voice: () => {} } }), /configuration/);
@@ -11,6 +14,12 @@ const { createIsolatedNativePlayer } = require('../scripts/experimental/isolated
     const aborted = new AbortController(); aborted.abort();
     await assert.rejects(player('Public text.', { signal: aborted.signal }), /cancelled/);
     assert.equal(fs.existsSync(dir), false);
+    const target = path.join(root, 'target'), alias = path.join(root, 'alias');
+    fs.mkdirSync(target); fs.symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const linkedState = path.join(alias, 's');
+    await assert.rejects(createIsolatedNativePlayer({ dir: linkedState })(''),
+      error => error.message === 'Isolated native playback failed');
+    assert.equal(fs.existsSync(linkedState), false, 'linked state must still fail before creation');
     await assert.rejects(player('x'.repeat(1048577)), /bounded/);
     await assert.rejects(createIsolatedNativePlayer({ dir, options: { mode: 'invalid-private-fixture' } })(''),
       error => error.message === 'Isolated native playback failed');
@@ -23,7 +32,19 @@ const { createIsolatedNativePlayer } = require('../scripts/experimental/isolated
     assert.equal(settled, false, 'worker permission checks must not synchronously block the host');
     assert.deepEqual(await completion, { state: 'completed' });
     assert.equal(fs.existsSync(path.join(dir, 'playback.lock')), false);
+    const lock = path.join(dir, 'playback.lock');
+    const owner = JSON.stringify({ pid: process.pid, token: 'a'.repeat(32) });
+    fs.writeFileSync(lock, owner, { mode: 0o600, flag: 'wx' });
+    const waitingAbort = new AbortController();
+    const waiting = createIsolatedNativePlayer({ dir, options: { mode: 'full', waitMs: 10000 } })
+      ('Public waiting fixture.', { signal: waitingAbort.signal });
+    const timer = setTimeout(() => waitingAbort.abort(), 50);
+    try {
+      assert.deepEqual(await waiting, { state: 'stopped' });
+      assert.equal(fs.readFileSync(lock, 'utf8'), owner, 'abort must preserve the other live owner record');
+    } finally { clearTimeout(timer); fs.unlinkSync(lock); }
     assert.deepEqual(['SIGINT','SIGTERM'].map(name => process.listenerCount(name)), listeners);
-    console.log('PASS: isolated real permission/lock cleanup, asynchronous host, pre-abort and input bounds; no audio');
+    console.log('PASS: isolated real permission/lock cleanup, asynchronous host, pre-abort/bounds, linked-state refusal and abort with existing owner; no audio');
+    console.log('Temporary fixture canonicalized: ' + (temporary !== root));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

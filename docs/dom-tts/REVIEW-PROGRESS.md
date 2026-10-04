@@ -5,6 +5,17 @@ This record consolidates findings and dispositions, not approval to merge or rel
 
 ## Current integration update
 
+Exactdc8b5bb hosted runs37189835581/37189833290 both fail9/17: eight macOS jobs
+fail the new isolated-player fixture, Linux/Windows pass. Preserve those failures.
+Owned linked-temp-root reproduction fails the original fixture and passes its
+canonical-path/short-socket successor; linked-state rejection remains explicitly
+tested. Actual macOS successor verification is pending. No runtime permission
+policy was changed. The new fixture also verifies abort with an existing live-owner
+record leaves that record untouched; it is not an acoustic or live-harness test.
+Foreground reviewers5978226965/5978228658 separately confirm dc8 empty-text worker
+checks and host timer improvement; their Windows-only evidence does not certify Mac
+or satisfy final-byte MOMM quorum.
+
 PR41's final installer repair at5fbaf6d is incorporated via5c62e19; the unsafe
 permission-inheritance optimization is absent. Later draft increments connect the
 explicit source grant, JSONL framing, queue and native player APIs. Production native

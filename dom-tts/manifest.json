@@ -168,7 +168,7 @@
     },
     {
       "path": "tests/isolated-player-check.cjs",
-      "sha256": "be2bb67fa388a019e3170ed223a2ff1b6c9843f4c165c25a62a1e9068f8e27a8"
+      "sha256": "bb4f3144a3a868a021123c9487464561e029ecb4775b774a25e2ac598d6f92d8"
     },
     {
       "path": "tests/native-boundary.cjs",

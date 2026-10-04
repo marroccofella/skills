@@ -2,6 +2,20 @@
 
 ## Optional worker isolation and stop outcome
 
+Original dc8b5bb CI is not green: all eight macOS jobs in each matrix fail the new
+isolation fixture with a sanitized playback refusal; baseline and preceding checks
+pass. Both37189835581 and37189833290 finish9/17: all five Linux and four Windows
+jobs pass, all eight macOS jobs fail. A local
+owned linked-temp-root reproducer fails the original fixture specifically with
+that refusal and passes the repaired fixture. Test repair canonicalizes the owned
+temporary root, shortens its socket path, retains explicit linked-state refusal,
+and adds cancellation with a pre-existing live-owner lock without changing its
+bytes. No production ACL/link/socket limit is weakened. Actual macOS successor CI
+is required to confirm the fixture correction; the generic original log alone
+does not establish its precise underlying privacy/socket failure. Initial private
+VM diagnostic harness failures were excluded; the normal-realm before/after run
+is the valid reproducer.
+
 External authenticated stop now propagates an explicit stopped result rather than
 false completion (07fe439). Its failing-before/passing-after actual IPC fixture
 also verifies pending work in both selected sessions is cancelled and late admission
