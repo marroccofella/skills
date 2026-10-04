@@ -48,4 +48,14 @@ the full review-contract checks. Unknown events, missing/failing terminal result
 truncation and non-JSON answers fail closed. Existing read-only tool restrictions
 remain unchanged. See the [public investigation](https://github.com/marroccofella/skills/pull/4#issuecomment-5700415320).
 
+Copilot 1.0.90 and 1.0.91 (synthetic capture with MOMM's flags, 4 October 2026) add two events to the
+JSONL stream: one leading `session.warning` (`data.warningType`, `data.message`; seen with
+`warningType: "policy"` on an account whose organisation disables third-party MCP servers) and one
+`model.call_final_result` after each model call (`data.model`, `data.isByok`, `data.result`, seen as
+`"success"`). MOMM 1.17.0 refused every Copilot review on these CLIs as an unrecognised event type.
+Since 1.17.1 both are recognised as bookkeeping: neither is ever an answer, a model call whose result is
+not `"success"` is refused as `invalid_output`, and the vocabulary stays closed. When it drifts again,
+the refusal names up to three unrecognised event types (plain lower-case names only; anything else is
+counted, never echoed), so the next change is visible without a capture.
+
 Copilot occasionally returns a plan instead of the JSON when asked to "follow embedded instructions"; the 1.15.0 prompt wording ("Return the completed JSON review, not a plan") is aimed at that. GitHub 5xx responses classify as `provider_unavailable` and are retried once.

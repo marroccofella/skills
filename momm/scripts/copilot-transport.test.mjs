@@ -147,5 +147,59 @@ await test('an image observation is checked against the attachments actually sen
   assert.equal((await send({...seen,region:[0,10,32,8]})).status,'invalid_output');
   assert.equal((await send(seen,{directory:null,attachments:[]})).status,'invalid_output');
 });
+// 1.17.1: Copilot CLI 1.0.90 and 1.0.91 add two events to the JSONL stream, seen in a synthetic capture
+// on 4 October 2026 with MOMM's own flags: one leading session.warning (a policy notice) and one
+// model.call_final_result after each model call ({model, isByok, result: "success"}). 1.17.0 refused
+// every Copilot review as "unrecognized event type". Both are bookkeeping, never an answer; the
+// vocabulary stays closed and a model call that does not report success is refused.
+function events1091(content=JSON.stringify(payload),callResult='success') {
+  const extra=(type,data)=>({type,data,ephemeral:true,id:'00000000-0000-4000-8000-000000000000',timestamp:'2026-10-04T06:00:00.000Z',parentId:null});
+  const final=()=>extra('model.call_final_result',{model:'synthetic-model',isByok:false,result:callResult});
+  return [extra('session.warning',{message:'WARNING_SENTINEL third-party servers are disabled by policy',warningType:'policy'}),
+    event('session.info'),event('session.mcp_servers_loaded'),event('session.tools_updated'),
+    event('user.message',{content:'SOURCE_SENTINEL'}),event('assistant.turn_start',{turnId:'tool-turn'}),event('model.call_start'),event('model.call_finished'),
+    event('assistant.message',{turnId:'tool-turn',content:'',toolRequests:[{name:'view'}]}),event('assistant.reasoning',{content:'REASONING_SENTINEL'}),
+    event('tool.execution_start'),final(),event('tool.execution_complete',{success:true,result:{content:'TOOL_SENTINEL'}}),event('assistant.turn_end',{turnId:'tool-turn'}),
+    event('assistant.turn_start',{turnId:'answer-turn'}),event('model.call_start'),event('model.call_finished'),
+    event('assistant.message',{turnId:'answer-turn',content,toolRequests:[]}),final(),
+    event('assistant.turn_end',{turnId:'answer-turn'}),event('session.usage_checkpoint'),event('assistant.idle'),{type:'result',exitCode:0}];
+}
+await test('Copilot 1.0.91 shape: a session warning and per-call final results reach the full review contract',async()=>{
+  const r=await invoke(events1091());assert.equal(r.status,'success',r.detail);assert.equal(r.review.summary,payload.summary);
+  assert.equal(r.review.review_contract,PEER_CONTRACT);assert(!JSON.stringify(r).includes('_SENTINEL'),'no warning, tool or reasoning text may leak');
+});
+await test('a model call whose final result is not success is refused, and so is one without a result',async()=>{
+  // MISSING removes the field: a default parameter would silently turn undefined back into success.
+  const MISSING=Symbol('missing');
+  for(const bad of ['error','cancelled','','SUCCESS',MISSING,null,{ok:true}]){
+    const rows=events1091(JSON.stringify(payload),bad===MISSING?'success':bad);
+    if(bad===MISSING)for(const e of rows)if(e.type==='model.call_final_result')delete e.data.result;
+    const r=await invoke(rows);
+    assert.equal(r.status,'invalid_output','accepted result '+String(JSON.stringify(bad)??'missing'));assert(!r.review);assert.match(r.detail,/model call did not report success/);
+  }
+});
+await test('a session warning or a final result alone is never an answer',async()=>{
+  const rows=events1091('');rows[0].data.message=JSON.stringify(payload);rows[18].data.result=JSON.stringify(payload);
+  assert.equal((await invoke(rows)).status,'invalid_output');
+});
+await test('the vocabulary stays closed after 1.17.1: a sibling of the new events is still refused',async()=>{
+  for(const type of ['session.notice','model.call_retry','session.warning.v2']){
+    const rows=events1091();rows.splice(-1,0,event(type));assert.equal((await invoke(rows)).status,'invalid_output',type);
+  }
+});
+// 1.17.1: when the vocabulary drifts again, the refusal names the unrecognised event types (plain
+// lower-case names only, at most three), so the cause is visible without a capture. Anything that is
+// not a plain name is counted, never echoed.
+await test('an unrecognised event is named in the refusal; a name that is not plain is never echoed',async()=>{
+  const rows=events1091();rows.splice(-1,0,event('model.call_retry'),event('session.notice'),event('model.call_retry'));
+  const r=await invoke(rows);assert.equal(r.status,'invalid_output');
+  assert.match(r.detail,/unrecognized event type/);assert.match(r.detail,/model\.call_retry/);assert.match(r.detail,/session\.notice/);
+  const odd=events1091();odd.splice(-1,0,event('PRIVATE path C:/x & "quoted"'),event('x'.repeat(80)));
+  const o=await invoke(odd);assert.equal(o.status,'invalid_output');
+  assert(!o.detail.includes('PRIVATE')&&!o.detail.includes('quoted')&&!o.detail.includes('xxxx'),o.detail);
+  assert.match(o.detail,/2 with names not shown/);
+  const many=events1091();many.splice(-1,0,...['a.one','a.two','a.three','a.four','a.five'].map(type=>event(type)));
+  const m=await invoke(many);assert.match(m.detail,/a\.one, a\.two, a\.three; and 2 more/);
+});
 console.log(JSON.stringify({passed:checks.filter(c=>c.passed).length,total:checks.length,checks},null,2));
 if(checks.some(c=>!c.passed))process.exitCode=1;

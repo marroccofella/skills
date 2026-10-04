@@ -1305,13 +1305,17 @@ function unwrapReviewPayload(stdout, nesting = 0) {
 // The known event vocabulary is deliberately closed: drift needs inspection,
 // not silent acceptance of a new error/cancellation event. Never echo this stream
 // in diagnostics: non-answer events can contain tool input or reasoning metadata.
+// 1.17.1: Copilot CLI 1.0.90 and 1.0.91 add `session.warning` (a notice, for example an organisation
+// policy that disables third-party MCP servers) and `model.call_final_result` (one per model call:
+// {model, isByok, result}), seen in a synthetic capture with these flags on 4 October 2026. Both are
+// bookkeeping and never an answer. A model call that does not report "success" is refused.
 function copilotReviewPayload(stdout) {
   const invalid = detail => ({ payload: null, status: "invalid_output", detail: `Copilot machine output refused: ${detail}` });
   const failed = () => ({ payload: null, status: "error", detail: "Copilot returned a terminal failure event; no earlier answer was accepted." });
   const known = new Set(["session.info", "session.auto_mode_resolved", "session.mcp_servers_loaded", "session.tools_updated",
     "user.message", "assistant.turn_start", "model.call_start", "model.call_finished", "assistant.message",
     "tool.execution_start", "tool.execution_complete", "assistant.turn_end", "assistant.reasoning",
-    "session.usage_checkpoint", "assistant.idle", "result"]);
+    "session.usage_checkpoint", "assistant.idle", "result", "session.warning", "model.call_final_result"]);
   let events;
   try {
     events = String(stdout).split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
@@ -1321,7 +1325,14 @@ function copilotReviewPayload(stdout) {
   }
   if (events.some(e => e.type === "session.error" || e.type === "session.abort" || e.is_error === true || e.error
     || (e.type === "result" && Number.isInteger(e.exitCode) && e.exitCode !== 0))) return failed();
-  if (events.some(e => !known.has(e.type))) return invalid("unrecognized event type; verify this CLI's output contract");
+  const unknown = [...new Set(events.map(e => e.type).filter(type => !known.has(type)))];
+  if (unknown.length) {
+    // Name the drift, never echo it: only plain lower-case event names are shown, the rest are counted.
+    const plain = unknown.filter(type => /^[a-z][a-z0-9_.]{0,48}$/.test(type)), hidden = unknown.length - plain.length;
+    const named = [plain.slice(0, 3).join(", "), plain.length > 3 ? `and ${plain.length - 3} more` : "", hidden ? `${hidden} with names not shown` : ""].filter(Boolean).join("; ");
+    return invalid(`unrecognized event type (${named}); verify this CLI's output contract`);
+  }
+  if (events.some(e => e.type === "model.call_final_result" && e.data?.result !== "success")) return invalid("a model call did not report success");
   if (events.filter(e => e.type === "result").length !== 1 || events.at(-1).type !== "result" || events.at(-1).exitCode !== 0) {
     return invalid("a single final result with numeric exitCode 0 is required");
   }
