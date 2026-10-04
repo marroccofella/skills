@@ -23,10 +23,10 @@ provenance or acceptance evidence. Every advertised feature still needs its own 
 | C08 | Manifest-managed install/upgrade/rollback/uninstall | Integrated | Real default-target EPERM; clean non-admin/second host; Windows ARM |
 | C09 | Native SAPI, say and espeak-ng adapters | Integrated source | Native Mac/Linux audio/listening; Intel/ARM and missing-device cases |
 | C10 | Selected-transcript final-message narration | Integrated | Completion accounting and delivery omissions in actual harness context |
-| S01 | Nonblocking stable-segment queue | Experimental | Connect event input and native owned player; production opt-in path |
+| S01 | Nonblocking stable-segment queue | Experimental source/framer/queue pipeline and native player APIs connected | Real selected-source adapter, durable admission and production opt-in path |
 | S02 | Bounded UTF-8/JSONL framing | Experimental | Transport/rotation/reconnect integration and first-event evidence |
-| S03 | Delivery states and retry/cancel/revocation | Experimental in memory | Controller persistence, ambiguous outcome policy, native cancellation |
-| S04 | Immediate host text independent of speech | Chat orchestration adjusted; product integration planned | Measured off/on real harness path; no text held behind playback |
+| S03 | Delivery states and retry/cancel/revocation | Experimental in memory; explicit stopped/completed propagation | Controller persistence, ambiguous outcomes and crash containment; authenticated stop closes whole queue |
+| S04 | Immediate host text independent of speech | Optional worker isolation experimental; local timer probe improves | Measured off/on visible real harness path; timer evidence is not GUI latency |
 | S05 | Token deltas, sentence chunks and final reconciliation | Planned | Range/grapheme units, revisions/unsaid suffix, ordinals and cross-generation boundaries |
 | H01 | Generic event/CLI integration | CLI integrated; event path planned | Reference adapter plus independent consumers and actual end-to-end runs |
 | H02 | Claude Code | Strict final-record parser integrated | Supported hooks/stream-json adapter; interactive/headless pinned-version tests |

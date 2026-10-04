@@ -3,6 +3,29 @@
 Legion, 4 October 2026. Canonical coordination: [discussion38](https://github.com/marroccofella/skills/discussions/38).
 This record consolidates findings and dispositions, not approval to merge or release.
 
+## Current integration update
+
+PR41's final installer repair at5fbaf6d is incorporated via5c62e19; the unsafe
+permission-inheritance optimization is absent. Later draft increments connect the
+explicit source grant, JSONL framing, queue and native player APIs. Production native
+timeout cleanup now awaits worker exit, and playback accepts optional AbortSignal.
+These changes are development source, not an installed replacement or complete harness.
+
+External authenticated stop incorrectly reported queue completion at7313f72.
+Legion reproduced it and fixed it at07fe439: explicit playback outcome closes the
+whole queue and cancels active/pending work. Independent Windows Node24.15 reviewer
+5978143632 confirms the original reproducer and pending-session fixtures now pass.
+Exact07fe runs37189229468 and37189226976 both pass17/17 jobs. These receipts do not
+transfer to the isolated-player successor. Earlier7313 push/PR matrices also pass.
+
+The new optional fixed worker-thread player isolates synchronous permission checks
+from the host event loop while awaiting playback outcome plus thread exit. Windows
+Node22.16 empty-text timer probe:1133ms in-process versus28ms isolated; native SAPI
+authenticated stop to queue idle33ms, active/pending cancelled, bytes0, no own lock.
+These are timer/process receipts, not visible-display or acoustic/listening acceptance.
+Worker failure/non-settling containment, real source/harness conversion, durable
+accounting, legacy migration, EPERM/policy and independent release quorum remain open.
+
 ## Source stack and ownership
 
 | PR | Scope / pin | Ownership and disposition |

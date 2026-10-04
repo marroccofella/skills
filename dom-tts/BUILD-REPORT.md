@@ -1,5 +1,23 @@
 # Dom TTS 0.5.0-dev.1 build report
 
+## Optional worker isolation and stop outcome
+
+External authenticated stop now propagates an explicit stopped result rather than
+false completion (07fe439). Its failing-before/passing-after actual IPC fixture
+also verifies pending work in both selected sessions is cancelled and late admission
+or retry is refused. Independent Windows Node24.15 review5978143632 repeats it.
+
+An optional experimental isolated native player moves preparation, per-call ACL
+validation and native playback into a fixed worker thread. It retains the existing
+lock/stop routes, restricted environment and bounded inputs. Completion waits for
+both an explicit outcome and worker exit; no forced termination shortcut is used.
+Local Windows x64 Node22.16 real permission/empty-text fixture passes without audio.
+20ms timer measured1133ms in-process versus28ms isolated. A separate public native
+SAPI fixture authenticates stop and cancels active/pending work, bytes0, lock absent,
+33ms stop-to-queue-idle. No GUI latency, acoustic silence or human hearing verdict.
+Supplemental isolation tests run separately from9903 common baseline assertions.
+Exact successor CI/review, non-settling/crash containment and live harness gates open.
+
 ## Legion integration receipt — 4 October 2026
 
 Current integration is not fully consolidated. docs/dom-tts/FEATURE-PARITY.md tracks

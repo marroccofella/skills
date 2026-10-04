@@ -211,6 +211,23 @@ path with an injected engine. Actual native queue-stream execution, human listen
 device timing and all real harness/source adapters remain unverified.
 # Authenticated global stop outcome
 
+## Optional isolated native player
+
+`createIsolatedNativePlayer` runs the existing native player in a fixed owned worker
+thread, with a restricted environment, bounded text/configuration and no arbitrary
+worker path or command option. Abort and parent process signals request existing
+playback cancellation. Completion requires both its explicit outcome and thread
+exit; the wrapper never forcibly terminates a thread that may own native children.
+It is opt-in and experimental; an unresponsive helper/worker and arbitrary process
+crash still need containment acceptance. Existing installed skills are unchanged.
+
+On Windows x64 Node 22.16, identical empty-text playback with actual privacy checks
+gave a 20 ms host timer delay of 1133 ms in-process versus 28 ms isolated. No audio
+played in that measurement; it does not certify GUI display latency. A separate
+public native SAPI queue fixture used authenticated stop: active and pending work
+cancelled, retained bytes zero, own lock absent, 33 ms from stop request to queue
+idle. This measures process/queue completion, not acoustic silence or hearing.
+
 Playback now returns an explicit completed or stopped outcome after owned cleanup.
 The native queue adapter propagates that outcome. An external authenticated stop
 closes the entire queue, cancels pending work across its selected sessions, clears
