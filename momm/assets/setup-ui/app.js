@@ -109,18 +109,30 @@ function showToast(message) {
 // started on and the one now installed. Closing this window does not stop the server,
 // so the notice names the control that does (the footer button's label).
 // Only two plain version numbers and the literal flag make a notice;
-// an answer without the field changes nothing. The region is a live region, so an
-// unchanged notice is not written again.
+// a successful answer without the field changes nothing. The region is a live region,
+// so an unchanged notice is not written again.
 const plainVersion = (value) => typeof value === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(value);
-let staleNoticeShown = "";
+const STALE_UNCHECKED = " The last refresh failed, so this was not checked again; it is what the last successful check found.";
+let staleNoticeShown = "", staleNoticeVerified = "";
+function writeStaleNotice(unchecked) {
+  const html = staleNoticeVerified ? `<p class="stale-notice">${staleNoticeVerified}${unchecked ? STALE_UNCHECKED : ""}</p>` : "";
+  if (html === staleNoticeShown) return;
+  staleNoticeShown = html;
+  staleNotice.innerHTML = html;
+}
 function renderStaleNotice(check) {
   if (!staleNotice || !check || typeof check !== "object") return;
   const running = check.running_version, installed = check.installed_version;
   const stale = check.stale === true && plainVersion(running) && plainVersion(installed) && running !== installed;
-  const html = stale ? `<p class="stale-notice">Setup Center is running ${escapeHtml(running)}; ${escapeHtml(installed)} is now installed. Choose Close Setup Center, then start it again.</p>` : "";
-  if (html === staleNoticeShown) return;
-  staleNoticeShown = html;
-  staleNotice.innerHTML = html;
+  staleNoticeVerified = stale ? `Setup Center is running ${escapeHtml(running)}; ${escapeHtml(installed)} is now installed. Choose Close Setup Center, then start it again.` : "";
+  writeStaleNotice(false);
+}
+// A failed refresh whose answer carries the version check verified the notice again. One without it
+// (or no answer at all) verified nothing: a notice already shown stays and says so; none is invented.
+function staleNoticeAfterFailure(error) {
+  if (!staleNotice) return;
+  if (error?.setup_center && typeof error.setup_center === "object") return renderStaleNotice(error.setup_center);
+  writeStaleNotice(true);
 }
 
 async function api(path, options = {}) {
@@ -426,7 +438,7 @@ async function loadMaintenance(force = false) {
     renderStaleNotice(fresh.setup_center); // this is the refresh that follows an applied update
     loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
   } catch (error) {
-    renderStaleNotice(error.setup_center);
+    staleNoticeAfterFailure(error);
     maintenanceSummary.textContent = "The maintenance check could not finish. Your reviewer setup is unaffected.";
     showToast(error.message);
   } finally { maintenanceRefreshButton.disabled = false; }
@@ -455,7 +467,7 @@ async function refresh() {
     for (const route of report.routes || []) if (route.ready !== true && liveResults.get(route.agent)?.status === "success") liveResults.delete(route.agent);
     render();
   } catch (error) {
-    renderStaleNotice(error.setup_center); // about the server, not the governor: shown whichever is selected
+    staleNoticeAfterFailure(error); // about the server, not the governor: shown whichever is selected
     if (refreshEpoch === governorEpoch) {
       summary.textContent = "We could not check the local reviewers.";
       showToast(error.message);

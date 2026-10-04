@@ -1358,6 +1358,37 @@ await test('the page shows the banner from a failed refresh when the server says
   assert.match(region.innerHTML,STALE_SENTENCE,'a failed maintenance refresh shows the banner');
   assert.match(c.node('#maintenance-summary').textContent,/could not finish/);
 });
+// R10: a refresh that fails with no answer about the server verified nothing. A notice the last
+// successful check produced stays, and says it was not checked again; no notice is invented.
+await test('a refresh that fails without the version check keeps a verified notice and marks it as not checked again',async()=>{
+  const check={running_version:'1.17.1',installed_version:'1.17.2',stale:true},UNCHECKED=/The last refresh failed, so this was not checked again/;
+  const good={routes:[{agent:'codex',role:'reviewer',installed:true,ready:true}]};
+  let answer=()=>({ok:true,status:200,json:async()=>({...good,setup_center:check})});
+  const c=ui({fetch:async()=>answer()});
+  c.init({token:'t',platform:'win32',providers:{codex:{label:'Codex',docs:'x'}}},null);
+  const region=c.node('#stale-notice');
+  const failed=()=>({ok:false,status:500,json:async()=>({error:'Readiness check failed'})});
+  answer=failed;await c.core.refresh();
+  assert.equal(region.innerHTML,'','no notice was verified, so a failure invents none');
+  answer=()=>({ok:true,status:200,json:async()=>({...good,setup_center:check})});await c.core.refresh();
+  assert.match(region.innerHTML,STALE_SENTENCE);assert.doesNotMatch(region.innerHTML,UNCHECKED,'a verified notice carries no mark');
+  answer=failed;await c.core.refresh();
+  assert.match(region.innerHTML,STALE_SENTENCE,'the verified notice stays');assert.match(region.innerHTML,UNCHECKED,'and says the refresh failed');
+  assert.match(c.node('#summary').textContent,/could not check/,'the failure itself is still shown');
+  assert.doesNotMatch(region.innerHTML,/<(?!\/?p\b)/,'still text in one paragraph: no control, no link, no script');
+  const marked=region.innerHTML;let writes=0,html=marked;
+  Object.defineProperty(region,'innerHTML',{get:()=>html,set(value){writes++;html=String(value);}});
+  await c.core.refresh();assert.equal(writes,0,'a second failure does not write the same notice again');
+  answer=()=>{throw new Error('Failed to fetch');};await c.core.refresh();
+  assert.equal(html,marked,'a server that does not answer at all is the same case');
+  answer=failed;await c.core.loadMaintenance(true);await flush();assert.equal(html,marked,'a failed maintenance refresh keeps it marked');
+  answer=()=>({ok:false,status:500,json:async()=>({error:'Readiness check failed',setup_center:check})});await c.core.refresh();
+  assert.match(html,STALE_SENTENCE);assert.doesNotMatch(html,UNCHECKED,'an error answer that carries the check verified the notice again');
+  answer=failed;await c.core.refresh();assert.match(html,UNCHECKED);
+  answer=()=>({ok:true,status:200,json:async()=>({...good,setup_center:{...check,installed_version:'1.17.1',stale:false}})});await c.core.refresh();
+  assert.equal(html,'','a successful check that finds the versions agree withdraws the notice and the mark');
+  answer=failed;await c.core.refresh();assert.equal(html,'','and a later failure does not bring it back');
+});
 await test('the banner names the control that stops the server, by its label on the page',()=>{
   const page=fs.readFileSync(new URL('../assets/setup-ui/index.html',import.meta.url),'utf8');
   const label=/<button id="close-server"[^>]*>([^<]+)<\/button>/.exec(page)?.[1];
