@@ -179,8 +179,17 @@ await test('a model call whose final result is not success is refused, and so is
   }
 });
 await test('a session warning or a final result alone is never an answer',async()=>{
-  const rows=events1091('');rows[0].data.message=JSON.stringify(payload);rows[18].data.result=JSON.stringify(payload);
-  assert.equal((await invoke(rows)).status,'invalid_output');
+  // Every model call stays at "success", so it is the answer gate that refuses this, not the result gate.
+  const rows=events1091('');
+  rows.find(e=>e.type==='session.warning').data.message=JSON.stringify(payload);
+  assert(rows.filter(e=>e.type==='model.call_final_result').every(e=>e.data.result==='success'));
+  const r=await invoke(rows);assert.equal(r.status,'invalid_output');assert.match(r.detail,/no completed tool-free assistant answer/);
+});
+await test('one failed model call among successful ones is refused even with a valid final answer',async()=>{
+  for(const which of [0,1]){
+    const rows=events1091();rows.filter(e=>e.type==='model.call_final_result')[which].data.result='error';
+    const r=await invoke(rows);assert.equal(r.status,'invalid_output','call '+which);assert(!r.review);assert.match(r.detail,/model call did not report success/);
+  }
 });
 await test('the vocabulary stays closed after 1.17.1: a sibling of the new events is still refused',async()=>{
   for(const type of ['session.notice','model.call_retry','session.warning.v2']){
