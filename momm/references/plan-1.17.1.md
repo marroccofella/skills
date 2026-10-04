@@ -2,8 +2,9 @@
 
 Status: **built and released on 4 October 2026** (signed tag `momm-1.17.1`). When this plan was written
 the current release was 1.17.0 (signed tag `momm-1.17.0`, 3 October 2026). Owner instruction, 4 October 2026: fix the Copilot route, release it as 1.17.1, and
-add the twenty reliability improvements below to the same version. The Copilot fix (items F1 to F3) is
-kept as separate commits at the base of the branch so it can ship alone if the owner decides so.
+add the twenty reliability improvements below to the same version. The Copilot fix (items F1 to F3)
+was kept as separate commits at the base of the branch, so that it could ship alone had the owner
+decided so; the owner decided the same day that everything be released together.
 
 One writer; reviewers read-only; account logins only; automatic updates stay off; no privacy check is
 weakened; no setting of the user's is changed. Every item has failing-first tests.

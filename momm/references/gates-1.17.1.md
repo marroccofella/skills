@@ -326,7 +326,8 @@ not made and the decision goes back to the owner.
 The owner instructed the release governor to complete and release 1.17.1. Pull request 44 was marked
 ready and squash-merged through the normal path; no administrative override or alternative route was
 used. The squash commit `06e8d5ad7be9748928a6e8159106bfb86afa582a` has exactly the tree of candidate
-`f5392d412fb717509c85a471453aeaac480134f7`: `3c89649f3a91b2499289523984418e297319e65a`. The seal is unchanged:
+`f5392d412fb717509c85a471453aeaac480134f7`. Both commits have the tree
+`3c89649f3a91b2499289523984418e297319e65a`. The seal is unchanged:
 `d97da212bd826359387faf785a8c7e9b22f968eadc2c4fa5aa366cb633be49d6`.
 
 - Sealed candidate: 97 of 97 suites on Windows, Node 22.16, on the sealed commit under an 8.3 short
