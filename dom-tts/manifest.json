@@ -167,12 +167,20 @@
       "sha256": "6bb0ab17610a2962ec934140f0ff1e3bf962abbb024aa424d20eb992997001db"
     },
     {
+      "path": "tests/fixtures/isolated-wait-worker.cjs",
+      "sha256": "0867e32fb1c0ba8b62cb9fa9a0f800220036f1c57b2e884064b92b31198ba269"
+    },
+    {
       "path": "tests/install-check.cjs",
       "sha256": "6576c35b88dfb9b0eb0c3da41f02415470ea79612b9163e439f560bdd25b4ea2"
     },
     {
       "path": "tests/isolated-player-check.cjs",
-      "sha256": "6dae10169f2b508817bd0e486a3be68de8248c69539e52aa099bbe7690625fb2"
+      "sha256": "d68dbaf1e9f30fd7436fa698510551f5b325c2ca2a8bb567177c760f34a9029d"
+    },
+    {
+      "path": "tests/isolated-wait-check.cjs",
+      "sha256": "408d78993a460380cf9fe33b3f773baf88ed0ccb7f943e836c6b8aeb410529e0"
     },
     {
       "path": "tests/native-boundary.cjs",

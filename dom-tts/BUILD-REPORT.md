@@ -2,6 +2,23 @@
 
 ## Optional worker isolation and stop outcome
 
+Exact3ccbc8c diagnostic increment passes17/17 in both37191015669/37191013418,
+verified from all job outcomes. Foreground Windows reviewer5978388021 verifies
+fixed codes;5978389309 separately checks unknown-code/raw-field fallback without
+leaking a sentinel. Those receipts retain their exact pin and do not establish
+remote hardware or final-byte MOMM quorum.
+
+New test-only acceptance closes the earlier timed-abort synchronization gap: a
+fixture instruments failed exclusive lock acquisition and the unchanged production
+worker's actual100ms wait-timer registration. Only then does the parent abort.
+The competing owner is actual playback with authenticated IPC/lock/status and a
+held injected engine; its lock/status bytes remain unchanged, no kill is requested,
+and it remains active until explicitly released by the test. Waiting worker reports
+stopped and exits; owner subsequently completes and cleans its own lock. Local
+Windows Node22.16 PASS; no audio or acoustic timing. Test instrumentation is not a
+production worker-path/command option; runtime source is unchanged. Initial missing
+test-helper extension failure was corrected before this valid receipt.
+
 At3ec07c2 both37190508980/37190506960 have all eight macOS Intel/ARM jobs and
 five Linux jobs successful; Windows completion remains separately checked.
 Decoded ARM Node20 job111401492262 reports canonicalized temporary fixture=true

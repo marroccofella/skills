@@ -5,6 +5,15 @@ This record consolidates findings and dispositions, not approval to merge or rel
 
 ## Current integration update
 
+Exact3ccbc8c now passes17/17 in both37191015669/37191013418; bounded diagnostic
+reviews5978388021/5978389309 confirm known/unknown category handling on Windows.
+New test-only worker-lock acceptance observes real wait-timer registration after
+exclusive-acquisition conflict, then aborts. Actual competing playback IPC owner
+keeps its lock/status bytes and held injected engine untouched, completes only on
+test release and removes its own lock. Local Windows check PASS; successor hosted
+CI/review pending. This narrows synchronized lock-wait cancellation acceptance,
+not synchronous-helper interruption, arbitrary crash containment or acoustic stop.
+
 At3ec07c2 both successor matrices pass all eight macOS plus five Linux jobs;
 remaining Windows jobs are still checked independently. Peer5978330269 confirms
 the scoped no-audio repair and owned junction before/after; decoded macOS job

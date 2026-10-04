@@ -43,8 +43,9 @@ const { createIsolatedNativePlayer } = require('../scripts/experimental/isolated
       assert.deepEqual(await waiting, { state: 'stopped' });
       assert.equal(fs.readFileSync(lock, 'utf8'), owner, 'abort must preserve the other live owner record');
     } finally { clearTimeout(timer); fs.unlinkSync(lock); }
+    await require('./isolated-wait-check.cjs').check(dir);
     assert.deepEqual(['SIGINT','SIGTERM'].map(name => process.listenerCount(name)), listeners);
-    console.log('PASS: isolated real permission/lock cleanup, asynchronous host, pre-abort/bounds, linked-state refusal and abort with existing owner; no audio');
+    console.log('PASS: isolated real permission/lock cleanup, asynchronous host, pre-abort/bounds, linked-state refusal, timed and synchronized lock-wait owner-preserving abort; no audio');
     console.log('Temporary fixture canonicalized: ' + (temporary !== root));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
