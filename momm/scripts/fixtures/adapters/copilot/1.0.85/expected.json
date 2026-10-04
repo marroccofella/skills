@@ -1,0 +1,47 @@
+{
+  "schema": "momm-adapter-fixtures/1",
+  "route": "copilot",
+  "cli_version": "1.0.85",
+  "shape_from": "momm/scripts/copilot-transport.test.mjs events(), the 21-event stream of Copilot CLI 1.0.85; quota event from the dispatcher self-test copilot_quota_failure_is_named_and_stream_never_echoed. not-json is narration around a bare answer, which stays refused on this route. Synthetic content.",
+  "cases": {
+    "success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "fenced-success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "session-error.jsonl": {
+      "expect": {
+        "status": "error",
+        "detail": "terminal failure event"
+      }
+    },
+    "quota-error.jsonl": {
+      "process": {
+        "exit_code": 1
+      },
+      "expect": {
+        "status": "quota",
+        "detail": "HTTP 402"
+      }
+    },
+    "unknown-event.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "unrecognized event type (future.state)"
+      }
+    },
+    "not-json.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "assistant answer is not strict JSON"
+      }
+    }
+  }
+}

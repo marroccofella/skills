@@ -1,14 +1,14 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.0**, sealed on 30 September 2026; its signed tag `momm-1.17.0` is created by the
-release workflow. The previous signed release is `momm-1.16.1`, 28 September 2026. Nothing else
+only sources. Today they say **1.17.1**, sealed on 4 October 2026; its signed tag `momm-1.17.1` is created by the
+release workflow. The previous signed release is `momm-1.17.0`, 3 October 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
 ## Website and public feedback (separate repository maintenance)
 
-2 October reviewer-diagnostics addition (publication depends on the signed release gates): the suite runner
+2 October reviewer-diagnostics addition (published in the signed 1.17.0 release): the suite runner
 prints a start line before each suite. Opt-in `--save-report --commit <full SHA>`
 saves original-run JSON and complete captured failure streams in newly allocated
 private evidence storage. `MOMM_EVIDENCE_HOME` uses the same project-specific external
@@ -32,10 +32,15 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17 candidate.** 1.16.1 is released. The reviewed plan is
-  [references/plan-1.17.md](references/plan-1.17.md); its scope is built on the `release/momm-1.17`
-  branch and goes to outside reviewers as a candidate before any signed tag. Its leading theme is
-  role-preserving review (see "1.17" below).
+- **Now: 1.17.1 sealed candidate, publication pending.** Copilot reviews work again on recent Copilot
+  CLI versions (new events and fenced answers), a CLI too old for its model is shown at preflight, and
+  twenty reliability improvements make failures explain themselves: [plan](references/plan-1.17.1.md),
+  [gate record and findings](references/gates-1.17.1.md).
+- **1.17 released.** The reviewed plan is
+  [references/plan-1.17.md](references/plan-1.17.md); its leading theme is role-preserving review.
+  Exact-main CI, signed checkpoint, six hosted lifecycle cells including interrupted recovery,
+  and signed stable publication passed. Scope and known limits remain in the
+  [gate evidence record](references/gates-1.17.md), including hosted-only Unix evidence and saved-report storage refusals.
 - **1.16.1 (released).** Closed the holes 1.16.0 documented, proved the lifecycle 1.16.0 claimed and
   made reruns auditable. Charter, scope, non-goals and gates:
   [references/plan-1.16.1.md](references/plan-1.16.1.md).
@@ -87,11 +92,12 @@ to the actual gate, bounds stdin, aligns range-check limits (committed-range che
 2,000 source files, `MAX_RANGE_SOURCE_FILES`; working-tree snapshots keep 200), exports only the
 latest identifiable ruling, withholds scores when severity calibration is unknown,
 and refuses existing companion files or broad POSIX outputs before writing.
-Unreadable tracked source now fails the hygiene check. These are candidate fixes;
-their new tests, final-source peer coverage and native lifecycle gates still have
-to pass. No tag, installed-skill update or public release follows from local tests.
+Unreadable tracked source now fails the hygiene check. Historical pre-release status:
+these candidate fixes still required new tests, final-source peer coverage and native
+lifecycle gates. Those release gates are now closed in the linked 1.17 gate evidence
+record. Local tests alone never authorize a tag, installed-skill update or public release.
 
-## 1.17 (candidate; built from its reviewed plan)
+## 1.17 (released; built from its reviewed plan)
 
 **Leading theme: role-preserving review.** One writer, a harsher bench: versioned reviewer roles
 separate from routes, typed claims (`DEFECT`, `RISK`, `QUESTION`, `IDEA`, `NOISE`) beside severity,
@@ -121,6 +127,11 @@ receive media is a 1.17 design review, not a patch.
 
 ## Released
 
+- **1.17.0**, 3 October 2026, tag `momm-1.17.0`: role-preserving review, typed claims, role cover and
+  second looks, POSIX executable containment, Codex/Grok review isolation, command-bound capabilities,
+  and private original-run diagnostics. Six hosted Windows/macOS/Linux Node 18/24 lifecycle cells
+  passed 13 steps each, including interrupted-upgrade recovery from 1.16.1 and 1.16.0.
+  Record: [references/release-1.17.0.md](references/release-1.17.0.md).
 - **1.16.1**, 28 September 2026, tag `momm-1.16.1`: media type from bytes, visible capability expiry,
   completion receipts for committed-range reviews, a per-piece attempt ledger, installation
   inventory, fail-closed executable resolution on Windows, Grok isolation and partial Codex

@@ -1,0 +1,3 @@
+{"event":"init","init":{"cwd":"synthetic-project"}}
+{"event":"step_update","step_update":{"text_delta":"Synthetic progress."}}
+{"event":"result","result":{"status":"SUCCESS","response":"{\"review_status\":\"complete\",\"reviewed_scope\":[{\"quote\":\"export function average(xs) {\",\"assessment\":\"The whole function was read.\"}],\"verdict\":\"ACCEPT\",\"confidence\":0.8,\"findings\":[],\"summary\":\"Synthetic valid review.\",\"suggested_improvements\":[]}"}}

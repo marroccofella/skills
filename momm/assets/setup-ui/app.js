@@ -55,6 +55,7 @@ const planForm = document.querySelector("#plan-form");
 const planIn = document.querySelector("#plan-in");
 const planOut = document.querySelector("#plan-out");
 const planResult = document.querySelector("#plan-result");
+const staleNotice = document.querySelector("#stale-notice");
 
 let session = null;
 let capabilities = null;
@@ -103,6 +104,47 @@ function showToast(message) {
   showToast.timer = setTimeout(() => toast.classList.remove("show"), 4200);
 }
 
+// The server is long-running: after an update it still serves the code it started
+// with. Status and maintenance answers, failed ones included, carry the version it
+// started on and the one now installed. Closing this window does not stop the server,
+// so the notice names the control that does (the footer button's label).
+// Only two plain version numbers and the literal flag make a notice;
+// a successful answer without the field leaves its sentence as it is. The region is a live region,
+// so an unchanged notice is not written again.
+// Status and maintenance refreshes overlap, so each is numbered when it is asked for. An answer that
+// carries the version check always counts: the server makes the check as it answers. An outcome without
+// it counts only if it was asked for after everything already heard, so a request that fails late does
+// not mark a notice that a newer answer has verified since (closing review of 1.17.1).
+const plainVersion = (value) => typeof value === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(value);
+const STALE_UNCHECKED = " The last refresh failed, so this was not checked again; it is what the last successful check found.";
+let staleNoticeShown = "", staleNoticeVerified = "", staleNoticeAsked = 0, staleNoticeHeard = 0;
+function writeStaleNotice(unchecked) {
+  const html = staleNoticeVerified ? `<p class="stale-notice">${staleNoticeVerified}${unchecked ? STALE_UNCHECKED : ""}</p>` : "";
+  if (html === staleNoticeShown) return;
+  staleNoticeShown = html;
+  staleNotice.innerHTML = html;
+}
+function renderStaleNotice(check, asked) {
+  if (!staleNotice) return;
+  if (!check || typeof check !== "object") {
+    // Nothing was verified, so the sentence stays; this refresh did not fail, so the mark does not.
+    if (asked > staleNoticeHeard) { staleNoticeHeard = asked; writeStaleNotice(false); }
+    return;
+  }
+  const running = check.running_version, installed = check.installed_version;
+  const stale = check.stale === true && plainVersion(running) && plainVersion(installed) && running !== installed;
+  staleNoticeVerified = stale ? `Setup Center is running ${escapeHtml(running)}; ${escapeHtml(installed)} is now installed. Choose Close Setup Center, then start it again.` : "";
+  staleNoticeHeard = staleNoticeAsked;
+  writeStaleNotice(false);
+}
+// A failed refresh whose answer carries the version check verified the notice again. One without it
+// (or no answer at all) verified nothing: a notice already shown stays and says so; none is invented.
+function staleNoticeAfterFailure(error, asked) {
+  if (!staleNotice) return;
+  if (error?.setup_center && typeof error.setup_center === "object") return renderStaleNotice(error.setup_center);
+  if (asked > staleNoticeHeard) { staleNoticeHeard = asked; writeStaleNotice(true); }
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (session?.token) headers["X-MOMM-Token"] = session.token;
@@ -117,6 +159,7 @@ async function api(path, options = {}) {
   if (!response.ok) {
     const error = new Error(value.error || "Setup Center could not complete that action.");
     error.status = response.status;
+    error.setup_center = value.setup_center; // a failed refresh still says when the server is stale
     throw error;
   }
   return value;
@@ -134,6 +177,9 @@ function routeState(route) {
   // render — the guard alone stops it showing "Verified" and counting toward
   // completion once readiness falls.
   if (live?.status === "success" && route.ready === true) return "ready";
+  // 1.17.1 R1: preflight remembered that this CLI version and its configured model did not work
+  // together. That is an update, never a sign-in, and it explains a failed check on the same card.
+  if (route.compatibility && route.installed !== false) return "update";
   if (live?.status === "failed") return "failed";
   if (route.ready) return "detected";
   if (route.installed === false) return "install";
@@ -142,10 +188,16 @@ function routeState(route) {
 }
 
 function stateLabel(state) {
-  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Install", testing: "Verifying", failed: "Needs attention", unknown: "Check inconclusive" })[state] || "Check";
+  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Install", testing: "Verifying", failed: "Needs attention", unknown: "Check inconclusive", update: "CLI update needed" })[state] || "Check";
 }
 
 function routeCopy(route, state) {
+  if (state === "update") {
+    const record = route.compatibility || {};
+    const version = typeof record.cli_version === "string" && record.cli_version ? ` (${record.cli_version.slice(0, 40)})` : "";
+    const model = typeof record.model === "string" && record.model ? `the configured model ${record.model.slice(0, 80)}` : "its configured model";
+    return `The installed CLI${version} needs an update to work with ${model}.`;
+  }
   if (state === "unknown") return route.note || "The version check did not complete. Retry discovery or explicitly verify the connection; this is not proof that installation or login is needed.";
   if (state === "ready") return "Connection verified with a harmless synthetic sentence. Ready for peer review.";
   if (state === "detected") return "A local account session was found. Verify it without sending repository code.";
@@ -168,6 +220,7 @@ function providerMaintenance(agent) {
 
 function modelFact(route, state, modelReport) {
   if (state === "ready") return "Verified";
+  if (state === "update") return "Needs CLI update";
   if (modelReport?.models?.length) return `${modelReport.models.length} available`;
   if (modelReport?.status === "interactive_selector" && route.ready) return "Available in selector";
   if (modelReport?.status === "login_required" || state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) return "Needs sign-in";
@@ -182,23 +235,29 @@ function providerCard(route) {
   const { cli, models } = providerMaintenance(route.agent);
   const detectedVersion = String(cli?.current || route.version || (route.installed === false ? "Not detected" : "Version unknown")).split("\n")[0];
   const cliText = cli?.status === "update_available" ? `${detectedVersion} → ${cli.latest}` : detectedVersion;
-  const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : state === "unknown" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
+  const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : state === "unknown" || state === "update" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
   let mainAction = "";
+  // The update state offers the existing update action, with the command this Setup Center verified
+  // for the installation. Without one, the official command from preflight is shown as text only.
+  const canUpdate = state === "update" && cli?.installed === true && Boolean(cli.update_command);
+  const hint = typeof route.update_hint === "string" && /^[^\r\n]{1,200}$/.test(route.update_hint) ? route.update_hint : null;
+  const updateCopy = state !== "update" || canUpdate ? "" : `<p class="card-copy card-hint">${hint ? `Run this in a terminal, then choose Check again: <code>${escapeHtml(hint)}</code>` : "Use the provider’s official update command (see Help), then choose Check again."}</p>`;
   if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button>`;
+  else if (state === "update") mainAction = canUpdate ? `<button class="button primary" data-action="update" data-provider="${route.agent}">Update CLI…</button>` : "";
   else if (state === "unknown") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify connection</button>`;
   else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}">Sign in</button>${state === 'failed' && route.ready ? `<button class="button ghost" data-test="${route.agent}">Verify again</button>` : ''}`;
   else if (state === 'failed') mainAction = `<button class="button ghost" data-test="${route.agent}">Retry check</button>`;
   else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">Verify connection</button>`;
   else if (state === "ready") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify again</button>`;
   else mainAction = '<button class="button primary" disabled>Verifying…</button>';
-  const updateAction = cli?.status === "update_available" && cli.update_command ? `<button class="inline-action" data-action="update" data-provider="${route.agent}">Update</button>` : "";
+  const updateAction = !canUpdate && cli?.status === "update_available" && cli.update_command ? `<button class="inline-action" data-action="update" data-provider="${route.agent}">Update</button>` : "";
   return `
     <article class="provider-card ${state === "ready" ? "ready" : state === "failed" ? "failed" : ""}" data-card="${route.agent}">
       <div class="card-top">
         <div class="provider-name"><span class="provider-icon">${escapeHtml(provider.label.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(provider.label)}</h3><small class="version">Peer reviewer</small></div></div>
-        <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
+        <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", update: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
       </div>
-      <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>
+      <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>${updateCopy}
       <div class="provider-facts">
         <div class="provider-fact"><span>CLI</span><div class="provider-fact-line"><strong title="${escapeHtml(cliText)}">${escapeHtml(cliText)}</strong>${updateAction}</div></div>
         <div class="provider-fact"><span>Account</span><strong>${escapeHtml(authText)}</strong></div>
@@ -224,7 +283,9 @@ function render() {
   const remaining = [];
   const unknownChecks = routes.filter((route) => routeState(route) === 'unknown').length;
   if (unknownChecks) remaining.push(`${unknownChecks} inconclusive version check${unknownChecks === 1 ? '' : 's'}`);
+  const outdated = routes.filter((route) => routeState(route) === "update").length;
   if (installs) remaining.push(`${installs} CLI${installs === 1 ? "" : "s"} to install`);
+  if (outdated) remaining.push(`${outdated} CLI${outdated === 1 ? " to update for its configured model" : "s to update for their configured models"}`);
   if (signIns) remaining.push(`${signIns} account${signIns === 1 ? "" : "s"} to connect`);
   if (failedChecks) remaining.push(`${failedChecks} failed check${failedChecks === 1 ? '' : 's'} to investigate`);
   if (verifications) remaining.push(`${verifications} detected session${verifications === 1 ? "" : "s"} to verify`);
@@ -351,6 +412,7 @@ function renderMaintenance() {
 async function loadMaintenance(force = false) {
   maintenanceRefreshButton.disabled = true;
   maintenanceSummary.textContent = "Checking published skills, reviewer CLIs, models, runtimes, and environment names…";
+  const asked = ++staleNoticeAsked;
   try {
     const fresh = await api("/api/maintenance", { method: "POST", body: JSON.stringify({ governor: governorSelect.value, force }) });
     // Refuse incomplete server responses before touching the last good display
@@ -384,8 +446,10 @@ async function loadMaintenance(force = false) {
     }
     renderMaintenance();
     render();
+    renderStaleNotice(fresh.setup_center, asked); // this is the refresh that follows an applied update
     loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
   } catch (error) {
+    staleNoticeAfterFailure(error, asked);
     maintenanceSummary.textContent = "The maintenance check could not finish. Your reviewer setup is unaffected.";
     showToast(error.message);
   } finally { maintenanceRefreshButton.disabled = false; }
@@ -399,10 +463,12 @@ async function refresh() {
   refreshEpoch = governorEpoch;
   refreshButton.disabled = true;
   summary.textContent = "Checking this computer…";
+  const asked = ++staleNoticeAsked;
   try {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
     if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
     report = fresh;
+    renderStaleNotice(fresh.setup_center, asked);
     // The topbar pill links to /ledger on this origin; its tooltip names the
     // file on disk once the ledger exists, so the page can also be opened directly.
     const ledgerLink = document.querySelector("#ledger-link");
@@ -413,6 +479,7 @@ async function refresh() {
     for (const route of report.routes || []) if (route.ready !== true && liveResults.get(route.agent)?.status === "success") liveResults.delete(route.agent);
     render();
   } catch (error) {
+    staleNoticeAfterFailure(error, asked); // about the server, not the governor: shown whichever is selected
     if (refreshEpoch === governorEpoch) {
       summary.textContent = "We could not check the local reviewers.";
       showToast(error.message);
@@ -517,11 +584,14 @@ async function runQuickSetup() {
   try {
     await refresh();
     await loadMaintenance(false);
-    // A card already being verified is not eligible: its running job owns it.
-    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing"].includes(routeState(route)));
+    // A card already being verified is not eligible: its running job owns it. Nor is a CLI known not
+    // to work with its configured model (1.17.1 R1): the card says so, and a verification would spend
+    // allowance on that failure. The state the card shows decides, whatever the readiness flag says.
+    const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing", "update"].includes(routeState(route)));
     if (!eligible.length) {
       const disconnected = reviewerRoutes().filter((route) => !route.ready);
-      showToast(disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
+      const outdated = reviewerRoutes().some((route) => routeState(route) === "update");
+      showToast(outdated ? "Detected sessions are checked. Follow the remaining provider cards." : disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
       return;
     }
     let passed = 0;

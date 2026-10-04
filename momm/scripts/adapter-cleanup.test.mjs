@@ -9,6 +9,7 @@ import {assemblePrompt} from './guidance.mjs';
 import {requirePrivateEvidence} from './evidence-permissions.mjs';
 import {codexIsolationArgs,codexReviewArgs,grokIsolationEnv} from './route-isolation.mjs';
 import {grokStreamProgress,grokStreamReview} from './grok-stream.mjs';
+import * as reviewAnswer from './review-answer.mjs';
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>0&&end>start);
@@ -25,7 +26,9 @@ function context(overrides={},command=()=> 'synthetic-agent'){
     VALID_VERDICTS:new Set(['ACCEPT','MODIFY','REJECT']),VALID_SEVERITIES:new Set(['CRITICAL','WARNING','NITPICK']),
     attachmentRouting:()=>[],attachmentContractSection:()=>'',buildContract:()=> 'Synthetic contract',
     agentTimeoutMs:(_a,ms)=>ms,cleanOauthEnv:()=>({}),parseUsage:()=>({reported:null}),LOGIN_HINTS:{},
-    sanitizeText:s=>({value:s}),clipped:(s,n)=>String(s).slice(0,n),antigravityCommand:command,grokCommand:command,REVIEW_JSON_SCHEMA:{type:'object'},grokIsolationEnv,codexIsolationArgs,codexReviewArgs,grokStreamProgress,grokStreamReview});
+    sanitizeText:s=>({value:s}),clipped:(s,n)=>String(s).slice(0,n),antigravityCommand:command,grokCommand:command,REVIEW_JSON_SCHEMA:{type:'object'},grokIsolationEnv,codexIsolationArgs,codexReviewArgs,grokStreamProgress,grokStreamReview,
+    // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+    ...reviewAnswer});
   vm.runInContext(source.slice(start,end)+';this.invoke=invokeReviewer;',ctx);
   return {ctx,temporary};
 }

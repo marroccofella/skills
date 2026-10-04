@@ -12,6 +12,7 @@ import { resolveGit as resolveGitForTest } from './governor.mjs';
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { createProcessScope, executableOutside } from "./process-scope.mjs";
 import {privateTestFixture} from './private-test-fixture.mjs';
+import { knownIncompatibility } from './compatibility.mjs';
 if (!path.isAbsolute(GIT)) throw new Error('no trusted Git was found outside the checkout; this suite never launches a bare name');
 const source = fs.readFileSync(new URL("./multi-review.mjs", import.meta.url), "utf8");
 const start = source.indexOf("function platformCommand("), end = source.indexOf("function clipped(");
@@ -103,7 +104,7 @@ try {
   await test("preflight preserves unsupported installed launcher instead of inventing missing CLI", async () => {
     const probe = vm.runInNewContext(source.slice(source.indexOf("async function commandVersion("), source.indexOf("const ANSI =")) + "\n({commandVersion,preflightCheck})", {
       runProcess: async () => ({ error: { code: "MOMM_UNSUPPORTED_LAUNCHER", message: "Unsupported Windows launcher: shell shim refused" }, stdout: "", stderr: "", code: null }),
-      clipped: s => s, fs, os, path, INSTALL_HINTS: {}, LOGIN_HINTS: {},
+      clipped: s => s, fs, os, path, INSTALL_HINTS: {}, LOGIN_HINTS: {}, knownIncompatibility,
     });
     const [route] = await probe.preflightCheck(["claude"], "codex");
     assert.equal(route.installed, true); assert.equal(route.ready, false); assert.equal(route.status, "unsupported");

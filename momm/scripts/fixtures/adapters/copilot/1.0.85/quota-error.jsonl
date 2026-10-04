@@ -1,0 +1,7 @@
+{"type":"session.info","data":{}}
+{"type":"session.auto_mode_resolved","data":{}}
+{"type":"session.mcp_servers_loaded","data":{}}
+{"type":"session.tools_updated","data":{}}
+{"type":"user.message","data":{"content":"Synthetic prompt."}}
+{"type":"session.error","data":{"errorType":"quota","message":"You have exceeded your monthly quota (Request ID: SYNTHETIC)","statusCode":402,"errorCode":"quota_exceeded"}}
+{"type":"result","exitCode":1}

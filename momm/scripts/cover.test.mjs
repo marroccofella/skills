@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { PEER_CONTRACT, reviewProblem } from "./review-contract.mjs";
 import { assemblePrompt } from "./guidance.mjs";
 import { grokIsolationEnv } from "./route-isolation.mjs";
+import * as reviewAnswer from "./review-answer.mjs";
 import * as roles from "./roles.mjs";
 import { captureSourceSnapshot, inspectCompletion, digest } from "./governor.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
@@ -45,6 +46,8 @@ function productionChain() {
     parseUsage: () => null, LOGIN_HINTS: {}, sanitizeText: (s) => ({ value: s }), clipped: (s, n) => String(s ?? "").slice(0, n),
     antigravityCommand: () => "agy", grokCommand: () => "grok", REVIEW_JSON_SCHEMA: { type: "object" },
     ...roles, ...(cover ?? {}),
+    // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+    ...reviewAnswer,
   });
   vm.runInContext(`${code}\nthis.api = { buildContract, personaFor, invokeReviewer, invokeWithRetry, shouldRetryStatus };`, context);
   return { ...context.api, cleanup: () => fs.rmSync(workspace, { recursive: true, force: true }) };

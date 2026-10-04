@@ -82,6 +82,8 @@ jobs:
           node momm/scripts/update-clock.test.mjs
           node momm/scripts/update-claim.test.mjs
           node momm/scripts/probes.test.mjs
+          node momm/scripts/compatibility.test.mjs
+          node momm/scripts/run-notices.test.mjs
           node momm/scripts/governor-split.test.mjs
           node momm/scripts/capabilities.test.mjs
           node momm/scripts/lock-ownership.test.mjs
@@ -118,6 +120,8 @@ jobs:
           node momm/scripts/attempts.test.mjs
           node momm/scripts/evidence-location.test.mjs
           node momm/scripts/quotation-diagnostics.test.mjs
+          node momm/scripts/review-answer.test.mjs
+          node momm/scripts/adapter-matrix.test.mjs
           node momm/scripts/path-resolution.test.mjs
           node momm/scripts/review-claims.test.mjs
           node momm/scripts/review-workflow.test.mjs

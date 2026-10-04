@@ -1,5 +1,6 @@
 // Synthetic export fixtures only. No private ledgers or network services.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import vm from 'node:vm';import {fileURLToPath} from 'node:url';import {spawnSync} from 'node:child_process';
+import {renderPublic} from './render-momm-site.mjs';import {releaseStatus,releaseStatusMarkdown,readmeStatusBlock} from './momm-site-home.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-public-export-')),results=[];
 function test(name,fn){try{fn();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:e.message});}}
 function fixture(name){const dir=path.join(temp,name);fs.mkdirSync(path.join(dir,'docs/evidence'),{recursive:true});fs.cpSync(path.join(root,'momm/references'),path.join(dir,'momm/references'),{recursive:true});fs.copyFileSync(path.join(root,'versions.json'),path.join(dir,'versions.json'));
@@ -34,6 +35,29 @@ try{
  test('duplicate rows ignore object key order, not differing values',()=>{const dir=fixture('duplicate'),a=input(dir,'a',[{run_id:'rev_fixture',timestamp:'2026-01-01'}]),b=input(dir,'b',[{timestamp:'2026-01-01',run_id:'rev_fixture'}]);const r=run(dir,[a,b]);assert.equal(r.status,0,r.stderr);assert.equal(JSON.parse(r.stdout).import_diagnostics.identical_duplicates,1);input(dir,'b',[{timestamp:'2026-02-01',run_id:'rev_fixture'}]);const file=path.join(dir,'docs/evidence/momm-evidence.json'),before=fs.readFileSync(file);const bad=run(dir,[a,b]);assert.notEqual(bad.status,0);assert.match(bad.stderr,/Conflicting duplicate/);assert.deepEqual(fs.readFileSync(file),before);});
  test('malformed imports fail before output writes',()=>{const dir=fixture('malformed'),er=input(dir,'er',['{bad']);const file=path.join(dir,'docs/evidence/momm-evidence.json'),before=fs.readFileSync(file);const r=run(dir,[er]);assert.notEqual(r.status,0);assert.match(r.stderr,/Malformed/);assert.deepEqual(fs.readFileSync(file),before);});
  test('incomplete ledger template fails before output writes',()=>{const dir=fixture('headless-template'),er=input(dir,'er',[{run_id:'rev_fixture'}]);const file=path.join(dir,'docs/evidence/momm-evidence.json'),html=path.join(dir,'docs/evidence/index.html'),before=fs.readFileSync(file);fs.writeFileSync(html,'<script id="data" type="application/json">{}</script>');const prior=fs.readFileSync(html),r=run(dir,[er]);assert.notEqual(r.status,0);assert.match(r.stderr,/Missing head/);assert.deepEqual(fs.readFileSync(file),before);assert.deepEqual(fs.readFileSync(html),prior);});
+ // 1.17.1 S10, gate review rev_20261004085941_a8b4e58041e1: the README status line through the renderer itself.
+ // An export fixture has no README, so there is no second copy to keep in step and none is written.
+ test('a stale README status line fails --check, is rewritten by the renderer, then passes; CRLF endings are kept',()=>{
+   const dir=fixture('readme-status'),er=input(dir,'er',[{run_id:'rev_fixture'}]),readme=path.join(dir,'README.md');
+   const exported=run(dir,[er]);assert.equal(exported.status,0,exported.stderr);assert(!fs.existsSync(readme),'a tree without a README gets none');
+   renderPublic({root:dir,check:true});
+   const status=releaseStatus(JSON.parse(fs.readFileSync(path.join(dir,'versions.json'),'utf8')),JSON.parse(fs.readFileSync(path.join(dir,'momm/references/release-history.json'),'utf8')));
+   const current=`# fixture\n\n${readmeStatusBlock(status)}\n\nText.\n`,stale=current.replace(releaseStatusMarkdown(status),'**MOMM release status.** Stable: [0.0.1 (signed tag)](momm/references/release-0.0.1.md)');
+   assert.notEqual(stale,current);
+   for(const ending of ['\n','\r\n']){
+     const spelled=text=>text.replaceAll('\n',ending);
+     fs.writeFileSync(readme,spelled(stale));
+     assert.throws(()=>renderPublic({root:dir,check:true}),error=>/Public outputs are stale/.test(error.message)&&error.message.endsWith(':\nREADME.md'),'the README, and only the README, is reported stale');
+     assert.equal(fs.readFileSync(readme,'utf8'),spelled(stale),'check mode writes nothing');
+     renderPublic({root:dir});assert.equal(fs.readFileSync(readme,'utf8'),spelled(current),'the renderer rewrites the line and keeps the line endings');
+     renderPublic({root:dir,check:true});
+   }
+   // Closing review of 1.17.1: the README alone could not show "before anything is written". Another output is
+   // made stale first; a renderer that wrote its outputs and then refused would have rendered it again.
+   const home=path.join(dir,'docs/momm/index.html');assert(fs.readFileSync(home,'utf8').length>100,'the renderer wrote the home page above');fs.writeFileSync(home,'stale');
+   fs.writeFileSync(readme,'# fixture\n');assert.throws(()=>renderPublic({root:dir}),/exactly one momm-release-status block/);assert.equal(fs.readFileSync(readme,'utf8'),'# fixture\n','a README without the block is left as it was');
+   assert.equal(fs.readFileSync(home,'utf8'),'stale','and it is refused before anything is written');
+ });
  test('preview accepts an aliased docs root but not outside files',()=>{
    const dir=path.join(temp,'alias-preview'),real=path.join(temp,'real-docs'),outside=path.join(temp,'outside');fs.mkdirSync(dir);fs.mkdirSync(real);fs.mkdirSync(outside);fs.writeFileSync(path.join(real,'index.html'),'inside');fs.writeFileSync(path.join(outside,'index.html'),'outside');
    fs.symlinkSync(real,path.join(dir,'docs'),process.platform==='win32'?'junction':'dir');fs.symlinkSync(outside,path.join(real,'escape'),process.platform==='win32'?'junction':'dir');

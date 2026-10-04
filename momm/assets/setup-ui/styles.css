@@ -30,6 +30,12 @@ a { color: inherit; }
 .controller-control span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .controller-control select { min-height: 32px; padding-left: 8px; border: 0; background-color: var(--card); font-size: 12px; }
 
+/* 1.17.1 R10: the stale-server notice. The region is a live region that is always
+   rendered, so a screen reader hears the text arrive; it has no box of its own.
+   It sticks to the top so the notice is seen wherever the refresh was started. */
+.stale-notice-region { position: sticky; top: 10px; z-index: 4; }
+.stale-notice { margin: 14px 0 0; padding: 13px 16px; border: 1px solid var(--amber); border-left-width: 5px; border-radius: 13px; color: var(--ink); background: var(--amber-soft); box-shadow: var(--shadow); font-size: 14px; font-weight: 650; line-height: 1.5; }
+
 .hero {
   padding: 76px 0 58px;
   display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(270px, .7fr); gap: 72px; align-items: end;
@@ -97,6 +103,9 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: var(--card); }
 .version { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .status { flex: none; padding: 6px 9px; }
 .card-copy { margin: 14px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+/* An update command shown as text (no allowlisted action for this installation): selectable in one click, wraps on narrow cards. */
+.card-hint { margin-top: -4px; }
+.card-hint code { padding: 1px 5px; border-radius: 5px; color: var(--green); background: var(--mint); font-family: var(--font-mono); font-size: .92em; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .provider-facts { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-bottom: 16px; }
 .provider-fact { min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: var(--card); }
 .provider-fact span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }

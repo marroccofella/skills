@@ -17,6 +17,7 @@ installed skills or account settings.
   report. Results do not automatically classify failures as environmental.
 - Commit identity is caller-supplied, explicitly labelled as such. Verify
   `git rev-parse HEAD` and `git status --porcelain` separately before and after.
+  (Since 1.17.1 the report also records the actual `HEAD` and tree state beside the label.)
 - Existing permission inspection is reused; inaccessible or non-private evidence
   storage refuses before suites launch. Existing ACLs are never repaired.
 
@@ -34,6 +35,14 @@ Run `node scripts/ci-runner-report.test.mjs`,
 Check HEAD and cleanliness again. Retain any first failures and report focused
 reruns separately. Private stdout/stderr can contain local paths: do not publish
 whole logs or JSON; share only relevant redacted assertions.
+
+Saved evidence must also remain writable throughout the run. A final report replacement can fail
+even after every suite passes; keep that nonzero process exit and incomplete report separate from
+the suite totals. A Windows/Node24.19 run under OneDrive reported this boundary on the final 1.17
+candidate; its cloud-sync/file-locking cause remains unproven. If cloud-synchronized storage is
+unreliable or is refused as a linked entry, use the existing external private `MOMM_EVIDENCE_HOME`
+option in a suitable unsynchronized location. Never repair another user's permissions or weaken
+linked-entry checks to make saving pass. Preserve the original attempt and report reruns separately.
 
 Post one verdict in Discussion #32, linking the follow-up PR and tested full SHA.
 Use a unique stable name: Bab/BAB (adversarial security), Bob (test reliability),

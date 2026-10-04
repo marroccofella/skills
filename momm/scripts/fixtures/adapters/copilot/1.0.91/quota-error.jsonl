@@ -1,0 +1,7 @@
+{"type":"session.warning","data":{"message":"Synthetic notice: third-party servers are disabled by policy.","warningType":"policy"},"ephemeral":true,"id":"00000000-0000-4000-8000-000000000000","timestamp":"2026-10-04T06:00:00.000Z","parentId":null}
+{"type":"session.info","data":{}}
+{"type":"session.mcp_servers_loaded","data":{}}
+{"type":"session.tools_updated","data":{}}
+{"type":"user.message","data":{"content":"Synthetic prompt."}}
+{"type":"session.error","data":{"errorType":"quota","message":"You have exceeded your monthly quota (Request ID: SYNTHETIC)","statusCode":402,"errorCode":"quota_exceeded"}}
+{"type":"result","exitCode":1}

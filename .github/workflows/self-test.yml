@@ -34,144 +34,211 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
+      # Every step below carries the `!cancelled()` condition, so a failing suite no longer hides the steps
+      # after it: one run shows every failure, and any failed step still fails the job (1.17.1 S9).
       # Zero model calls: the self-test exercises env scrubbing, recursion
       # guards, JSON parsing, and forced-timeout settlement deterministically.
       - name: Safety self-test
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/multi-review.mjs --self-test --pretty
       - name: Media byte validation
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/media-bytes.test.mjs
       - name: Scope audit closure and native export permissions
+        if: ${{ !cancelled() }}
         timeout-minutes: 3
         run: node momm/scripts/scope-closure.test.mjs
       - name: Installation completion boundary
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/install-completion.test.mjs
       - name: Capability expiry refusal
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/expiry-regression.test.mjs
       - name: Attempt accounting and tool-produced checks
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/attempts.test.mjs
       - name: Evidence home outside the project (1.17 A7)
+        if: ${{ !cancelled() }}
         timeout-minutes: 5
         run: node momm/scripts/evidence-location.test.mjs
       - name: Private quotation diagnostics (1.17 A4.2)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/quotation-diagnostics.test.mjs
+      - name: One answer rule for every route and private answer shape (1.17.1 S1, S2)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/review-answer.test.mjs
+      - name: Versioned adapter regression matrix (1.17.1 R2)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/adapter-matrix.test.mjs
       - name: Fail-closed Windows PATH identity
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/path-resolution.test.mjs
       - name: Review-claim evidence regressions
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-claims.test.mjs
       - name: CI deadlines and test catalog
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-workflow.test.mjs
       - name: Final review regression controls
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-final-regressions.test.mjs
       - name: Triage regressions from review rev_20260922162715
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-triage-1161.test.mjs
       - name: Named security regression - executable resolution
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/executable-resolution.test.mjs
       - name: Disputed review boundary controls
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-refutations.test.mjs
       - name: Final candidate review follow-up regressions
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/review-followup.test.mjs
       - name: Reviewer transport and hostile-output regression
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/transport.test.mjs
       - name: Process ownership and real POSIX cancellation drills
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/process-scope.test.mjs
       - name: Real command entrypoints through symlinks and junctions
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/entrypoint.test.mjs
       - name: Release stabilisation regressions (offline)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/stabilisation.test.mjs
       - name: Explicit updater transaction and recovery fixtures
+        if: ${{ !cancelled() }}
         timeout-minutes: 8
         run: node momm/scripts/update.test.mjs
       - name: New and legacy install bootstrap trust boundaries (offline)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/bootstrap.test.mjs
       - name: Legacy discovery migration and rollback (synthetic installs only)
+        if: ${{ !cancelled() }}
         timeout-minutes: 4
         run: node momm/scripts/migrate-legacy.test.mjs
       - name: A committed-range review is bound to that range (real temporary repository, zero provider calls)
+        if: ${{ !cancelled() }}
         timeout-minutes: 4
         run: node momm/scripts/governor-range.test.mjs
       - name: Every tracked source is reviewable text (no raw control bytes, nothing Git calls binary)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node scripts/source-hygiene.test.mjs
       - name: Effectiveness scorecard and training export (read-only, synthetic evidence)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/scorecard.test.mjs
       - name: Route and role roster in the scorecard (1.17 B6, synthetic evidence)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/scorecard-roster.test.mjs
       - name: Installed somewhere is not what the harness loads (read-only inventory, real links)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/installations.test.mjs
       - name: Governor review-to-decision lifecycle (offline)
+        if: ${{ !cancelled() }}
         timeout-minutes: 5
         run: node momm/scripts/governor.test.mjs
       - name: usage module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/usage.test.mjs
       - name: guidance module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/guidance.test.mjs
       - name: split module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/split.test.mjs
       - name: scheduler module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/scheduler.test.mjs
       - name: update-clock module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/update-clock.test.mjs
       - name: Token-confirmed release of a stale update claim (1.17 A6b, temporary repositories)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/update-claim.test.mjs
       - name: probes module (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/probes.test.mjs
+      - name: remembered CLI/model compatibility, repeated-status notice and gate-review guard (1.17.1 R1, S3, S4)
+        if: ${{ !cancelled() }}
+        # bash on every OS; both suites run, and the step fails if either failed (see the list below).
+        shell: bash
+        timeout-minutes: 4
+        run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
+          node momm/scripts/compatibility.test.mjs
+          node momm/scripts/run-notices.test.mjs
+          exit $failed
       - name: governor split/rating/direct rules (1.16)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/governor-split.test.mjs
       - name: modality registry, overlay and effective matrix (1.16 E7)
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/capabilities.test.mjs
       - name: existing lock ownership is never stolen
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/lock-ownership.test.mjs
       - name: modality planner and step-scoped runner (1.16 E7)
+        if: ${{ !cancelled() }}
         timeout-minutes: 3
         run: node momm/scripts/modality.test.mjs
       - name: modality runner regressions from the 1.16 readiness audit
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/modality-evaluation.test.mjs
       - name: guided image generation rounds, fake runner only (1.17 E)
+        if: ${{ !cancelled() }}
         timeout-minutes: 3
         run: node momm/scripts/generation-rounds.test.mjs
       - name: Windows launch guard on every process-launching script
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node scripts/launch-guard.test.mjs
       - name: Public information is deterministic and internally linked
-        # bash on every OS: it stops at the first failing command. Under the Windows default
-        # (PowerShell) only the LAST command's exit code counted, so a failing suite in the middle of
-        # this list was reported green (found at the 1.16.0 release halt, run 35459186774).
+        if: ${{ !cancelled() }}
+        # bash on every OS. Under the Windows default (PowerShell) only the LAST command's exit code
+        # counted, so a failing suite in the middle of this list was reported green (found at the 1.16.0
+        # release halt, run 35459186774). Plain bash stopped at the first failure, so each push showed
+        # only the next one. The first line keeps the list running and names every failing suite; the
+        # last line fails the step if any failed (1.17.1 S9).
         shell: bash
         timeout-minutes: 8
         run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
           node scripts/render-momm-site.mjs --check
           node scripts/check-momm-site.mjs
           node scripts/momm-release-pages.test.mjs
@@ -204,13 +271,17 @@ jobs:
           node momm/scripts/cover.test.mjs
           node momm/scripts/invariants.test.mjs
           node momm/scripts/second-look.test.mjs
+          exit $failed
       - name: Doctor (no model calls)
+        if: ${{ !cancelled() }}
         run: node momm/scripts/multi-review.mjs --doctor --pretty
       - name: Native evidence permission gates (zero provider calls)
+        if: ${{ !cancelled() }}
         # Native controls change access only on newly created synthetic fixtures.
         timeout-minutes: 3
         run: node scripts/evidence-permissions-native.test.mjs
       - name: Guided onboarding is zero-call and rejects unknown routes
+        if: ${{ !cancelled() }}
         shell: node {0}
         run: |
           const { spawnSync } = require("node:child_process");
@@ -224,28 +295,41 @@ jobs:
           if (unsafe.status === 0 || unsafe.stderr.includes("\u001b")) throw new Error("unknown reviewer input was not safely rejected");
           console.log("guided onboarding is zero-call, self-excluding, and input-safe");
       - name: Local Setup Center safety contract
+        if: ${{ !cancelled() }}
         # Offline helper assertions; maintenance fixtures separately exercise
         # token/Host handling through a simulated HTTP handler.
         run: node momm/scripts/setup-ui.mjs --self-test
       - name: CLI maintenance regression tests
+        if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/setup-maintenance.test.mjs
       - name: Setup Center JavaScript syntax
+        if: ${{ !cancelled() }}
+        # bash on every OS, as for the suite lists: under the Windows default (PowerShell) only the last
+        # check's exit code counted. Every check runs, and the step fails if any failed.
+        shell: bash
         run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
           node --check momm/scripts/setup-ui.mjs
           node --check momm/scripts/ledger.mjs
           node --check momm/scripts/multi-review.mjs
           node --check momm/assets/setup-ui/app.js
           node --check myskills/scripts/health-contract-test.mjs
+          exit $failed
       - name: myrepo offline safety self-test
+        if: ${{ !cancelled() }}
         run: node myrepo/scripts/publish.mjs --self-test
       - name: myskills integrated health contract
+        if: ${{ !cancelled() }}
         run: node myskills/scripts/run-all.mjs --pretty
       - name: myskills canonical and quick-mode contract
+        if: ${{ !cancelled() }}
         run: node myskills/scripts/health-contract-test.mjs
       - name: Yorkshire pudding self-test
+        if: ${{ !cancelled() }}
         run: node yorkshire-pudding/scripts/yorkshirify.mjs --self-test
       - name: Public evidence is sanitized and sealed
+        if: ${{ !cancelled() }}
         shell: node {0}
         run: |
           const { createHash } = require("node:crypto");
@@ -281,6 +365,7 @@ jobs:
       # The private ledger generator must build from real telemetry and must
       # write only inside .ensemble_reviews/ (the gitignored private zone).
       - name: Private ledger builds and stays private
+        if: ${{ !cancelled() }}
         shell: node {0}
         run: |
           const { spawnSync } = require("node:child_process");
@@ -316,8 +401,10 @@ jobs:
           fs.rmSync(dir, { recursive: true, force: true });
           console.log("private ledger builds from telemetry and writes only inside .ensemble_reviews/");
       - name: Legacy alias forwards
+        if: ${{ !cancelled() }}
         run: node multi-llm-review/scripts/multi-review.mjs --self-test --pretty
       - name: Legacy alias keeps --stream stderr NDJSON-pure
+        if: ${{ !cancelled() }}
         shell: node {0}
         run: |
           const { spawnSync } = require("node:child_process");
@@ -327,12 +414,14 @@ jobs:
           for (const line of lines) JSON.parse(line);
           console.log(`ok: ${lines.length} stderr line(s), all valid JSON`);
       - name: Legacy install alias forwards (dry run)
+        if: ${{ !cancelled() }}
         run: node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
       # Evidence round trip: self-exclusion (zero model calls) must persist a report whose logged sha256
       # matches a fresh read of the file and whose input_sha256 matches the
       # exact piped artifact. Unavailable storage refuses before input/dispatch;
       # a later log-indexing failure still reports the successfully saved report.
       - name: Evidence persistence round trip
+        if: ${{ !cancelled() }}
         timeout-minutes: 5
         shell: node {0}
         run: |
@@ -397,7 +486,8 @@ jobs:
   # Owner decision, 24 September 2026. These thirteen suites passed locally but no workflow ran them,
   # so a green run implied coverage it did not have (independent review of 5f91a36). They are
   # platform-independent, make no network calls and take about four seconds together, so one Linux
-  # job carries them. bash stops at the first failure; PowerShell would report only the last one.
+  # job carries them. bash runs the whole list and fails the step if any suite failed (1.17.1 S9);
+  # PowerShell would report only the last one.
   site-and-ledger:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -411,9 +501,11 @@ jobs:
         with:
           node-version: 22.x
       - name: Site, ledger, preview, release-observer and improvement suites
+        if: ${{ !cancelled() }}
         timeout-minutes: 5
         shell: bash
         run: |
+          failed=0; trap 'echo "::error::Suite failed: $BASH_COMMAND"; failed=1' ERR; set +e
           node scripts/ledger-ui.test.mjs
           node scripts/momm-improvement-regressions.test.mjs
           node scripts/momm-release-observer.test.mjs
@@ -428,3 +520,4 @@ jobs:
           node scripts/momm-site-visuals.test.mjs
           node scripts/preview-module.test.mjs
           node scripts/ci-runner-report.test.mjs
+          exit $failed

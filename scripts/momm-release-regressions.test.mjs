@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import os from 'node:os';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import * as reviewAnswer from '../momm/scripts/review-answer.mjs';
 const mode = process.argv[2];
 const read = p => fs.readFileSync(p, 'utf8');
 if (mode === 'envelope' || mode === 'rejection') {
@@ -13,7 +14,8 @@ if (mode === 'envelope' || mode === 'rejection') {
   const classifierEnd = source.indexOf('  const problem = result.outputLimited ?', classifierStart);
   assert(classifierStart >= 0 && classifierEnd > classifierStart, 'Inspect changed classification boundaries; never test an empty extraction');
   const classifier = source.slice(classifierStart, classifierEnd);
-  const ctx = vm.createContext({ Buffer, parseUsage:()=>null, sanitizeText: value => ({value}), result: {}, agent: 'claude' });
+  // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions. options is the dispatcher's own.
+  const ctx = vm.createContext({ Buffer, parseUsage:()=>null, sanitizeText: value => ({value}), result: {}, agent: 'claude', options: {}, ...reviewAnswer });
   vm.runInContext(helpers + '\nfunction classify(result) {' + classifier + '\nreturn {status:"success"};}', ctx);
   const review = JSON.stringify({review_status:'complete', verdict:'ACCEPT', confidence:1, findings:[], summary:'Synthetic evidence'});
   const envelopes = [{status:'ERROR',response:review},{status:'FAILED',response:review},{is_error:true,type:'result',result:review},{error:{message:'synthetic'},response:review}];

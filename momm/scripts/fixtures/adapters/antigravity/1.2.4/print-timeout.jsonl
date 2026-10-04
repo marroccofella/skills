@@ -1,0 +1,3 @@
+{"event":"init","init":{"cwd":"synthetic-project"}}
+{"event":"step_update","step_update":{"text_delta":"Synthetic progress."}}
+{"event":"result","result":{"status":"SUCCESS","response":""}}

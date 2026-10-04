@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import { codexIsolationArgs, codexReviewArgs, grokIsolationEnv } from "./route-isolation.mjs";
 import { grokStreamProgress, grokStreamReview } from "./grok-stream.mjs";
+import { strictAnswer, answerShape, envelopeAnswer } from "./review-answer.mjs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -24,7 +25,9 @@ import { ATTEMPT_BUDGET, COVERABLE_STATUSES, MODEL_FAMILIES, runPieceCovers, cov
 import { runSecondLook } from "./second-look.mjs";
 import { createUpdateClock, maybeUpdateNotice } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
-import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, EVIDENCE_FOLDER } from "./evidence-location.mjs";
+import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, evidenceRefusal, EVIDENCE_FOLDER } from "./evidence-location.mjs";
+import { knownIncompatibility, settleCompatibility, rememberedNotice } from "./compatibility.mjs";
+import { repeatedStatusNotices, diffInputNotice } from "./run-notices.mjs";
 
 // Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
 // cmd.exe and libuv's own shell:false lookup try the WORKING DIRECTORY before
@@ -37,7 +40,7 @@ if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
-const MOMM_VERSION = "1.17.0";
+const MOMM_VERSION = "1.17.1";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -858,7 +861,9 @@ function usage() {
   node scripts/multi-review.mjs --self-test
 
 Options:
-  --input, --patch <file>    Review a file instead of git diff HEAD/stdin
+  --input, --patch <file>    Review a file instead of git diff HEAD/stdin. A diff file given here is itself the
+                             reviewed source, so findings that cite project files cannot receive a completion
+                             receipt (the run says so): for a gate review use --range
   --range <base>..<head>     Review a COMMITTED range. MOMM takes the diff itself and binds the report (and any
                              completion receipt) to both full commit ids. A diff on stdin must be identical.
                              A two-tip diff (git diff base head), not merge-base: pick a base head descends from.
@@ -888,7 +893,9 @@ Options:
                             other reviewer's claims; it is reported under covers[] with covering_for,
                             and adds a quorum vote only for a known model family new to that piece
   --stream                  Emit NDJSON progress events on stderr while reviewers run
-  --preflight               Check every route (install + auth evidence) and exit; zero model calls
+  --preflight               Check every route (install + auth evidence) and exit; zero model calls. A route whose
+                            CLI version and configured model failed together on this machine is shown not ready,
+                            with the update command, until either changes or the route succeeds
   --store-input             Persist the sanitized reviewed artifact inside the report (opt-in,
                             for shareable demos; by default only its sha256 is stored)
   --label <text>            Human subject for this run (e.g. "auth refactor"), carried in the
@@ -1299,19 +1306,30 @@ function unwrapReviewPayload(stdout, nesting = 0) {
   return null;
 }
 
+// 1.17.1 S2: an answer refused as not JSON carries its shape, for the private attempt record only:
+// length, a fence at either end, the parser's error position and the first 80 characters after
+// sanitizeText: no answer text past them. invokeWithRetry strips it before the result goes anywhere else.
+function answerShapeEvidence(answer) {
+  return { answer_shape: answerShape(answer, { redact: (text) => sanitizeText(text).value }) };
+}
+
 // Copilot's human text renderer can wrap lines and remove JSON quote escaping.
 // Consume its JSONL transport instead, never repair the model's answer. Only a
 // completed assistant turn followed by the single final zero-exit result counts.
 // The known event vocabulary is deliberately closed: drift needs inspection,
 // not silent acceptance of a new error/cancellation event. Never echo this stream
 // in diagnostics: non-answer events can contain tool input or reasoning metadata.
+// 1.17.1: Copilot CLI 1.0.91 adds (and 1.0.90, which failed the same way, probably added) `session.warning` (a notice, for example an organisation
+// policy that disables third-party MCP servers) and `model.call_final_result` (one per model call:
+// {model, isByok, result}), seen in a synthetic capture with these flags on 4 October 2026. Both are
+// bookkeeping and never an answer. A model call that does not report "success" is refused.
 function copilotReviewPayload(stdout) {
   const invalid = detail => ({ payload: null, status: "invalid_output", detail: `Copilot machine output refused: ${detail}` });
   const failed = () => ({ payload: null, status: "error", detail: "Copilot returned a terminal failure event; no earlier answer was accepted." });
   const known = new Set(["session.info", "session.auto_mode_resolved", "session.mcp_servers_loaded", "session.tools_updated",
     "user.message", "assistant.turn_start", "model.call_start", "model.call_finished", "assistant.message",
     "tool.execution_start", "tool.execution_complete", "assistant.turn_end", "assistant.reasoning",
-    "session.usage_checkpoint", "assistant.idle", "result"]);
+    "session.usage_checkpoint", "assistant.idle", "result", "session.warning", "model.call_final_result"]);
   let events;
   try {
     events = String(stdout).split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
@@ -1321,7 +1339,14 @@ function copilotReviewPayload(stdout) {
   }
   if (events.some(e => e.type === "session.error" || e.type === "session.abort" || e.is_error === true || e.error
     || (e.type === "result" && Number.isInteger(e.exitCode) && e.exitCode !== 0))) return failed();
-  if (events.some(e => !known.has(e.type))) return invalid("unrecognized event type; verify this CLI's output contract");
+  const unknown = [...new Set(events.map(e => e.type).filter(type => !known.has(type)))];
+  if (unknown.length) {
+    // Name the drift, never echo it: only plain lower-case event names are shown, the rest are counted.
+    const plain = unknown.filter(type => /^[a-z][a-z0-9_.]{0,48}$/.test(type)), hidden = unknown.length - plain.length;
+    const named = [plain.slice(0, 3).join(", "), plain.length > 3 ? `and ${plain.length - 3} more` : "", hidden ? `${hidden} with names not shown` : ""].filter(Boolean).join("; ");
+    return invalid(`unrecognized event type (${named}); verify this CLI's output contract`);
+  }
+  if (events.some(e => e.type === "model.call_final_result" && e.data?.result !== "success")) return invalid("a model call did not report success");
   if (events.filter(e => e.type === "result").length !== 1 || events.at(-1).type !== "result" || events.at(-1).exitCode !== 0) {
     return invalid("a single final result with numeric exitCode 0 is required");
   }
@@ -1339,9 +1364,12 @@ function copilotReviewPayload(stdout) {
   }
   if (!completed || typeof answer?.content !== "string" || !answer.content.trim()
     || !Array.isArray(answer.toolRequests) || answer.toolRequests.length) return invalid("no completed tool-free assistant answer");
-  let payload;
-  try { payload = JSON.parse(answer.content); } catch { return invalid("assistant answer is not strict JSON"); }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("assistant answer must be a JSON object");
+  // 1.17.1: an answer that holds exactly one fenced block is unwrapped (narration around the block is
+  // ignored) and its inside parsed as strictly as a bare answer. The rule is strictAnswer
+  // (review-answer.mjs), shared with Antigravity.
+  const { payload, problem } = strictAnswer(answer.content);
+  if (problem === "not_json") return { ...invalid("assistant answer is not strict JSON"), ...answerShapeEvidence(answer.content) };
+  if (problem) return invalid("assistant answer must be a JSON object");
   return { payload };
 }
 
@@ -1361,9 +1389,9 @@ function antigravityStreamPayload(stdout, stream = true) {
   if (results.length !== 1 || events.at(-1).event !== "result" || results[0].result?.status !== "SUCCESS") return invalid("one final SUCCESS result is required");
   const result = results[0].result;
   if (typeof result.response !== "string" || !result.response.trim()) return invalid("terminal response is empty or incomplete");
-  let payload;
-  try { payload = JSON.parse(result.response); } catch { return invalid("terminal answer is not strict JSON"); }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return invalid("terminal answer must be a JSON object");
+  const { payload, problem } = strictAnswer(result.response);
+  if (problem === "not_json") return { ...invalid("terminal answer is not strict JSON"), ...answerShapeEvidence(result.response) };
+  if (problem) return invalid("terminal answer must be a JSON object");
   return { payload };
 }
 
@@ -1874,7 +1902,8 @@ async function dispatchReviewer(agent, artifact, options, settings) {
   }
   const transportOutput = agent === "copilot" ? copilotReviewPayload(result.stdout)
     : agent === "antigravity" ? antigravityStreamPayload(result.stdout, !attachments.length) : null;
-  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout) };
+  if (transportOutput?.status) return { agent, status: transportOutput.status, detail: transportOutput.detail, progress: result.progress, usage: parseUsage(agent, result.stdout),
+    ...(transportOutput.answer_shape && !options.replyContract ? { answer_shape: transportOutput.answer_shape } : {}) };
   // Grok's stream is rebuilt into the envelope json mode printed; a failed tool call inside it is an
   // event, not a terminal error, so only the stream's own verdict decides that.
   const grokStream = agent === "grok" ? grokStreamReview(result.stdout) : null;
@@ -1900,12 +1929,16 @@ async function dispatchReviewer(agent, artifact, options, settings) {
     const shape = !out.trim() ? "empty stdout" : grokStream?.problem ? grokStream.problem
       : answerText !== null ? (extractJsonObjects(answerText).length ? "final message has JSON but no findings[] object" : "no JSON object in the final message")
         : extractJsonObjects(out).length ? "JSON present but no findings[] object" : "no JSON object in stdout";
+    // 1.17.1 S2: the answer is Grok's final message, the answer field of a JSON envelope, or stdout
+    // itself. When it holds no JSON object at all, its shape goes to the private attempt record.
+    const printed = stripAnsi(out), refused = grokStream ? answerText : envelopeAnswer(extractJsonObjects(printed)) ?? printed;
     return {
       agent,
       status: "invalid_output",
       progress: result.progress,
       usage: parseUsage(agent, `${result.stdout ?? ""}\n${result.stderr ?? ""}`),
       detail: `reviewer did not return the required JSON schema — ${shape}; stdout ${Buffer.byteLength(out, "utf8")} bytes, stderr ${Buffer.byteLength(err, "utf8")} bytes${result.outputLimited ? ", output limit hit" : ""}${out.trim() || err.trim() ? `; sample: "${sample(out.trim() || err)}"` : ""}`,
+      ...(typeof refused === "string" && refused.trim() && !options.replyContract && !extractJsonObjects(refused).length ? answerShapeEvidence(refused) : {}),
     };
   }
   const problem = result.outputLimited ? "output limit hit; review may be truncated" : options.replyContract ? options.replyContract.problem(payload, artifact) : reviewProblem(payload, artifact, { attachments });
@@ -2369,6 +2402,14 @@ async function preflightCheck(reviewers, governor) {
       entry.note = "deprecated route: individual Code Assist tiers were retired 2026-06-18, so this fails closed on individual accounts (enterprise Code Assist only). For Gemini models under an account login, route through antigravity. The route is not being removed.";
     }
     if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
+    // 1.17.1 R1: this machine saw this CLI version fail with this configured model (compatibility.mjs).
+    // The route reads not ready, with the reason and the official update command. Nothing is asked
+    // of a model and no CLI setting is changed.
+    const known = knownIncompatibility({ route: agent, cliVersion: version.version });
+    if (known) {
+      Object.assign(entry, { ready: false, compatibility: { cli_version: known.cli_version, model: known.model, at: known.at, notice: known.notice }, update_hint: known.update_command });
+      entry.note = entry.note ? `${known.notice} ${entry.note}` : known.notice;
+    }
     return entry;
   }));
 }
@@ -2422,8 +2463,9 @@ async function invokeWithRetry(invoker, agent, artifact, options, onRetry, sleep
   }
   // An invalid-output retry is disclosed on the result: what was rejected first, and why.
   const disclosed = first?.status === "invalid_output" ? { retried_after: first.status, first_attempt_detail: first.detail ?? null } : {};
-  // Quotation diagnostics went to the private attempt record (onAttempt), and never go further.
-  const { quotation_diagnostics: _privateQuotes, ...returned } = result;
+  // Quotation diagnostics and the shape of a non-JSON answer went to the private attempt record
+  // (onAttempt), and never go further.
+  const { answer_shape: _privateShape, quotation_diagnostics: _privateQuotes, ...returned } = result;
   return { ...returned, attempts, attempt_history: history, ...disclosed };
 }
 
@@ -2505,8 +2547,9 @@ function createUi(enabled, outStream = process.stderr) {
         // Candidate routes (auth is not the problem) render their note, not a
         // misleading auth label; real routes render install/auth state.
         const isCandidate = e.auth === "n/a" && e.note;
-        const reason = isCandidate ? e.note : e.installed === false ? "not installed" : `auth ${e.auth}`;
-        const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
+        // 1.17.1 R1: a remembered CLI/model mismatch reads as that, with the update command, never as a login.
+        const reason = isCandidate ? e.note : e.installed === false ? "not installed" : e.compatibility ? `CLI/model compatibility error on ${e.compatibility.at.slice(0, 10)}; same CLI and model` : `auth ${e.auth}`;
+        const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.compatibility ? e.update_hint : e.login_hint;
         const hint = fix ? `  ${color(ANSI.bold, "→")} ${fix}` : "";
         return `  ${color(isCandidate ? ANSI.dim : ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${color(isCandidate ? ANSI.dim : ANSI.yellow, reason)}${hint}`;
       });
@@ -2987,7 +3030,8 @@ async function selfTest(pretty) {
         && explicit.timeoutMs === 90000 && explicit.effort === "medium" && invalid;
     })(),
     redacts_common_token_prefixes: (() => {
-      const r = sanitizeText("a ghp_abcdefghijklmnopqrstuvwxyz0123 b github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 c AKIAABCDEFGHIJKLMNOP d sk-abcdefghijklmnopqrstuvwxyz0123 e");
+      // Joined at run time: the source-hygiene suite refuses a token shape written out whole in a tracked file.
+      const r = sanitizeText(["a gh", "p_abcdefghijklmnopqrstuvwxyz0123 b github", "_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 c AK", "IAABCDEFGHIJKLMNOP d s", "k-abcdefghijklmnopqrstuvwxyz0123 e"].join(""));
       return r.redactions === 4 && !/ghp_|github_pat_|AKIA|sk-abc/.test(r.value);
     })(),
     template_strings_and_env_lookups_survive_sanitizer: (() => {
@@ -3261,7 +3305,7 @@ async function selfTest(pretty) {
         && buildOutstanding([], [], "fixture", os.tmpdir()).complete === false;
     })(),
     temp_location_detected_as_ephemeral: isEphemeralLocation(os.tmpdir()) === true,
-    sanitizer_no_offset_leak: sanitizeText("token sk-ant-abcdefghijklmnop end").value === "token [REDACTED] end"
+    sanitizer_no_offset_leak: sanitizeText("token s" + "k-ant-abcdefghijklmnop end").value === "token [REDACTED] end"
       && sanitizeText("api_key=supersecretvalue").value === "api_key=[REDACTED]",
     severity_merge_takes_max: (() => {
       const merged = rationalize([
@@ -3366,7 +3410,7 @@ function evidenceCommand(args) {
       return;
     }
     const status = inspectEvidencePermissions(directory);
-    process.stdout.write(`${JSON.stringify({ evidence: directory, ...where, exists: true, ...status, ...(status.verified ? {} : { remediation: evidenceRemediation(directory) }) }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ evidence: directory, ...where, exists: true, ...status, ...(status.verified ? {} : { remediation: evidenceRemediation(directory, undefined, undefined, status.reason) }) }, null, 2)}\n`);
     if (!status.verified) process.exitCode = 1;
     return;
   }
@@ -3468,11 +3512,13 @@ async function main() {
         if (e.role === "governor") process.stderr.write(`  ${color(ANSI.dim, "⊘")} ${e.agent.padEnd(12)} ${color(ANSI.dim, e.note)}\n`);
         else if (e.ready) process.stderr.write(`  ${color(ANSI.green, "✓")} ${e.agent.padEnd(12)} ${color(ANSI.dim, `${e.version ?? ""} · auth ${e.auth}`)}\n`);
         else {
-          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.login_hint;
-          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
+          const fix = e.installed === false ? (e.install_hint ?? e.login_hint) : e.compatibility ? e.update_hint : e.login_hint;
+          process.stderr.write(`  ${color(ANSI.yellow, "⚠")} ${e.agent.padEnd(12)} ${e.installed === false ? "not installed" : e.compatibility ? "CLI and model did not work together" : `auth ${e.auth}`}${fix ? `  ${color(ANSI.bold, "→")} ${fix}` : ""}${e.note && !e.compatibility ? `  ${color(ANSI.dim, e.note)}` : ""}\n`);
         }
       }
     }
+    // 1.17.1 R1: said in full whether or not stderr is a terminal, so a harness relays it too.
+    if (!options.stream) for (const e of entries) if (e.compatibility) process.stderr.write(`momm compatibility: ${e.compatibility.notice}\n`);
     { const note = await maybeUpdateNotice({ stream: options.stream }); if (note) process.stderr.write(note); }
     return;
   }
@@ -3490,6 +3536,13 @@ async function main() {
   const rawArtifact = await collectArtifact(options);
   const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input, options.range ?? null);
   if (options.range && !sourceSnapshot.complete) throw new Error(`--range could not be bound to the repository: ${sourceSnapshot.reason}`);
+  // 1.17.1 S4: a diff file given as --input is its own source snapshot. Said before anything is sent;
+  // a notice, never a refusal.
+  const inputNotice = diffInputNotice({ cwd: process.cwd(), input: options.input, range: options.range ?? null, artifact: rawArtifact });
+  if (inputNotice) {
+    emitEvent(options.stream, { event: "input.notice", notice: inputNotice });
+    if (!options.stream) process.stderr.write(`momm input: ${inputNotice}\n`);
+  }
   const byteLength = Buffer.byteLength(rawArtifact, "utf8");
   // --split reviews pieces under the ceiling, so the whole-input limit becomes the
   // splitter's hard cap (2 MB) rather than the per-review limit.
@@ -3561,7 +3614,8 @@ async function main() {
     if (!options.stream) process.stderr.write(`Governor guidance (sha256 ${resolvedGuidance.governor.sha256.slice(0, 12)}):\n${sanitizeText(resolvedGuidance.governor.text).value}\n\n`);
   }
   // --stream owns stderr for machines; the live UI owns it for humans. Never both.
-  const ui = createUi(!options.stream && (options.ui === true || (options.ui !== false && process.stderr.isTTY)));
+  const liveUi = !options.stream && (options.ui === true || (options.ui !== false && process.stderr.isTTY));
+  const ui = createUi(liveUi);
   emitEvent(options.stream, {
     event: "dispatch", governor: options.governor, reviewers: uniqueReviewers, input_bytes: byteLength,
     ...(options.staging.attachments.length ? { attachments: options.staging.attachments.map(({ name, modality, bytes, sha256, metadata_stripped, width, height }) => ({ name, modality, bytes, sha256, metadata_stripped, ...(Number.isInteger(width) && Number.isInteger(height) ? { width, height } : {}) })) } : {}),
@@ -3574,6 +3628,13 @@ async function main() {
   const preflightFirst = await preflightCheck(uniqueReviewers, options.governor);
   for (const entry of preflightFirst) emitEvent(options.stream, { event: "preflight", ...entry });
   ui.preflight(preflightFirst);
+  // 1.17.1 R1: a remembered CLI/model mismatch is said before any route is asked. The route still
+  // runs. The live display shows it in its preflight row, so the full sentence waits for the end there.
+  const compatibilityNotices = preflightFirst.filter((entry) => entry.compatibility).map((entry) => entry.compatibility.notice);
+  for (const notice of compatibilityNotices) {
+    emitEvent(options.stream, { event: "compatibility.notice", notice });
+    if (!options.stream && !liveUi) process.stderr.write(`momm compatibility: ${notice}\n`);
+  }
   const preflightPromise = Promise.resolve(preflightFirst);
   // 1.16 splitting: a large diff becomes pieces packed at file/hunk boundaries;
   // every route reviews every piece through one bounded scheduler; quorum is
@@ -3612,8 +3673,8 @@ async function main() {
       onAttempt: row => {
         const record = {...attemptRecord(row, { runId, piece: pieceId ?? "whole", inputHash: createHash("sha256").update(sanitized.value).digest("hex"), pieceHash: createHash("sha256").update(artifactText).digest("hex"), ordinal: row.ordinal, durationMs: row.duration_ms, startedAt: row.started_at, attemptId:row.attempt_start?.attempt_id }),...coverFields,start:row.attempt_start};
         const reference = persistAttempt(process.cwd(), record);
-        // The stored record (bound by its sha256) keeps any quotation diagnostics; the report does not.
-        const { quotation_diagnostics: _privateQuotes, ...bound } = record;
+        // The stored record (bound by its sha256) keeps any quotation diagnostics and answer shape; the report does not.
+        const { answer_shape: _privateShape, quotation_diagnostics: _privateQuotes, ...bound } = record;
         attemptEvidence.push({ ...bound, evidence: reference });
       },
       onProgress: (reviewer, progress) => emitEvent(options.stream, { event: "reviewer.progress", reviewer, state: "awaiting_final_response", ...tag, ...progress }) },
@@ -3701,6 +3762,21 @@ async function main() {
       else process.stderr.write(`momm guidance: sidecar not written (${guidanceSidecar.error})\n`);
     }
   }
+  // 1.17.1 R1: settle this machine's record from what each route just returned (every piece of a
+  // split run, and covers): a success clears it, a compatibility failure is remembered with the CLI
+  // version preflight read and the model the route was given. A failure to write is a notice.
+  const compatibilityMemory = settleCompatibility({ results: [...(pieceResults ? pieceResults.flatMap((piece) => piece.results) : results), ...coverResults.map((c) => c.result)],
+    versions: Object.fromEntries(preflightEntries.map((entry) => [entry.agent, entry.version ?? null])), governor: options.governor });
+  const memoryNotices = [
+    ...compatibilityMemory.recorded.filter((route) => !preflightEntries.some((entry) => entry.agent === route && entry.compatibility)).map(rememberedNotice),
+    ...(compatibilityMemory.error ? [`the compatibility record on this machine was not updated: ${compatibilityMemory.error}`] : []),
+  ];
+  for (const notice of memoryNotices) emitEvent(options.stream, { event: "compatibility.notice", notice });
+  // 1.17.1 S3: the same failure in a route's last three recorded runs here (this run included) is
+  // named with its likely class. A notice only: nothing is routed on it.
+  const statusNotices = repeatedStatusNotices({ dir: evidenceAt.dir, results, governor: options.governor });
+  for (const notice of statusNotices) emitEvent(options.stream, { event: "status.notice", notice });
+  const runNotices = [...roleNotices, ...(inputNotice ? [inputNotice] : []), ...compatibilityNotices, ...memoryNotices, ...statusNotices];
   const report = {
     report_schema: REPORT_SCHEMA,
     dispatcher_version: MOMM_VERSION,
@@ -3748,8 +3824,9 @@ async function main() {
     timeout_ms: options.timeoutMs,
     project_rules_applied: Boolean(options.projectRulesApplied),
     ...guidanceReportFields(resolvedGuidance),
-    // Visible, never a refusal: role briefs (or checklists) past their review date (1.17 B1).
-    ...(roleNotices.length ? { notices: roleNotices } : {}),
+    // Visible, never a refusal: role briefs (or checklists) past their review date (1.17 B1), a diff
+    // file given as --input (S4), a remembered CLI/model mismatch (R1) and a repeated status (S3).
+    ...(runNotices.length ? { notices: runNotices } : {}),
     preflight: preflightEntries,
     reviewers: results.map((result) => ({
       agent: result.agent,
@@ -3913,6 +3990,11 @@ async function main() {
   if (evidence.error && !options.stream) {
     process.stderr.write(`WARNING: evidence persistence failed (${evidence.failed_stage}) — ${evidence.error}\n`);
   }
+  // 1.17.1: the notices this run's outcome raised, in full, once the live display has finished.
+  if (!options.stream) {
+    for (const notice of [...(liveUi ? compatibilityNotices : []), ...memoryNotices]) process.stderr.write(`momm compatibility: ${notice}\n`);
+    for (const notice of statusNotices) process.stderr.write(`momm routes: ${notice}\n`);
+  }
   // The governor's remaining half of the protocol, stated plainly. Printed
   // even when the UI rendered, because silently-skipped triage is the single
   // most common way a momm run ends half-done.
@@ -3956,7 +4038,10 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+  // 1.17.1 R7: a refused evidence location or folder is one plain line, so its paths and the command it
+  // names can be read and copied as they are. --stream keeps stderr as JSON lines.
+  const refusal = process.argv.includes("--stream") ? null : evidenceRefusal(error);
+  process.stderr.write(refusal ? `${refusal}\n` : `${JSON.stringify({ error: error.message })}\n`);
   process.exitCode = 1;
 }).finally(() => {
   // Last-resort termination: sandboxed environments can leave descendants

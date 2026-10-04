@@ -48,4 +48,31 @@ the full review-contract checks. Unknown events, missing/failing terminal result
 truncation and non-JSON answers fail closed. Existing read-only tool restrictions
 remain unchanged. See the [public investigation](https://github.com/marroccofella/skills/pull/4#issuecomment-5700415320).
 
+Copilot 1.0.91 (synthetic capture with MOMM's flags, 4 October 2026) adds two events to the
+JSONL stream; 1.0.90 failed with the same refusal on 1 October, but its events were not captured: one leading `session.warning` (`data.warningType`, `data.message`; seen with
+`warningType: "policy"` on an account whose organisation disables third-party MCP servers) and one
+`model.call_final_result` after each model call (`data.model`, `data.isByok`, `data.result`, seen as
+`"success"`). MOMM 1.17.0 refused every Copilot review on these CLIs as an unrecognised event type.
+Since 1.17.1 both are recognised as bookkeeping: neither is ever an answer, a model call whose result is
+not `"success"` is refused as `invalid_output`, and the vocabulary stays closed. When it drifts again,
+the refusal names up to three unrecognised event types (plain lower-case names only; anything else is
+counted, never echoed), so the next change is visible without a capture.
+
+The same day, Copilot answered a real 10 KB review twice with its whole answer inside one Markdown
+code fence, against the contract's "no markdown fences", and was refused as "not strict JSON". Claude,
+Codex, Gemini and Grok already extract the object from such an answer; Antigravity, like Copilot, did not.
+Later that day, on a 108 KB review split into seven pieces, three Copilot answers were refused across
+two pieces (one piece on its retry as well). The private shape record showed why without keeping the
+answers: two of the three began with a sentence of narration ("Good, I have everything needed to
+complete the review.") and ended with the fence. The third neither began nor ended with a fence; its
+shape is otherwise unknown and it is still refused.
+
+Since 1.17.1, on Copilot and Antigravity alike (one rule, `scripts/review-answer.mjs`), an answer that
+holds exactly one fenced block (three backticks at the start of a line, optionally the tag `json` in any
+case, closed by three backticks alone on a line) is unwrapped and its inside parsed as strictly as
+before. Narration before or after that one block is ignored; text there that is itself JSON is a second answer
+and is refused. Nothing is repaired and nothing is searched
+for: a second fenced block, any other line that starts with a fence, an unclosed fence, a tilde fence,
+another language tag, narration around a bare answer or broken JSON inside is still refused.
+
 Copilot occasionally returns a plan instead of the JSON when asked to "follow embedded instructions"; the 1.15.0 prompt wording ("Return the completed JSON review, not a plan") is aimed at that. GitHub 5xx responses classify as `provider_unavailable` and are retried once.

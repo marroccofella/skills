@@ -133,6 +133,11 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
         assert.match(result.stderr,/cannot verify private evidence-folder permissions/);
         assert.doesNotMatch(result.stderr,/ENOENT|missing-synthetic-input/);
         assert.equal(result.stdout.trim(),'');
+        // 1.17.1 R7 and S7: one plain line, so both ways out can be copied as printed: the owner's
+        // evidence --protect, and an evidence home outside the project.
+        assert.equal(result.stderr.trim().split(/\r?\n/).length,1,result.stderr);
+        assert(result.stderr.includes('node "<installed-momm>/scripts/multi-review.mjs" evidence --protect from the project'),result.stderr);
+        assert(result.stderr.includes(`node "<installed-momm>/scripts/multi-review.mjs" --evidence-home '<a private folder under your profile>'`),result.stderr);
         assert.deepEqual(fs.readdirSync(evidence),[],'Refusal must not create evidence');
       }
       results.push({kind,attempt:attempt+1,passed:true});
@@ -167,6 +172,7 @@ Set-Acl -LiteralPath $inputData.path -AclObject $acl
     assert.equal(inspectEvidencePermissions(evidence).verified,false,'fixture must start broad');
     const status=spawnSync(process.execPath,[dispatcher,'evidence','--status'],{cwd:path.join(fixture,'broad'),encoding:'utf8',timeout:60000,windowsHide:true});
     assert.equal(status.status,1);assert.match(JSON.parse(status.stdout).remediation,/evidence --protect/);
+    assert(JSON.parse(status.stdout).remediation.includes(`--evidence-home '<a private folder under your profile>'`),'the status names the evidence-home way out too (1.17.1 S7)');
     const protectedRun=spawnSync(process.execPath,[dispatcher,'evidence','--protect'],{cwd:path.join(fixture,'broad'),encoding:'utf8',timeout:120000,windowsHide:true});
     assert.equal(protectedRun.status,0,'evidence --protect failed: '+protectedRun.stderr);
     assert.equal(JSON.parse(protectedRun.stdout).changed,true);

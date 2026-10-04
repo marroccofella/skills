@@ -130,6 +130,86 @@ for(const [kind,expected]of[['private',true],['broad',false],['mkdir_failed',fal
   assert(!/ in (PowerShell|cmd\.exe)/.test(evidenceRemediation(path.join(home,'0123456789abcdef0123456789abcdef'),'linux',{MOMM_EVIDENCE_HOME:home})),'POSIX keeps one form');
   checks++;
  }
+ // 1.17.1 S7: a refused in-project .ensemble_reviews also names the way out that changes no existing folder: an
+ // evidence home, as the exact start of the command. Its folder is a fixed placeholder, quoted by the same per-shell
+ // rules as above. evidence --protect is still only named for the owner, and nothing here runs it.
+ {
+  const evidence=path.resolve('synthetic-project','.ensemble_reviews'),placeholder='<a private folder under your profile>';
+  const command=quoted=>`node "<installed-momm>/scripts/multi-review.mjs" --evidence-home ${quoted}`;
+  const single=`start your command with ${command(`'${placeholder}'`)}`,double=command(`"${placeholder}"`);
+  for(const reason of ['different_owner','additional_principal','no_access_rules','permissions_not_private','inspection_limit',undefined]){
+   const posix=evidenceRemediation(evidence,'linux',{},reason),windows=evidenceRemediation(evidence,'win32',{},reason);
+   for(const text of [posix,windows])assert(text.startsWith('Run node "<installed-momm>/scripts/multi-review.mjs" evidence --protect from the project'),`${reason}: ${text}`);
+   assert(posix.includes(`${single}, then the options you used`),`${reason}: ${posix}`);
+   assert(!posix.includes(double)&&!/ in (PowerShell|cmd\.exe)/.test(posix),'POSIX keeps one form');
+   assert(windows.includes(`${single} in PowerShell, or ${double} in cmd.exe, then the options you used`),`${reason}: ${windows}`);
+   for(const text of [posix,windows])assert(text.includes('MOMM_EVIDENCE_HOME set to that folder does the same for every MOMM command'),text);
+  }
+  // The refusal a review prints carries it, beside the reason in words and the owner's action.
+  let spawned=[];
+  const ownerRun=(_exe,args)=>{spawned.push(args.at(-1));return {status:0,stdout:JSON.stringify({verified:false,reason:'different_owner',inspected:1})};};
+  assert.throws(()=>requirePrivateEvidence(evidence,{...winBase,fsx,run:ownerRun}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='different_owner'
+   &&/owned by another account/.test(e.message)&&/No permission changes were made/.test(e.message)&&e.message.includes('multi-review.mjs" evidence --protect from the project')
+   &&e.message.includes(`${single} in PowerShell, or ${double} in cmd.exe`)&&!/[\r\n]/.test(e.message));
+  assert.equal(spawned.length,1,'a refusal inspects once and runs nothing else');
+  assert.doesNotMatch(spawned[0],/Set-Acl|SetAccessControl|SetAccessRule|AddAccessRule|SetOwner/i,'evidence --protect is never run for the owner');
+  assert.throws(()=>requirePrivateEvidence(evidence,{platform:'linux',uid:123,fsx:{...fsx,lstatSync:()=>stat({uid:456})}}),e=>e.reason==='permissions_not_private'&&e.message.includes(`${single}, then`));
+  checks++;
+  // A folder inside it (reports, a saved run) is the same in-project evidence.
+  for(const platform of ['linux','win32'])assert(evidenceRemediation(path.join(evidence,'reports'),platform,{},'different_owner').includes(single));
+  // Not offered where it cannot help: a folder already under an evidence home, a folder that is not project
+  // evidence (provider scratch), or an inspector that could not run.
+  const home=path.resolve('synthetic-home'),folder=path.join(home,'0123456789abcdef0123456789abcdef');
+  for(const platform of ['linux','win32']){
+   for(const reason of ['different_owner',undefined])assert.equal(evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home},reason),evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home}),'an evidence-home folder keeps its own command');
+   assert(!evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home},'different_owner').includes(placeholder));
+   assert(!evidenceRemediation(dir,platform,{},'additional_principal').includes('--evidence-home'),'scratch is not project evidence');
+   assert(!evidenceRemediation(evidence,platform,{},'inspection_unavailable').includes('--evidence-home'));
+  }
+  checks++;
+  // The command injection closed in the final review of 1.17.0 stays closed: the added text is the same constant
+  // whatever the project is called, so a project path holding quotes, $, &, % or an apostrophe is never written
+  // into a command by it. The folder itself still appears exactly where it did (the POSIX chmod, quoted as before).
+  const hostile=path.resolve(`synthetic "p'r$(o)j & %PATH% ${String.fromCharCode(0x2019)}x`,'.ensemble_reviews');
+  for(const reason of ['different_owner','linked_entry','invalid_root']){
+   for(const platform of ['linux','win32']){
+    const added=text=>text.slice(text.indexOf(' Or keep this project'));
+    const plain=evidenceRemediation(evidence,platform,{},reason),odd=evidenceRemediation(hostile,platform,{},reason);
+    assert(plain.includes(' Or keep this project')&&added(odd)===added(plain),`${reason} ${platform}: ${odd}`);
+    assert(!added(odd).includes(path.dirname(hostile)));
+    const homes=[...odd.matchAll(/multi-review\.mjs"(?: evidence)? --evidence-home (\S+)/g)].map(m=>m[1]);
+    assert.deepEqual(homes,platform==='win32'?["'<a",'"<a']:["'<a"],'every --evidence-home argument in the text is the quoted placeholder');
+   }
+   const posix=evidenceRemediation(hostile,'linux',{},reason);
+   assert.equal(posix.split(hostile).length-1,0,'the raw path is never printed on POSIX');
+   if(reason==='different_owner')assert(posix.includes(`chmod -R go-rwx '${hostile.replaceAll("'","'\\''")}'`),posix);
+  }
+  checks++;
+  // 1.17.1 R7: evidence --protect refuses a link, a junction, a hard-linked or special file, and a folder that is
+  // itself a link, so for those reasons it is not offered as the remedy: the owner removes the entry. No path
+  // is printed, so nothing needs quoting.
+  for(const platform of ['linux','win32']){
+   for(const reason of ['linked_entry','linked_or_special_entry']){
+    const text=evidenceRemediation(evidence,platform,{},reason);
+    assert(text.startsWith('Remove the link or special file from the evidence folder yourself')&&!text.includes('Run node')&&!text.includes(path.dirname(evidence)),text);
+    assert(text.includes(platform==='win32'?`${single} in PowerShell, or ${double} in cmd.exe`:single),text);
+    const inHome=evidenceRemediation(folder,platform,{MOMM_EVIDENCE_HOME:home},reason);
+    assert(inHome.startsWith('Remove the link or special file')&&!inHome.includes('--evidence-home')&&!inHome.includes(home),inHome);
+   }
+   const root=evidenceRemediation(evidence,platform,{},'invalid_root');
+   assert(root.startsWith('Remove or rename the entry that has the evidence folder\'s name yourself')&&!root.includes('Run node'),root);
+  }
+  const linkedRun=()=>({status:0,stdout:JSON.stringify({verified:false,reason:'linked_entry',inspected:2})});
+  assert.throws(()=>requirePrivateEvidence(evidence,{...winBase,fsx,run:linkedRun}),e=>e.reason==='linked_entry'&&/contains a link or junction/.test(e.message)&&/Remove the link or special file/.test(e.message)&&!e.message.includes('Run node'));
+  // A link, or a file, where the folder should be: the refusal says so (it used to give no reason) and is typed.
+  for(const blocked of [stat({isSymbolicLink:()=>true}),stat({isDirectory:()=>false,isFile:()=>true})]){
+   assert.throws(()=>preparePrivateEvidence(evidence,{...winBase,fsx:{...fsx,lstatSync:()=>blocked},createPrivate:()=>{throw Error('must not create');}}),
+    e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='invalid_root'&&/cannot prepare its evidence directory: .* is a link or is not a plain directory\. No review input has been read or sent\. Remove or rename/.test(e.message));
+   assert.throws(()=>preparePrivateEvidence(evidence,{platform:'linux',uid:123,fsx:{...fsx,lstatSync:()=>blocked,mkdirSync:()=>{throw Object.assign(Error('SENSITIVE FIXTURE DETAIL'),{code:'EEXIST'});}}}),
+    e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&e.reason==='invalid_root'&&/is a link or is not a plain directory/.test(e.message)&&!e.message.includes('SENSITIVE FIXTURE DETAIL'));
+  }
+  checks++;
+ }
  // The protect action only ever targets a directory named .ensemble_reviews, and spawns nothing otherwise.
  const noSpawn=()=>{throw Error('Must not spawn');};
  assert.throws(()=>protectEvidence(path.resolve('Documents'),{...winBase,run:noSpawn,fsx}),e=>e.code==='MOMM_EVIDENCE_PERMISSIONS'&&/only ever changes a directory named \.ensemble_reviews/.test(e.message));checks++;

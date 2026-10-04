@@ -75,6 +75,29 @@ test("torn update claim fails closed with recovery guidance without removing it"
   });
   assert.throws(() => exclusive("fixture", () => {}), /update.*claim|claim.*invalid/i); assert.equal(removed, false);
 });
+test("a leftover Git lock is reported with its age through read-only calls and is never removed", () => {
+  // R8 (1.17.1): installing 1.17.0 stopped at the checkout on an empty index.lock, six days old, that no Git
+  // process owned. The check is given a file system that can only list and stat: removing or rewriting a
+  // lock would throw here, whatever its age.
+  const code = between(read("momm/scripts/update.mjs"), "const CHECKOUT_LOCKS", "const POLICY_PATHS").replaceAll("export function", "function");
+  const present = new Map(), listed = [];
+  const files = { readdirSync: dir => { listed.push(dir); return []; }, lstatSync: p => { if (present.has(path.basename(p))) return { mtimeMs: present.get(path.basename(p)) }; throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); } };
+  const refuse = vm.runInNewContext(code + ";refuseGitLocks", { path, process, fs: files, safeText: s => String(s), git: () => ".git\n.git" });
+  const outcome = (...args) => { try { refuse("fixture", ...args); return null; } catch (e) { return e; } };
+  assert.equal(outcome("Then repeat the command that was refused."), null, "no lock: nothing is refused");
+  for (const age of [2_000, 6 * 864e5, 4000 * 864e5]) {
+    present.set("index.lock", Date.now() - age);
+    const error = outcome("Then repeat the command that was refused.");
+    assert.equal(error?.code, "git_lock_present", `a lock ${age} ms old was let through`); assert.equal(error.locks.length, 1);
+    assert.match(error.message, /index\.lock/); assert.match(error.message, /does not prove/i); assert.match(error.message, /remove that one file yourself/);
+    assert.match(error.message, /never removes a Git lock/); assert.match(error.message, /3\. Then repeat the command that was refused\./);
+    if (age === 6 * 864e5) assert.match(error.message, /last written 6 days ago/);
+  }
+  // Recovery consults only the two locks its checkout needs, and does not walk the refs.
+  present.clear(); present.set("config.lock", Date.now()); listed.length = 0;
+  assert.equal(outcome("Then retry recovery.", { checkoutOnly: true }), null); assert.equal(listed.length, 0);
+  assert.equal(outcome("Then repeat the command that was refused.")?.code, "git_lock_present"); assert.equal(listed.length, 1, "one git directory: refs walked once");
+});
 for (const installer of ["install.mjs", "momm/scripts/install.mjs"]) test(`${installer} exposes successful links when receipt writing fails`, () => {
   let stdout = "", stderr = "", links = 0, readinessChecks = 0;
   const updateReadiness = { status: "prerequisites_missing", network_used: false, signature_verified: false };

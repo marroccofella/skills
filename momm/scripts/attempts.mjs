@@ -25,7 +25,7 @@ export function attemptRecord(result, { runId, piece = 'whole', inputHash, piece
     route: result.agent, ordinal, started_at: startedAt, finished_at: new Date().toISOString(), duration_ms: durationMs,
     status: result.status, outcome: outcomeFor(result), usage: result.usage ?? null,
     accounting: { tokens: reported && [reported.total_tokens, reported.input_tokens, reported.output_tokens].some(Number.isFinite) ? 'reported' : 'unavailable', cost: Number.isFinite(reported?.cost_usd) ? 'reported' : 'unavailable' },
-    ...quotationFields(result.quotation_diagnostics) };
+    ...quotationFields(result.quotation_diagnostics), ...answerShapeFields(result.answer_shape) };
 }
 // 1.17 A4.2: what a refused answer quoted, kept only in this private record. Known fields only,
 // bounded like reviewed_scope; never the answer itself (review-contract.mjs quotationDiagnostics).
@@ -41,6 +41,21 @@ function quotationFields(rows) {
     steps_tried: Array.isArray(row?.steps_tried) ? row.steps_tried.filter(step => ['exact', 'line_endings', 'look_alikes_and_whitespace', 'diff_one_side'].includes(step)) : [],
   }));
   return { quotation_diagnostics: clean };
+}
+// 1.17.1 S2: what an answer refused as not JSON looked like, kept only in this private record. Known
+// fields only, typed and bounded. The prefix is answer text: at most its first 80 characters after
+// redaction, so an answer that short is kept whole and nothing past them is kept (review-answer.mjs
+// answerShape).
+function answerShapeFields(shape) {
+  if (!shape || typeof shape !== 'object' || Array.isArray(shape)) return {};
+  const count = value => (Number.isInteger(value) && value >= 0 ? value : null);
+  return { answer_shape: {
+    length: count(shape.length),
+    starts_with_fence: shape.starts_with_fence === true,
+    ends_with_fence: shape.ends_with_fence === true,
+    parse_error_position: count(shape.parse_error_position),
+    prefix: typeof shape.prefix === 'string' ? [...shape.prefix].slice(0, 80).join('') : null,
+  } };
 }
 export function persistAttempt(root, record) {
   const evidence = evidenceDir({ cwd: root, env: process.env }); requirePrivateEvidence(evidence);
