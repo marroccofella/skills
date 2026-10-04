@@ -68,6 +68,18 @@ class NarrationQueue {
     this.schedule(); return { state: this.active?.generation === generation ? 'cancelling' : 'cancelled' };
   }
   forgetText(job) { if (job.event) { this.bytes -= job.bytes; job.event = null; } }
+  revokeSession(sessionId) {
+    if (typeof sessionId !== 'string' || !/^[\w.-]{1,128}$/.test(sessionId)) throw new Error('invalid session identity');
+    // Construction requires trusted explicit selection. A source ID alone never grants it.
+    this.sessions.delete(sessionId);
+    for (const job of this.jobs.values()) if (JSON.parse(job.group)[0] === sessionId) {
+      if (job.state === 'playing' || job.state === 'cancelling') { job.state = 'cancelling'; job.controller.abort(); }
+      else if (job.state === 'queued' || job.state === 'failed') job.state = 'cancelled';
+      this.forgetText(job);
+    }
+    this.schedule();
+    return { state: 'revoked' }; // Acoustic stop still depends on the supplied player.
+  }
   next() {
     const eligible = [], considered = new Set();
     for (const [id, jobs] of this.groups) {

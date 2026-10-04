@@ -74,6 +74,23 @@ module.exports = async function(check = fn => fn()) {
   check(() => assert.deepEqual(messages, ['Failure.','Unrelated.']));
   check(() => assert.throws(() => queue.accept(event('s2','.', { generationId: '../bad' })), /invalid event identity/));
   check(() => assert.throws(() => queue.accept(event('s2','.', { sequence: -1 })), /invalid stable segment/));
+  let revokeFinish, revokeSignal; const revocationOrder = [];
+  const revoked = new NarrationQueue({ selectedSessions: ['selected','second'], play: async (text, context) => {
+    revocationOrder.push(text); if (text === 'Revoked active.') { revokeSignal = context.signal; await new Promise(r => { revokeFinish = r; }); }
+  } });
+  revoked.accept(event('s0','Revoked active.')); revoked.accept(event('s1','Revoked pending.'));
+  revoked.accept(event('s0','Other survives.', { sessionId: 'second' })); await tick();
+  revoked.revokeSession('selected');
+  check(() => assert.equal(revokeSignal.aborted, true));
+  check(() => assert.throws(() => revoked.accept(event('s2','Foreign late.')), /session not selected/));
+  check(() => assert.equal(revoked.status().bytes, Buffer.byteLength('Other survives.')));
+  revokeFinish(); await revoked.idle();
+  check(() => assert.deepEqual(revocationOrder, ['Revoked active.','Other survives.']));
+  check(() => assert.equal(revoked.status().cancelled, 2));
+  const unicode = new NarrationQueue({ selectedSessions: ['selected'], maxBytes: 4, play: async () => {} });
+  check(() => assert.throws(() => unicode.accept(event('s0','😀x')), /byte limit/));
+  unicode.accept(event('s0','😀')); await unicode.idle();
+  check(() => assert.equal(unicode.status().completed, 1));
 };
 if (require.main === module) { let count = 0; module.exports(fn => { fn(); count++; })
   .then(() => console.log('PASS: ' + count + ' experimental queue assertions; injected playback, no native audio'))

@@ -12,7 +12,7 @@
     },
     {
       "path": "EVOLUTION.md",
-      "sha256": "f0cc36df274ba61a7c506fa25ade00980a171838eb9bc9fca3c439036d4ae439"
+      "sha256": "4f7bc8f56dbe9a5e44f5c8205868d9d5dfc1552188135bde7ded021bbfbdec18"
     },
     {
       "path": "LICENSE",
@@ -44,7 +44,7 @@
     },
     {
       "path": "scripts/experimental/narration-queue.js",
-      "sha256": "4c877496f238ed553226116c75a7ea4618a76b125ec34cb02f1a367fa4205700"
+      "sha256": "99fbf0ca430f7292e508280f5183399c9a67d5231ac999436ff0c885349e3cfa"
     },
     {
       "path": "scripts/install.js",
@@ -120,7 +120,7 @@
     },
     {
       "path": "tests/async-queue-checks.cjs",
-      "sha256": "fece1e2f0b50abbc173b9d535b6ec571ae88f925e059a63a00f84a61c7d778b5"
+      "sha256": "73555c1e5d42a224f05d2a38235042e84f3eed941e059de7417602fe6bfc4cfe"
     },
     {
       "path": "tests/corpus/golden.json",

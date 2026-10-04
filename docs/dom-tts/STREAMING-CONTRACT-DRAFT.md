@@ -20,10 +20,22 @@ is bounded and admission refuses when full; no persistence, exactly-once acousti
 guarantee, reconnect transport, revision reconciliation or automatic eviction exists.
 Status contains counts only, not speech, raw provider errors or identifiers.
 
-28 deterministic assertions exercise unresolved-player admission, sequence/replay
+35 deterministic assertions exercise unresolved-player admission, sequence/replay
 refusal, explicit session/role boundaries, retries, generation cancellation, limits,
-three-session fairness and failed-message ordering. These use injected promises;
+three-session fairness, failed-message ordering and selected-session revocation. These use injected promises;
 they are not native audio, acoustic latency or real-harness streaming receipts.
+
+The kernel's segment and total retained-text limits are UTF-8 bytes (Buffer.byteLength),
+not JavaScript character counts. It has no text-range fields yet; the delta/revision
+adapter must define and validate ranges, astral/surrogate and grapheme boundaries
+before range reconciliation is enabled. Emoji byte-bound checks exist; this is not
+evidence of a complete Unicode streaming segmenter.
+
+Only a trusted, owner-consented caller supplies selectedSessions. The kernel does not
+discover sources or authorize them from event IDs. revokeSession removes admission,
+aborts active work and drops retained queue text for that session; another session
+continues. It cannot erase strings already handed to an engine or prove acoustic stop.
+The future source registry/adapter must gate actual reads and enforce revocation too.
 
 ## Boundaries
 
