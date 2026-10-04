@@ -43,7 +43,9 @@ function quotationFields(rows) {
   return { quotation_diagnostics: clean };
 }
 // 1.17.1 S2: what an answer refused as not JSON looked like, kept only in this private record. Known
-// fields only, typed and bounded; never the answer itself (review-answer.mjs answerShape).
+// fields only, typed and bounded. The prefix is answer text: at most its first 80 characters after
+// redaction, so an answer that short is kept whole and nothing past them is kept (review-answer.mjs
+// answerShape).
 function answerShapeFields(shape) {
   if (!shape || typeof shape !== 'object' || Array.isArray(shape)) return {};
   const count = value => (Number.isInteger(value) && value >= 0 ? value : null);

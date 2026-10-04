@@ -5,8 +5,8 @@
 // accepts: Copilot and Antigravity read one answer string strictly; Claude, Codex, Gemini and Grok
 // extract the last review object from text (unchanged). Nothing is repaired on either.
 // S2: an answer refused as not JSON leaves its shape (length, fence at the start and end, parser error
-// position, redacted 80-character prefix) in the PRIVATE attempt record only. Never the answer, and
-// nothing new in the returned result, the in-memory history or the report.
+// position, redacted 80-character prefix) in the PRIVATE attempt record only. No answer text past that
+// prefix, and nothing new in the returned result, the in-memory history or the report.
 // Synthetic answers only, through the real adapters, retry seam and attempt writer; no provider is asked.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -190,6 +190,39 @@ try {
     assert.equal(reviewAnswer.answerShape('xposition 5').parse_error_position, runtimePosition('xposition 5'));
     assert.equal(reviewAnswer.answerShape('').length, 0);
   });
+  // Gate review of 1.17.1 (answer-shape-leaks-answer-prefix): the prefix IS answer text. The record
+  // keeps exactly that much, and the comments beside the code say so instead of "never the answer".
+  await check('S2: the prefix is the only answer text kept: a short answer whole, a longer one never past 80 characters', () => {
+    const at = { runId: 'rev_nonjson_fixture', piece: 'whole', inputHash: sha('x'), pieceHash: sha('x'), ordinal: 1, durationMs: 1, startedAt: new Date().toISOString() };
+    const kept = (answer) => attemptRecord({ agent: 'codex', status: 'invalid_output', answer_shape: reviewAnswer.answerShape(answer, { redact: (text) => sanitizeText(text).value }) }, at);
+    const short = `No review: the token ${secret} stopped me.`;
+    assert.equal(kept(short).answer_shape.prefix, sanitizeText(short).value, 'an answer of 80 characters or fewer is kept whole, after redaction');
+    assert(!JSON.stringify(kept(short)).includes(secret));
+    const long = kept(`${'a'.repeat(80)}PAST_THE_PREFIX_MARKER ${'b'.repeat(400)}`);
+    assert.equal(long.answer_shape.prefix, 'a'.repeat(80));
+    assert(!JSON.stringify(long).includes('PAST_THE_PREFIX_MARKER') && !JSON.stringify(long).includes('bbbb'), 'nothing past the 80th character is kept');
+    // What the code says it keeps, in the three places that say it.
+    const text = (name) => fs.readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
+    const cut = (whole, from, to) => { const a = whole.indexOf(from), b = whole.indexOf(to, a); assert(a >= 0 && b > a, `${from} not found`); return whole.slice(a, b); };
+    const stated = {
+      'attempts.mjs': cut(text('./attempts.mjs'), '// 1.17.1 S2:', 'function answerShapeFields('),
+      'review-answer.mjs': cut(text('./review-answer.mjs'), '// 1.17.1 S2:', 'export function answerShape('),
+      'multi-review.mjs': cut(source, '// 1.17.1 S2: an answer refused as not JSON carries its shape', 'function answerShapeEvidence('),
+    };
+    for (const [name, comment] of Object.entries(stated)) {
+      assert.doesNotMatch(comment, /never the answer/i, `${name} must not say that no answer text is kept`);
+      assert.match(comment, /80 (?:characters|code points)/, `${name} states the bound`);
+    }
+    assert.match(stated['attempts.mjs'], /kept whole/); assert.match(stated['review-answer.mjs'], /kept whole/);
+  });
+  await check('S2: length and prefix count code points; the parser position is a UTF-16 offset', () => {
+    const smile = String.fromCodePoint(0x1F600), text = `{"a":"${smile.repeat(2)}",}`;
+    const shape = reviewAnswer.answerShape(text);
+    assert.equal(shape.length, 11, 'eleven characters'); assert.equal(text.length, 13, 'thirteen UTF-16 code units');
+    assert.equal(shape.parse_error_position, runtimePosition(text));
+    assert([12, null].includes(shape.parse_error_position), 'the closing brace is at offset 12 in UTF-16 code units (10 in code points); absent when this Node gives none');
+    assert.equal(shape.prefix, text, 'no character is cut in half');
+  });
   const refusals = {
     copilot: /assistant answer is not strict JSON/, antigravity: /terminal answer is not strict JSON/, grok: /no JSON object in the final message/,
     claude: /JSON present but no findings\[\] object/, gemini: /JSON present but no findings\[\] object/, codex: /no JSON object in stdout/,
@@ -298,6 +331,22 @@ try {
     assert.deepEqual(state.attempts, [reference]);
     assert.equal(auditAttempts(root, [runId]).attempts.length, 1);
   });
+  // Gate review of 1.17.1: the answer shape is left out of the comparison with the report, so the
+  // record's sha256 is all that covers it. An edit to it after the run is refused by both binders.
+  await check('S2: a stored record whose answer shape was edited afterwards is refused by its hash', async () => {
+    assert(saved.length, 'an attempt record was written');
+    const { inspectCompletion } = await import('./governor.mjs');
+    const { auditAttempts } = await import('./attempt-audit.mjs');
+    const runId = 'rev_nonjson_fixture', file = path.join(root, saved[0].path), original = fs.readFileSync(file, 'utf8');
+    assert.equal(auditAttempts(root, [runId]).attempts.length, 1, 'accepted before the edit');
+    const edited = JSON.parse(original); edited.answer_shape.prefix = 'EDITED AFTER THE RUN';
+    try {
+      fs.writeFileSync(file, JSON.stringify(edited, null, 2) + '\n');
+      assert(inspectCompletion(root, runId).errors.some((e) => /changed evidence/.test(e)), 'the governor refuses the edited record');
+      assert.throws(() => auditAttempts(root, [runId]), /attempt hash or source mismatch/);
+    } finally { fs.writeFileSync(file, original); }
+    assert.equal(auditAttempts(root, [runId]).attempts.length, 1, 'the original bytes are accepted again');
+  });
   await check('S2: attemptRecord keeps only the known shape fields, bounded and typed', () => {
     const at = { runId: 'rev_nonjson_fixture', piece: 'whole', inputHash: sha('x'), pieceHash: sha('x'), ordinal: 1, durationMs: 1, startedAt: new Date().toISOString() };
     const hostile = attemptRecord({ agent: 'codex', status: 'invalid_output', answer_shape: { length: 9000, starts_with_fence: 'yes', ends_with_fence: true, parse_error_position: -4, prefix: 'x'.repeat(500), answer: 'WHOLE_ANSWER_MARKER', error: 'PARSER_MESSAGE_MARKER' } }, at);
@@ -307,6 +356,20 @@ try {
     assert(!JSON.stringify(hostile).includes('WHOLE_ANSWER_MARKER') && !JSON.stringify(hostile).includes('PARSER_MESSAGE_MARKER'));
     for (const odd of [null, undefined, 'text', [], 7]) assert.equal(Object.hasOwn(attemptRecord({ agent: 'codex', status: 'invalid_output', answer_shape: odd }, at), 'answer_shape'), false);
     assert.equal(Object.hasOwn(attemptRecord({ agent: 'codex', status: 'success' }, at), 'answer_shape'), false, 'records without a non-JSON refusal are unchanged');
+  });
+  await check('S2: attemptRecord refuses a count that is not a whole number and never cuts a character in half', () => {
+    const at = { runId: 'rev_nonjson_fixture', piece: 'whole', inputHash: sha('x'), pieceHash: sha('x'), ordinal: 1, durationMs: 1, startedAt: new Date().toISOString() };
+    const shaped = (answer_shape) => attemptRecord({ agent: 'codex', status: 'invalid_output', answer_shape }, at).answer_shape;
+    for (const odd of [12.5, -1, NaN, Infinity, '7', null, undefined, true]) {
+      assert.equal(shaped({ length: odd }).length, null, `length ${String(odd)}`);
+      assert.equal(shaped({ parse_error_position: odd }).parse_error_position, null, `position ${String(odd)}`);
+    }
+    assert.deepEqual(shaped({ length: 0, parse_error_position: 0 }), { length: 0, starts_with_fence: false, ends_with_fence: false, parse_error_position: 0, prefix: null });
+    // The 80th character is astral: it is kept whole (two code units) and the 81st is dropped.
+    const smile = String.fromCodePoint(0x1F600), edge = shaped({ prefix: 'x'.repeat(79) + smile.repeat(3) }).prefix;
+    assert.equal(edge, 'x'.repeat(79) + smile); assert.equal(edge.length, 81); assert.equal([...edge].length, 80);
+    assert.equal(shaped({ prefix: smile.repeat(200) }).prefix, smile.repeat(80));
+    for (const odd of [null, undefined, 5, {}, ['x']]) assert.equal(shaped({ prefix: odd }).prefix, null, `prefix ${JSON.stringify(odd)}`);
   });
 } finally {
   // Real paths on both sides: a hosted runner's temp folder is a short or linked name.

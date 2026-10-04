@@ -1308,7 +1308,7 @@ function unwrapReviewPayload(stdout, nesting = 0) {
 
 // 1.17.1 S2: an answer refused as not JSON carries its shape, for the private attempt record only:
 // length, a fence at either end, the parser's error position and the first 80 characters after
-// sanitizeText. Never the answer. invokeWithRetry strips it before the result goes anywhere else.
+// sanitizeText: no answer text past them. invokeWithRetry strips it before the result goes anywhere else.
 function answerShapeEvidence(answer) {
   return { answer_shape: answerShape(answer, { redact: (text) => sanitizeText(text).value }) };
 }
