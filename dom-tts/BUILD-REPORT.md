@@ -1,5 +1,24 @@
 # Dom TTS 0.5.0-dev.1 build report
 
+## Legion integration receipt — 4 October 2026
+
+Integration branch codex/dom-tts-0.5-programme starts at PR #41's exact head
+1337e670536161475b6070510232231932109923. Legion independently ran self-test
+on Windows x64 / Node 22.16.0: 9,706 common assertions passed, six POSIX-only
+checks skipped. Native windows-privacy.cjs passed broad-parent/new-child protection,
+broad-existing refusal, junction refusal and same-process changed-ACL revalidation.
+These are directory/privacy results, not new audio or listening evidence.
+
+Removed an obsolete comment describing the now-removed cache; runtime behaviour is
+unchanged from the reviewed PR #41 head. EVOLUTION.md records the owner's expanded
+programme and newly published legacy handoff. The regenerated source manifest must
+verify on the resulting commit; final integration hosted CI remains pending until
+dispatched. Prior exact-head successes and failures below remain historical receipts.
+
+PR #42's legacy source is archival and was not installed or executed as a live tray.
+Independent MOMM quorum, native Mac/Linux audio, final-candidate second Windows host,
+listening/acoustic timings, installation EPERM and policy compatibility remain open.
+
 4 October 2026, Asia/Dubai. Development candidate authored by Legion (Codex).
 Base: 75ba1ce6bd9653cd62264bb954ee17e6cb943075, 0.4.0-dev.2 / PR #39.
 Only bug fixes, safety improvements and migration/acceptance documentation.

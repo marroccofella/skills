@@ -49,3 +49,36 @@ private state location. The source manifest is integrity metadata, not a signatu
 Default spoken final replies are a host instruction preference, not a background
 watcher. Each host needs the skill, an audio engine and that preference installed.
 The consented watcher still reads one selected transcript only.
+
+## Owner-authorized programme follow-up (4 October 2026)
+
+The owner has expanded the future 0.5 programme beyond this bug-fix candidate.
+This does not retroactively claim delivery of additional features in dev.1.
+Stages: close core defects; recover legacy source and migration; independent text
+display and asynchronous speech streaming; generic/named harness adapters; accessible
+desktop controls; richer content/local voices; optional managed services, cloud
+voices, consented cloned-voice and microphone companions. Each stage needs separate
+review and acceptance evidence. Core local narration remains usable independently.
+
+PR #41 removes the permission cache and marker on branch
+claude/dom-tts-0.5-permission-check. Legion independently tested its exact commit
+1337e670536161475b6070510232231932109923 on Windows x64 / Node 22.16.0:
+9,706 common offline assertions passed, six POSIX-only checks were explicitly
+skipped, and native same-process changed-ACL refusal passed. This supports closing
+the reproduced cache shortcut on that commit; it does not certify all privacy races
+or later integration commits. Keep its failing-before CI receipt 37179287075.
+
+The legacy tray handoff is archival PR #42 at
+9fedaa449c3071aacc4aa6e7e7f88cc6ffceb756, not an installation or stable release.
+Discussion #38 identifies a PowerShell WinForms companion and differing same-version
+legacy installations. Original distribution provenance and independent GUI/listening
+evidence remain open. Inspect/review archived source before transplanting controls.
+
+Next work: asynchronous queue/event contract and legacy feature matrix, then pinned
+Claude Code and generic real-harness tests. Hermes tentatively means NousResearch's
+Hermes Agent; the owner's "Agent" and "Open Claude" identities remain unresolved.
+No newly named harness compatibility is certified. Do not await playback completion
+on the text-rendering path. Distinguish complete-message narration from token deltas.
+
+Coordination evidence:
+https://github.com/marroccofella/skills/discussions/38#discussioncomment-18739772

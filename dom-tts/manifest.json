@@ -12,7 +12,7 @@
     },
     {
       "path": "EVOLUTION.md",
-      "sha256": "85a403ce154f8401f195df2789458747d76eb13e87b5a648c9f4890676fababe"
+      "sha256": "3e4c71decd033a09ce9eac9236749ec7327465a0c84ef3609d7fafb612b6473c"
     },
     {
       "path": "LICENSE",
@@ -72,7 +72,7 @@
     },
     {
       "path": "scripts/runtime.js",
-      "sha256": "5e9a1a4c67a94ac4aad9f6ab66c0dea9c1cc2517e0bb8577ecec3434463bd409"
+      "sha256": "28fa44786b9f22c7a93c3a944323f42091170715c50e57416cf3ca4a92c56d83"
     },
     {
       "path": "scripts/self-test.js",

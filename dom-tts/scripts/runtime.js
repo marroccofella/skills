@@ -7,10 +7,6 @@ function safeEnv(){return Object.fromEntries(Object.entries(process.env).filter(
 function psQuote(value){return "'"+String(value).replace(/'/g,"''")+"'";}
 function readObject(file,fallback={}){try{const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1048576)return fallback;const obj=JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));return obj&&typeof obj==='object'&&!Array.isArray(obj)?obj:fallback;}catch{return fallback;}}
 function assertNoLinks(dir){let part=path.resolve(dir);while(true){if(fs.existsSync(part)&&fs.lstatSync(part).isSymbolicLink())throw new Error('State directories must not contain links');const parent=path.dirname(part);if(parent===part)break;part=parent;}}
-// Verified once per process and folder: a successful Windows ACL check leaves a marker bound to the
-// folder's identity, so later playbacks skip the PowerShell launch. A new or replaced folder is
-// checked again, including after a process restart. Disk markers never authorize a new process.
-// POSIX modes are checked on each call. Failure reasons omit paths/raw output.
 // The Windows ACL check runs on every call: no marker file or in-process memory stands in for it,
 // because ACLs can change without changing anything a cache could compare. Each caller checks once
 // per run (speak, status --recover, support bundle, watcher start), so this costs one PowerShell
@@ -44,4 +40,3 @@ function parseCli(argv,defaults={},allowed=[]){
 function endpoint(token,dir=stateDir){if(!/^[a-f0-9]{32}$/.test(token))throw new Error('Invalid playback token');const name=crypto.createHash('sha256').update(token).digest('hex').slice(0,24);if(process.platform==='win32')return '\\\\.\\pipe\\dom-tts-'+name;const socket=path.join(dir,'s-'+name.slice(0,12));if(Buffer.byteLength(socket)>100)throw new Error('State directory path is too long for the local stop socket (limit about 85 characters); set a shorter DOM_TTS_STATE_DIR');return socket;}
 function alive(pid){if(!Number.isSafeInteger(pid)||pid<1)return false;try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}}
 module.exports={ROOT,stateDir,powershell,safeEnv,psQuote,readObject,writeObject,ensurePrivate,parseCli,endpoint,alive};
-
