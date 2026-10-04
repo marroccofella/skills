@@ -55,6 +55,7 @@ const planForm = document.querySelector("#plan-form");
 const planIn = document.querySelector("#plan-in");
 const planOut = document.querySelector("#plan-out");
 const planResult = document.querySelector("#plan-result");
+const staleNotice = document.querySelector("#stale-notice");
 
 let session = null;
 let capabilities = null;
@@ -101,6 +102,23 @@ function showToast(message) {
   toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove("show"), 4200);
+}
+
+// The server is long-running: after an update it still serves the code it started
+// with. Status and maintenance answers carry the version it started on and the one
+// now installed. Only two plain version numbers and the literal flag make a notice;
+// an answer without the field changes nothing. The region is a live region, so an
+// unchanged notice is not written again.
+const plainVersion = (value) => typeof value === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(value);
+let staleNoticeShown = "";
+function renderStaleNotice(check) {
+  if (!staleNotice || !check || typeof check !== "object") return;
+  const running = check.running_version, installed = check.installed_version;
+  const stale = check.stale === true && plainVersion(running) && plainVersion(installed) && running !== installed;
+  const html = stale ? `<p class="stale-notice">Setup Center is running ${escapeHtml(running)}; ${escapeHtml(installed)} is now installed. Close this window and start the Setup Center again.</p>` : "";
+  if (html === staleNoticeShown) return;
+  staleNoticeShown = html;
+  staleNotice.innerHTML = html;
 }
 
 async function api(path, options = {}) {
@@ -384,6 +402,7 @@ async function loadMaintenance(force = false) {
     }
     renderMaintenance();
     render();
+    renderStaleNotice(fresh.setup_center); // this is the refresh that follows an applied update
     loadUpdateClock(); // the server fed installed versions to the clock; Check everything also triggered setup.check
   } catch (error) {
     maintenanceSummary.textContent = "The maintenance check could not finish. Your reviewer setup is unaffected.";
@@ -403,6 +422,7 @@ async function refresh() {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
     if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
     report = fresh;
+    renderStaleNotice(fresh.setup_center);
     // The topbar pill links to /ledger on this origin; its tooltip names the
     // file on disk once the ledger exists, so the page can also be opened directly.
     const ledgerLink = document.querySelector("#ledger-link");

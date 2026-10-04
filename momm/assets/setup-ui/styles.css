@@ -30,6 +30,12 @@ a { color: inherit; }
 .controller-control span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .controller-control select { min-height: 32px; padding-left: 8px; border: 0; background-color: var(--card); font-size: 12px; }
 
+/* 1.17.1 R10: the stale-server notice. The region is a live region that is always
+   rendered, so a screen reader hears the text arrive; it has no box of its own.
+   It sticks to the top so the notice is seen wherever the refresh was started. */
+.stale-notice-region { position: sticky; top: 10px; z-index: 4; }
+.stale-notice { margin: 14px 0 0; padding: 13px 16px; border: 1px solid var(--amber); border-left-width: 5px; border-radius: 13px; color: var(--ink); background: var(--amber-soft); box-shadow: var(--shadow); font-size: 14px; font-weight: 650; line-height: 1.5; }
+
 .hero {
   padding: 76px 0 58px;
   display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(270px, .7fr); gap: 72px; align-items: end;
