@@ -7,6 +7,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import * as updater from "./update.mjs";
 import { update, parse, git, run, resolveTool, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, cliBinary, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -43,7 +44,8 @@ try {
   });
   git(remote, "init");
   for (const file of ["momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
-  write(remote, "momm/SKILL.md", "Original protocol\n");
+  // Headings as well as text, so the consent-gate summary (S8) has sections to compare.
+  write(remote, "momm/SKILL.md", "# Fixture skill\n\nOriginal protocol\n\n## Kept section\n\nsame text\n\n## Retired section\n\nold text\n");
   write(remote, "sibling/SKILL.md", "A separately installed sibling\n");
   write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.0.0'; console.log('fixture dispatcher one');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.0.0" }));
@@ -61,7 +63,7 @@ try {
   run(process.execPath, ["install.mjs", "--skills", "momm,sibling", "--custom-dir", secondHarness], installed);
   write(remote, 'intermediate.txt', 'first intervening change\n'); commit(remote, 'intermediate one');
   write(remote, 'intermediate.txt', 'second intervening change\n'); commit(remote, 'intermediate two');
-  write(remote, "momm/SKILL.md", "Explicit new protocol\n");
+  write(remote, "momm/SKILL.md", "# Fixture skill\n\nExplicit new protocol\n\n## Kept section\n\nsame text\n\n## Added section\n\nnew text\n");
   write(remote, "momm/scripts/multi-review.mjs", "const MOMM_VERSION = '1.1.0'; console.log('fixture dispatcher two');\n");
   write(remote, "versions.json", JSON.stringify({ momm: "1.1.0" }));
   write(remote, ".gitignore", "# New release has different ignore rules\n");
@@ -101,6 +103,108 @@ try {
   });
   await test("yes_does_not_accept_changed_protocol", async () => {
     await assert.rejects(command(["--apply", "--yes"]), /--accept-protocol/); assert.equal(git(installed, "rev-parse", "HEAD"), first);
+  });
+  // S8 (1.17.1): the gate showed only the full diff. A short list now comes first: the protocol files that
+  // changed and the SKILL.md headings added, removed or changed. The gate itself is the one tested above.
+  await test("protocol_gate_prints_a_summary_before_the_full_diff", async () => {
+    for (const mode of [["--apply", "--yes"], ["--dry-run"]]) {
+      const logs = []; let error;
+      try { await update(["--repo", installed, ...mode], { ...deps, log: s => logs.push(s) }); } catch (e) { error = e; }
+      if (mode[0] === "--apply") assert.match(error?.message ?? "", /Policy changed[^]*--accept-protocol[^]*--yes never bypasses/, "the gate is unchanged");
+      else assert.equal(error, undefined);
+      const summaryAt = logs.findIndex(s => s.startsWith("Protocol change summary")), diffAt = logs.findIndex(s => s.startsWith("Protocol / default-rules / persona diff"));
+      assert(summaryAt >= 0, `${mode[0]}: no protocol change summary was printed`);
+      assert(diffAt > summaryAt, "the summary comes first, then the full diff");
+      const summary = logs[summaryAt];
+      assert.match(summary, /changed +momm\/SKILL\.md/); assert.match(summary, /changed +momm\/scripts\/multi-review\.mjs/);
+      assert(!summary.includes("intermediate.txt") && !summary.includes("versions.json"), "only protocol files are listed");
+      assert.match(summary, /added +## Added section/); assert.match(summary, /removed +## Retired section/); assert.match(summary, /changed +# Fixture skill/);
+      assert(!summary.includes("## Kept section"), "a section whose text is the same is not listed");
+      assert(summary.length < 2000, "a short list, not a second diff");
+      assert(logs[diffAt].includes("+Explicit new protocol") && logs[diffAt].includes("-Original protocol"), "the full diff follows as before");
+      assert.equal(git(installed, "rev-parse", "HEAD"), first);
+    }
+  });
+  await test("skill_heading_summary_compares_sections_and_ignores_fenced_code", () => {
+    assert.equal(typeof updater.headingChanges, "function", "update.mjs must export headingChanges");
+    const before = ["---", "name: momm", "---", "# Title", "intro", "## Run", "step one", "```sh", "# not a heading", "```", "## Gone", "x", "## Same", "kept"].join("\r\n");
+    const after = ["---", "name: momm", "---", "# Title", "intro", "## Run", "step one, changed", "```sh", "# still not a heading", "```", "## New", "y", "## Same", "kept"].join("\n");
+    assert.deepEqual(updater.headingChanges(before, after), { added: ["## New"], removed: ["## Gone"], changed: ["## Run"] });
+    assert.deepEqual(updater.headingChanges("# T\nx\n", "# T\r\nx\r\n"), { added: [], removed: [], changed: [] }, "line endings alone are not a change");
+    assert.deepEqual(updater.headingChanges("---\ndescription: a\n---\n# T\n", "---\ndescription: b\n---\n# T\n"), { added: [], removed: [], changed: ["(text before the first heading)"] });
+    assert.deepEqual(updater.headingChanges("", "# T\nx\n## U\n"), { added: ["# T", "## U"], removed: [], changed: [] }, "a new file lists its headings as added");
+    assert.deepEqual(updater.headingChanges("## A\none\n## A\ntwo\n", "## A\none\n## A\nthree\n"), { added: [], removed: [], changed: ["## A"] }, "a repeated heading is compared as a whole");
+    assert.deepEqual(updater.headingChanges("#hashtag\n####### seven\n", "#hashtag changed\n####### seven\n").changed, ["(text before the first heading)"], "not headings: no space after the marks, or more than six");
+  });
+  // R8 (1.17.1; field report of 3 October 2026): installing 1.17.0 failed at the checkout on a leftover
+  // .git/index.lock (empty, six days old, no Git process running), after the transaction had been staged.
+  // A Git lock is now reported before anything starts. It is never removed, and its age is shown, not judged.
+  const DAY = 864e5, gitDirOf = repo => path.resolve(repo, git(repo, "rev-parse", "--git-dir"));
+  // A minute beyond the round figure, so a file system that rounds a timestamp cannot show one unit less.
+  const plantLock = (name, age = 6 * DAY + 60_000) => { const file = path.join(gitDirOf(installed), name), at = new Date(Date.now() - age); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ""); fs.utimesSync(file, at, at); return file; };
+  // The updater prints real paths; a temp folder can be spelled differently (8.3 short names on hosted Windows).
+  const sameFile = (a, b) => fs.realpathSync.native(a) === fs.realpathSync.native(b);
+  const refused = async (args, extra = {}) => { const logs = []; let error; try { await update(["--repo", installed, ...args], { ...deps, log: s => logs.push(s), ...extra }); } catch (e) { error = e; } return { error, logs }; };
+  await test("git_lock_stops_dry_run_and_apply_before_any_change", async () => {
+    const lockFile = plantLock("index.lock"), stamp = fs.statSync(lockFile).mtimeMs;
+    const receipt = fs.readFileSync(lockPath, "utf8"), refs = git(installed, "show-ref"), checks = verified;
+    try {
+      for (const mode of [["--dry-run"], ["--apply", "--yes", "--accept-protocol"]]) {
+        const { error, logs } = await refused(mode);
+        assert(error, `${mode[0]} must stop on a Git lock`); assert.equal(error.code, "git_lock_present", error.message.split("\n")[0]);
+        assert.equal(error.locks.length, 1); assert(sameFile(error.locks[0].file, lockFile), error.locks[0].file);
+        assert(error.message.includes(error.locks[0].file), "the message names the lock by its full path");
+        assert.match(error.message, /6 days/, "the age is shown"); assert.match(error.message, /does not prove/i, "age is never proof that a lock is stale");
+        assert.match(error.message, process.platform === "win32" ? /tasklist/ : /pgrep/, "how to check that no Git process is running");
+        assert.match(error.message, /remove that one file yourself/i); assert.match(error.message, /never removes a Git lock/i);
+        assert.match(error.message, /nothing was changed/i); assert(error.message.split("\n").length <= 12, "one plain message");
+        assert.deepEqual(logs, [], "stopped before the first request: nothing fetched, staged or printed");
+        assert.equal(verified, checks, "no release was staged or verified");
+        assert.equal(fs.readFileSync(lockPath, "utf8"), receipt); assert.equal(git(installed, "show-ref"), refs); assert.equal(git(installed, "rev-parse", "HEAD"), first);
+        for (const name of ["transaction.json", "update.active"]) assert.equal(fs.existsSync(path.join(stateDir(installed), name)), false, `${name} was left behind`);
+        assert.equal(fs.statSync(lockFile).size, 0); assert.equal(fs.statSync(lockFile).mtimeMs, stamp, "the lock is left exactly as it was found");
+      }
+      // The commands that change no checkout are not held up: the release information check and the channel setting.
+      await command([]); await command(["--channel", "stable"]);
+      assert(fs.existsSync(lockFile));
+    } finally { fs.unlinkSync(lockFile); }
+  });
+  await test("git_lock_age_never_decides_and_every_standard_lock_is_reported", async () => {
+    // A lock two seconds old and one more than a year old are refused alike, and both are still there afterwards.
+    for (const [age, shown] of [[2_000, /\b\d{1,2} seconds? ago/], [400 * DAY, /\b(399|400) days ago/]]) {
+      const lockFile = plantLock("index.lock", age);
+      try { const { error } = await refused(["--dry-run"]); assert.equal(error?.code, "git_lock_present"); assert.match(error.message, shown); assert.match(error.message, /does not prove/i); assert(fs.existsSync(lockFile), "a lock is never removed, whatever its age"); }
+      finally { fs.unlinkSync(lockFile); }
+    }
+    for (const name of ["HEAD.lock", "config.lock", "shallow.lock", "packed-refs.lock", "refs/heads/fixture.lock", "refs/momm/verified.lock"]) {
+      const lockFile = plantLock(name);
+      try {
+        const { error, logs } = await refused(["--apply", "--yes", "--accept-protocol"]);
+        assert.equal(error?.code, "git_lock_present", `${name}: ${error?.message.split("\n")[0]}`); assert(sameFile(error.locks[0].file, lockFile)); assert.deepEqual(logs, []);
+        assert(fs.existsSync(lockFile), `${name} was removed`); assert.equal(git(installed, "rev-parse", "HEAD"), first);
+      } finally { fs.unlinkSync(lockFile); }
+    }
+    try { fs.rmdirSync(path.join(gitDirOf(installed), "refs", "momm")); } catch { /* not empty or absent: leave it */ }
+    const both = [plantLock("index.lock"), plantLock("refs/heads/fixture.lock", 3 * 3600_000 + 60_000)];
+    try {
+      const { error } = await refused(["--dry-run"]);
+      assert.equal(error?.code, "git_lock_present"); assert.equal(error.locks.length, 2);
+      for (const lock of error.locks) assert(error.message.includes(lock.file));
+      assert.match(error.message, /6 days/); assert.match(error.message, /3 hours/); assert.match(error.message, /remove only the files named above yourself/i);
+    } finally { for (const f of both) fs.unlinkSync(f); }
+    // No lock: the preview runs as before.
+    assert.equal((await refused(["--dry-run"])).error, undefined);
+  });
+  await test("git_lock_that_appears_during_the_preview_stops_apply_before_the_transaction", async () => {
+    const refs = git(installed, "show-ref"); let lockFile;
+    try {
+      const { error } = await refused(["--apply", "--yes", "--accept-protocol"], { verifySignature: (...args) => { deps.verifySignature(...args); lockFile = plantLock("index.lock", 1_000); } });
+      assert(lockFile, "the preview must reach its signature verifier, after the first check");
+      assert.equal(error?.code, "git_lock_present", error?.message.split("\n")[0]);
+      assert.equal(git(installed, "rev-parse", "HEAD"), first); assert.equal(git(installed, "show-ref"), refs, "no rollback or verified ref was written");
+      for (const name of ["transaction.json", "update.active"]) assert.equal(fs.existsSync(path.join(stateDir(installed), name)), false, `${name} was left behind`);
+      assert(fs.existsSync(lockFile), "the lock was removed");
+    } finally { if (lockFile) fs.unlinkSync(lockFile); }
   });
   await test("wrong_package_hash_refused_before_checkout", async () => {
     await assert.rejects(update(["--repo", installed, "--apply", "--yes", "--accept-protocol"], { ...deps, manifest: async () => ({ momm: "1.1.0", momm_releases: [{ ...release, sha256: "0".repeat(64) }] }) }), /SHA-256/);
@@ -172,12 +276,13 @@ try {
   });
   await test("pre_checkout_failure_preserves_attached_branch", async () => {
     const branch = git(installed, "symbolic-ref", "--short", "HEAD");
-    const refLock = path.resolve(installed, git(installed, "rev-parse", "--git-path", "refs/momm/verified.lock"));
-    fs.mkdirSync(path.dirname(refLock), { recursive: true });
-    fs.writeFileSync(refLock, "fixture-owned ref lock");
+    // A ref lock used to cause this failure; since 1.17.1 (R8) a lock is refused before the transaction starts.
+    // A ref beneath the name the updater promotes to makes the same step fail: refs/momm/verified cannot be
+    // a ref and a folder at once.
+    git(installed, "update-ref", "refs/momm/verified/blocker", first);
     try {
       await assert.rejects(command(["--apply", "--yes", "--accept-protocol"]), /Previous installation restored/);
-    } finally { fs.unlinkSync(refLock); }
+    } finally { git(installed, "update-ref", "-d", "refs/momm/verified/blocker"); }
     assert.equal(git(installed, "rev-parse", "HEAD"), first);
     assert.equal(git(installed, "symbolic-ref", "--short", "HEAD"), branch);
   });
@@ -218,6 +323,31 @@ try {
   await test("post_rollback_wrong_commit_retains_recovery_journal", async () => {
     await assert.rejects(update(["--repo", installed, "--rollback", "--yes"], { log, reinstall: () => { git(installed, "checkout", "--detach", second); } }), /Checkout changed during harness replay/);
     assert.equal(fs.existsSync(path.join(stateDir(installed), "transaction.json")), true);
+  });
+  // R8: a rollback needs the index and HEAD, so a lock on either is reported before it starts, and the
+  // pending transaction is kept for the retry. A lock the checkout does not use never holds recovery up.
+  await test("rollback_reports_a_git_lock_it_needs_and_keeps_the_pending_transaction", async () => {
+    const journal = path.join(stateDir(installed), "transaction.json"), journalBytes = fs.readFileSync(journal), receipt = fs.readFileSync(lockPath);
+    for (const name of ["index.lock", "HEAD.lock"]) {
+      const lockFile = plantLock(name);
+      try {
+        const { error } = await refused(["--rollback", "--yes"], { reinstall() { throw new Error("fixture: the harness replay must not start"); } });
+        assert.equal(error?.code, "git_lock_present", `${name}: ${error?.message.split("\n")[0]}`);
+        assert(sameFile(error.locks[0].file, lockFile)); assert.match(error.message, /6 days/); assert.match(error.message, /does not prove/i);
+        assert.match(error.message, /Then retry recovery: node "[^"]+update\.mjs" --rollback --yes/, "the retry names the recovery command");
+        assert.deepEqual(fs.readFileSync(journal), journalBytes, "transaction.json changed"); assert.deepEqual(fs.readFileSync(lockPath), receipt, "momm.lock changed");
+        assert.equal(git(installed, "rev-parse", "HEAD"), second); assert.equal(git(installed, "status", "--porcelain"), "", "the checkout was touched");
+        assert(fs.existsSync(lockFile), "the lock was removed"); assert.equal(fs.existsSync(path.join(stateDir(installed), "update.active")), false, "the update claim was left behind");
+      } finally { fs.unlinkSync(lockFile); }
+    }
+    const unrelated = [plantLock("config.lock"), plantLock("shallow.lock"), plantLock("refs/heads/fixture.lock")];
+    try {
+      // Reaches the checkout and the harness replay, as the test above does without any lock.
+      const { error } = await refused(["--rollback", "--yes"], { reinstall: () => { git(installed, "checkout", "--detach", second); } });
+      assert.match(error?.message ?? "", /Checkout changed during harness replay/);
+      for (const f of unrelated) assert(fs.existsSync(f), "a lock is never removed");
+    } finally { for (const f of unrelated) fs.unlinkSync(f); }
+    assert.equal(fs.existsSync(journal), true); assert.equal(git(installed, "rev-parse", "HEAD"), second);
   });
   await test("offline_rollback_uses_retained_runner_and_original_links", () => {
     // The recovery runner reads no manifest and needs no signature service.

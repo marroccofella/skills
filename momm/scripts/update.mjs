@@ -445,11 +445,95 @@ function clean(root) {
   ];
   throw Object.assign(new Error(lines.join("\n")), { code: "local_changes", changes });
 }
+// R8 (1.17.1; field report, 3 October 2026): installing 1.17.0 failed at the checkout on a leftover
+// .git/index.lock (empty, six days old, no Git process running), after the transaction had been staged
+// and partly replayed. A lock is now reported before anything starts. Nothing here removes one, and the
+// age is shown, never judged: an old lock can belong to a command that is still running.
+// index and HEAD belong to this working tree; the others are shared when the clone is a linked worktree.
+const CHECKOUT_LOCKS = ["index.lock", "HEAD.lock"], SHARED_LOCKS = ["config.lock", "shallow.lock", "packed-refs.lock"];
+export function gitLocks(root, { checkoutOnly = false } = {}) {
+  const [own, common = own] = git(root, "rev-parse", "--git-dir", "--git-common-dir").split(/\r?\n/).map(d => path.resolve(root, d));
+  const candidates = CHECKOUT_LOCKS.map(name => path.join(own, name));
+  if (!checkoutOnly) {
+    candidates.push(...SHARED_LOCKS.map(name => path.join(common, name)));
+    // A ref name may not end in .lock, so any such file under refs is a lock. Loose refs only: a small walk.
+    const pending = [...new Set([own, common])].map(d => path.join(d, "refs"));
+    while (pending.length) {
+      const at = pending.pop();
+      let entries; try { entries = fs.readdirSync(at, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (entry.isDirectory()) pending.push(path.join(at, entry.name));
+        else if (entry.name.endsWith(".lock")) candidates.push(path.join(at, entry.name));
+      }
+    }
+  }
+  const locks = [];
+  for (const file of candidates) { try { locks.push({ file, modified: fs.lstatSync(file).mtimeMs }); } catch { /* no such lock */ } }
+  return locks;
+}
+// `retry` is the sentence naming what to run once the lock is gone (recovery names its own command).
+export function refuseGitLocks(root, retry, options) {
+  const locks = gitLocks(root, options);
+  if (!locks.length) return;
+  const since = ms => { const s = Math.max(0, Math.floor(ms / 1000)), [unit, size] = [["day", 86400], ["hour", 3600], ["minute", 60], ["second", 1]].find(([, n]) => s >= n) ?? ["second", 1], n = Math.floor(s / size); return `${n} ${unit}${n === 1 ? "" : "s"}`; };
+  const now = Date.now(), one = locks.length === 1;
+  const shown = locks.slice(0, 8).map(l => `  ${safeText(l.file)}   last written ${since(now - l.modified)} ago (${new Date(l.modified).toISOString()})`);
+  const lines = [
+    "Git lock found in the skills clone, so nothing was changed. MOMM never removes a Git lock.",
+    ...shown, ...(locks.length > 8 ? [`  ... and ${locks.length - 8} more`] : []),
+    "Git keeps a lock while one of its commands works in this clone, and a command that crashed leaves its lock behind. The age does not prove a lock is stale.",
+    "1. Close editors and Git tools that have this clone open, then list the Git processes that are running:",
+    process.platform === "win32" ? '     tasklist /FI "IMAGENAME eq git.exe"' : "     pgrep -lx git",
+    `2. Only if it lists none, ${one ? "remove that one file yourself" : "remove only the files named above yourself"}.`,
+    `3. ${retry}`,
+  ];
+  throw Object.assign(new Error(lines.join("\n")), { code: "git_lock_present", locks });
+}
+const POLICY_PATHS = ["momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/roles", ":(glob)**/.reviewrules", ":(glob)**/*persona*"];
 function policyDiff(root, from, to) {
   // Dispatcher contains default rules and the route-to-role defaults; the role briefs themselves
   // (persona text and the loophole checklist) live in momm/roles since 1.17. Show whole diffs rather
   // than claiming a heuristic extraction detects every policy change.
-  return run("git", ["diff", "--no-ext-diff", "--no-textconv", from, to, "--", "momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/roles", ":(glob)**/.reviewrules", ":(glob)**/*persona*"], root);
+  return run("git", ["diff", "--no-ext-diff", "--no-textconv", from, to, "--", ...POLICY_PATHS], root);
+}
+// S8 (1.17.1): the consent gate showed only the full diff, which for a release runs to hundreds of lines.
+// A short list is printed first: the protocol files that changed and, for momm/SKILL.md, its headings.
+// A heading is "changed" when the text under it (up to the next heading) differs; a renamed heading
+// shows as one removed and one added. ATX headings (# to ######) outside fenced code only. This is a
+// reading aid: it decides nothing, the full diff still follows and the gate is unchanged.
+export function headingChanges(before, after) {
+  const sections = text => {
+    const found = new Map();
+    let heading = "(text before the first heading)", body = [], fence = null;
+    const close = () => found.set(heading, (found.has(heading) ? `${found.get(heading)}\0` : "") + body.join("\n"));
+    for (const line of String(text ?? "").split(/\r?\n/)) {
+      const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+      if (mark && (!fence || (mark[0] === fence[0] && mark.length >= fence.length))) fence = fence ? null : mark;
+      else if (!fence && /^ {0,3}#{1,6}(?:[ \t]|$)/.test(line)) { close(); heading = line.trim(); body = []; continue; }
+      body.push(line);
+    }
+    close();
+    return found;
+  };
+  const old = sections(before), now = sections(after);
+  return { added: [...now.keys()].filter(h => !old.has(h)), removed: [...old.keys()].filter(h => !now.has(h)),
+    changed: [...now.keys()].filter(h => old.has(h) && old.get(h) !== now.get(h)) };
+}
+export function policySummary(root, from, to) {
+  const label = text => safeText(text).replace(/\s+/g, " ").slice(0, 120), words = { A: "added", D: "removed" };
+  const fields = run("git", ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z", from, to, "--", ...POLICY_PATHS], root).split("\0").filter(Boolean);
+  const files = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) files.push({ state: words[fields[i][0]] || "changed", path: fields[i + 1] });
+  const capped = (rows, limit) => [...rows.slice(0, limit), ...(rows.length > limit ? [`    ... and ${rows.length - limit} more (see the full diff)`] : [])];
+  const lines = ["Protocol change summary (a reading aid; the full diff follows):", `  Protocol files changed: ${files.length}`,
+    ...capped(files.map(f => `    ${f.state.padEnd(8)} ${label(f.path)}`), 30)];
+  if (files.some(f => f.path === "momm/SKILL.md")) {
+    const blob = ref => { try { return run("git", ["show", `${ref}:momm/SKILL.md`], root); } catch { return ""; } }; // absent on one side: all added or all removed
+    const h = headingChanges(blob(from), blob(to));
+    const rows = ["added", "removed", "changed"].flatMap(kind => h[kind].map(text => `    ${kind.padEnd(8)} ${label(text)}`));
+    lines.push("  momm/SKILL.md headings (changed: the text under the heading differs):", ...(rows.length ? capped(rows, 40) : ["    none added, removed or changed"]));
+  } else lines.push("  momm/SKILL.md: not changed.");
+  return lines.join("\n");
 }
 function checkout(root, commit) {
   if (!COMMIT.test(commit)) throw new Error("Invalid recovery commit");
@@ -797,6 +881,9 @@ export async function update(argv, dependencies = {}) {
     const previous = savedPrevious ? { ...savedPrevious, installations:lock.installations,
       targets:lock.targets, custom_dirs:lock.custom_dirs, skills:lock.skills, installer:lock.installer } : null;
     if (!previous?.current?.commit || !SHA.test(previous.current.tree_sha256 || "")) throw new Error("No retained, hashed previous installation exists. Nothing changed.");
+    // R8: recovery is the way out of a broken state, so only the two locks its checkout cannot work with stop
+    // it, before the journal is written or anything is replayed; a pending transaction is left as it is.
+    refuseGitLocks(root, `Then retry recovery: ${recoveryCommand(dir)}`, { checkoutOnly: true });
     clean(root);
     const actualHead = git(root, "rev-parse", "HEAD");
     if (![lock.current.commit, previous.current.commit, journal?.candidate, journal?.from?.commit].filter(Boolean).includes(actualHead)) throw new Error("An unrelated checkout is active. Restore the interrupted update checkout yourself before recovery; MOMM will not replace it.");
@@ -827,6 +914,9 @@ export async function update(argv, dependencies = {}) {
   }
   const channel = o.channel || lock.channel;
   if (channel === 'main' && o.version) throw new Error('The main channel cannot be combined with an explicit release version. Choose stable or pinned.');
+  // R8: a preview or an update stops on any Git lock in the clone before the first request, so nothing is
+  // fetched or staged for a transaction that could not finish.
+  if (o.apply || o.dry_run) refuseGitLocks(root, "Then repeat the command that was refused.");
   log(`Network: GET ${MANIFEST_URL} (release information only).`);
   const m = await (dependencies.manifest || manifest)();
   const version = o.version || m.momm;
@@ -866,6 +956,7 @@ export async function update(argv, dependencies = {}) {
     git(temp, "fetch", "--no-tags", root, `${git(root, "rev-parse", "HEAD")}:refs/momm/installed`);
     log("Files that would change across this shared skills clone (including sibling skills):\n" + run("git", ["diff", "--no-ext-diff", "--no-textconv", "--name-status", "refs/momm/installed", commit], temp));
     const diff = policyDiff(temp, "refs/momm/installed", commit);
+    if (diff) log(policySummary(temp, "refs/momm/installed", commit));
     log(`Protocol / default-rules / persona diff (full dispatcher diff for conservative coverage):\n${diff || "No policy changes."}`);
     log(`Would replay saved installation scopes: ${JSON.stringify(lock.installations)}. Existing project .reviewrules files are not rewritten.`);
     if (o.dry_run) { log("Preview complete. No installed files, refs, links or receipt changed."); return; }
@@ -873,6 +964,7 @@ export async function update(argv, dependencies = {}) {
     await consent(o, `Install ${channel === "main" ? commit : version} and relink the saved harnesses?`);
     await exclusive(dir, async () => {
       if (fs.existsSync(journalFile)) throw new Error('An interrupted update appeared during preview; recover before applying.');
+      refuseGitLocks(root, "Then repeat the command that was refused."); // one may have appeared during the preview
       clean(root);
       const ignoreRulesChanged = run("git", ["diff", "--name-only", "-z", "refs/momm/installed", commit], temp).split("\0").some(name => name === ".gitignore" || name.endsWith("/.gitignore"));
       if (ignoreRulesChanged && run("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], root)) throw new Error("Ignore rules change while local ignored files exist. Move those files outside this skills clone yourself and retry. Nothing checked out; private files and recovery remain intact.");
