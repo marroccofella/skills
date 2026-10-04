@@ -5,6 +5,16 @@ This record consolidates findings and dispositions, not approval to merge or rel
 
 ## Current integration update
 
+At3ec07c2 both successor matrices pass all eight macOS plus five Linux jobs;
+remaining Windows jobs are still checked independently. Peer5978330269 confirms
+the scoped no-audio repair and owned junction before/after; decoded macOS job
+111401492262 reports canonicalization=true. This closes the hosted macOS fixture
+failure at3ec, not native Mac audio or complete release readiness.
+Next experimental increment adds fixed whitelisted worker error codes, with
+failing-before/passing-after actual linked-state/invalid-option rejection checks.
+Synchronized lock-wait entry, abort during synchronous helpers, unresponsive/crash
+containment and visible harness display timing remain open.
+
 Exactdc8b5bb hosted runs37189835581/37189833290 both fail9/17: eight macOS jobs
 fail the new isolated-player fixture, Linux/Windows pass. Preserve those failures.
 Owned linked-temp-root reproduction fails the original fixture and passes its

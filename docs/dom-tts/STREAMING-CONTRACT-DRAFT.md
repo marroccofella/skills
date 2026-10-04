@@ -213,6 +213,14 @@ device timing and all real harness/source adapters remain unverified.
 
 ## Optional isolated native player
 
+Worker rejection keeps the fixed message `Isolated native playback failed` and
+adds a whitelisted `error.code`: state-path-linked, state-path-too-long,
+state-permission-timeout, state-permission-refused, invalid-options,
+lock-unavailable or playback-failed. The worker classifies known errors locally;
+raw error messages, state paths, invalid option values and stacks are not sent to
+the parent. Unknown worker messages/exits fall back to playback-failed. Queue
+delivery remains a sanitized failure receipt, not an automatic retry instruction.
+
 `createIsolatedNativePlayer` runs the existing native player in a fixed owned worker
 thread, with a restricted environment, bounded text/configuration and no arbitrary
 worker path or command option. Abort and parent process signals request existing

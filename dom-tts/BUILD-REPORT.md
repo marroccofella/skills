@@ -2,6 +2,17 @@
 
 ## Optional worker isolation and stop outcome
 
+At3ec07c2 both37190508980/37190506960 have all eight macOS Intel/ARM jobs and
+five Linux jobs successful; Windows completion remains separately checked.
+Decoded ARM Node20 job111401492262 reports canonicalized temporary fixture=true
+and isolated checks PASS. Original generic logs cannot distinguish link refusal
+from socket length; canonicalization and shortening together are the verified
+fixture correction, not a weakened production path policy or audio certification.
+Worker failure-category regression then fails on3ec (code absent) and passes
+after fixed whitelisted codes are propagated; real linked-state and invalid-mode
+worker failures carry only state-path-linked/invalid-options respectively, with
+the generic public error message preserved. No raw worker error/path/text egress.
+
 Original dc8b5bb CI is not green: all eight macOS jobs in each matrix fail the new
 isolation fixture with a sanitized playback refusal; baseline and preceding checks
 pass. Both37189835581 and37189833290 finish9/17: all five Linux and four Windows

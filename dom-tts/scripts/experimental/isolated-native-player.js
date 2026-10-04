@@ -3,6 +3,7 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const { stateDir, safeEnv } = require('../runtime');
 const { createNativePlayer } = require('./native-player');
+const { isKnown } = require('./isolated-errors');
 function createIsolatedNativePlayer({ options = {}, dir = stateDir } = {}) {
   // Reuse configuration validation without preparing text or inspecting state here.
   createNativePlayer({ options, dir });
@@ -20,14 +21,17 @@ function createIsolatedNativePlayer({ options = {}, dir = stateDir } = {}) {
           workerData: { text, options: settings, dir }, env: safeEnv(), execArgv: []
         });
       } catch { reject(new Error('Isolated native playback could not start')); return; }
-      let outcome, failed = false;
+      let outcome, failed = false, failureCode = 'playback-failed';
       const stop = () => { try { worker.postMessage({ action: 'stop' }); } catch {} };
       signal?.addEventListener('abort', stop, { once: true });
       if (signal?.aborted) stop();
       process.on('SIGINT', stop); process.on('SIGTERM', stop);
       worker.on('message', message => {
         if (message?.state === 'completed' || message?.state === 'stopped') outcome = { state: message.state };
-        else failed = true;
+        else {
+          failed = true;
+          if (message?.state === 'failed' && isKnown(message.code)) failureCode = message.code;
+        }
       });
       worker.on('error', () => { failed = true; });
       // A message alone is not completion: retain ownership until the thread exits.
@@ -36,7 +40,7 @@ function createIsolatedNativePlayer({ options = {}, dir = stateDir } = {}) {
         signal?.removeEventListener('abort', stop);
         process.off('SIGINT', stop); process.off('SIGTERM', stop);
         if (code === 0 && !failed && outcome) resolve(outcome);
-        else reject(new Error('Isolated native playback failed'));
+        else reject(Object.assign(new Error('Isolated native playback failed'), { code: failureCode }));
       });
     });
   };

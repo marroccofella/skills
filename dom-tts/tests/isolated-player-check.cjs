@@ -18,11 +18,11 @@ const { createIsolatedNativePlayer } = require('../scripts/experimental/isolated
     fs.mkdirSync(target); fs.symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const linkedState = path.join(alias, 's');
     await assert.rejects(createIsolatedNativePlayer({ dir: linkedState })(''),
-      error => error.message === 'Isolated native playback failed');
+      error => error.message === 'Isolated native playback failed' && error.code === 'state-path-linked');
     assert.equal(fs.existsSync(linkedState), false, 'linked state must still fail before creation');
     await assert.rejects(player('x'.repeat(1048577)), /bounded/);
     await assert.rejects(createIsolatedNativePlayer({ dir, options: { mode: 'invalid-private-fixture' } })(''),
-      error => error.message === 'Isolated native playback failed');
+      error => error.message === 'Isolated native playback failed' && error.code === 'invalid-options');
     assert.equal(fs.existsSync(dir), false);
     const listeners = ['SIGINT','SIGTERM'].map(name => process.listenerCount(name));
     // Empty text exercises actual private-state/lock/cleanup, without an audio engine.

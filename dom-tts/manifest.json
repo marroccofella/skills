@@ -47,12 +47,16 @@
       "sha256": "fb7971e2453896100760a60038da15a8e150afbbbae459f4cf5db54213e06cf1"
     },
     {
+      "path": "scripts/experimental/isolated-errors.js",
+      "sha256": "6ce44a4ce58d029646a9ad98ab298d5b58921cef3162509de7b91c8c252b095f"
+    },
+    {
       "path": "scripts/experimental/isolated-native-player.js",
-      "sha256": "f96e849d495ef835fe20e00ba01dbcbe44a428c9e94fe5416fcc26d35cb22924"
+      "sha256": "9f654acebcc9ed29008b2e85d29b58c871ade593c41143eb15c9082fd334a462"
     },
     {
       "path": "scripts/experimental/isolated-playback-worker.js",
-      "sha256": "267aba900657e4f2ab9192eded368995e6e48915689c2be43a9d451c279d1395"
+      "sha256": "c94352e799087b80a0d615f452aa38ed259b65dbff6c3d6cf6ff98d894399f94"
     },
     {
       "path": "scripts/experimental/narration-queue.js",
@@ -168,7 +172,7 @@
     },
     {
       "path": "tests/isolated-player-check.cjs",
-      "sha256": "bb4f3144a3a868a021123c9487464561e029ecb4775b774a25e2ac598d6f92d8"
+      "sha256": "6dae10169f2b508817bd0e486a3be68de8248c69539e52aa099bbe7690625fb2"
     },
     {
       "path": "tests/native-boundary.cjs",
