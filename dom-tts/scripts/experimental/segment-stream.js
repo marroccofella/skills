@@ -44,11 +44,20 @@ class SegmentStream {
     const result = this.framer.finish(); this.framingError = result.error; return this.status();
   }
   async revoke() {
+    if (this.revocation) return this.revocation;
     this.revoked = true; this.pending = []; this.framer.reset();
-    let queueFailed = false;
-    try { this.queue.revokeSession(this.sessionId); } catch { queueFailed = true; }
-    const result = await this.source.revoke(this.token);
-    return queueFailed ? { ...result, downstream: 'failed' } : result;
+    let queueResult;
+    try { queueResult = Promise.resolve(this.queue.revokeSession(this.sessionId)).then(() => 'acknowledged', () => 'failed'); }
+    catch { queueResult = Promise.resolve('failed'); }
+    // Start source invalidation even while queue acknowledgement is pending/failing.
+    let sourceResult;
+    try { sourceResult = Promise.resolve(this.source.revoke(this.token)).catch(() => ({ revoked: false, downstream: 'failed' })); }
+    catch { sourceResult = Promise.resolve({ revoked: false, downstream: 'failed' }); }
+    this.revocation = Promise.all([queueResult, sourceResult]).then(([queue, source]) => ({
+      revoked: source.revoked, source: source.downstream, queue,
+      downstream: queue === 'acknowledged' && source.downstream !== 'failed' ? 'acknowledged' : 'failed'
+    }));
+    return this.revocation;
   }
 }
 module.exports = { SegmentStream };

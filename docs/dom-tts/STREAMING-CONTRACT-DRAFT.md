@@ -192,3 +192,12 @@ reconciliation. Syntactic byte progress and admitted/duplicate counts are separa
 there is no durable source-offset acknowledgement. Revocation clears pending/carry
 and revokes source plus queue. This is not a filesystem tailer, delta converter,
 native player, consent UI or real harness. Failed streams are not auto-reset/replayed.
+
+SegmentStream revocation awaits both queue and source acknowledgements and reports
+them separately. Synchronous throws and asynchronous rejection are sanitized failures;
+source invalidation starts even while queue acknowledgement is pending. Repeated
+stream revocation returns the retained result without reissuing its direct hooks.
+The stream owns its direct queue cancellation; an independently supplied source
+hook may also cancel that queue and therefore must be idempotent. Actual
+NarrationQueue.revokeSession is idempotent. Never-settling hooks remain pending;
+there is no fabricated timeout success or native/acoustic guarantee.

@@ -52,7 +52,7 @@
     },
     {
       "path": "scripts/experimental/segment-stream.js",
-      "sha256": "087d2c9e00e1a0486bce6d0cd32de987ffbeaa2c534faa23db7f53bd2bd2f369"
+      "sha256": "a7c2f1a3555fe388cbbfd135e0a3192336636e443c9c8b888ecb7b3f7a1ca3a5"
     },
     {
       "path": "scripts/experimental/source-reader.js",
@@ -168,7 +168,7 @@
     },
     {
       "path": "tests/segment-stream-checks.cjs",
-      "sha256": "726b2dfd3412549d3e8c89ea69dbabc43edd90828dfcac0d4a1ed9bc9b5ce293"
+      "sha256": "4352eaa6a2b6501956511563ac3fdb01874fb1f089efae5e0a5327e9bd605a5c"
     },
     {
       "path": "tests/source-reader-checks.cjs",
