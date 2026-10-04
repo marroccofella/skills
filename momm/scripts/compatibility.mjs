@@ -7,7 +7,8 @@
 // (references/cli/help/codex.txt), so MOMM remembers the failure it saw instead: route, CLI version, configured model and time, in
 //   ~/.momm/compatibility-<machine>.json
 // beside the capability overlay and under the same rules (capabilities.mjs): folder 0700, file 0600,
-// written by rename, serialised by `<file>.lock` (O_EXCL, owner pid) that is never stolen.
+// written by rename (here from a temporary file created with O_EXCL under a random name), serialised by
+// `<file>.lock` (O_EXCL, owner pid) that is never stolen.
 //
 // The record is shown at the next --preflight and dispatch while the same CLI version and model are
 // in place. It stops applying when either changes and is removed when the route next succeeds. It is
@@ -16,7 +17,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { codexIsolationArgs } from "./route-isolation.mjs";
 import { UPDATE_COMMANDS } from "./update-clock.mjs";
 
@@ -55,6 +56,15 @@ export function isCompatibilityFailure(result) {
 export function configuredModel(route, { home = os.homedir(), env = process.env, files = fs } = {}) {
   return READS_MODEL.has(route) ? codexIsolationArgs({ home, env, fs: files }).model : null;
 }
+
+// The model one run was given, read by the rule a record's model is held to: undefined when the run
+// carries no settings, null when none was set, the value is not one a record can hold, or the route is
+// not one MOMM reads a model for (its record binds to the CLI version alone, as the next check expects).
+const givenModel = (route, run) => {
+  if (!isPlainObject(run?.route_settings)) return undefined;
+  const given = run.route_settings.model;
+  return READS_MODEL.has(route) && typeof given === "string" && MODEL.test(given) ? given : null;
+};
 
 const validEntry = (entry, machine) => isPlainObject(entry) && entry.machine_id === machine
   && typeof entry.route === "string" && ROUTE.test(entry.route)
@@ -107,11 +117,18 @@ export function knownIncompatibility({ route, cliVersion, model, home, env = pro
   } catch { return null; }
 }
 
+// The temporary file has a name nobody can prepare and is created exclusively ("wx"): an entry already
+// at that name, a link included, is never written through, emptied or moved into the record's place.
+// The write is refused instead (the message names no path), and only a file made here is removed.
 function writePrivate(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, text, { encoding: "utf8", mode: 0o600 });
-  fs.renameSync(temporary, file);
+  const temporary = `${file}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  let fd;
+  try { fd = fs.openSync(temporary, "wx", 0o600); } catch (error) { throw new Error(`a temporary file for the compatibility record could not be created in the .momm folder of your home (${error?.code ?? "error"}), so the record was left as it was.`); }
+  try {
+    try { fs.writeFileSync(fd, text, "utf8"); } finally { fs.closeSync(fd); }
+    fs.renameSync(temporary, file);
+  } catch (error) { try { fs.unlinkSync(temporary); } catch { /* moved into place, or already gone */ } throw error; }
 }
 // The overlay's lock discipline: the lock holds the owner's pid and is never stolen, because a PID
 // check and an unlink are not atomic. The message names no path; the caller's report may be shared.
@@ -133,6 +150,9 @@ function withLock(file, timeoutMs, fn) {
 //   a success                       -> the record is removed
 //   a compatibility failure         -> recorded with the version and the model the route was given
 //   any other outcome               -> kept while version and model stand, removed once either changed
+// A success and a compatibility failure in one run: the success shows the pair works and the record
+// goes, unless the success is known to have been given another model than the failure (the
+// configuration changed between two pieces). That failure stands and is recorded for its own model.
 // An unread version neither records nor removes. Never throws: a review does not fail on its memory.
 export function settleCompatibility({ results = [], versions = {}, governor = null, home, machine, now = new Date(), lockTimeoutMs = COMPATIBILITY_LOCK_TIMEOUT_MS } = {}) {
   const outcome = { recorded: [], cleared: [], error: null };
@@ -143,29 +163,38 @@ export function settleCompatibility({ results = [], versions = {}, governor = nu
       if (!result || typeof result.agent !== "string" || result.agent === governor || NOT_RUN.has(result.status) || !ROUTE.test(result.agent)) continue;
       byRoute.set(result.agent, [...(byRoute.get(result.agent) ?? []), result]);
     }
-    const before = readCompatibility(home, { machine });
-    const plan = [];
-    for (const [route, runs] of byRoute) {
-      const existing = before.entries.find((entry) => entry.route === route) ?? null;
-      const version = typeof versions?.[route] === "string" && CLI_VERSION.test(versions[route]) ? versions[route] : null;
-      const failure = runs.find(isCompatibilityFailure);
-      if (runs.some((run) => run.status === "success")) { if (existing) plan.push({ route, entry: null }); continue; }
-      if (failure) {
-        const given = failure.route_settings?.model;
-        if (version) plan.push({ route, entry: { route, cli_version: version, model: typeof given === "string" && MODEL.test(given) ? given : null, at: new Date(now).toISOString(), machine_id: machine } });
-        continue;
+    // What the runs say about each route's entry among `entries`: an entry to record, or null to remove one.
+    const planFor = (entries) => {
+      const plan = [];
+      for (const [route, runs] of byRoute) {
+        const existing = entries.find((entry) => entry.route === route) ?? null;
+        const version = typeof versions?.[route] === "string" && CLI_VERSION.test(versions[route]) ? versions[route] : null;
+        const succeeded = runs.filter((run) => run.status === "success");
+        const answers = (success, failed) => { const one = givenModel(route, success), other = givenModel(route, failed); return one === undefined || other === undefined || one === other; };
+        const failure = runs.find((run) => isCompatibilityFailure(run) && !succeeded.some((success) => answers(success, run)));
+        if (failure) {
+          if (version) plan.push({ route, entry: { route, cli_version: version, model: givenModel(route, failure) ?? null, at: new Date(now).toISOString(), machine_id: machine } });
+          continue;
+        }
+        if (succeeded.length) { if (existing) plan.push({ route, entry: null }); continue; }
+        if (!existing || !version) continue;
+        // Every run's model, in any order: the entry is kept while any run was given the model it names.
+        const given = runs.map((run) => givenModel(route, run)).filter((model) => model !== undefined);
+        if (existing.cli_version !== version || (given.length && !given.includes(existing.model))) plan.push({ route, entry: null });
       }
-      if (!existing || !version) continue;
-      const given = runs.find((run) => run.route_settings)?.route_settings.model;
-      if (existing.cli_version !== version || (given !== undefined && (given ?? null) !== existing.model)) plan.push({ route, entry: null });
-    }
-    if (!plan.length) return outcome;
+      return plan;
+    };
+    const before = readCompatibility(home, { machine });
+    if (!planFor(before.entries).length) return outcome;
     // A link or a folder in the record's place is someone else's: never followed, never replaced.
     if (before.problem === "not_a_file" || before.problem === "unreadable") throw new Error(NOT_OURS);
     withLock(before.path, lockTimeoutMs, () => {
-      // Read again under the lock, so a concurrent run's entry for another route is kept.
+      // Read again under the lock and decide again from that reading: another run may have changed the
+      // record since the first one, and a removal planned from the older entry would erase its newer one.
       const current = readCompatibility(home, { machine });
       if (current.problem === "not_a_file" || current.problem === "unreadable") throw new Error(NOT_OURS);
+      const plan = planFor(current.entries);
+      if (!plan.length) return;
       let entries = current.entries;
       for (const { route, entry } of plan) {
         const had = entries.some((candidate) => candidate.route === route);

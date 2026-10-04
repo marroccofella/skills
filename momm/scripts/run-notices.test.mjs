@@ -91,6 +91,20 @@ try {
     const out = repeated([...filler, logLine('2026-10-02T09:00:00.000Z', { codex: 'timeout' }), logLine('2026-10-03T09:00:00.000Z', { codex: 'timeout' })], [{ agent: 'codex', status: 'timeout' }]);
     assert.equal(out.length, 1); assert.ok(out[0].includes('2026-10-02T09:00:00.000Z'));
   });
+  // 1.17.1 gate review (rev_20261004083921_b12f1d0fd3bf): the log is read from its last 1 MiB, whole
+  // lines only. One damaged line longer than that leaves a tail with no line end in it; here that tail
+  // would parse on its own, and it is still not a line of the log.
+  await test('S3: a tail that holds no line end holds no whole line, so its fragment is never read as a run', () => {
+    const tail = 1024 * 1024, row = (pad) => logLine('2026-10-03T09:00:00.000Z', { codex: 'quota' }, { pad });
+    const fragment = row('a'.repeat(tail - Buffer.byteLength(row(''))));
+    assert.equal(Buffer.byteLength(fragment), tail, 'the fixture is exactly the tail that is read');
+    const dir = folder('evidence'), log = path.join(dir, 'review-log.jsonl'), now = { dir, results: [{ agent: 'codex', status: 'quota' }], governor: 'claude', runs: 2 };
+    fs.writeFileSync(log, `not a row ${fragment}`);
+    assert.deepEqual(need('repeatedStatusNotices')(now), []);
+    // The same row as a whole line of the log is a recorded run.
+    fs.writeFileSync(log, `${row('')}\n`);
+    assert.equal(need('repeatedStatusNotices')(now).length, 1);
+  });
   // Two real runs in one project, shared by the S3 and S4 checks below (each takes several seconds on
   // Windows): an ordinary file first, then a diff file. Between them the first run's own log line is
   // appended again one minute later, so the second run is the route's third recorded failure.
