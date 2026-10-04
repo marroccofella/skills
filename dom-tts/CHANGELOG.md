@@ -20,6 +20,11 @@ See EVOLUTION.md for migration and open release gates.
 - tests/permission-cache-checks.cjs adds the regression tests; tests/windows-privacy.cjs
   changes a real ACL and rechecks in the same process.
 - The self-test reports shared, POSIX-only and Windows-only assertion counts separately.
+- The installer creates its stage inside the already-checked `.dom-tts-backups` folder
+  (mkdtemp), so each install action makes one Windows permission check instead of two.
+  The installed folder now carries ACL entries inherited from that protected folder
+  (same principals) rather than its own explicit protected ACL. An interrupted install
+  leaves its stage inside the backups folder, not beside the installed skills.
 
 ## 0.4.0-dev.2
 

@@ -15,7 +15,9 @@ function install(args){
   const prior=managed(dest).backup;if(!prior||path.dirname(prior)!==backups||!fs.existsSync(prior))throw new Error('No retained upgrade snapshot');managed(prior);
   fs.renameSync(dest,backup);try{fs.renameSync(prior,dest);writeObject(path.join(dest,'.dom-tts-install.json'),{schema:'dom-tts-install/1',version:require(path.join(dest,'package.json')).version,backup});}catch(e){if(!fs.existsSync(dest))fs.renameSync(backup,dest);throw e;}return {...plan,backup};
  }
- const stage=path.join(path.dirname(dest),'.dom-tts-stage-'+crypto.randomBytes(12).toString('hex'));ensurePrivate(stage);
+ // The stage is created inside the backups folder checked above, so it inherits that protected ACL
+ // (Windows) or starts owner-only (mkdtemp, POSIX) without a second PowerShell permission launch.
+ const stage=fs.mkdtempSync(path.join(backups,'.dom-tts-stage-'));
  try{
   for(const item of source.files){const target=path.join(stage,item.path);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(ROOT,item.path),target);}
   fs.copyFileSync(path.join(ROOT,'manifest.json'),path.join(stage,'manifest.json'));verify(stage);
