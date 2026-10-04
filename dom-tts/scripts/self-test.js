@@ -56,6 +56,7 @@ async function main(){
  require('../tests/evolution-checks.cjs')(check);
  require('../tests/permission-cache-checks.cjs')(check);
  await require('../tests/async-queue-checks.cjs')(check);
+ require('../tests/event-framing-checks.cjs')(check);
  const ran=only.posix.run+only.windows.run,skipped=only.posix.skipped+only.windows.skipped;
  console.log('PASS: '+checks+' assertions on '+process.platform+' ('+(checks-ran)+' on every platform + '+only.posix.run+' POSIX-only + '+only.windows.run+' Windows-only; '+skipped+' platform-specific skipped here); '+corpus.length+' golden inputs and '+extra.replies+' realistic replies × 8 modes; 1,000 seeded chunk properties; watcher failure/retry; IPC stop; permission-check failures; stale-lock recovery and live-owner preservation; tables; diagnostics and CLI.');
  }finally{fs.rmSync(fixture,{recursive:true,force:true});}

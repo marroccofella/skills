@@ -12,7 +12,7 @@
     },
     {
       "path": "EVOLUTION.md",
-      "sha256": "4f7bc8f56dbe9a5e44f5c8205868d9d5dfc1552188135bde7ded021bbfbdec18"
+      "sha256": "1cd2346c171a235ba998baca6b794b85973cc5594c189f109d3306735ea50737"
     },
     {
       "path": "LICENSE",
@@ -43,8 +43,12 @@
       "sha256": "2b7f2f75329c97aa5eae35be90c4b3fd0ed7fdecfaee9188fe6e644b2e3dda03"
     },
     {
+      "path": "scripts/experimental/event-framer.js",
+      "sha256": "fb7971e2453896100760a60038da15a8e150afbbbae459f4cf5db54213e06cf1"
+    },
+    {
       "path": "scripts/experimental/narration-queue.js",
-      "sha256": "99fbf0ca430f7292e508280f5183399c9a67d5231ac999436ff0c885349e3cfa"
+      "sha256": "1c51e5de1e3702ce3fe514c3285eece1567a9d49cb1aa88626368edb38a84e0b"
     },
     {
       "path": "scripts/install.js",
@@ -80,7 +84,7 @@
     },
     {
       "path": "scripts/self-test.js",
-      "sha256": "238c438507cf5cdfe86aab719f520ad60d6ef75000a4b07e4ba2394a20a43d2e"
+      "sha256": "a174fb5e465815e99bcbc0c15325c41b16044a0db06206ba285e71f062b005c8"
     },
     {
       "path": "scripts/speak.js",
@@ -120,7 +124,7 @@
     },
     {
       "path": "tests/async-queue-checks.cjs",
-      "sha256": "73555c1e5d42a224f05d2a38235042e84f3eed941e059de7417602fe6bfc4cfe"
+      "sha256": "f46180f9a25fea1b4b84ec3584017e6e9573f7224787e1b06acd4927f90f3f43"
     },
     {
       "path": "tests/corpus/golden.json",
@@ -129,6 +133,10 @@
     {
       "path": "tests/corpus/replies.json",
       "sha256": "d291258e8995b9628ef4b108baec7686d8cd2038845fdc7a3c3deb1642c2d020"
+    },
+    {
+      "path": "tests/event-framing-checks.cjs",
+      "sha256": "c5e032870ffe5c9eaf9f493303549fa7494428d85f25465e626c3d5467890eca"
     },
     {
       "path": "tests/evolution-checks.cjs",

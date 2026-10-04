@@ -20,7 +20,7 @@ is bounded and admission refuses when full; no persistence, exactly-once acousti
 guarantee, reconnect transport, revision reconciliation or automatic eviction exists.
 Status contains counts only, not speech, raw provider errors or identifiers.
 
-35 deterministic assertions exercise unresolved-player admission, sequence/replay
+39 deterministic assertions exercise unresolved-player admission, sequence/replay
 refusal, explicit session/role boundaries, retries, generation cancellation, limits,
 three-session fairness, failed-message ordering and selected-session revocation. These use injected promises;
 they are not native audio, acoustic latency or real-harness streaming receipts.
@@ -36,6 +36,28 @@ discover sources or authorize them from event IDs. revokeSession removes admissi
 aborts active work and drops retained queue text for that session; another session
 continues. It cannot erase strings already handed to an engine or prove acoustic stop.
 The future source registry/adapter must gate actual reads and enforce revocation too.
+
+The kernel also exposes delivery(identity): count-free per-segment state with a typed
+playback-failed result and an attempt-terminal flag. Admission remains separate from
+completion. Failed work can be explicitly retried, so terminal describes that attempt,
+not an irreversible lifetime verdict. Receipts are in-memory, are not native/human
+audibility evidence, and disappear with the queue; durable controller accounting and
+mandatory per-final-reply harness hooks remain future integration work.
+
+event-framer.js supplies a bounded per-stream JsonlFramer. It carries incomplete UTF-8
+bytes/JSONL, decodes complete records strictly, and returns valid records preceding a
+later malformed record together with a typed error. committedBytes counts syntactically
+parsed bytes, not admitted events or completed speech. An error clears carry and stops
+that parser until an explicit reset; adapters must preserve/reconcile offsets rather
+than silently skipping failed input. Reset begins a new byte-accounting stream and is
+not a replay/deduplication policy. Record/chunk limits are bytes; record count per push
+is also bounded. 152 framing assertions cover every two-part byte split of the Unicode
+fixture, incomplete input, malformed JSON/UTF-8, shape checks and bounds.
+
+No pipeline currently joins framer, delta/final reconciliation, consent registry,
+queue, native player and host hook. The installed-0.4 field report in discussion
+comment18739938 (omitted invocation, permissions, chunk timeout and uncollected
+completion) remains a separate unresolved integration investigation.
 
 ## Boundaries
 

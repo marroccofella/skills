@@ -127,5 +127,14 @@ class NarrationQueue {
     for (const job of this.jobs.values()) result[job.state]++;
     return result;
   }
+  delivery(input) {
+    if (!input || typeof input!=='object') throw new Error('delivery identity required');
+    for (const field of ['sessionId','turnId','generationId','messageId','segmentId'])
+      if (typeof input[field]!=='string' || !/^[\w.-]{1,128}$/.test(input[field])) throw new Error('invalid delivery identity');
+    const job=this.jobs.get(this.identities(input).job);
+    if (!job) return {state:'unknown',terminal:false};
+    return {state:job.state,terminal:['completed','failed','cancelled'].includes(job.state),
+      ...(job.state==='failed'?{error:'playback-failed'}:{})};
+  }
 }
 module.exports = { NarrationQueue };

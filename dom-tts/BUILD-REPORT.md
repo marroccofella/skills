@@ -4,15 +4,21 @@
 
 Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
 stable-segment kernel with an injected player, not a production watcher/engine path.
-35 deterministic queue assertions pass: admission during unresolved playback,
+39 deterministic queue assertions pass: admission during unresolved playback,
 duplicate/conflicting replay, sequence gaps, selected-session/role boundaries,
 retry, cancellation, bounded history/bytes, round-robin service and failure ordering.
 Selected-session revocation and UTF-8 byte limits also have deterministic checks.
-The full Windows Node 22.16.0 suite now reports 9,741 common assertions, with six
+The bounded JSONL framer adds 152 assertions: every two-part Unicode byte split,
+incomplete data, strict UTF-8, malformed JSON/record shape and size/count limits.
+The queue exposes typed per-segment delivery states, without raw speech/provider errors.
+The full Windows Node 22.16.0 suite now reports 9,897 common assertions, with six
 POSIX checks skipped. No new native speech, real harness or acoustic receipt exists.
 The first test invocation failed because the new module did not yet exist; this is
 new-feature red/green evidence, not a reproduced defect in the former queue.
 Specific MOMM sharing approval/quorum remain pending; this implementation is draft.
+Neither component is connected to production narration. Installed-0.4 omissions,
+permissions, timeouts and missing completion receipts (discussion18739938) are not
+claimed resolved by isolated framing/queue tests.
 
 Integration branch codex/dom-tts-0.5-programme starts at PR #41's exact head
 1337e670536161475b6070510232231932109923. Legion independently ran self-test

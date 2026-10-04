@@ -23,11 +23,14 @@ module.exports = async function(check = fn => fn()) {
   release(); await queue.idle();
   check(() => assert.deepEqual(heard, ['First.', 'Second.']));
   check(() => assert.equal(queue.status().completed, 2));
+  check(() => assert.equal(queue.delivery(event('s0','First.')).state,'completed'));
+  check(() => assert.equal(queue.delivery(event('s0','First.')).terminal,true));
 
   let attempts = 0;
   const retry = new NarrationQueue({ selectedSessions: ['selected'], play: async () => { if (++attempts === 1) throw new Error('private raw provider error'); } });
   retry.accept(event('s0', 'Retry.')); await retry.idle();
   check(() => assert.equal(retry.status().failed, 1));
+  check(() => assert.equal(retry.delivery(event('s0','Retry.')).error,'playback-failed'));
   check(() => assert(!JSON.stringify(retry.status()).includes('private raw')));
   check(() => assert.equal(retry.retry(event('s0', 'Retry.')).state, 'queued'));
   await retry.idle();
@@ -44,6 +47,7 @@ module.exports = async function(check = fn => fn()) {
   finish(); await cancelled.idle();
   check(() => assert.equal(cancelled.status().cancelled, 2));
   check(() => assert.equal(cancelled.status().completed, 0));
+  check(() => assert.equal(cancelled.delivery(event('s0','Active.')).state,'cancelled'));
 
   const bounded = new NarrationQueue({ selectedSessions: ['selected'], maxTracked: 1, maxBytes: 4, play: async () => {} });
   check(() => assert.throws(() => bounded.accept(event('s0', '12345')), /byte limit/));
