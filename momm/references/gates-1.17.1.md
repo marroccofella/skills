@@ -123,14 +123,15 @@ that refusal.
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.0 and 1.16.1 | Six hosted cells | after the merge |
 | 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
-| 5. Live review with every installed reviewer route valid | Report | passed on the Copilot fix (finding 1) |
+| 5. Live review with every installed reviewer route valid | Report | passed: Codex, Antigravity, Copilot and Grok each returned valid reviews in all three range reviews of the whole delta; refused and retried pieces are listed below |
 | 6. Signed tag `momm-1.17.1` | Release workflow run | approved by the owner's instruction of 4 October 2026, if every gate above passes on the final sealed commit |
 
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.1 changes is listed here with a complete
-receipt. The two reviews of the Copilot fix are listed. The range reviews of the whole delta (R1 to
-R10 and S1 to S10) are added when their triage is complete; until they are listed, gate 3 is open.
+receipt. Listed: the two reviews of the Copilot fix and the three range reviews of the whole delta (R1
+to R10 and S1 to S10). The closing review of the changes made in triage is added when its receipt is
+complete; until it is listed, gate 3 is open.
 
 - `rev_20261004062357_5e1763ad52ff` — the Copilot event fix. Codex, Antigravity and Grok ACCEPT, no
   findings; Copilot `invalid_output` (the fenced answer, finding 1). Six suggestions ruled, three
@@ -140,6 +141,72 @@ R10 and S1 to S10) are added when their triage is complete; until they are liste
   not to hold; one NITPICK about wording applied; five suggestions ruled, four applied. Receipt
   complete; it records `stale: dispatcher_sha256` because the review's own follow-up changed the
   dispatcher.
+
+The three range reviews below cover everything between the Copilot fix and the integrated twenty items.
+Each reviewer saw the diff in pieces of at most 20 KB; quorum (two valid reviews) was met on every piece.
+Every WARNING and CRITICAL was either reproduced with a check that fails on the reviewed commit and
+passes after the fix, or rejected with a probe that runs the real code path; a green suite alone was
+not accepted as a rejection. Every suggestion has a recorded decision. Each receipt records
+`stale: dispatcher_sha256` because the fixes changed the dispatcher.
+
+- `rev_20261004083921_b12f1d0fd3bf` — dispatcher, answers, compatibility record, notices and evidence
+  location (five pieces). All four routes valid. Statuses kept apart from quorum: Grok timed out on one
+  piece; one Copilot answer was refused for an invalid finding and accepted on its retry. 13 WARNING:
+  five real and fixed, eight shown not to hold. 52 suggestions ruled, 12 applied. Receipt complete.
+  Fixed: the compatibility record was written through a temporary file with a predictable name, so an
+  entry planted there was written through and moved into the record's place (now a random name,
+  created exclusively); a removal planned before the record's lock could erase an entry another run
+  had written for the same route (now planned again under the lock); a success given another model hid
+  a compatibility failure in the same run; a damaged last line of the review log could be counted as a
+  run; and three comments denied that any answer text is kept, beside the code that keeps a redacted
+  prefix.
+- `rev_20261004085003_77d89c336993` — updater and Setup Center (three pieces). All four routes valid.
+  8 WARNING and 4 NITPICK: six real and fixed, six shown not to hold. 35 suggestions ruled, 13
+  applied. Receipt complete. Fixed: the protocol summary at the consent gate read a fence closer with
+  an info string as a closer, reported a file whose sections had only changed places as "none added,
+  removed or changed", and treated a `SKILL.md` it could not read as empty (it now stops with Git's
+  error); the lock message says how many locks it does not name; Quick Setup no longer verifies a
+  reviewer whose card reads "CLI update needed"; a console that cannot be written to no longer fails
+  a refresh.
+- `rev_20261004085941_a8b4e58041e1` — suite runner, hygiene suite, records and site status line (seven
+  pieces). All four routes valid. Statuses kept apart from quorum: Copilot was refused on one piece on
+  both attempts and on another on its first attempt (finding 1, third cause). 4 CRITICAL, 18 WARNING
+  and 6 NITPICK: twenty real and fixed, eight shown not to hold. 62 suggestions ruled, 19 applied.
+  Receipt complete. None of the four CRITICAL findings held: three said a function was undefined or a
+  Windows tool was called on every platform, one said an import path was invalid, and each was
+  disproved by running that path (the functions are declared later in the same file; the path
+  exists). Fixed: `--recover-report` could be redirected by a link put in the destination's place
+  after its check (the destination is now resolved and checked again, and written by its real path);
+  every save of a run report retries a refused rename, not only the last; the destination is compared
+  by file identity, and by case only on Windows and macOS; a run id must have the UUID form; the
+  release catalogue must be in ascending version order before a status line is rendered; a README with
+  CRLF line endings is accepted; and the plan, this record and the release notes were corrected where
+  they said more than the code does.
+
+Two changes were made by the governor after triage, each with a test that failed first, and are covered
+by the closing review: the narration rule (finding 1, third cause) and the mark on a stale Setup Center
+notice after a failed refresh (R10). Four triage check scripts were edited by the governor before any
+fix was merged, so that the same bytes hold on the reviewed commit and on the final tree: three rules
+pinned wording that those two changes replaced, and one belonged to a suggestion whose change another
+packet made. Ten suggestions that one packet had declined as outside its files are recorded as applied,
+because the neighbouring packet made exactly that change under a finding of the same review.
+
+## Found in triage and carried forward
+
+- The capability overlay (`momm/scripts/capabilities.mjs`, outside this release's reviewed range) still
+  writes through a temporary file with a predictable name, the pattern fixed here for the
+  compatibility record. Candidate for 1.18.
+- An evidence home with a file among its parent folders is refused without a reason. Candidate for
+  1.18.
+- `--recover-report` cannot exclude a link placed between its last check and the write itself; the
+  window is two adjacent calls.
+- The case regression test for `--recover-report` can fail first only on a case-sensitive file system;
+  it first ran on the hosted Linux cells, not in triage. The link form of the temporary-file test ran
+  with a plain file on the triage machine, where file links cannot be created.
+- The Git-lock claims about reflog locks were checked with one Git version (2.53 on Windows); the
+  check repeats on whatever Git runs the suite.
+- The third refused Copilot answer of the gate review had a shape the record could not tell apart
+  (neither starting nor ending with a fence); if it recurs, the shape record will show it again.
 
 ## Still required before the tag
 
