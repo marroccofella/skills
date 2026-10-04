@@ -56,8 +56,11 @@ weakened; no setting of the user's is changed. Every item has failing-first test
 - **R10. Stale Setup Center warning.** A running Setup Center whose version differs from the installed
   one says so and asks for a restart, naming the control that stops it. After a refresh that fails
   without the version check, a notice already shown stays and says it was not checked again. Done
-  when: the page shows the notice after the installed version changes under it, and its self-test
-  covers it.
+  when: the page shows the notice after the installed version changes under it; the notice names the
+  page's own control that stops the server, by its label; after a refresh that fails without the
+  version check, a notice already shown stays and is marked as not checked again, and none is
+  invented; and `momm/scripts/setup-maintenance.test.mjs` tests all three. The Setup Center self-test
+  checks the version comparison and the notice's wording.
 
 ## Items from this release's own failures (S1 to S10)
 
