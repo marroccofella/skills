@@ -41,7 +41,7 @@ function runChild(command,input,context,onProgress){
   let timer=setTimeout(timeout,120000);
   function finish(error){if(done)return;done=true;clearTimeout(timer);context.setChild(null);error&&!context.stopped()?reject(error):resolve();}
   child.stderr.on('data',data=>{stderr=(stderr+data).slice(-4096);});
-  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!timedOut){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
+  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!done&&!timedOut&&!ipcError){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
   child.on('error',error=>finish(new Error(error.code==='ENOENT'?'Native speech executable is missing':'Native speech could not start')));
   child.on('exit',code=>finish(ipcError|| (timedOut?new Error('Native speech chunk exceeded 120 seconds'):code===0?null:new Error(failureMessage(stderr)))));
   try{child.send({action:'start',command,input:input||''},error=>{if(error){ipcError=new Error('Native speech IPC failed');cancel();}});}catch{ipcError=new Error('Native speech IPC failed');cancel();}
