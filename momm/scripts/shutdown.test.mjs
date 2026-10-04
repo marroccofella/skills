@@ -8,6 +8,7 @@ import http from 'node:http';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {parse as parseUpdateOptions} from './update.mjs';
+import {evidenceRefusal} from './evidence-location.mjs';
 const source = fs.readFileSync(new URL('./multi-review.mjs', import.meta.url), 'utf8');
 const start = source.lastIndexOf('main().catch(');
 assert(start > 0, 'production finalizer boundary moved');
@@ -33,13 +34,13 @@ if (process.argv[2] === '--child' || process.argv[2] === '--information-child') 
     process.exitCode = code;
     process.stdout.write(JSON.stringify({fixture:true,exit_code:code})+'\n');
   };
-  vm.runInNewContext(finalizer, {main,process,setTimeout,parseUpdateOptions});
+  vm.runInNewContext(finalizer, {main,process,setTimeout,parseUpdateOptions,evidenceRefusal});
 } else {
   const passed=[], failed=[];
   const test=(name,fn)=>{try{fn();passed.push(name);}catch(e){failed.push({name,error:e.message});}};
-  function simulate({platform='win32',code=0,stdout='flush',stderr='flush',error=null}={}) {
+  function simulate({platform='win32',code=0,stdout='flush',stderr='flush',error=null,argv=['node','fixture']}={}) {
     const timers=[], exits=[], writes=[], callbacks={};
-    const proc={platform,argv:['node','fixture'],exitCode:code,exit:value=>exits.push(value)};
+    const proc={platform,argv,exitCode:code,exit:value=>exits.push(value)};
     function write(which,mode) {return (text,done)=>{
       writes.push({which,text,timers:timers.length});
       if(mode==='throw')throw Error('synthetic broken pipe');
@@ -48,7 +49,7 @@ if (process.argv[2] === '--child' || process.argv[2] === '--information-child') 
     };}
     proc.stdout={write:write('stdout',stdout)};proc.stderr={write:write('stderr',stderr)};
     const main=()=>({catch:handler=>{if(error)handler(error);return {finally:fn=>fn()};}});
-    vm.runInNewContext(finalizer,{main,process:proc,setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer;}});
+    vm.runInNewContext(finalizer,{main,process:proc,evidenceRefusal,setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer;}});
     return {timers,exits,writes,proc,callbacks};
   }
   test('Windows flush yields 250ms before forced exit, with an independent 2000ms bound',()=>{
@@ -84,6 +85,17 @@ if (process.argv[2] === '--child' || process.argv[2] === '--information-child') 
     const r=simulate({error:Error('synthetic failure')});
     assert.equal(r.proc.exitCode,1);r.timers.find(t=>t.ms===250).fn();assert.deepEqual(r.exits,[1]);
     assert.match(r.writes[0].text,/synthetic failure/);
+  });
+  // 1.17.1 R7: a refused evidence location or folder is printed as its own plain sentence, so the paths and
+  // the command it names are readable as they are; --stream keeps stderr as JSON lines. Exit 1 either way.
+  for(const code of ['MOMM_EVIDENCE_LOCATION','MOMM_EVIDENCE_PERMISSIONS'])test(`${code} is one plain line, a JSON line under --stream, and exit 1`,()=>{
+    const error=Object.assign(Error('synthetic refusal of X:\\folder: run node "<installed-momm>/x.mjs"'),{code});
+    const plain=simulate({error});
+    assert.equal(plain.proc.exitCode,1);assert.equal(plain.writes[0].text,`${error.message}\n`);
+    const stream=simulate({error,argv:['node','fixture','--stream']});
+    assert.equal(stream.proc.exitCode,1);assert.deepEqual(JSON.parse(stream.writes[0].text),{error:error.message});
+    const other=simulate({error:Object.assign(Error(error.message),{code:'ENOENT'})});
+    assert.deepEqual(JSON.parse(other.writes[0].text),{error:error.message},'any other failure keeps its JSON line');
   });
   for(const code of [0,1,3])test(`real piped loopback fetch drains and exits ${code}`,()=>{
     const r=spawnSync(process.execPath,[fileURLToPath(import.meta.url),'--child',String(code)],

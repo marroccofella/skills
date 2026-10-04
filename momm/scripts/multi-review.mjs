@@ -25,7 +25,7 @@ import { ATTEMPT_BUDGET, COVERABLE_STATUSES, MODEL_FAMILIES, runPieceCovers, cov
 import { runSecondLook } from "./second-look.mjs";
 import { createUpdateClock, maybeUpdateNotice } from "./update-clock.mjs";
 import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace, requirePrivateScratch, inspectEvidencePermissions, protectEvidence, evidenceRemediation } from "./evidence-permissions.mjs";
-import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, EVIDENCE_FOLDER } from "./evidence-location.mjs";
+import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, evidenceRefusal, EVIDENCE_FOLDER } from "./evidence-location.mjs";
 import { knownIncompatibility, settleCompatibility, rememberedNotice } from "./compatibility.mjs";
 import { repeatedStatusNotices, diffInputNotice } from "./run-notices.mjs";
 
@@ -3409,7 +3409,7 @@ function evidenceCommand(args) {
       return;
     }
     const status = inspectEvidencePermissions(directory);
-    process.stdout.write(`${JSON.stringify({ evidence: directory, ...where, exists: true, ...status, ...(status.verified ? {} : { remediation: evidenceRemediation(directory) }) }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ evidence: directory, ...where, exists: true, ...status, ...(status.verified ? {} : { remediation: evidenceRemediation(directory, undefined, undefined, status.reason) }) }, null, 2)}\n`);
     if (!status.verified) process.exitCode = 1;
     return;
   }
@@ -4037,7 +4037,10 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+  // 1.17.1 R7: a refused evidence location or folder is one plain line, so its paths and the command it
+  // names can be read and copied as they are. --stream keeps stderr as JSON lines.
+  const refusal = process.argv.includes("--stream") ? null : evidenceRefusal(error);
+  process.stderr.write(refusal ? `${refusal}\n` : `${JSON.stringify({ error: error.message })}\n`);
   process.exitCode = 1;
 }).finally(() => {
   // Last-resort termination: sandboxed environments can leave descendants
