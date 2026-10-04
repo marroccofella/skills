@@ -292,4 +292,13 @@ for (const [file, text] of [['momm/references/upgrade-prompt.md', read('momm/ref
   const sentence = entry.split(/(?<=\.) /).find((one) => one.includes('anything is written')) ?? '';
   assert(/one real and fixed/.test(entry) && /suggestion/.test(sentence), 'gates-1.17.1.md: the entry of rev_20261004112834 counts one real finding, so the second thing it lists as fixed must be given to the suggestion it came from');
 }
+// 1.17.1 last review rev_20261004140004_37cfc29e0951 (final-review-quorum-contradiction): the entry of the
+// final review named three routes that failed on two different pieces and then said that none of them
+// gave a valid review of "that piece", beside "quorum was met on all five pieces". It says how many
+// valid reviews each affected piece had.
+{
+  const reviews = read('momm/references/gates-1.17.1.md').replace(/\r\n/g, '\n').split('\n## Reviews\n')[1].split('\n## ')[0];
+  const entry = (reviews.split(/\n(?=- `rev_)/).find((block) => block.startsWith('- `rev_20261004130329_38fbda81466d`')) ?? '').replace(/\s+/g, ' ');
+  assert(entry && !/none of the three/.test(entry) && /piece 1 had three valid reviews/.test(entry) && /piece 5 had two/.test(entry), 'gates-1.17.1.md: the entry of rev_20261004130329 must say how many valid reviews pieces 1 and 5 had, so that "quorum on all five pieces" can be checked against it');
+}
 console.log(JSON.stringify({passed:true,checks:'supervised-vs-detached process limitations, verification checklist and separate default-off update controls'}));

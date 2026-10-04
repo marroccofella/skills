@@ -247,8 +247,9 @@ is recorded as applied, because the product packet made that change under a find
   four routes returned valid reviews, and quorum was met on all five pieces. Antigravity's answer on
   piece 1 was refused on both attempts as not strict JSON (it was bare JSON that does not parse, so
   nothing could be unwrapped), Copilot's on piece 5 was refused on both attempts because a quote did
-  not match the diff, and Grok timed out on piece 5 (one attempt); none of the three gave a valid
-  review of that piece. Three answers were refused once and accepted on a retry: Copilot's on piece 2
+  not match the diff, and Grok timed out on piece 5 (one attempt). So piece 1 had three valid reviews
+  (all but Antigravity's) and piece 5 had two (Codex's and Antigravity's), which is the quorum; the
+  other three pieces had four. Three answers were refused once and accepted on a retry: Copilot's on piece 2
   (an invalid finding), Antigravity's and Grok's on piece 3 (a quote that did not match). 6 WARNING
   and 5 NITPICK: one real and fixed, ten shown not to hold. 30 suggestions ruled, none applied.
   Receipt complete. The real finding was in this record: the entry above said "one real and fixed" and
