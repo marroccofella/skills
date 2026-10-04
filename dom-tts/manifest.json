@@ -175,8 +175,12 @@
       "sha256": "6576c35b88dfb9b0eb0c3da41f02415470ea79612b9163e439f560bdd25b4ea2"
     },
     {
+      "path": "tests/isolated-check-diagnostic.cjs",
+      "sha256": "e0b5bbf3143e53de0c726fb08700e7e9e4a4f36497fe927467c450686b93c42f"
+    },
+    {
       "path": "tests/isolated-player-check.cjs",
-      "sha256": "d68dbaf1e9f30fd7436fa698510551f5b325c2ca2a8bb567177c760f34a9029d"
+      "sha256": "d843a88284bf552a0f5842b7a0515e67ec877e688b1b36888282d7408e1562fa"
     },
     {
       "path": "tests/isolated-wait-check.cjs",
