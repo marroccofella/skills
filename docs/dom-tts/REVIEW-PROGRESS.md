@@ -23,7 +23,7 @@ remains separate. No reviewer branches are overwritten by Legion.
 |---|---|---|
 | Four original defects: dropped prose, decrement for dash, oversized chunks, silent watcher loss | Core regressions retained; independent Linux and Windows receipts are separately pinned | Preserve real-reply/listening coverage; avoid equating generated assertion counts with corpus size |
 | Writable public-metadata marker and same-process permission cache | Removed by41; tests-only54be078 failed before fix1337e67; comment-only2874e4d follows | Keep per-call fail-closed permission enforcement |
-| Windows install check exceeded60s at8491472 | Original attempt1 run37183108521 failed; duplicate37183106417 passed; cause open | Legion dispatched unchanged-byte failed-job attempt2; collect result without erasing attempt1 |
+| Windows install check exceeded60s at8491472 | Original attempt1 run37183108521 failed; duplicate37183106417 passed; attempt2 passed unchanged bytes; cause open | Preserve all attempts; passing rerun is not a root-cause repair |
 | e630232 diagnostic successor | Both37183666336 and37183664235 verified17/17 successful jobs | Diagnostics are evidence collection, not a root-cause repair |
 | Default-target EPERM and PowerShell policy failures | Open; disposable install success is not affected-host reproduction | Affected host and clean non-admin host/VM investigation; preserve installation and actionable refusal |
 | Missing legacy tray/settings source | PR42 packet recovered; original distribution provenance and installed-copy parity open | Legion packet verification and active migration; source existence does not prove working controls |

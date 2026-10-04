@@ -33,6 +33,24 @@ periodic progress announcements. The installed 0.4 report in discussion comment
 
 ## Required evidence
 
+Declare eligibility and skip policy before evaluation. Count expected delivery
+against independent harness events, not only the product's admitted-event journal.
+Report missing invocation, skipped-by-policy and superseded counts explicitly;
+these outcomes must not inflate a success ratio. Periodic backlog must be bounded
+and coalesced under a declared policy, with each superseded sample accounted for.
+
+Unknown started speech remains ambiguous even after an owned child is reaped:
+reaping proves process termination, not absence of earlier audible output. Keep
+that outcome visible or abandoned; automatic duplicate-free retry is not justified.
+Any at-least-once replay policy needs explicit user authorization. Cancellation
+continues to prohibit automatic retry. Test lease clock/heartbeat behavior across
+suspend/resume and process identity reuse; no lease controller is implemented here.
+
+Journal failure must not erase in-process deduplication. Document restart duplicate
+risk while durable receipts are unavailable. Use session plus an actual provider
+identity/ordinal when supported, never content-only suppression of repeated replies.
+Report independent hosts and sessions separately from correlated event counts.
+
 Record exact source commit, harness/version, model where relevant, OS/architecture,
 Node version, native versus stand-in player, input identity, admission/terminal
 counts, failures and retries. Measure visible-text and acoustic timings separately.
