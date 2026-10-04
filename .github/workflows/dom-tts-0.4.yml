@@ -28,6 +28,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
+      - run: node tests/source-reader-checks.cjs
       - run: node -e "require('./scripts/package').verify()"
       - run: node tests/install-check.cjs
       - run: node tests/native-boundary.cjs

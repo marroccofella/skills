@@ -159,3 +159,18 @@ not a safe production queue implementation. Preserve the Standard core while add
 the new path behind an explicit experimental option. No old global watcher is copied
 into the new path. Specific 0.5 MOMM source-sharing approval and independent quorum
 remain pending; do not treat this design document as that approval.
+# Source-reader prototype
+
+The experimental SourceReader accepts only explicitly granted injected readers.
+The controller must obtain human source consent before calling grant; this API
+does not collect or prove human consent itself. Opaque object grants bind to one
+session, refuse foreign/forged grants and concurrent reads, and limit returned
+Buffer size. Revocation aborts the injected reader, discards its late result and
+calls a supplied session-revocation hook. Reader errors are sanitized.
+
+No filesystem discovery, source identity/rotation validation, durable consent UI,
+delta/final reconciliation or native player connection is implemented by this
+prototype. Readers must honor AbortSignal; arbitrary injected code cannot be
+forcibly stopped or its external buffers erased. Bounds apply to accepted results,
+not allocations performed by an injected reader. Tests use injected promises,
+not private transcripts or live harnesses; CI runs them separately from9903 totals.
