@@ -92,7 +92,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "5c388d463acee5055d8849534151188ceacd16946081ca61b9dfc36090ebd9d6"
+      "sha256": "72b424fa80827b94ce33240b09f82895328fd290aaac9c86661da5868d0e883f"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -185,6 +185,10 @@
     {
       "path": "tests/native-boundary.cjs",
       "sha256": "a55d4861003ef7bfd302078643042efa014df8e1dadc4805ff2e75811a3b3765"
+    },
+    {
+      "path": "tests/native-ipc-check.cjs",
+      "sha256": "481d35dc36b068c0f77dc40947ab9021ea8a73c0b45ab0e7a7b7024699c9dae1"
     },
     {
       "path": "tests/native-player-check.cjs",

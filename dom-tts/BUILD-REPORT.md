@@ -223,3 +223,7 @@ cleanup are retained. The new injected-player regression fails before/passes aft
 9903 Windows assertions/six skips, worker stop and timeout regressions pass.
 This is cancellation plumbing, not a connected native streaming adapter or measured
 acoustic stop. Current direct CLI behavior has no new automatic source/harness hook.
+
+### Owned-worker IPC failure regression (Legion, 4 October)
+
+On predecessor 1e730929d60028395bb4ffa4f5126e63db769c2e, an injected start-send callback failure using an actual owned Node worker reported failure and cleared ownership before worker exit. The disposable fixture cancelled its own worker afterward. The new regression fails before the fix and passes after: retain the IPC error, request owned cancellation and settle on worker exit. Windows x64 / Node 22.16: focused IPC, timeout and AbortSignal checks pass; offline suite 9,903 assertions passes, six POSIX checks skipped. No audio or private text in the new fixture. Hosted exact-candidate CI and independent final-byte review remain pending. General child error events, never-settling cancellation, crash/descendant containment and acoustic silence are not certified by this result.
