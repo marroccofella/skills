@@ -182,7 +182,7 @@ await test('a session warning or a final result alone is never an answer',async(
   // Every model call stays at "success", so it is the answer gate that refuses this, not the result gate.
   const rows=events1091('');
   rows.find(e=>e.type==='session.warning').data.message=JSON.stringify(payload);
-  assert(rows.filter(e=>e.type==='model.call_final_result').every(e=>e.data.result==='success'));
+  assert(rows.filter(e=>e.type==='model.call_final_result').every(({data})=>data.result==='success'));
   const r=await invoke(rows);assert.equal(r.status,'invalid_output');assert.match(r.detail,/no completed tool-free assistant answer/);
 });
 await test('one failed model call among successful ones is refused even with a valid final answer',async()=>{
