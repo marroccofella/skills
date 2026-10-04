@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PEER_CONTRACT, reviewProblem, quotationDiagnostics } from "./review-contract.mjs";
 import { assemblePrompt } from "./guidance.mjs";
 import { grokIsolationEnv } from "./route-isolation.mjs";
+import * as reviewAnswer from "./review-answer.mjs";
 import { captureSourceSnapshot, resolveGit, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
 
@@ -261,7 +262,9 @@ try {
         VALID_VERDICTS: new Set(["ACCEPT", "MODIFY", "REJECT"]), VALID_SEVERITIES: new Set(["CRITICAL", "WARNING", "NITPICK"]),
         attachmentRouting: () => [], attachmentContractSection: () => "", buildContract: () => "NATIVE REVIEW CONTRACT", agentTimeoutMs: (_a, ms) => ms, cleanOauthEnv: () => ({}),
         parseUsage: () => null, LOGIN_HINTS: {}, sanitizeText: (s) => ({ value: s }), clipped: (s, n) => String(s ?? "").slice(0, n),
-        antigravityCommand: () => "agy", grokCommand: () => "grok", REVIEW_JSON_SCHEMA: { type: "object" } });
+        antigravityCommand: () => "agy", grokCommand: () => "grok", REVIEW_JSON_SCHEMA: { type: "object" },
+        // 1.17.1 S1/S2: the adapters read an answer through review-answer.mjs; the real functions.
+        ...reviewAnswer });
       // 1.17 A4.2: the review-contract path attaches private quotation diagnostics; the real helper and validator.
       context.quotationDiagnostics = quotationDiagnostics;
       vm.runInContext(slice("function quotationEvidence(", "\n// Live progress display"), context);

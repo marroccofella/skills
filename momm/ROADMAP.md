@@ -1,8 +1,8 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.0**, released on 3 October 2026; its signed tag `momm-1.17.0` was created by the
-release workflow after exact-main CI and six hosted lifecycle cells passed. The previous signed release is `momm-1.16.1`, 28 September 2026. Nothing else
+only sources. Today they say **1.17.1**, sealed on 4 October 2026; its signed tag `momm-1.17.1` is created by the
+release workflow. The previous signed release is `momm-1.17.0`, 3 October 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -32,7 +32,11 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17 released.** The reviewed plan is
+- **Now: 1.17.1 sealed candidate, publication pending.** Copilot reviews work again on recent Copilot
+  CLI versions (new events and fenced answers), a CLI too old for its model is shown at preflight, and
+  twenty reliability improvements make failures explain themselves: [plan](references/plan-1.17.1.md),
+  [gate record and findings](references/gates-1.17.1.md).
+- **1.17 released.** The reviewed plan is
   [references/plan-1.17.md](references/plan-1.17.md); its leading theme is role-preserving review.
   Exact-main CI, signed checkpoint, six hosted lifecycle cells including interrupted recovery,
   and signed stable publication passed. Scope and known limits remain in the

@@ -73,4 +73,13 @@ are refused. Source stays off process arguments. Media routing is unchanged.
 See [official stdin protocol](https://antigravity.google/docs/cli/headless/#stream-prompts-from-stdin)
 and the [public diagnostic](https://github.com/marroccofella/skills/pull/4#issuecomment-5700434342).
 
+Since 1.17.1 the answer is read by the same rule as Copilot's (`scripts/review-answer.mjs`): bare strict
+JSON, or exactly one fenced block (three backticks, optionally the tag `json` in any case) whose inside is
+strict JSON; narration before or after that one block is ignored (text there that is itself JSON is refused). Before that a fenced answer was refused here.
+A second fenced block, any other line that starts with a fence, an unclosed fence, a tilde fence, another
+language tag, narration around a bare answer or broken JSON inside is still refused, and nothing is
+repaired. An answer refused as
+not JSON leaves only its shape (length, a fence at either end, the parser's error position, a redacted
+80-character prefix) in the private attempt record.
+
 For media, prompt text asks the agent to read the private file and attached media; `--json-schema` is MOMM's review schema. For text-only input, the complete contract and artifact travel in the stdin user event. Print timeout stays below the dispatcher timeout; a native partial-output timeout is still failure even if the native exit is zero.

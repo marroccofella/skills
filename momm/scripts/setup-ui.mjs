@@ -436,7 +436,8 @@ async function modelStatus(routes) {
   return Promise.all(Object.keys(providers).map(async (agent) => {
     const route = routeMap.get(agent);
     if (!route || route.installed === false) return { agent, status: "missing", models: [] };
-    if (!route.ready) return { agent, status: "login_required", models: [] };
+    // 1.17.1 R1: not ready for a remembered CLI/model mismatch is an update, never a sign-in.
+    if (!route.ready) return { agent, status: route.compatibility ? "update_required" : "login_required", models: [] };
     if (!["antigravity", "grok"].includes(agent)) return { agent, status: "interactive_selector", models: [] };
     const command = agent === "antigravity" ? "agy" : "grok";
     const result = await runCommand(command, ["models"], { timeoutMs: 20_000 });
@@ -1577,6 +1578,50 @@ function createSetupCenterPointer({ cwd = process.cwd(), pid = process.pid, proc
   return { write, remove, file };
 }
 
+// --- Stale Setup Center notice (1.17.1 R10) -----------------------------------
+// This server is long-running. An update replaces the files under it, and the
+// process goes on serving the code it loaded and the version it started with.
+// The installed dispatcher's version line is READ again (never imported, never
+// run) on the page's own status and maintenance refreshes. The pattern is the
+// installations inventory's, which that script does not export: it is repeated
+// here and the self-test keeps the two the same. A difference is a notice on the
+// page and one console line: nothing is refused, restarted or launched.
+const SEMVER = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
+const VERSION_LINE = /^[ \t]*(?:export\s+)?const\s+MOMM_VERSION\s*=\s*["']([^"'\r\n]{1,40})["']/m;
+function installedDispatcherVersion(file = dispatcherScript, files = fs) {
+  let fd;
+  try {
+    // Bounded, and a regular file only: a pipe or device at this path must not park the server.
+    if (!files.statSync(file).isFile()) return null;
+    fd = files.openSync(file, "r");
+    const stat = files.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const size = Math.min(stat.size, 4 << 20), buffer = Buffer.alloc(size);
+    let filled = 0;
+    while (filled < size) { const read = files.readSync(fd, buffer, filled, size - filled, filled); if (read <= 0) break; filled += read; }
+    const found = VERSION_LINE.exec(buffer.subarray(0, filled).toString("utf8"))?.[1];
+    return found && SEMVER.test(found) ? found : null;
+  } catch { return null; } // unreadable: unknown
+  finally { if (fd !== undefined) try { files.closeSync(fd); } catch { /* nothing to do */ } }
+}
+
+function createVersionWatch({ read = installedDispatcherVersion, log = (line) => process.stderr.write(line) } = {}) {
+  const running = read();
+  let announced = null;
+  return () => {
+    const installed = read();
+    // Unknown is not different: a dispatcher that cannot be read mid-update raises nothing.
+    const stale = running !== null && installed !== null && installed !== running;
+    if (stale && announced !== installed) {
+      announced = installed;
+      // The console line is a courtesy: a console that cannot be written to must not fail the answer that carries the notice.
+      try { log(`MOMM Setup Center is running ${running}; ${installed} is now installed. Close this Setup Center and start it again.\n`); } catch { /* the page still says it */ }
+    }
+    return { running_version: running, installed_version: installed, stale };
+  };
+}
+const setupCenterVersion = createVersionWatch();
+
 function createServer() {
   // Navigation cannot send a custom header. Exchange an authenticated request
   // for a short-lived, one-use ledger ticket, never a reusable session in a URL.
@@ -1605,7 +1650,7 @@ function createServer() {
         if (!authorized(request)) return sendJson(response, 403, {error:'Invalid local session'});
         const governor = String(requestUrl.searchParams.get("governor") || "codex").toLowerCase();
         if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
-        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null, ledger_url: ledgerFileUrl() });
+        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null, ledger_url: ledgerFileUrl(), setup_center: setupCenterVersion() });
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/guidance") {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
@@ -1682,7 +1727,8 @@ function createServer() {
             for (const item of rows) if (item && typeof item === "object" && item.agent && item.current) updateClock.setInstalled(item.agent, item.current);
             if (body.force === true) triggerClock(updateClock, "setup.check");
           }
-          return sendJson(response, 200, value);
+          // Read per answer and kept out of the cached report: this is the refresh that follows an applied update.
+          return sendJson(response, 200, { ...value, setup_center: setupCenterVersion() });
         }
         if (requestUrl.pathname === "/api/test") {
           const provider = String(body.provider || "").toLowerCase();
@@ -1705,7 +1751,10 @@ function createServer() {
       }
       return sendJson(response, 404, { error: "Not found" });
     } catch (error) {
-      return sendJson(response, 500, { error: safeDetail(error.message) || "Unexpected local error" });
+      // A status or maintenance refresh that fails after the installed scripts changed is when the notice
+      // matters most. Only those two routes, and only for a request that carries the session token.
+      const refresh = (requestUrl.pathname === "/api/status" || requestUrl.pathname === "/api/maintenance") && authorized(request);
+      return sendJson(response, 500, { error: safeDetail(error.message) || "Unexpected local error", ...(refresh ? { setup_center: setupCenterVersion() } : {}) });
     }
   });
 }
@@ -2365,6 +2414,47 @@ async function dashboardRegression() {
   return checks;
 }
 
+// 1.17.1 R10 regression: a fixture dispatcher whose declared version changes under a running watch.
+// No server, no child process; the fixture is read, never run.
+function staleNoticeRegression() {
+  const checks = { stale_notice_follows_installed_version: false, stale_notice_prints_one_console_line: false, stale_notice_unknown_is_not_a_difference: false,
+    stale_notice_pattern_matches_inventory: false, stale_notice_present_in_ui: false, stale_notice_regression_threw: false };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "momm-setup-stale-"));
+  try {
+    const file = path.join(root, "multi-review.mjs"), declare = (version) => fs.writeFileSync(file, `const MOMM_VERSION = "${version}";\n`);
+    const lines = [];
+    declare("1.17.1");
+    const check = createVersionWatch({ read: () => installedDispatcherVersion(file), log: (line) => lines.push(line) });
+    const agreed = check();
+    declare("1.17.2");
+    const changed = check(), again = check();
+    checks.stale_notice_follows_installed_version = agreed.stale === false && agreed.running_version === "1.17.1" && agreed.installed_version === "1.17.1"
+      && JSON.stringify(changed) === JSON.stringify({ running_version: "1.17.1", installed_version: "1.17.2", stale: true }) && again.stale === true;
+    checks.stale_notice_prints_one_console_line = lines.length === 1 && /^[^\n]*Setup Center is running 1\.17\.1; 1\.17\.2 is now installed\.[^\n]*\n$/.test(lines[0]);
+    fs.rmSync(file);
+    const missing = check();
+    fs.writeFileSync(file, 'const MOMM_VERSION = "not a version";\n');
+    const malformed = check();
+    declare("1.17.1");
+    const back = check();
+    checks.stale_notice_unknown_is_not_a_difference = missing.stale === false && missing.installed_version === null && malformed.stale === false && malformed.installed_version === null
+      && back.stale === false && lines.length === 1;
+    // The version pattern is repeated from installations.mjs, which does not export it: the two declarations must stay identical.
+    const declared = (text, name) => text.match(new RegExp(`^const ${name} = .*$`, "m"))?.[0];
+    const inventory = fs.readFileSync(path.join(scriptDir, "installations.mjs"), "utf8"), own = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
+    checks.stale_notice_pattern_matches_inventory = ["SEMVER", "VERSION_LINE"].every((name) => Boolean(declared(inventory, name)) && declared(own, name) === declared(inventory, name));
+    const html = fs.readFileSync(path.join(assetDir, "index.html"), "utf8"), js = fs.readFileSync(path.join(assetDir, "app.js"), "utf8"), css = fs.readFileSync(path.join(assetDir, "styles.css"), "utf8");
+    checks.stale_notice_present_in_ui = /<div id="stale-notice"[^>]*\brole="status"[^>]*\baria-live="polite"[^>]*><\/div>/.test(html) && !/<div id="stale-notice"[^>]*\bhidden\b/.test(html)
+      && js.includes("renderStaleNotice") && js.includes("is now installed. Choose Close Setup Center, then start it again.") && html.includes(">Close Setup Center</button>")
+      && js.includes("renderStaleNotice(error.setup_center)") // a failed refresh shows it too
+      && css.includes(".stale-notice {") && css.includes(".stale-notice-region {");
+  } catch (error) {
+    checks.stale_notice_regression_threw = true;
+    process.stderr.write(`stale notice regression: ${error?.stack || error?.message || error}\n`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  return checks;
+}
+
 async function selfTest() {
   // A child that outlives its budget must be reported as timed out — the
   // listener-order regression this guards against was found by momm review.
@@ -2457,6 +2547,7 @@ async function selfTest() {
     // CLI version probes by bare name. On Windows only the guard on THIS process stops the working-directory
     // lookup for shell:false spawns (measured; a child env entry does not), so it must be set by this module itself.
     windows_launch_guard_is_set_on_this_process: process.platform !== "win32" || process.env.NoDefaultCurrentDirectoryInExePath === "1",
+    ...staleNoticeRegression(),
     ...regression,
   };
   const { passed, failing } = summarizeChecks(tests);

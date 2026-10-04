@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { improvementBody } from './momm-site-community.mjs';
 import { releasePages } from './momm-release-pages.mjs';
+import { releaseStatus, releaseStatusHtml, releaseStatusMarkdown, readmeStatusBlock } from './momm-site-home.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -57,6 +58,35 @@ check('immutable 1.17 evidence links', () => {
     assert(!html.includes('blob/main/momm/references/' + file), file);
   }
   assert(html.includes('pre-publication wording'));
+});
+// 1.17.1 S10: the README states the stable version and any candidate under test in one generated line.
+// It is never a second truth: it must be exactly what versions.json and the release catalogue give today.
+check('one generated release status line', () => {
+  const manifest = JSON.parse(read('versions.json')), catalogue = JSON.parse(read('momm/references/release-history.json'));
+  // The renderer keeps a CRLF README's line endings, so the comparison here is of lines, not of line endings.
+  const status = releaseStatus(manifest, catalogue), line = releaseStatusMarkdown(status), readme = read('README.md').replace(/\r\n/g, '\n');
+  const stale = 'README.md disagrees with versions.json and the release catalogue: run node scripts/render-momm-site.mjs';
+  assert.equal(readme.split(readmeStatusBlock(status)).length - 1, 1, stale);
+  assert.deepEqual(readme.split('\n').filter(text => /Stable: |Candidate under test/.test(text)), [line], 'README.md must state the release status once, in the generated line');
+  assert(readme.indexOf(line) < readme.indexOf('## Install MOMM in one line'), 'the status line belongs above the install instructions');
+  for (const [, target] of line.matchAll(/\]\(([^)]+)\)/g))
+    if (!target.startsWith('https://')) assert(fs.existsSync(new URL('../' + target, import.meta.url)), 'the status line links to a missing file: ' + target);
+  assert.equal(read('docs/momm/index.html').split(releaseStatusHtml(status)).length - 1, 1, 'the home page disagrees with versions.json and the release catalogue: run node scripts/render-momm-site.mjs');
+  // The line follows the records. With a candidate under test, publishing it (the same entry becomes a
+  // release) must leave one stable version and no candidate; without one, there is nothing under test.
+  const newest = catalogue[catalogue.length - 1];
+  if (newest.kind === 'version-notes') {
+    assert.equal(status.candidate?.version, manifest.momm);
+    assert.notEqual(status.stable.version, manifest.momm, 'a candidate under test is not the stable release');
+    assert(line.includes(`Candidate under test: [${manifest.momm}, not released]`));
+    const published = releaseStatus(manifest, [...catalogue.slice(0, -1), { ...newest, kind: 'release', tag: 'momm-' + newest.version, published_date: '2026-01-01T00:00:00Z' }]);
+    assert.equal(published.candidate, null);
+    assert(releaseStatusMarkdown(published).startsWith(`**MOMM release status.** Stable: [${manifest.momm} (signed tag)]`) && !releaseStatusMarkdown(published).includes('Candidate'));
+  } else {
+    assert.equal(status.candidate, null);
+    assert.equal(status.stable.version, manifest.momm);
+    assert(!line.includes('Candidate'));
+  }
 });
 assert.equal(failures.length, 0, failures.join('\n'));
 console.log('Release/site consistency: released status, CI coverage, historical scope, verified front doors and tag-pinned evidence pass.');

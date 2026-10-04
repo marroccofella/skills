@@ -1,0 +1,59 @@
+{
+  "schema": "momm-adapter-fixtures/1",
+  "route": "antigravity",
+  "cli_version": "1.2.4",
+  "shape_from": "momm/scripts/antigravity-transport.test.mjs events(), the stdin stream transport verified on agy 1.2.4 (momm/references/cli/antigravity.md, Adapter notes). not-json is narration around a bare answer, which stays refused on this route. Synthetic content.",
+  "cases": {
+    "success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "fenced-success.jsonl": {
+      "expect": {
+        "status": "success",
+        "verdict": "ACCEPT"
+      }
+    },
+    "error.jsonl": {
+      "expect": {
+        "status": "error",
+        "detail": "unsuccessful terminal result"
+      }
+    },
+    "cancelled.jsonl": {
+      "expect": {
+        "status": "error",
+        "detail": "unsuccessful terminal result"
+      }
+    },
+    "unknown-event.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "unrecognized event type"
+      }
+    },
+    "empty-response.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "terminal response is empty or incomplete"
+      }
+    },
+    "print-timeout.jsonl": {
+      "process": {
+        "stderr": "[agy] print timeout after 55s with turn in progress; returning partial output\n"
+      },
+      "expect": {
+        "status": "timeout",
+        "detail": "native print deadline"
+      }
+    },
+    "not-json.jsonl": {
+      "expect": {
+        "status": "invalid_output",
+        "detail": "terminal answer is not strict JSON"
+      }
+    }
+  }
+}

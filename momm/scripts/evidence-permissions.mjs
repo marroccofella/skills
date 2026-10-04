@@ -139,9 +139,10 @@ const REASON_WORDS = {
   invalid_root: 'it is not a plain directory',
   inspection_unavailable: 'its permissions could not be inspected',
 };
+const HOME_PLACEHOLDER = '<a private folder under your profile>';
 // What the owner can do about a refusal. MOMM never changes permissions on its own; the protect
 // action below runs only when the owner types it.
-export function evidenceRemediation(directory, platform = process.platform, env = process.env) {
+export function evidenceRemediation(directory, platform = process.platform, env = process.env, reason) {
   const target = path.resolve(directory);
   // With an evidence home (1.17 A7) the folder is <home>/<32 hex>; the printed command names the same home,
   // since --evidence-home given to one command does not carry to the next (gate-3 review of 1.17.0).
@@ -156,9 +157,21 @@ export function evidenceRemediation(directory, platform = process.platform, env 
   // %NAME% even inside them, so no cmd.exe form is printed for a path with a percent sign.
   const action = (home) => `node "<installed-momm>/scripts/multi-review.mjs" evidence${home ? ` --evidence-home ${home}` : ''} --protect`;
   const posix = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-  if (platform !== 'win32') return `Run ${action(inHome && posix(home))} from the project (equivalent to: chmod -R go-rwx ${posix(target)}), or move the project's evidence to a location only you can access.`;
+  // 1.17.1 S7: the project's own .ensemble_reviews has a second way out, an evidence home, which needs no
+  // existing folder changed (a folder owned by another account cannot be protected at all). The text is a
+  // constant: its folder is a placeholder, quoted for each shell as above, and no path of this machine is
+  // put into the command. Not offered where it cannot help: a folder already under an evidence home, a
+  // folder that is not project evidence (provider scratch), or an inspector that could not run.
+  const inProject = !inHome && target.split(path.sep).includes(EVIDENCE_FOLDER);
+  const start = (quoted) => `node "<installed-momm>/scripts/multi-review.mjs" --evidence-home ${quoted}`;
+  const shells = platform !== 'win32' ? start(`'${HOME_PLACEHOLDER}'`) : `${start(`'${HOME_PLACEHOLDER}'`)} in PowerShell, or ${start(`"${HOME_PLACEHOLDER}"`)} in cmd.exe`;
+  const alternative = !inProject || reason === 'inspection_unavailable' ? '' : ` Or keep this project's evidence outside the project (MOMM creates a private folder for it there): start your command with ${shells}, then the options you used (${EVIDENCE_HOME_ENV} set to that folder does the same for every MOMM command).`;
+  // 1.17.1 R7: evidence --protect refuses a linked folder itself, so it is not the remedy for one. No path is printed.
+  if (reason === 'invalid_root') return `Remove or rename the entry that has the evidence folder's name yourself (MOMM never follows or removes it), then run the command again.${alternative}`;
+  if (reason === 'linked_entry' || reason === 'linked_or_special_entry') return `Remove the link or special file from the evidence folder yourself (MOMM never follows or removes one, and evidence --protect refuses a folder that holds one), then run the command again.${alternative}`;
+  if (platform !== 'win32') return `Run ${action(inHome && posix(home))} from the project (equivalent to: chmod -R go-rwx ${posix(target)}), or move the project's evidence to a location only you can access.${alternative}`;
   const effect = `from the project (it restricts ${target} to your account and makes everything inside inherit that), or move the project's evidence to a location only you can access.`;
-  if (!inHome) return `Run ${action(null)} ${effect}`;
+  if (!inHome) return `Run ${action(null)} ${effect}${alternative}`;
   const powershell = action(`'${home.replace(/['‘’‚‛]/g, '$&$&')}'`);
   // A trailing backslash (a drive root) is doubled so it does not escape the closing quote for the argument parser.
   const cmd = /[%"]/.test(home) ? null : action(`"${home.replace(/(\\+)$/, '$1$1')}"`);
@@ -168,7 +181,7 @@ export function requirePrivateEvidence(directory, options) {
   const result = inspectEvidencePermissions(directory, options);
   if (!result.verified) {
     const why = REASON_WORDS[result.reason] ?? 'its permissions could not be verified';
-    const error = new Error(`MOMM cannot verify private evidence-folder permissions (${result.reason}): ${why}. No permission changes were made and no review input was read or sent. ${evidenceRemediation(directory, options?.platform)}`);
+    const error = new Error(`MOMM cannot verify private evidence-folder permissions (${result.reason}): ${why}. No permission changes were made and no review input was read or sent. ${evidenceRemediation(directory, options?.platform, undefined, result.reason)}`);
     error.code = 'MOMM_EVIDENCE_PERMISSIONS';
     error.reason = result.reason;
     throw error;
@@ -195,17 +208,21 @@ export function requirePrivateScratch(directory, options = {}) {
 
 export function preparePrivateEvidence(directory, options = {}) {
   const fsx = options.fsx ?? fs, platform = options.platform ?? process.platform;
-  const refuse = () => {
-    const error = new Error('MOMM cannot prepare its evidence directory. No review input has been read or sent. Choose an accessible private project location.');
-    error.code = 'MOMM_EVIDENCE_PERMISSIONS'; return error;
+  // blocked: a link, or something that is not a directory, already has the folder's name (1.17.1 R7: say so).
+  const refuse = (blocked = false) => {
+    const error = new Error(blocked
+      ? `MOMM cannot prepare its evidence directory: ${path.resolve(directory)} is a link or is not a plain directory. No review input has been read or sent. ${evidenceRemediation(directory, platform, undefined, 'invalid_root')}`
+      : 'MOMM cannot prepare its evidence directory. No review input has been read or sent. Choose an accessible private project location.');
+    error.code = 'MOMM_EVIDENCE_PERMISSIONS'; if (blocked) error.reason = 'invalid_root'; return error;
   };
+  const notPlain = (entry) => { try { const st = fsx.lstatSync(entry); return st.isSymbolicLink() || !st.isDirectory(); } catch { return false; } };
   if (platform === 'win32') {
     // mkdir would inherit the parent's access rules, which on most Windows volumes include other
     // accounts, and MOMM never repairs permissions afterwards. So a folder MOMM creates itself is
     // created with its private DACL in the same call; a folder that already exists is left alone.
     const target = path.resolve(directory);
     let exists = true;
-    try { const st = fsx.lstatSync(target); if (st.isSymbolicLink() || !st.isDirectory()) throw refuse(); }
+    try { const st = fsx.lstatSync(target); if (st.isSymbolicLink() || !st.isDirectory()) throw refuse(true); }
     catch (e) { if (e?.code === 'ENOENT') exists = false; else throw e?.code === 'MOMM_EVIDENCE_PERMISSIONS' ? e : refuse(); }
     if (!exists) {
       try { fsx.mkdirSync(path.dirname(target), { recursive: true }); } catch { throw refuse(); }
@@ -220,7 +237,7 @@ export function preparePrivateEvidence(directory, options = {}) {
     return requirePrivateEvidence(target, options);
   }
   try { fsx.mkdirSync(directory, { recursive: true, mode: 0o700 }); }
-  catch { throw refuse(); }
+  catch { throw refuse(notPlain(directory)); }
   // mode 0700 alone is not verification.
   return requirePrivateEvidence(directory, options);
 }

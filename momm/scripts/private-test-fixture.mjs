@@ -9,6 +9,18 @@ import {fileURLToPath} from 'node:url';
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
 if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
+// A new temp folder under its real, long name. Hosted Windows runners spell the temp folder as an 8.3
+// short name and macOS reaches it through /var -> /private/var, while MOMM prints real paths; a test
+// that compares paths starts here, so both sides are spelled the same way. Permissions are not changed.
+export function realTempDir(prefix='momm-test-') {
+  if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));
+  try { return fs.realpathSync.native(root); }
+  catch(error) {
+    // Exact freshly allocated target only: the caller never learns its name, so it is not left behind.
+    fs.rmSync(root,{recursive:true,force:true});throw error;
+  }
+}
 export function privateTestFixture(prefix='momm-test-',{run=spawnSync}={}) {
   if(!/^momm-[a-z0-9-]+-$/.test(prefix))throw Error('Invalid synthetic fixture prefix');
   const root=fs.mkdtempSync(path.join(os.tmpdir(),prefix));

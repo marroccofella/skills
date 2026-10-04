@@ -1,0 +1,13 @@
+{"type":"available_commands","tools":["read_file","grep"],"commands":["compact"]}
+{"type":"thought","data":"The user wants a review"}
+{"type":"thought","data":" of one small function."}
+{"type":"text","data":"{\"review_status\":\"complete\","}
+{"type":"text","data":"\"reviewed_scope\":[{\"quote\":\""}
+{"type":"text","data":"export function average(xs) "}
+{"type":"text","data":"{\",\"assessment\":\"The whole f"}
+{"type":"text","data":"unction was read.\"}],\"verdic"}
+{"type":"text","data":"t\":\"ACCEPT\",\"confidence\":0.8"}
+{"type":"text","data":",\"findings\":[],\"summary\":\"Sy"}
+{"type":"text","data":"nthetic valid review.\",\"sugg"}
+{"type":"text","data":"ested_improvements\":[]}"}
+{"type":"error","message":"Synthetic provider error."}
