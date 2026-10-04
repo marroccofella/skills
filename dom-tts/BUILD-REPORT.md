@@ -2,6 +2,19 @@
 
 ## Legion integration receipt — 4 October 2026
 
+Current integration is not fully consolidated. docs/dom-tts/FEATURE-PARITY.md tracks
+the core, experimental components, recovered legacy controls and authorized future
+work separately. Archived source presence is not active feature parity.
+
+Hosted failure preserved: exact8491472 Windows Node18 run37183108521,
+job111379459703 passed9903 offline assertions and committed-manifest verification,
+then its first install call failed with the explicit 60-second permission-helper
+timeout. No ACL refusal or underlying runner cause is established. A diagnostic
+timing probe now runs only after Windows CI failure; it does not alter permissions,
+disable checks, retry installation or turn the failed step green. Local Windows
+x64/Node22.16.0 probe passed: fresh private child1480ms, existing child1364ms.
+Local success does not resolve that hosted failure. Keep actual EPERM distinct.
+
 Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
 stable-segment kernel with an injected player, not a production watcher/engine path.
 45 deterministic queue assertions pass: admission during unresolved playback,

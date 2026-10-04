@@ -163,6 +163,10 @@
       "sha256": "a319f2fc343c04536bbf6b75eb8455f6392f7127508518fe5be3b894d14e9930"
     },
     {
+      "path": "tests/windows-permission-probe.cjs",
+      "sha256": "ba66643330996c96f9e32e7b20ea672b9ee4c612d329b00aa95df3c76f879a00"
+    },
+    {
       "path": "tests/windows-privacy.cjs",
       "sha256": "7ce3664c598a4cda5d5c0801483a6877b87a6daa011abec706793284309450b3"
     }
