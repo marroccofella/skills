@@ -185,3 +185,63 @@ The whole pack in the three ways was run on Windows only; on macOS and Linux the
 hosted matrix, which runs the runner's own tests for the evidence home, the self-tests and the suite
 that starts six suites by hand. The drills are GitHub-hosted runners, not the owner's machines. The
 independent tester's 74 of 97 on 1.17.1 remains the record for that release.
+
+## Corrections and post-publication audit — 5 October 2026
+
+The paragraphs above are retained as the publication record at commit
+`2a01e7e532ffe2089f8c657d24eea316d03908d7`. References above to the "final tree"
+mean the sealed/tagged payload, not a later documentation-only main commit.
+The immutable signed tag and the original failures and receipts remain unchanged.
+
+### Independent tester receipt and timeline
+
+The original sentence, "What this release did not have: no independent tester ran the sealed
+candidate before it was tagged.", was incorrect. The same Windows tester who reported the 1.17.1
+failure completed a full candidate run on `b8e2578d2b7bfb411400ef9c1aaf12069e243013`:
+98/98, report saved, exit 0 with inherited `MOMM_EVIDENCE_HOME`, on Windows x64 / Node 24.19.0.
+The [original receipt](https://github.com/marroccofella/skills/pull/47#issuecomment-5995444008)
+was published before both tag creation and release publication:
+
+| Event | UTC timestamp |
+| --- | --- |
+| Full candidate run ended | 2026-10-05T13:26:25.107Z |
+| Original receipt posted | 2026-10-05T13:28:30Z |
+| Signed stable tag's tagger time | 2026-10-05T14:04:07Z |
+| GitHub release published | 2026-10-05T14:04:24Z |
+
+Candidate and released squash commit `80685113372a1f2a93d08a218801995a28ac2baa` share tree
+`d69f6acbf94a07eaeaec7ba6884de4577819f377`. This is one reviewer, not an extra identity or
+three independent full-pack configurations. The announcement's contrary absence statement is
+also superseded by this correction and the
+[tester follow-up](https://github.com/marroccofella/skills/discussions/32#discussioncomment-18764793).
+Independent personal-machine Unix evidence is still absent.
+
+### Final-delta audit
+
+Status: COMPLETE for the scoped post-publication review
+`rev_20261005192643_3728b9df2f88`, not a claim of retroactive pre-release review coverage.
+Codex performed the audit as sole writer/governor; the governor did not count as a reviewer.
+The range `e8c9c374189a9ccec5681e477b80d75ee8ffc30c..b8e2578d2b7bfb411400ef9c1aaf12069e243013`
+covered the final isolation-suite, version and record delta. Quorum required two valid external
+reviews per piece: the first had Claude, Copilot and Grok, the second Claude and Grok.
+Claude, Copilot and Grok's aggregate verdicts were MODIFY; Antigravity's two answers and Copilot's
+second-piece answer were invalid and not counted. There were 0 CRITICAL, 3 WARNING and 2 NITPICK
+findings, plus 17 suggestions; each has a governor disposition and a private completion receipt.
+
+The historical final-review coverage gap and ambiguous tally prose were confirmed as record
+limitations, not runtime defects. The historical fix list combines findings with applied
+suggestions; it must not be read as six findings. The proposed stale-seal risk was refuted by
+recomputation against the released Git tree. Governor-authored probes confirmed native multiline
+child execution, immediate refusal of an unlisted retry code, transient retry success and bounded
+retry exhaustion. An unsupported mtime is explicitly refused; a native Windows removal race
+was not reproduced and is not claimed. No product source was changed.
+
+Codex performed signing verification using the installed trusted updater's pinned workflow
+identity, issuer and repository/ref checks, and ran `scripts/momm-release.mjs --check` on the clean
+released checkout. The seal matched `8856516e847feb5df2bb24ddb6f8b003bfdfaedfa4b2c3cbc38f7b6df96e3c1a`.
+The six public receipts from
+[run 37319325734](https://github.com/marroccofella/skills/actions/runs/37319325734)
+were downloaded and matched their SHA-256 checksum sidecars; each reported 13 successful steps
+on the released checkpoint, including two prepared-stage recoveries. These are hosted drill
+receipts, not new personal-machine lifecycle runs. This later audit cannot change when a
+pre-publication gate was performed.
