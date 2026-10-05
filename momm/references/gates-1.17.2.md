@@ -1,8 +1,10 @@
-# 1.17.2 gate record — candidate, not released
+# 1.17.2 gate record — released 5 October 2026
 
-This record names no current commit: a file cannot name its own commit. The candidate under test is
-the head of the 1.17.2 pull request. The published release stays 1.17.1 until the signed tag
-`momm-1.17.2` exists.
+The signed tag `momm-1.17.2` was published on 5 October 2026 at
+`80685113372a1f2a93d08a218801995a28ac2baa`. The release closure at the end records that immutable
+payload; these later documentation changes do not retag it or change its seal. Statements below that
+say "after the merge" or "still required" are kept as the candidate's history; the closure says what
+happened.
 
 ## Why this release exists
 
@@ -55,12 +57,12 @@ noted that one suite passed again with the variable removed. That result stands 
 
 | Gate | Evidence required | Status |
 | --- | --- | --- |
-| 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, and the OS by Node matrix | Run output and job logs | named in the pull request |
-| 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.1 and 1.17.0 | Six hosted cells | after the merge |
+| 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, and the OS by Node matrix | Run output and job logs | passed: 98 of 98 in each of the three ways on the sealed commit (Windows, Node 22.16), the evidence home left empty or holding only the runner's own run; the three self-tests passed both ways; matrix run 37312397546 passed 15/15 on the sealed commit and run 37316304547 passed 15/15 on `main` |
+| 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.1 and 1.17.0 | Six hosted cells | passed: run 37319325734, six cells, 13/13 steps each, on the signed checkpoint of the merged commit |
 | 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below: four reviews, each with a complete receipt; what the last of them could not cover is said under it |
-| 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
+| 4. Privacy and history scan before every push | Scanner exit 0 | passed: exit 0, working tree and history clean, before each push of the release branch and of the drills branch |
 | 5. Live review with every installed reviewer route valid | Report | see the reviews below, by route and piece |
-| 6. Signed tag `momm-1.17.2` | Release workflow run | approved by the owner's instruction of 5 October 2026, if every gate above passes on the final sealed commit |
+| 6. Signed tag `momm-1.17.2` | Release workflow run | passed: approved by the owner's instruction of 5 October 2026, if every gate above passes on the final sealed commit; they did, and stable run 37321320864 passed; fresh-clone signature, transparency, identity and payload verification passed |
 
 ## Reviews
 
@@ -133,6 +135,9 @@ that were edited afterwards as described here.
 
 ## Still required before the tag
 
+Historical: this section is what the sealed candidate still needed. All four steps were then done; see
+the release closure below.
+
 Owner approval. On 5 October 2026 the owner instructed that 1.17.2 be completed and released. That
 instruction is the owner's approval for the signed tag, on condition that every gate passes on the
 final sealed commit. If a gate does not pass, the tag is not made and the decision goes back to the
@@ -142,3 +147,40 @@ owner.
 2. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
 3. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
 4. The signed tag, then the publication record.
+
+## Release closure — 5 October 2026
+
+The owner instructed the release governor to complete and release 1.17.2. Pull request 47 was marked
+ready and squash-merged through the normal path; no administrative override or alternative route was
+used. The squash commit `80685113372a1f2a93d08a218801995a28ac2baa` has exactly the tree of candidate
+`b8e2578d2b7bfb411400ef9c1aaf12069e243013`. Both commits have the tree
+`d69f6acbf94a07eaeaec7ba6884de4577819f377`. The seal is unchanged:
+`8856516e847feb5df2bb24ddb6f8b003bfdfaedfa4b2c3cbc38f7b6df96e3c1a`.
+
+- Sealed candidate, on Windows, Node 22.16: the pack passed 98 of 98 with nothing set (under an 8.3
+  short temp path), 98 of 98 with `MOMM_EVIDENCE_HOME` inherited (the home was empty afterwards), and
+  98 of 98 with `--save-report --evidence-home` (the home held only the runner's own run). The
+  dispatcher, Setup Center and ledger self-tests passed with the variable unset and set. A fresh clone
+  of the pushed branch passed 98 of 98 with the seal check passing. Hosted matrix
+  [run 37312397546](https://github.com/marroccofella/skills/actions/runs/37312397546), 15/15; the new suite passed in all
+  fourteen matrix cells, its first run on macOS and Linux.
+- Exact-main CI: [run 37316304547](https://github.com/marroccofella/skills/actions/runs/37316304547), 15/15 on
+  `80685113372a1f2a93d08a218801995a28ac2baa`.
+- Signed checkpoint: [run 37318187394](https://github.com/marroccofella/skills/actions/runs/37318187394); tag
+  `momm-main-80685113372a1f2a93d08a218801995a28ac2baa`.
+- Lifecycle drills: [run 37319325734](https://github.com/marroccofella/skills/actions/runs/37319325734) on that checkpoint;
+  six hosted cells (Windows, macOS and Linux, Node 18 and 24), 13/13 steps each: fresh signed install,
+  signed installs of 1.17.1 and 1.17.0, upgrade, rollback, re-upgrade and recovery from an interrupted
+  upgrade from each, and refusal of a damaged payload.
+- Signed stable release: [run 37321320864](https://github.com/marroccofella/skills/actions/runs/37321320864), published
+  2026-10-05T14:04:24Z. The updater smoke on the genuine signature (preview and apply) passed in that run.
+- Fresh-clone verification of the tag: `gitsign verify-tag` with the expected workflow identity
+  validated the Git signature, the Rekor entry and the certificate claims; the same command with
+  another repository's identity was refused; `scripts/momm-release.mjs --check` passed on the tag's
+  checkout; the live `versions.json` on `main` names 1.17.2 with this seal.
+
+What this release did not have: no independent tester ran the sealed candidate before it was tagged.
+The whole pack in the three ways was run on Windows only; on macOS and Linux the evidence is the
+hosted matrix, which runs the runner's own tests for the evidence home, the self-tests and the suite
+that starts six suites by hand. The drills are GitHub-hosted runners, not the owner's machines. The
+independent tester's 74 of 97 on 1.17.1 remains the record for that release.
