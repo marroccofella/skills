@@ -65,8 +65,9 @@ noted that one suite passed again with the variable removed. That result stands 
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.2 changes is listed here with a complete
-receipt. The two reviews of the fix are listed. The review of the release changes (version, records,
-the new suite and its registration) is added when its receipt is complete; until it is listed, gate 3
+receipt. Listed: the two reviews of the fix and the review of the release changes (version, records,
+the new suite and its registration). One last review, of the changes that review led to and of the
+entries this record gained since, is added when its receipt is complete; until it is listed, gate 3
 is open.
 
 - `rev_20261004215722_98380aae661e` — the fix (two pieces). Piece 1: four valid reviews, one from each
@@ -92,6 +93,20 @@ is open.
   applied. Receipt complete. The WARNING said an import written across a line continuation is skipped
   and code after it missed; that suite and six sister spellings were run through the check itself and
   none is accepted.
+- `rev_20261005085544_5f04d7ebefc8` — the release changes (three pieces). Each piece had four valid
+  reviews, one from each route (Codex, Antigravity, Copilot, Grok), each at the first attempt. Verdicts
+  by route: Antigravity ACCEPT; Codex, Copilot and Grok MODIFY. 10 WARNING and 1 NITPICK: five real and
+  fixed, six shown not to hold. 27 suggestions ruled, five applied. Receipt complete. The real
+  findings: the records gave 1.17.0 the count that was measured on 1.17.1 (on 1.17.0 six commands were
+  tried, and its whole pack was never run with the variable set); the advice on what to delete from a
+  real evidence home would have had a user delete the evidence of a temporary project of their own
+  (it now names three things only a fixture's folder has, and says to leave anything else); the entry
+  of the first review above said four valid reviews and none in one paragraph (it is now by piece);
+  the new suite counted an evidence home that was gone as left empty (it must now be there, the same
+  folder, untouched and empty); and the notes named two of the three self-tests. Not real: that the
+  manifest and the bootstrap link name 1.17.2 before its tag (every release is sealed that way,
+  because the sealed tree cannot change before the tag is made from it), and four claims that a file
+  or a change was missing from the range, each made from one piece of it.
 
 ## Still required before the tag
 
@@ -100,7 +115,7 @@ instruction is the owner's approval for the signed tag, on condition that every 
 final sealed commit. If a gate does not pass, the tag is not made and the decision goes back to the
 owner.
 
-1. Gate 3 met: the review of the release changes listed under Reviews with a complete receipt.
+1. Gate 3 met: the last review listed under Reviews with a complete receipt.
 2. Gate 1 on the sealed commit: the pack in three ways, the self-tests both ways, and the matrix.
 3. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
 4. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
