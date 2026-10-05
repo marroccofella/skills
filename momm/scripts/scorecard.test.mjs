@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulePath = path.join(here, 'scorecard.mjs');

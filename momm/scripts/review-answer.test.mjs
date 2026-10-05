@@ -22,6 +22,7 @@ import { PEER_CONTRACT, reviewProblem, quotationDiagnostics } from './review-con
 import { assemblePrompt } from './guidance.mjs';
 import * as isolation from './route-isolation.mjs';
 import * as grokStream from './grok-stream.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 let reviewAnswer = {}; try { reviewAnswer = await import('./review-answer.mjs'); } catch { /* absent before 1.17.1 S1 */ }
 
 const source = fs.readFileSync(fileURLToPath(new URL('./multi-review.mjs', import.meta.url)), 'utf8');

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import {fileURLToPath} from 'node:url';
 import {releasePages,inline,markdown} from './momm-release-pages.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),catalogue=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json'))),pages=releasePages(root);
 assert.equal(Object.keys(pages).length,catalogue.length+3);
 assert(pages['docs/momm/releases/bootstrap.html'].includes('gitsign_missing'));

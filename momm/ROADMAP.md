@@ -1,8 +1,9 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.1**, sealed on 4 October 2026; its signed tag `momm-1.17.1` is created by the
-release workflow. The previous signed release is `momm-1.17.0`, 3 October 2026. Nothing else
+only sources. Today they say **1.17.2**, a candidate sealed on 5 October 2026 and not yet published:
+its signed tag `momm-1.17.2` will be created by the release workflow when the release gates pass.
+Until then the signed release is `momm-1.17.1`, 4 October 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -32,10 +33,15 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17.1 sealed candidate, publication pending.** Copilot reviews work again on recent Copilot
-  CLI versions (new events and fenced answers), a CLI too old for its model is shown at preflight, and
-  twenty reliability improvements make failures explain themselves: [plan](references/plan-1.17.1.md),
-  [gate record and findings](references/gates-1.17.1.md).
+- **Now: 1.17.2 sealed candidate, publication pending.** A patch for the suite pack and two self-tests,
+  which failed when `MOMM_EVIDENCE_HOME` was set (an independent tester got 74 of 97 on 1.17.1). Reviews
+  themselves were not affected: [gate record and finding](references/gates-1.17.2.md).
+- **1.17.1 released.** Copilot reviews work again on recent Copilot CLI versions (new events, fenced
+  and narrated answers), a CLI too old for its model is shown at preflight, and twenty reliability
+  improvements make failures explain themselves: [plan](references/plan-1.17.1.md),
+  [gate record, findings and release closure](references/gates-1.17.1.md). Exact-main CI, signed
+  checkpoint, six hosted lifecycle cells and signed stable publication passed. No independent tester
+  ran the sealed candidate before release; Unix evidence is hosted CI and the drills.
 - **1.17 released.** The reviewed plan is
   [references/plan-1.17.md](references/plan-1.17.md); its leading theme is role-preserving review.
   Exact-main CI, signed checkpoint, six hosted lifecycle cells including interrupted recovery,

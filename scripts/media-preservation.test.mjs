@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {fixturePng,JPEG} from '../momm/scripts/media-fixtures.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const {privateTestFixture}=await import('./private-test-fixture.mjs');
 process.umask(0o077);
 const root=privateTestFixture('momm-media-preservation-');

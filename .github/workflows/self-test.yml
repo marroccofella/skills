@@ -66,6 +66,10 @@ jobs:
         if: ${{ !cancelled() }}
         timeout-minutes: 5
         run: node momm/scripts/evidence-location.test.mjs
+      - name: Suites started by hand with an evidence home set pass and leave it empty (1.17.2)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 4
+        run: node scripts/evidence-home-isolation.test.mjs
       - name: Private quotation diagnostics (1.17 A4.2)
         if: ${{ !cancelled() }}
         timeout-minutes: 2

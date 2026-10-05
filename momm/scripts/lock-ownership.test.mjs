@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const cases=[
  ['capabilities.mjs','function withOverlayLock(','\n// Records one probe result.','withOverlayLock','overlay'],
  ['guidance.mjs','function withTrustLock(','\nconst fileHash','withTrustLock','trust'],

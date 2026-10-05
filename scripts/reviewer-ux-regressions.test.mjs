@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const client=fs.readFileSync(new URL('../momm/assets/setup-ui/app.js',import.meta.url),'utf8');
 const ledger=fs.readFileSync(new URL('../momm/scripts/ledger.mjs',import.meta.url),'utf8');
 const checks=[];

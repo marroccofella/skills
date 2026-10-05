@@ -1,6 +1,7 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { resolveGit as resolveGitForTest } from './governor.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 // Git by resolved absolute path, never a bare name: see executable-resolution.test.mjs.
 const GIT = resolveGitForTest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')) ?? 'git-not-found-outside-the-checkout';
 import { deflateSync } from 'node:zlib';

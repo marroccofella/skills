@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseUnifiedDiff, splitDiff, reassemble, headerOnlyQuote, lineSplitHunk } from "./split.mjs";
 import fs from "node:fs";
 import vm from "node:vm";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const failures = [], passed = [];
 function test(name, fn) {

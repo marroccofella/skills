@@ -68,7 +68,8 @@ if (save && !/^[a-f0-9]{40}$/.test(commit ?? '')) {
   process.stderr.write('--save-report requires --commit <full SHA>; this is caller-supplied identity, not automatic Git verification.\n'); process.exit(2);
 }
 // The option the evidence refusals name (1.17.1 R7). As in multi-review.mjs it is applied to the
-// environment, so every module in this run, and every suite, resolves the same evidence home.
+// environment, so every module in this run resolves the same evidence home. The suites are started
+// without it (see the environment they are given below).
 if (given.has('--evidence-home')) {
   if (!save) usage('--evidence-home is only used with --save-report.');
   if (!given.get('--evidence-home')) usage('--evidence-home needs a directory: --evidence-home <dir>.');
@@ -152,6 +153,10 @@ if (checkoutLine) process.stdout.write(checkoutLine + '\n');
 // Same launch guard the workflow relies on; the security suites unset it themselves where they must.
 const env = { ...process.env, NO_UPDATE_CHECK: '1', MOMM_NO_UPDATE_CHECK: '1' };
 delete env.NoDefaultCurrentDirectoryInExePath;
+// The evidence home is for this command's own report. A suite builds its own fixture projects and decides
+// where their evidence lives; one that inherited the home looked for it there, and 23 of 97 suites failed
+// on the released 1.17.1. Windows names ignore case, so every spelling of the name is removed there.
+for (const name of Object.keys(env)) if ((process.platform === 'win32' ? name.toUpperCase() : name) === 'MOMM_EVIDENCE_HOME') delete env[name];
 let failed = 0, saveError = null;
 for (const [index, command] of selected.entries()) {
   process.stdout.write(`RUN ${index + 1}/${selected.length} ${command}\n`);

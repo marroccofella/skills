@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeOverlayEntry, effective, autoReviewers, renderMatrix, SUCCESS_EXPIRY_MS } from './capabilities.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-expiry-'));
 try {
   const now = new Date('2026-09-01T00:00:00Z');

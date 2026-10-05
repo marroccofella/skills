@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import * as registry from './capabilities.mjs';
 import { UPDATE_COMMANDS } from './update-clock.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 let memory = {}; try { memory = await import('./compatibility.mjs'); } catch { /* absent before R1: every check below then fails by name */ }
 const need = (name) => { assert.equal(typeof memory[name], 'function', `compatibility.mjs must export ${name}`); return memory[name]; };
 const source = fs.readFileSync(new URL('./multi-review.mjs', import.meta.url), 'utf8');

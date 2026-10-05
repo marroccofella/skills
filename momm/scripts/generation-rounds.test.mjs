@@ -10,6 +10,7 @@ import * as gen from "./generation-rounds.mjs";
 import { loadBaseline, effective, sha256 } from "./capabilities.mjs";
 import { fixturePng, JPEG } from "./media-fixtures.mjs";
 import { requirePrivateEvidence } from "./evidence-permissions.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];

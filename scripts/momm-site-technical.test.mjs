@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {stackingModel,bindStackingModel} from '../docs/momm/stacking-model.mjs';
 import {routeBrands,brandBadge,ensembleObservations,technicalBody} from './momm-site-technical.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 assert.equal(stackingModel({reviewers:10,blindSpot:0}).missReduction,512);

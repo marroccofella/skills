@@ -5,6 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 // Entries under scripts/ belong to the repository checkout. The skill is also installed by linking or
 // copying momm/ alone, where they do not exist: there they are skipped by name, never silently.

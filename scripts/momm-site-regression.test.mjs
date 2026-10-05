@@ -1,4 +1,5 @@
 import fs from'node:fs';import path from'node:path';import{fileURLToPath,pathToFileURL}from'node:url';import assert from'node:assert/strict';import vm from'node:vm';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),repo=root;
 const search=await import('./momm-site-search.mjs'),video=await import('./momm-site-videos.mjs');
 const tour=JSON.parse(fs.readFileSync(path.join(root,'docs/momm/tour.json'))),script=fs.readFileSync(path.join(root,'docs/momm/watch.js'),'utf8');

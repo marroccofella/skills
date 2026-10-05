@@ -10,6 +10,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as cap from "./capabilities.mjs";
 import { commandShapeSha256 as CURRENT_SHAPE } from "./route-isolation.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const mommRoot = path.resolve(here, "..");

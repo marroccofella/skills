@@ -1,6 +1,7 @@
 // Tests for scheduler.mjs (MOMM 1.16.0 E5). Run: node momm/scripts/scheduler.test.mjs
 import assert from "node:assert/strict";
 import { createScheduler, adaptiveTimeoutMs, earlyExitDecision, EARLY_EXIT_REASONS, HARD_JOB_CAP } from "./scheduler.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const failures = [], passed = [];
 async function test(name, fn) {

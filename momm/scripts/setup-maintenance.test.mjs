@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import {EventEmitter} from 'node:events';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('function parseVersion('), end = source.indexOf('// Returns true only if a terminal');
 assert(start >= 0 && end > start);
@@ -1619,6 +1620,27 @@ await test('a console that cannot be written to never fails a refresh: the notic
     assert.equal(failed.status,500,url);assert.equal(failed.value.error,'Readiness check failed','the failure reported is the refresh, not the console');
     same(failed.value.setup_center,expected);assert.equal(w.lines.length,1);
   }
+});
+// --- Found on the released 1.17.1: the self-test followed the caller's MOMM_EVIDENCE_HOME -------
+// `setup-ui.mjs --self-test` is also how an installation is checked. Its fixtures keep their evidence
+// in their own temporary projects, but the product read the caller's variable, looked under that home,
+// found no reports there and the regression stopped (usage_zero_of_n_for_reports_without_usage,
+// dashboard_regression_threw). The real command is run here, as a child, the way a user runs it.
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+await test('the self-test passes whatever MOMM_EVIDENCE_HOME the caller has set, and writes nothing there',()=>{
+  const home=fs.mkdtempSync(path.join(os.tmpdir(),'momm-selftest-home-'));
+  try{
+    // A usable home, and a setting the product refuses for a real project (a relative path).
+    for(const [label,value] of [['a usable evidence home',home],['a refused setting','relative-evidence-home']]){
+      const r=spawnSync(process.execPath,[fileURLToPath(new URL('./setup-ui.mjs',import.meta.url)),'--self-test'],{encoding:'utf8',timeout:120000,windowsHide:true,env:{...process.env,MOMM_EVIDENCE_HOME:value}});
+      let report=null;try{report=JSON.parse(r.stdout);}catch{/* reported below */}
+      assert(report,`${label}: the self-test printed no report (exit ${r.status}): ${String(r.stderr).slice(0,300)}`);
+      assert.deepEqual(report.failing,[],label);assert.equal(report.passed,true,label);assert.equal(r.status,0,label);
+      assert.equal(report.tests.evidence_home_followed_by_ledger_view_status_pointer_usage_and_watcher,true,`${label}: the evidence-home check still ran, with a home of its own`);
+    }
+    assert.deepEqual(fs.readdirSync(home),[],'nothing was written into the caller\'s evidence home');
+  }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

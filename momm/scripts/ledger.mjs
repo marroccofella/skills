@@ -388,6 +388,11 @@ function appendRating(er, args) {
 }
 
 function ledgerSelfTest() {
+  // The fixtures below keep their evidence in their own temporary projects, and the ledger is started in
+  // them as a child. A caller's MOMM_EVIDENCE_HOME would send those children to the caller's home instead
+  // (two checks failed that way on the released 1.17.1). This call ends by exiting the process, so the
+  // setting is dropped here and no real ledger build is affected.
+  delete process.env.MOMM_EVIDENCE_HOME;
   const rolled = rollup([
     { reviewer: "codex", disposition: "applied", run_id: "r1" },
     { reviewer: "codex", disposition: "applied-with-modification", run_id: "r1", finding_id: "f1" },

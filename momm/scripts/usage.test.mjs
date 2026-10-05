@@ -1,6 +1,7 @@
 // Tests for usage.mjs (MOMM 1.16.0 E1). Run: node momm/scripts/usage.test.mjs
 import assert from "node:assert/strict";
 import { parseUsage, inputEstimate, rollupUsage, lastJsonObject, ESTIMATE_METHOD } from "./usage.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const passed = [], failures = [];
 const test = (name, fn) => { try { fn(); passed.push(name); } catch (e) { failures.push({ test: name, error: e.message }); } };

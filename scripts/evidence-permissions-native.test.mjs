@@ -14,6 +14,7 @@ import {recordCompletion} from '../momm/scripts/governor.mjs';
 import {plan,run} from '../momm/scripts/modality.mjs';
 import {loadBaseline,effective} from '../momm/scripts/capabilities.mjs';
 import {privateTestFixture} from './private-test-fixture.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'momm-native-evidence-'));
 const dispatcher=fileURLToPath(new URL('../momm/scripts/multi-review.mjs',import.meta.url));

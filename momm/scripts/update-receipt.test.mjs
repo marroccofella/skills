@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {git, recordInstall, readLock, stateDir, treeHash, update} from './update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-receipt-regression-')),results=[];
 const write=(file,value)=>{const p=path.join(temp,file);fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,value);};
 const commit=message=>{git(temp,'add','.');git(temp,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m',message);return git(temp,'rev-parse','HEAD');};

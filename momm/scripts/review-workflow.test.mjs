@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const workflow=fs.readFileSync(path.join(root,'.github/workflows/self-test.yml'),'utf8').replace(/\r\n/g,'\n');
 assert.match(workflow,/self-test:\s+timeout-minutes: 25/,'the existing job is bounded, not the 360-minute default');

@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const moduleUrl = new URL('./process-scope.mjs', import.meta.url);
 const scopeModule = fs.existsSync(moduleUrl) ? await import(moduleUrl.href) : null;
 const results = [], failures = [];

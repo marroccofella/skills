@@ -12,6 +12,7 @@ import {readMedia} from './media-bytes.mjs';
 import {takeEvidenceHomeOption,evidenceLocation,recordEvidenceProject} from './evidence-location.mjs';
 import {settleCompatibility,rememberedNotice} from './compatibility.mjs';
 import {repeatedStatusNotices,diffInputNotice} from './run-notices.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const dispatcher=fileURLToPath(new URL('./multi-review.mjs',import.meta.url));
 const source=fs.readFileSync(dispatcher,'utf8');
 const stageStart=source.indexOf('function stageAttachments(');

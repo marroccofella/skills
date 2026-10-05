@@ -7,6 +7,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = p => fs.readFileSync(path.join(root, p), "utf8");
 const passed = [], failed = [];

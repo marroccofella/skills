@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {summary,managedBody,intact,publish,observe} from './momm-release-observer.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const tag='momm-1.16.0', commit='a'.repeat(40), checker='b'.repeat(40);
 const text=summary({tag,commit,checker,manifestVersion:'1.16.0',assets:2}), body=managedBody(tag,text);
 assert(intact(body));assert(!intact(body+'Human change'));

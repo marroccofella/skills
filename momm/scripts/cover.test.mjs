@@ -15,6 +15,7 @@ import * as reviewAnswer from "./review-answer.mjs";
 import * as roles from "./roles.mjs";
 import { captureSourceSnapshot, inspectCompletion, digest } from "./governor.mjs";
 import { privateTestFixture } from "./private-test-fixture.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(scripts, "multi-review.mjs"), "utf8");

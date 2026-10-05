@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import {parse as parseUpdateOptions} from '../momm/scripts/update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const source=fs.readFileSync(path.join(root,'momm/scripts/multi-review.mjs'),'utf8');
 const start=source.lastIndexOf('}).finally(() => {')+'}).finally(() => {'.length;

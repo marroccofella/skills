@@ -14,6 +14,7 @@ import { digest } from './governor.mjs';
 import { privateTestFixture, realTempDir } from './private-test-fixture.mjs';
 import { preparePrivateEvidence } from './evidence-permissions.mjs';
 import { evidenceLocation } from './evidence-location.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 if (process.platform !== 'win32') process.umask(0o077); // fixture files must be owner-only: the evidence gate inspects their modes on POSIX
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const mode = process.argv[2] ?? 'all';
@@ -91,7 +92,7 @@ tests.permissions = () => {
 };
 tests.hygiene = () => {
   const code=source('scripts/source-hygiene.test.mjs').replace(/^import .*;\r?\n/gm,'').replaceAll('import.meta.url',JSON.stringify(new URL('../../scripts/source-hygiene.test.mjs',import.meta.url).href));
-  const processStub={exitCode:0};let report;
+  const processStub={exitCode:0,env:{}};let report;
   vm.runInNewContext(code,{fs:{readFileSync(){throw Object.assign(Error('synthetic unreadable'),{code:'EACCES'});}},path,os,assert,fileURLToPath,pathToFileURL,createHash,realTempDir,resolveGit:()=>'/synthetic/git',process:processStub,console:{log(text){report=JSON.parse(text);}},spawnSync(_cmd,args){return {status:0,stdout:args[0]==='ls-files'?[...Array.from({length:60},(_,i)=>`f${i}.mjs`),'f.test.mjs'].join('\0'):'',stderr:''};}});
   assert.equal(report.results.find(x=>/raw control byte/.test(x.name)).passed,false,'unreadable source is not clean source');
   // 1.17.1 S5/S6: the same holds for the home-path, credential and temp-folder rules.
