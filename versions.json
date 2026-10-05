@@ -1,8 +1,18 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.1",
+  "momm": "1.17.2",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.2",
+      "tag": "momm-1.17.2",
+      "changes": [
+        "The suite pack no longer fails when MOMM_EVIDENCE_HOME is set: on 1.17.1 and 1.17.0, 23 of its 97 commands failed under it (an independent tester found it on the released 1.17.1). Reviews themselves were not affected.",
+        "setup-ui.mjs --self-test and ledger.mjs --self-test pass whether or not you keep evidence outside your projects; before, they reported a working installation as failing.",
+        "The suite runner still keeps its saved report in the evidence home, but starts the suites without it, for MOMM_EVIDENCE_HOME and for --evidence-home alike; a pack run no longer leaves fixture folders in your evidence home.",
+        "No change to how a review runs, to SKILL.md, the reviewer roles or the review contract."
+      ]
+    },
     {
       "version": "1.17.1",
       "tag": "momm-1.17.1",
