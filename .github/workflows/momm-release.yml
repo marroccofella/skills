@@ -119,6 +119,7 @@ jobs:
           node momm/scripts/expiry-regression.test.mjs
           node momm/scripts/attempts.test.mjs
           node momm/scripts/evidence-location.test.mjs
+          node scripts/evidence-home-isolation.test.mjs
           node momm/scripts/quotation-diagnostics.test.mjs
           node momm/scripts/review-answer.test.mjs
           node momm/scripts/adapter-matrix.test.mjs
