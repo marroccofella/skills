@@ -89,6 +89,13 @@ evidence resolver; excluded and undispatched rows do not count) and the gate-rev
 untracked diff file given as `--input` gets a notice naming `--range`; the review runs as before), with
 real provider-free dispatcher runs.
 
+1.17.2 addition: `scripts/evidence-home-isolation.test.mjs` starts six suites directly (`node <suite>`, not
+through `scripts/run-ci-suites.mjs`), each first without `MOMM_EVIDENCE_HOME` and then with it naming a new
+empty folder outside the checkout: scorecard-roster, ledger-serving, probes, cover, quotation-diagnostics
+and ledger-media. Each must pass both ways and leave the folder empty. All six failed that way on the
+released 1.17.1, because a suite inherited the caller's evidence home; three of them do not import the
+test-support module, so their own first statement is what is exercised.
+
 - `momm/scripts/review-claims.test.mjs`
 - `momm/scripts/review-workflow.test.mjs`
 
@@ -144,6 +151,7 @@ real provider-free dispatcher runs.
 - `momm/scripts/usage.test.mjs`
 - `scripts/ci-runner-report.test.mjs`
 - `scripts/doc-consistency.test.mjs`
+- `scripts/evidence-home-isolation.test.mjs`
 - `scripts/evidence-permissions-native.test.mjs`
 - `scripts/evidence-permissions.test.mjs`
 - `scripts/information-shutdown.test.mjs`
