@@ -26,7 +26,7 @@ noted that one suite passed again with the variable removed. That result stands 
   `ledger.mjs --self-test`, which no suite runs, on two of its own.
 - **Who was affected.** Anyone running the pack, a suite or one of those two self-tests with the
   variable set on 1.17.1. On 1.17.0 six commands were sampled on the tag (five suites and
-  `setup-ui.mjs --self-test`): each passes with the variable unset and fails with it set. The whole
+  `setup-ui.mjs --self-test`): each passed with the variable unset and failed with it set. The whole
   1.17.0 pack was not run with the variable set, so this record gives no count for that release.
   Reviews with an evidence home were not affected; the dispatcher's self-test passed under it.
 - **A second effect.** Six more suites passed under the variable while writing their fixtures'
@@ -57,7 +57,7 @@ noted that one suite passed again with the variable removed. That result stands 
 | --- | --- | --- |
 | 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, and the OS by Node matrix | Run output and job logs | named in the pull request |
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.1 and 1.17.0 | Six hosted cells | after the merge |
-| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
+| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below: four reviews, each with a complete receipt; what the last of them could not cover is said under it |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
 | 5. Live review with every installed reviewer route valid | Report | see the reviews below, by route and piece |
 | 6. Signed tag `momm-1.17.2` | Release workflow run | approved by the owner's instruction of 5 October 2026, if every gate above passes on the final sealed commit |
@@ -65,10 +65,9 @@ noted that one suite passed again with the variable removed. That result stands 
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.2 changes is listed here with a complete
-receipt. Listed: the two reviews of the fix and the review of the release changes (version, records,
-the new suite and its registration). One last review, of the changes that review led to and of the
-entries this record gained since, is added when its receipt is complete; until it is listed, gate 3
-is open.
+receipt. Listed: the two reviews of the fix, the review of the release changes (version, records, the
+new suite and its registration), and one last review of the changes that review led to and of the
+entries this record had gained by then.
 
 - `rev_20261004215722_98380aae661e` — the fix (two pieces). Piece 1: four valid reviews, one from each
   route (Codex, Antigravity, Copilot, Grok), each at the first attempt. Piece 2: three valid reviews,
@@ -107,6 +106,30 @@ is open.
   manifest and the bootstrap link name 1.17.2 before its tag (every release is sealed that way,
   because the sealed tree cannot change before the tag is made from it), and four claims that a file
   or a change was missing from the range, each made from one piece of it.
+- `rev_20261005102718_5f47d30cf18c` — the last review: what the review above led to, and this record's
+  entries up to then (three pieces). Pieces 1 and 3: four valid reviews each, one from each route, at
+  the first attempt. Piece 2: three valid reviews, from Codex, Antigravity and Grok at the first
+  attempt; Copilot gave no valid review of piece 2, its answer being refused on both attempts because
+  a quote did not match the diff. Quorum was met on all three pieces. Verdicts by route: Codex ACCEPT,
+  Antigravity ACCEPT, Grok MODIFY, and Copilot MODIFY, which rests on pieces 1 and 3. 3 WARNING and
+  1 NITPICK: four real and fixed, none shown not to hold. 15 suggestions ruled, five applied. Receipt
+  complete. Fixed: two stand-in children of the new suite removed the evidence home and remade it at
+  once, which Windows can refuse for a moment after a removal (they now try again for up to two
+  seconds; this was reasoned from the code and could not be made to happen in 300 tries on the triage
+  machine); the suite now fails, with the reason, where a file system does not keep the modification
+  time it sets on a new evidence home, instead of checking nothing; each suite's control run now ends
+  before its evidence home is made; the name rule in the cleanup advice says exactly what the suites
+  produce; the roadmap says the tag will be created, not that it is; and four sentences about 1.17.0
+  use one tense.
+
+Nothing was reviewed after the last review. What changed after it: the changes it asked for, listed
+just above, which are in the new suite, the release notes, the reviewer pack, the diagnostics note,
+the roadmap and one sentence of the manifest; and in this record its own entry, the status of gate 3,
+one verb in "Who was affected" and the list below. The hosted matrix is the next check of the suite
+changes, on every cell. A record cannot carry the review of its own last lines; they are for the
+reader to check against the receipts. Each receipt was recorded on the tree that held that review's
+own changes; the two reviews of the fix still validate on the final tree, and the last two bind files
+that were edited afterwards as described here.
 
 ## Still required before the tag
 
@@ -115,8 +138,7 @@ instruction is the owner's approval for the signed tag, on condition that every 
 final sealed commit. If a gate does not pass, the tag is not made and the decision goes back to the
 owner.
 
-1. Gate 3 met: the last review listed under Reviews with a complete receipt.
-2. Gate 1 on the sealed commit: the pack in three ways, the self-tests both ways, and the matrix.
-3. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
-4. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
-5. The signed tag, then the publication record.
+1. Gate 1 on the sealed commit: the pack in three ways, the self-tests both ways, and the matrix.
+2. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
+3. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
+4. The signed tag, then the publication record.
