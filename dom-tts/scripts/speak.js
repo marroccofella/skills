@@ -32,13 +32,15 @@ function prepare(args,{settings=savedSettings()}={}){
  return {profile,mode,provider,speed,voice:args.voice??settings.voice??'',chunks:chunkText(text,maxChunkChars,speed),waitMs};
 }
 function stopValue(dir){try{return fs.readFileSync(path.join(dir,'stop.flag'),'utf8');}catch{return '';}}
-async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePrivate}={}){
+async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePrivate,abortSignal}={}){
+ if(abortSignal?.aborted)throw new Error('Playback cancelled before start');
  privacy(dir);const lock=path.join(dir,'playback.lock'),status=path.join(dir,'status.json'),token=crypto.randomBytes(16).toString('hex');
  const previousStop=stopValue(dir),start=Date.now();let acquired=false,child=null,stopped=false,server;
  const setStatus=patch=>writeObject(status,{...patch,updatedAt:new Date().toISOString()});
- while(!acquired){try{const fd=fs.openSync(lock,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{fs.closeSync(fd);}acquired=true;}catch(error){if(error.code!=='EEXIST')throw error;const seen=inspectLock(dir);if(seen.state==='stale'){recoverStale(dir);continue;}if(seen.state==='malformed')throw new Error('Malformed playback lock needs manual inspection; run status.js');if(Date.now()-start>=options.waitMs)throw new Error('Another playback owns the lock; retry or use --wait-ms');if(stopValue(dir)!==previousStop)throw new Error('Playback stopped while waiting');await new Promise(r=>setTimeout(r,100));}}
+ while(!acquired){if(abortSignal?.aborted)throw new Error('Playback cancelled before start');try{const fd=fs.openSync(lock,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{fs.closeSync(fd);}acquired=true;}catch(error){if(error.code!=='EEXIST')throw error;const seen=inspectLock(dir);if(seen.state==='stale'){recoverStale(dir);continue;}if(seen.state==='malformed')throw new Error('Malformed playback lock needs manual inspection; run status.js');if(Date.now()-start>=options.waitMs)throw new Error('Another playback owns the lock; retry or use --wait-ms');if(stopValue(dir)!==previousStop)throw new Error('Playback stopped while waiting');await new Promise(r=>setTimeout(r,100));}}
  const requestStop=()=>{stopped=true;if(child)child.kill();};
  const signal=()=>requestStop();process.on('SIGINT',signal);process.on('SIGTERM',signal);
+ abortSignal?.addEventListener('abort',requestStop,{once:true});if(abortSignal?.aborted)requestStop();
  try{
   server=net.createServer(socket=>{socket.setTimeout(1000,()=>socket.destroy());let input='';socket.on('error',()=>{});socket.on('data',data=>{input+=data;if(input.length>1024)return socket.destroy();if(!input.includes('\n'))return;try{const message=JSON.parse(input.split('\n')[0]);if(message.token===token&&message.action==='stop'){requestStop();socket.end('stopped\n');}else socket.end('denied\n');}catch{socket.destroy();}});});
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(endpoint(token,dir),resolve);});
@@ -50,9 +52,10 @@ async function playback(options,{dir=stateDir,play=native.play,privacy=ensurePri
  }catch(error){setStatus({state:stopped?'stopped':'error',error:stopped?undefined:'playback-failed'});if(!stopped)throw error;}
  finally{
   if(child)child.kill();if(server)await new Promise(r=>server.close(r));
-  process.off('SIGINT',signal);process.off('SIGTERM',signal);
+  process.off('SIGINT',signal);process.off('SIGTERM',signal);abortSignal?.removeEventListener('abort',requestStop);
   if(readObject(lock).token===token){try{fs.unlinkSync(lock);}catch{}}
  }
+ return {state:stopped?'stopped':'completed'};
 }
 async function main(){const args=parseArgs(process.argv.slice(2)),options=prepare(args);if(args.dryRun){process.stdout.write(options.chunks.join('\n---\n'));return;}options.provider=native.selectProvider(options.provider);await playback(options);}
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});

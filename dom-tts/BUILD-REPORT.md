@@ -1,5 +1,123 @@
 # Dom TTS 0.5.0-dev.1 build report
 
+## Optional worker isolation and stop outcome
+
+Exact3ccbc8c diagnostic increment passes17/17 in both37191015669/37191013418,
+verified from all job outcomes. Foreground Windows reviewer5978388021 verifies
+fixed codes;5978389309 separately checks unknown-code/raw-field fallback without
+leaking a sentinel. Those receipts retain their exact pin and do not establish
+remote hardware or final-byte MOMM quorum.
+
+New test-only acceptance closes the earlier timed-abort synchronization gap: a
+fixture instruments failed exclusive lock acquisition and the unchanged production
+worker's actual100ms wait-timer registration. Only then does the parent abort.
+The competing owner is actual playback with authenticated IPC/lock/status and a
+held injected engine; its lock/status bytes remain unchanged, no kill is requested,
+and it remains active until explicitly released by the test. Waiting worker reports
+stopped and exits; owner subsequently completes and cleans its own lock. Local
+Windows Node22.16 PASS; no audio or acoustic timing. Test instrumentation is not a
+production worker-path/command option; runtime source is unchanged. Initial missing
+test-helper extension failure was corrected before this valid receipt.
+
+At3ec07c2 both37190508980/37190506960 have all eight macOS Intel/ARM jobs and
+five Linux jobs successful; Windows completion remains separately checked.
+Decoded ARM Node20 job111401492262 reports canonicalized temporary fixture=true
+and isolated checks PASS. Original generic logs cannot distinguish link refusal
+from socket length; canonicalization and shortening together are the verified
+fixture correction, not a weakened production path policy or audio certification.
+Worker failure-category regression then fails on3ec (code absent) and passes
+after fixed whitelisted codes are propagated; real linked-state and invalid-mode
+worker failures carry only state-path-linked/invalid-options respectively, with
+the generic public error message preserved. No raw worker error/path/text egress.
+
+Original dc8b5bb CI is not green: all eight macOS jobs in each matrix fail the new
+isolation fixture with a sanitized playback refusal; baseline and preceding checks
+pass. Both37189835581 and37189833290 finish9/17: all five Linux and four Windows
+jobs pass, all eight macOS jobs fail. A local
+owned linked-temp-root reproducer fails the original fixture specifically with
+that refusal and passes the repaired fixture. Test repair canonicalizes the owned
+temporary root, shortens its socket path, retains explicit linked-state refusal,
+and adds cancellation with a pre-existing live-owner lock without changing its
+bytes. No production ACL/link/socket limit is weakened. Actual macOS successor CI
+is required to confirm the fixture correction; the generic original log alone
+does not establish its precise underlying privacy/socket failure. Initial private
+VM diagnostic harness failures were excluded; the normal-realm before/after run
+is the valid reproducer.
+
+External authenticated stop now propagates an explicit stopped result rather than
+false completion (07fe439). Its failing-before/passing-after actual IPC fixture
+also verifies pending work in both selected sessions is cancelled and late admission
+or retry is refused. Independent Windows Node24.15 review5978143632 repeats it.
+
+An optional experimental isolated native player moves preparation, per-call ACL
+validation and native playback into a fixed worker thread. It retains the existing
+lock/stop routes, restricted environment and bounded inputs. Completion waits for
+both an explicit outcome and worker exit; no forced termination shortcut is used.
+Local Windows x64 Node22.16 real permission/empty-text fixture passes without audio.
+20ms timer measured1133ms in-process versus28ms isolated. A separate public native
+SAPI fixture authenticates stop and cancels active/pending work, bytes0, lock absent,
+33ms stop-to-queue-idle. No GUI latency, acoustic silence or human hearing verdict.
+Supplemental isolation tests run separately from9903 common baseline assertions.
+Exact successor CI/review, non-settling/crash containment and live harness gates open.
+
+## Legion integration receipt — 4 October 2026
+
+Current integration is not fully consolidated. docs/dom-tts/FEATURE-PARITY.md tracks
+the core, experimental components, recovered legacy controls and authorized future
+work separately. Archived source presence is not active feature parity.
+
+Hosted failure preserved: exact8491472 Windows Node18 run37183108521,
+job111379459703 passed9903 offline assertions and committed-manifest verification,
+then its first install call failed with the explicit 60-second permission-helper
+timeout. No ACL refusal or underlying runner cause is established. A diagnostic
+timing probe now runs only after Windows CI failure; it does not alter permissions,
+disable checks, retry installation or turn the failed step green. Local Windows
+x64/Node22.16.0 probe passed: fresh private child1480ms, existing child1364ms.
+Local success does not resolve that hosted failure. Keep actual EPERM distinct.
+Same exact head's other run37183106417 passes17/17, including Windows Node18;
+the failed run is16/17. This establishes inconsistent duplicate-run outcomes, not
+a diagnosed OS/Node/runtime cause. Neither receipt is transferred to successor bytes.
+
+Experimental queue increment: scripts/experimental/narration-queue.js is an in-memory
+stable-segment kernel with an injected player, not a production watcher/engine path.
+45 deterministic queue assertions pass: admission during unresolved playback,
+duplicate/conflicting replay, sequence gaps, selected-session/role boundaries,
+retry, cancellation, bounded history/bytes, round-robin service and failure ordering.
+Selected-session revocation and UTF-8 byte limits also have deterministic checks.
+The bounded JSONL framer adds 152 assertions: every two-part Unicode byte split,
+incomplete data, strict UTF-8, malformed JSON/record shape and size/count limits.
+The queue exposes typed per-segment delivery states, without raw speech/provider errors.
+Reviewer ordering finding (PR43 comment5977260726) reproduced locally as A0,B0,A1
+with late A1 admitted/completed. Its failing-before fixture was then repaired by
+sealing a predecessor when a new message is admitted in the same generation. New
+late text is refused for adapter reconciliation; exact replay and retained retries
+remain supported. Cross-generation/provider ordinals are not implemented.
+The full Windows Node 22.16.0 suite now reports 9,903 common assertions, with six
+POSIX checks skipped. No new native speech, real harness or acoustic receipt exists.
+The first test invocation failed because the new module did not yet exist; this is
+new-feature red/green evidence, not a reproduced defect in the former queue.
+Specific MOMM sharing approval/quorum remain pending; this implementation is draft.
+Neither component is connected to production narration. Installed-0.4 omissions,
+permissions, timeouts and missing completion receipts (discussion18739938) are not
+claimed resolved by isolated framing/queue tests.
+
+Integration branch codex/dom-tts-0.5-programme starts at PR #41's exact head
+1337e670536161475b6070510232231932109923. Legion independently ran self-test
+on Windows x64 / Node 22.16.0: 9,706 common assertions passed, six POSIX-only
+checks skipped. Native windows-privacy.cjs passed broad-parent/new-child protection,
+broad-existing refusal, junction refusal and same-process changed-ACL revalidation.
+These are directory/privacy results, not new audio or listening evidence.
+
+Removed an obsolete comment describing the now-removed cache; runtime behaviour is
+unchanged from the reviewed PR #41 head. EVOLUTION.md records the owner's expanded
+programme and newly published legacy handoff. The regenerated source manifest must
+verify on the resulting commit; final integration hosted CI remains pending until
+dispatched. Prior exact-head successes and failures below remain historical receipts.
+
+PR #42's legacy source is archival and was not installed or executed as a live tray.
+Independent MOMM quorum, native Mac/Linux audio, final-candidate second Windows host,
+listening/acoustic timings, installation EPERM and policy compatibility remain open.
+
 4 October 2026, Asia/Dubai. Development candidate authored by Legion (Codex).
 Base: 75ba1ce6bd9653cd62264bb954ee17e6cb943075, 0.4.0-dev.2 / PR #39.
 Only bug fixes, safety improvements and migration/acceptance documentation.
@@ -83,3 +201,56 @@ and agent-in-loop scoring. Windows ARM64 is unverified. No global session watche
 tray, microphone, cloud provider or Duplex feature was added. Default spoken replies
 remain a separately configured host preference. Do not merge or tag as stable until
 the evidence gates and owner's release decision are satisfied.
+# Native timeout completion correction — draft
+
+Legion reproduced a native.runChild boundary at a16403b with a harmless owned Node
+stand-in and the120s timer shortened to1s only inside an isolated test process.
+Timeout rejection occurred before worker exit and cleared the owned handle.
+The correction requests stop at timeout but retains ownership until worker exit;
+only then does it report the timeout. Late chunk progress cannot restart the timer.
+New regression fails before/passes after;9903 common Windows assertions/six POSIX
+skips and real-worker environment/stop stand-in checks pass. This is process evidence,
+not acoustic stop, an explanation of the earlier short-reply timeout, or listening
+certification. A non-settling worker/cancellation channel remains a containment gate;
+the implementation does not fabricate successful cleanup on a watchdog deadline.
+Exact-candidate CI and independent review remain pending for this draft correction.
+
+Playback now accepts an optional AbortSignal in its dependency context for queue
+adapters. It uses the existing owned stop path; pre-aborted requests refuse before
+privacy/state work, waiting lock acquisition checks cancellation, and active abort
+updates stopped status only after the supplied player settles. Listener and lock
+cleanup are retained. The new injected-player regression fails before/passes after;
+9903 Windows assertions/six skips, worker stop and timeout regressions pass.
+This is cancellation plumbing, not a connected native streaming adapter or measured
+acoustic stop. Current direct CLI behavior has no new automatic source/harness hook.
+
+### Owned-worker IPC failure regression (Legion, 4 October)
+
+On predecessor 1e730929d60028395bb4ffa4f5126e63db769c2e, an injected start-send callback failure using an actual owned Node worker reported failure and cleared ownership before worker exit. The disposable fixture cancelled its own worker afterward. The new regression fails before the fix and passes after: retain the IPC error, request owned cancellation and settle on worker exit. Windows x64 / Node 22.16: focused IPC, timeout and AbortSignal checks pass; offline suite 9,903 assertions passes, six POSIX checks skipped. No audio or private text in the new fixture. Hosted exact-candidate CI and independent final-byte review remain pending. General child error events, never-settling cancellation, crash/descendant containment and acoustic silence are not certified by this result.
+
+Synchronous-send follow-up: an injected throw previously rejected with raw error before exit and bypassed exit-listener registration. Register listeners before sending, catch the throw, retain ownership and sanitize as Native speech IPC failed while requesting owned cancellation. Actual-worker synchronous regression fails before/pass after; callback/timeout regressions and Windows9903/six skips pass. Stop-send throws/disconnected channels, general child error events and non-settling/crash cases remain separate open boundaries. New exact-head CI/review pending.
+
+IPC progress follow-up: actual owned worker plus injected callback failure and buffered CHUNK still reported progress on bdfa. The new late-progress regression fails before/pass after ignoring progress once failure, timeout or settlement has occurred. Callback/synchronous/timeout and Windows9903/six skips pass. This is injected event-ordering evidence, not acoustic or historical timeout attribution. Stop-send/disconnection/general-error/crash/non-settling boundaries remain open; new exact CI/review pending.
+
+General child-error follow-up: actual-worker injected EPIPE regression fails on df28 and passes after retaining ownership/cancelling until exit when a worker PID exists. Genuine OS failed-spawn with nonexistent Node executable/no PID promptly rejects and clears handle; dedicated regression passes. Focused IPC synchronous/late-progress/timeout and Windows9903/six skips pass. No audio/private text. Disconnected/stop-send throwing/nonsettling/crash containment remains open; exact new CI/review pending.
+
+Hosted Windows Node24 run37195038312 job111415032634 failed at isolated-player with generic message after core/IPC/spawn checks passed. Duplicate37195035037 succeeded; original failure preserved, precise cause unresolved. Later helper probes passed26221/23830ms, which do not diagnose the earlier failure. Acceptance now reports only fixed phase/code fields, excluding raw errors/paths/text; sanitizer hostile sentinel and local isolated acceptance pass. Runtime unchanged by diagnostic increment. New CI pending; diagnostic improvement does not fix hosted root cause.
+
+Stop-send follow-up: actual owned worker injected stop-send throw escaped cancellation on ee7; regression fails before/pass after containing send exceptions and callback errors and disconnecting only owned IPC. Existing worker disconnect handler cancels; parent retains ownership until exit. Throw/callback tests, child-error/synchronous/timeout/failedspawn and Windows9903/six skips pass. No engine/audio/private input in new fixtures. Failed disconnect/nonsettling/parent-crash/native descendant and acoustic tests remain open. Original Windows24 isolated failure unresolved; new exact CI/review pending.
+
+### Uncommitted worker lease draft — 4 October 22:59 UTC
+Peer report https://github.com/marroccofella/skills/pull/43#issuecomment-5985085829 was independently reproduced on4faf571: simultaneous stop-send/disconnect exceptions retain an active owned worker after3500ms. The local draft stops1000ms parent heartbeats on cancellation and expires a3000ms worker lease into existing direct-child cancellation; parent settlement remains tied to worker exit. The corrected one-shot fault regression fails on4faf571 and passes on the draft. Ordinary4500ms direct Node stand-in playback renews its lease, and pre-command expiry exits1 rather than reporting success.
+Windows x64 Node22.16 local checks:9903 assertions pass, six POSIX assertions skipped; timeout, noPID spawn, late-progress IPC, synchronous/callback stop-send and three lease cases pass.62 source-manifest files verify. These are actual worker/direct Node stand-in process results, not native acoustic or human-listening evidence. Event-loop starvation longer than the lease can cancel otherwise live playback. Worker child-kill failure, arbitrary descendants and native cross-host behavior remain unproven. This draft has no committed successor, exact-candidate hosted CI or independent MOMM quorum; source-sharing rejection remains respected. No stable-release approval.
+
+### Local wrapped-policy diagnostic draft — 4 October 23:19 UTC
+Hal's pinned report18750369 concerns installed da5c228 on Windows x64 Node24.19: managed installation succeeds on that host, SAPI speech fails under script policy. Independent peer5985491032 reproduced the same whitespace diagnostic defect on current4faf571. Legion's public-string test also fails before and passes after normalizing whitespace in failureMessage; CRLF/tab policy text maps to the sanitized policy refusal, SelectVoice/general distinctions remain, and command assertions retain -File with no -Command or -ExecutionPolicy. This is a local uncommitted diagnostic fix, not permission to change policy and not successful speech. Other-host EPERM, actual listening and the unrelated hosted Windows isolated-player failure remain open. Manifest now63 source files; successor CI and MOMM quorum remain pending.
+
+Policy readiness clarification (Legion, 4 October23:23UTC): Microsoft's Windows PowerShell5.1 documentation confirms Restricted disallows every script file, and all Undefined scopes default to Restricted on Windows clients. A signed script alone cannot make -File playback ready under Restricted. Engine discovery and launcher readiness must be separate; opt-in process tests and human hearing must remain separate results. Hal's context-specific report and peer5985546512 add no current-head audio or affected-host EPERM evidence. No policy change authorized or performed. Source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1
+
+Separate native-helper field evidence (4 October23:35UTC): Hal18750509 reports Windows x64 Node24.19 actual System.Speech prototype:5 checks passed, explicit stop failed cancellation classification(exit5,76ms process stop-to-exit), EOF/oversized unreached. Owner hearing pertains only first original sentence; original binary overwritten, so corrected source/executable hashes cannot bind that verdict. Corrected executable was Application Control blocked before retesting; no protection change, alternate route or production integration. These reports do not certify PR43. Signing/provenance/full native lifecycle and separately bound listening remain open. Microsoft SAC documentation(last updated2026-09-28) explicitly supports RSA and ECC certificates from trusted providers; RSA-only statement is superseded. Local self-signing/trust acceptance is not established, no purchase/deployment authorized. https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control
+
+Draft publication checkpoint (Legion, 5 October00:02UTC): focused actual-worker lease modes pass on Windows x64 Node22.16 with Node stand-in, not native audio. Three-second parent stalls can cancel playback; child-kill failure and descendants remain open. Policy wording now requests an administrator-approved launch configuration because signing alone does not enable scripts under Restricted. Source-only draft publication is authorized; independent MOMM quorum is still open after dispatch rejection. No release or installation approval is inferred. Source scan512 tracked/unignored files reports no credential/local-path/media findings; committed successor/history scan and exact CI remain pending.
+
+### Heartbeat exit-ordering draft (Legion,5 October00:24UTC)
+Peer5985936334 reports a real Windows x64 Node24.19 native injection playback failure with Native speech IPC failed on d22b5c7, followed by harmless successful retries. Preserve failed native suite; its original cause is not established. Legion's actual-worker/direct Node stand-in probe delays a heartbeat-send error callback until natural worker exit0: d22 rejects despite successful worker exit. Separate heartbeat errors from start/general IPC errors, keep owned cancellation, accept successful worker exit0, retain nonzero/active failure and suppress late progress. Four targeted modes and Windows9903 assertions/six POSIX skips pass; original start-IPC callback/synchronous regressions pass. No native listening or acoustic result. This local draft needs exact hosted CI and independent quorum; the source-sharing rejection remains respected.
+Predecessor exact CI: PR37246231045 is17/17 success; push37246229100 is16 success plus Windows24 cancellation job111564575286, not17/17 and not a test-failure diagnosis. Hal18750866 expanded candidate remains separate local-only findings under the owner's reported choice; no source export/integration requested.

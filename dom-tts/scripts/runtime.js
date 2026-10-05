@@ -41,4 +41,3 @@ function parseCli(argv,defaults={},allowed=[]){
 function endpoint(token,dir=stateDir){if(!/^[a-f0-9]{32}$/.test(token))throw new Error('Invalid playback token');const name=crypto.createHash('sha256').update(token).digest('hex').slice(0,24);if(process.platform==='win32')return '\\\\.\\pipe\\dom-tts-'+name;const socket=path.join(dir,'s-'+name.slice(0,12));if(Buffer.byteLength(socket)>100)throw new Error('State directory path is too long for the local stop socket (limit about 85 characters); set a shorter DOM_TTS_STATE_DIR');return socket;}
 function alive(pid){if(!Number.isSafeInteger(pid)||pid<1)return false;try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}}
 module.exports={ROOT,stateDir,powershell,safeEnv,psQuote,readObject,writeObject,ensurePrivate,parseCli,endpoint,alive};
-

@@ -1,0 +1,5 @@
+const {isKnown}=require('../scripts/experimental/isolated-errors');
+const phases=new Set(['configuration','linked-state','invalid-options','empty-playback','timed-wait','synchronized-wait','cleanup']);
+function diagnostic(phase,error){return {schema:'dom-tts-isolated-check/1',phase:phases.has(phase)?phase:'unknown',code:isKnown(error?.code)?error.code:'fixture-failed'};}
+module.exports={diagnostic};
+if(require.main===module){const assert=require('node:assert/strict');const sentinel='PRIVATE_SENTINEL_PATH_AND_TEXT';assert.deepEqual(diagnostic('empty-playback',{code:'state-permission-timeout',message:sentinel,stack:sentinel}),{schema:'dom-tts-isolated-check/1',phase:'empty-playback',code:'state-permission-timeout'});assert.equal(JSON.stringify(diagnostic(sentinel,{code:sentinel,message:sentinel})).includes(sentinel),false);console.log('PASS: isolated acceptance diagnostics whitelist phase/code and exclude raw fields');}
