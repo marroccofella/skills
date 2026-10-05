@@ -11,7 +11,9 @@
         "setup-ui.mjs --self-test and ledger.mjs --self-test pass whether or not you keep evidence outside your projects; before, they reported a working installation as failing.",
         "The suite runner still keeps its saved report in the evidence home, but starts the suites without it, for MOMM_EVIDENCE_HOME and for --evidence-home alike; a pack run no longer leaves fixture folders in your evidence home.",
         "No change to how a review runs, to SKILL.md, the reviewer roles or the review contract."
-      ]
+      ],
+      "sha256": "8856516e847feb5df2bb24ddb6f8b003bfdfaedfa4b2c3cbc38f7b6df96e3c1a",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
       "version": "1.17.1",
