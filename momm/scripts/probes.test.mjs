@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { CODEX_REVIEW_ISOLATION_ARGS, commandShapeSha256 as shapeSha256 } from "./route-isolation.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const CODEX_INPUT_SHAPE = (modality) => shapeSha256("codex", "input", modality);
 import { runProbes, recordProbe, latestProbes, containmentVector, reviewVector, PROBE_CLIS, PROBES_FILE, sha256, findFindings, unavailableReason, SYNTHETIC_DIFF, defaultExec, windowsLauncher, parseTimeoutArg, isolateReply, classifyReply, canaryPrompt, AUTH_PATTERN,
   runModalityProbes, MODALITY_PROBE_SCHEMA, syntheticPng, syntheticPdf, syntheticWav, syntheticSentence, crc32, confirmContent, inputProbePrompt, inputProbeVector, generativeCells, generativeProbeVector, routeDisclosure, generativeDisclosure, globFiles, expandHome, overlayEntryFor, expiresAtFor, parseProbeArgs, clearingAction, blockerInText, PROBE_COLOURS, registryAbsent, relativeProbeRef } from "./probes.mjs";

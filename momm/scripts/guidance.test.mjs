@@ -9,6 +9,7 @@ import {
   assemblePrompt, formatEffectivePrompt, validateGuidance, sha256, trustCommand, trustKey, readBoundedBytes,
   ARTIFACT_DELIMITER, GUIDANCE_BUDGET, GUIDANCE_FILE_MAX_BYTES,
 } from "./guidance.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const failures = [], passed = [];
 const test = (name, fn) => { try { fn(); passed.push(name); } catch (e) { failures.push({ test: name, error: e.message }); } };

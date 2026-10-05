@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {inspectEvidencePermissions,requirePrivateEvidence,requirePrivateScratch,preparePrivateEvidence,createPrivateDirectory,protectEvidence,evidenceRemediation} from '../momm/scripts/evidence-permissions.mjs';
 import {evidenceLocation,recordEvidenceProject} from '../momm/scripts/evidence-location.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const dir=path.resolve('synthetic-evidence');
 // Actual allocator code, isolated dependencies: a stripped Windows environment
 // must refuse with the privacy error before spawning or allocating anything.

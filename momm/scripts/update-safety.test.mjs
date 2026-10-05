@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 // The update() slice names these (1.17.1: R8 lock check, S8 protocol summary); its context gets the real functions.
 import {refuseGitLocks, policySummary} from './update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source = fs.readFileSync(path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 'momm/scripts/update.mjs'), 'utf8');
 const results=[];
 async function test(name,run){try{await run();results.push({name,passed:true});}catch(e){results.push({name,passed:false,error:e.message});}}

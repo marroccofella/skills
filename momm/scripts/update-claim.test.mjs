@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as updater from './update.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const { git, recordInstall, stateDir, update, parse } = updater;
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-update-claim-')), results = [];

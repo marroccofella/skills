@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { PEER_CONTRACT } from "./review-contract.mjs";
 import { splitDiff } from "./split.mjs";
 import * as governor from "./governor.mjs";
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const DEPTH = 5;
 const scripts = path.dirname(fileURLToPath(import.meta.url));

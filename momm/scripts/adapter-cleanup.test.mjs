@@ -10,6 +10,7 @@ import {requirePrivateEvidence} from './evidence-permissions.mjs';
 import {codexIsolationArgs,codexReviewArgs,grokIsolationEnv} from './route-isolation.mjs';
 import {grokStreamProgress,grokStreamReview} from './grok-stream.mjs';
 import * as reviewAnswer from './review-answer.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source=fs.readFileSync(new URL('./multi-review.mjs',import.meta.url),'utf8');
 const start=source.indexOf('function extractJsonObjects('),end=source.indexOf('\nfunction fingerprint(',start);
 assert(start>0&&end>start);

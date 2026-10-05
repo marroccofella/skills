@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { windowsTool } from '../momm/scripts/process-scope.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-runner-report-'));
 const externalHome = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-runner-home-'));
@@ -142,6 +143,33 @@ try {
     assert(saved && same(path.dirname(path.dirname(saved[1])), path.join(flagHome, project[0])), 'the report is where --evidence-home says');
     assert.deepEqual(folders(), before, 'nothing was saved in the checkout');
     for (const usage of [['--evidence-home'], ['--evidence-home', flagHome], ['--evidence-home', flagHome, '--list']]) { const r = run(...usage); assert.equal(r.status, 2, usage.join(' ')); assert.equal(r.stdout, ''); }
+  });
+  // Found on the released 1.17.1: with MOMM_EVIDENCE_HOME set, 23 of 97 suites failed. Every suite was
+  // started with the runner's whole environment, so the product looked for a fixture project's evidence
+  // under that home instead of in the fixture. The home is for this command's own report and nothing else.
+  item('the suites a run starts do not inherit the evidence home, and the report is still saved there', () => {
+    const seen = path.join(root, 'seen.log');
+    put('scripts/sees.mjs', "import fs from 'node:fs'; fs.appendFileSync(new URL('../seen.log', import.meta.url), JSON.stringify(process.env.MOMM_EVIDENCE_HOME ?? null) + '\\n');");
+    put('.github/workflows/self-test.yml', 'run: node scripts/sees.mjs\n');
+    try {
+      const before = folders(), without = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toUpperCase() !== 'MOMM_EVIDENCE_HOME'));
+      const cases = [['the variable', (target) => [{ ...without, MOMM_EVIDENCE_HOME: target }, []]], ['--evidence-home', (target) => [without, ['--evidence-home', target]]]];
+      // Windows names ignore case: a variable spelled another way is the same variable to every child.
+      if (process.platform === 'win32') cases.push(['the variable in lower case', (target) => [{ ...without, momm_evidence_home: target }, []]]);
+      for (const [index, [name, given]] of cases.entries()) {
+        const target = path.join(externalHome, `not-inherited-${index}`), [env, args] = given(target);
+        fs.rmSync(seen, { force: true });
+        const r = spawnSync(process.execPath, [runner, '--save-report', '--commit', sha, ...args], { encoding:'utf8', timeout:30000, windowsHide:true, env });
+        assert.equal(r.status, 0, `${name}: ${r.stdout}${r.stderr}`);
+        assert.deepEqual(fs.readFileSync(seen, 'utf8').trimEnd().split('\n').map((line) => JSON.parse(line)), [null], `${name}: the suite ran once and saw no evidence home`);
+        const project = fs.readdirSync(target); assert.equal(project.length, 1, `${name}: the home received one project folder`);
+        const saved = lastLines(r)[1].match(/^Report saved: yes, (.+report\.json) /);
+        assert(saved && same(path.dirname(path.dirname(saved[1])), path.join(target, project[0])), `${name}: the report is saved under the evidence home`);
+        const report = readJson(saved[1]);
+        assert.equal(report.passed, 1); assert.equal(report.failed, 0); assert.equal(report.results[0].command, 'scripts/sees.mjs');
+      }
+      assert.deepEqual(folders(), before, 'nothing was saved in the checkout');
+    } finally { fs.rmSync(seen, { force: true }); put('.github/workflows/self-test.yml', 'run: node scripts/ok.mjs\nrun: node scripts/bad.mjs\n'); }
   });
   put('scripts/remove-sink.mjs', "import fs from 'node:fs'; import path from 'node:path'; const home=path.join(process.cwd(),'.ensemble_reviews'); for(const n of fs.readdirSync(home)) if(n.startsWith('ci-')) fs.rmSync(path.join(home,n),{recursive:true,force:true}); console.log('SINK-REMOVAL-FAILURE'); process.exitCode=1;");
   put('.github/workflows/self-test.yml','run: node scripts/remove-sink.mjs\n');

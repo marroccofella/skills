@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { privateTestFixture } from './private-test-fixture.mjs';
 import { resolveGit } from './governor.mjs';
 import { evidenceLocation } from './evidence-location.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 let notices = {}; try { notices = await import('./run-notices.mjs'); } catch { /* absent before S3/S4: every check below then fails by name */ }
 const need = (name) => { assert.equal(typeof notices[name], 'function', `run-notices.mjs must export ${name}`); return notices[name]; };
 const scripts = path.dirname(fileURLToPath(import.meta.url));

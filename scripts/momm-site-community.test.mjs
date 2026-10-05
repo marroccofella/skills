@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {mediaBody, normalizeNavigation, improvementBody} from './momm-site-community.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const read=name=>fs.readFileSync(new URL('../docs/momm/'+name,import.meta.url),'utf8');
 const tour=JSON.parse(read('tour.json')), films=JSON.parse(read('films.json'));
 const gallery=mediaBody(tour,films,'1.16.0');

@@ -24,6 +24,7 @@ import { windowsTool, windowsChildEnv, posixTool, posixChildEnv } from './proces
 import { resolveGit } from './governor.mjs';
 import { resolveTool } from './update.mjs';
 import { windowsLauncher } from './probes.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
 const isWindows = process.platform === 'win32';

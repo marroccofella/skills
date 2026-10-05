@@ -3,6 +3,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const script=path.join(root,'scripts/momm-release.mjs');
 const source=fs.readFileSync(script,'utf8').replace(/^#!.*\n/,'').replace(/^import .*;\r?$/gm,'').replace('fileURLToPath(import.meta.url)',JSON.stringify(script));

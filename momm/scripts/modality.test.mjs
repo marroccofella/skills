@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import * as mod from "./modality.mjs";
 import { loadBaseline, effective, sha256 } from "./capabilities.mjs";
 import { fixturePng, JPEG, MP4 } from './media-fixtures.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const passed = [], failures = [];

@@ -6,6 +6,7 @@ import http from 'node:http';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { evidenceDir } from '../momm/scripts/evidence-location.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'momm/scripts/setup-ui.mjs'), 'utf8');
 const start = source.indexOf('async function serveLedger(');

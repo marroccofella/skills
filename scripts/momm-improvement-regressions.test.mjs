@@ -5,6 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {mediaBody,normalizeNavigation} from './momm-site-community.mjs';
 import {observe,publish,managedBody,summary,intact} from './momm-release-observer.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const tour=JSON.parse(read('docs/momm/tour.json'));
 const tag='momm-1.16.0', checker='b'.repeat(40), commit='a'.repeat(40);

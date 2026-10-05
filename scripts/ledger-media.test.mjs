@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { privateTestFixture } from './private-test-fixture.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sha = (b) => createHash('sha256').update(b).digest('hex');

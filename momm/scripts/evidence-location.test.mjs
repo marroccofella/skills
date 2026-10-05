@@ -15,6 +15,7 @@ import { preparePrivateEvidence, requirePrivateEvidence, inspectEvidencePermissi
 import { captureSourceSnapshot, digest } from './governor.mjs';
 import { attemptRecord, persistAttempt } from './attempts.mjs';
 import { buildScorecard } from './scorecard.mjs';
+delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const win = process.platform === 'win32';
