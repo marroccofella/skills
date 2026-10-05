@@ -161,9 +161,10 @@ used. The squash commit `80685113372a1f2a93d08a218801995a28ac2baa` has exactly t
   short temp path), 98 of 98 with `MOMM_EVIDENCE_HOME` inherited (the home was empty afterwards), and
   98 of 98 with `--save-report --evidence-home` (the home held only the runner's own run). The
   dispatcher, Setup Center and ledger self-tests passed with the variable unset and set. A fresh clone
-  of the pushed branch passed 98 of 98 with the seal check passing. Hosted matrix
-  [run 37312397546](https://github.com/marroccofella/skills/actions/runs/37312397546), 15/15; the new suite passed in all
-  fourteen matrix cells, its first run on macOS and Linux.
+  of the pushed branch passed 98 of 98 with the seal check passing. Hosted
+  [run 37312397546](https://github.com/marroccofella/skills/actions/runs/37312397546) passed 15 of 15
+  jobs: the fourteen matrix cells and the `site-and-ledger` job. The new suite passed in all fourteen
+  cells, its first run on macOS and Linux.
 - Exact-main CI: [run 37316304547](https://github.com/marroccofella/skills/actions/runs/37316304547), 15/15 on
   `80685113372a1f2a93d08a218801995a28ac2baa`.
 - Signed checkpoint: [run 37318187394](https://github.com/marroccofella/skills/actions/runs/37318187394); tag
