@@ -92,7 +92,7 @@
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "e062c92f6ad23c3a810d44352608d7e58413583a83a3a05fa1815322ddfa2a5c"
+      "sha256": "3d2150a8ed97fd607296c3d0d796228cad97192b91c5a886097b5b06b58c7b5d"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -193,6 +193,10 @@
     {
       "path": "tests/native-boundary.cjs",
       "sha256": "a55d4861003ef7bfd302078643042efa014df8e1dadc4805ff2e75811a3b3765"
+    },
+    {
+      "path": "tests/native-heartbeat-check.cjs",
+      "sha256": "407d542bc5818693aaa21bc5129ff124c30e59cc871603297abbedff5e8834bb"
     },
     {
       "path": "tests/native-ipc-check.cjs",

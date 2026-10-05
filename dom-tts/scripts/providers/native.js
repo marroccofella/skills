@@ -39,15 +39,16 @@ function runChild(command,input,context,onProgress){
   let cancelling=false,heartbeat;
   const disconnect=()=>{try{if(child.connected)child.disconnect();}catch{}};
   const cancel=()=>{cancelling=true;clearInterval(heartbeat);if(!child.connected)return;try{child.send({action:'stop'},error=>{if(error)disconnect();});}catch{disconnect();}};context.setChild({kill:cancel});
-  let done=false,timedOut=false,ipcError=null,stderr='',buffer='';
+  let done=false,timedOut=false,ipcError=null,heartbeatError=null,stderr='',buffer='';
   const timeout=()=>{if(done)return;timedOut=true;cancel();};
   let timer=setTimeout(timeout,120000);
   function finish(error){if(done)return;done=true;clearTimeout(timer);clearInterval(heartbeat);context.setChild(null);error&&!context.stopped()?reject(error):resolve();}
   child.stderr.on('data',data=>{stderr=(stderr+data).slice(-4096);});
-  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!done&&!timedOut&&!ipcError){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
+  child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!done&&!timedOut&&!ipcError&&!heartbeatError){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
   child.on('error',error=>{const failure=new Error(error.code==='ENOENT'?'Native speech executable is missing':'Native speech could not start');if(!child.pid)return finish(failure);ipcError=failure;cancel();});
-  child.on('exit',code=>finish(ipcError|| (timedOut?new Error('Native speech chunk exceeded 120 seconds'):code===0?null:new Error(failureMessage(stderr)))));
-  heartbeat=setInterval(()=>{if(done||cancelling)return;try{child.send({action:'heartbeat'},error=>{if(error){ipcError=new Error('Native speech IPC failed');cancel();}});}catch{ipcError=new Error('Native speech IPC failed');cancel();}},1000);
+  child.on('exit',code=>finish(ipcError|| (timedOut?new Error('Native speech chunk exceeded 120 seconds'):code===0?null:heartbeatError||new Error(failureMessage(stderr)))));
+  // A heartbeat callback can fail as a successful worker exits; its exit result is authoritative.
+  heartbeat=setInterval(()=>{if(done||cancelling)return;try{child.send({action:'heartbeat'},error=>{if(error&&!done){heartbeatError=new Error('Native speech IPC failed');cancel();}});}catch{heartbeatError=new Error('Native speech IPC failed');cancel();}},1000);
   try{child.send({action:'start',command,input:input||''},error=>{if(error){ipcError=new Error('Native speech IPC failed');cancel();}});}catch{ipcError=new Error('Native speech IPC failed');cancel();}
  });
 }
