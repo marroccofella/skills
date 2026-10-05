@@ -88,11 +88,11 @@
     },
     {
       "path": "scripts/providers/native-worker.js",
-      "sha256": "f036a0c60c77b1fc0cf51b56e59a08bc99d93d0b6ecfbf627f9c23e282f837fc"
+      "sha256": "c447deec5ffcba3a11b5feb878d676a22fcb06dbf7eb78dd90d90a1c30729406"
     },
     {
       "path": "scripts/providers/native.js",
-      "sha256": "3bd48100c8bc3c3b9c45e735f0ca5aa9ff6de5d984487f979cd20f025b43c0d7"
+      "sha256": "e062c92f6ad23c3a810d44352608d7e58413583a83a3a05fa1815322ddfa2a5c"
     },
     {
       "path": "scripts/providers/sapi.js",
@@ -199,8 +199,16 @@
       "sha256": "a160175d5651789826197534760b4a3f183c6d0a0df0cd18b51c5a405acadbb8"
     },
     {
+      "path": "tests/native-lease-check.cjs",
+      "sha256": "54473ca89671b3c54b2510282868821cad33b80eb68685026a4e99a6d73d5ff8"
+    },
+    {
       "path": "tests/native-player-check.cjs",
       "sha256": "ee242610d60adb97cf83b299c344e9b7f8a18c3234e3f81c82870646b1520961"
+    },
+    {
+      "path": "tests/native-policy-check.cjs",
+      "sha256": "10a02a331689984fd08c61d6d4a81f1a43d3fe400a7f532b5d440a0f4270a38b"
     },
     {
       "path": "tests/native-spawn-check.cjs",

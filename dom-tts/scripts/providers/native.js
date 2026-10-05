@@ -27,24 +27,27 @@ function findEspeak(){
 }
 function available(provider){try{if(provider==='espeak-ng')findEspeak();else fs.accessSync(provider==='sapi'?powershell:'/usr/bin/say',fs.constants.F_OK);return true;}catch{return false;}}
 function failureMessage(stderr=''){
+ stderr=String(stderr).replace(/\s+/g,' ');
  if(/PSSecurityException|running scripts is disabled|execution polic(?:y|ies)/i.test(stderr))
-  return 'Windows speech script was blocked by execution policy; use an administrator-approved signed script or policy. Dom TTS does not bypass policy.';
+  return 'Windows speech script was blocked by execution policy; use an administrator-approved speech launch configuration. Dom TTS does not bypass policy.';
  return 'Native speech failed'+(stderr.includes('SelectVoice')?': requested voice is unavailable':'; check doctor and your audio device');
 }
 function runChild(command,input,context,onProgress){
  return new Promise((resolve,reject)=>{
   if(context.stopped())return resolve();
   const child=fork(path.join(__dirname,'native-worker.js'),[],{windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],env:safeEnv(),execArgv:[]});
+  let cancelling=false,heartbeat;
   const disconnect=()=>{try{if(child.connected)child.disconnect();}catch{}};
-  const cancel=()=>{if(!child.connected)return;try{child.send({action:'stop'},error=>{if(error)disconnect();});}catch{disconnect();}};context.setChild({kill:cancel});
+  const cancel=()=>{cancelling=true;clearInterval(heartbeat);if(!child.connected)return;try{child.send({action:'stop'},error=>{if(error)disconnect();});}catch{disconnect();}};context.setChild({kill:cancel});
   let done=false,timedOut=false,ipcError=null,stderr='',buffer='';
   const timeout=()=>{if(done)return;timedOut=true;cancel();};
   let timer=setTimeout(timeout,120000);
-  function finish(error){if(done)return;done=true;clearTimeout(timer);context.setChild(null);error&&!context.stopped()?reject(error):resolve();}
+  function finish(error){if(done)return;done=true;clearTimeout(timer);clearInterval(heartbeat);context.setChild(null);error&&!context.stopped()?reject(error):resolve();}
   child.stderr.on('data',data=>{stderr=(stderr+data).slice(-4096);});
   child.stdout.on('data',data=>{buffer+=data;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at).trim();buffer=buffer.slice(at+1);const match=line.match(/^CHUNK (\d+)$/);if(match&&!done&&!timedOut&&!ipcError){clearTimeout(timer);timer=setTimeout(timeout,120000);onProgress(Number(match[1]));}}});
   child.on('error',error=>{const failure=new Error(error.code==='ENOENT'?'Native speech executable is missing':'Native speech could not start');if(!child.pid)return finish(failure);ipcError=failure;cancel();});
   child.on('exit',code=>finish(ipcError|| (timedOut?new Error('Native speech chunk exceeded 120 seconds'):code===0?null:new Error(failureMessage(stderr)))));
+  heartbeat=setInterval(()=>{if(done||cancelling)return;try{child.send({action:'heartbeat'},error=>{if(error){ipcError=new Error('Native speech IPC failed');cancel();}});}catch{ipcError=new Error('Native speech IPC failed');cancel();}},1000);
   try{child.send({action:'start',command,input:input||''},error=>{if(error){ipcError=new Error('Native speech IPC failed');cancel();}});}catch{ipcError=new Error('Native speech IPC failed');cancel();}
  });
 }
