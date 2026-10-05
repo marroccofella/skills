@@ -43,7 +43,7 @@ candidate; its cloud-sync/file-locking cause remains unproven. If cloud-synchron
 unreliable or is refused as a linked entry, use the existing external private `MOMM_EVIDENCE_HOME`
 option in a suitable unsynchronized location. (On 1.17.1 that option made 23 of the pack's 97
 commands fail, because the suites inherited it; an independent tester found this on the released
-1.17.1. On 1.17.0 six commands were tried and each fails the same way; the whole 1.17.0 pack was not
+1.17.1. On 1.17.0 six commands were tried and each failed the same way; the whole 1.17.0 pack was not
 run with the option. Since 1.17.2 the suites are started without it and the report alone goes to the external home.) Never repair another user's permissions or weaken
 linked-entry checks to make saving pass. Preserve the original attempt and report reruns separately.
 

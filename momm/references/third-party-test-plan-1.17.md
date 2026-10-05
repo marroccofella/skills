@@ -69,7 +69,7 @@ Reports use private `.ensemble_reviews/` by default, or the project-specific fol
 under `MOMM_EVIDENCE_HOME` (or the runner's `--evidence-home <dir>`) when configured.
 Since 1.17.2 the evidence home is for the runner's own report only: the suites are started without it,
 and a suite you start by hand drops it too. On 1.17.1 the pack failed under it (23 of 97 commands).
-On 1.17.0 six commands were tried and each fails under it; the whole 1.17.0 pack was not run that
+On 1.17.0 six commands were tried and each failed under it; the whole 1.17.0 pack was not run that
 way. Test both releases with the variable unset. From 1.17.2 the pack is expected to
 pass in all three ways: with nothing set, with `MOMM_EVIDENCE_HOME` set, and with `--evidence-home`;
 say in your report which you used, and that the evidence home held only the runner's own run folder

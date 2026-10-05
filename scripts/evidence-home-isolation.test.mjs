@@ -60,11 +60,20 @@ const inside = (base, target) => { const relative = path.relative(base, target);
 // Its modification time is first set to a date long past. A file system moves that time when an entry is
 // added to a folder or removed from it, so a child that wrote there and tidied up afterwards is seen too,
 // however coarse the file system's clock is. The body is given the folder and what it looked like then.
+// The date is read back first and compared to the second (NTFS, APFS and ext4 keep finer times than that).
+// Where it was not kept, the time compared later would be the folder's own recent one, and a child that wrote
+// and tidied up within one tick of the clock would pass unseen; so the check fails here and says why
+// (review rev_20261005102718_5f47d30cf18c, suggestion 77f98306).
 const LONG_PAST = new Date('2001-01-01T00:00:00Z');
 const withHome = (body) => {
   const home = realTempDir('momm-evidence-home-isolation-');
-  try { fs.utimesSync(home, new Date(), LONG_PAST); return body(home, fs.lstatSync(home, { bigint: true })); }
-  finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  try {
+    fs.utimesSync(home, new Date(), LONG_PAST);
+    const before = fs.lstatSync(home, { bigint: true });
+    const kept = before.mtimeNs / 1_000_000_000n, set = BigInt(LONG_PAST.getTime() / 1000);
+    assert(kept === set, `the file system did not keep the modification time set on a new evidence home (set to ${LONG_PAST.toISOString()}, second ${set} since 1970; read back second ${kept}): a child that writes there and tidies up could go unseen, so nothing is checked`);
+    return body(home, before);
+  } finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 };
 // What was done to an evidence home since it was handed over, one phrase each; none when it is the same
 // folder, never added to, and empty. Reading it leaves no mark and is not seen here.
@@ -94,19 +103,33 @@ check('a child started here sees the evidence home it is given, and the control 
 // The other half of the harness: what it calls a used evidence home. Review rev_20261005085544_5f04d7ebefc8
 // (deleted-evidence-home-passes): a folder that was gone counted as left empty, so a child that removed the
 // home it was given, or wrote there and tidied up, passed. Stand-in children do each of those things here.
+// Two of them make the home again right after removing it. On Windows the name of a removed folder can stay
+// taken for a moment (the removal is pending while anything still holds the folder), and making it again is
+// then refused with one of the codes below although nothing is wrong. Those two try again for up to two
+// seconds; after that the error stands and the check fails, naming it. Review rev_20261005102718_5f47d30cf18c
+// (win-rm-recreate-standin); the refusal was reasoned from the code and has not been seen to happen.
+// `throw error;` has a line to itself: Node prints the source line an uncaught error was thrown from before
+// the error itself, and the check below quotes only the first 300 characters a failed stand-in wrote.
+const STAND_IN_START = [
+  'const fs = require("node:fs"), path = require("node:path");',
+  'const again = (make) => { for (let tries = 0; ; tries += 1) { try { return make(); } catch (error) {',
+  '  if (tries === 40 || !["EPERM", "EEXIST", "EBUSY", "EACCES", "EISDIR"].includes(error.code))',
+  '    throw error;',
+  '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50); } } };',
+].join('\n');
 const STAND_INS = [
   ['leaves it alone', '', null],
   ['only reads it', 'fs.readdirSync(process.env.MOMM_EVIDENCE_HOME);', null],
   ['leaves an entry in it', 'fs.writeFileSync(path.join(process.env.MOMM_EVIDENCE_HOME, "left.json"), "{}");', /^left 1 entry in the caller's evidence home: left\.json$/],
   ['removes it', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true });', /^removed the caller's evidence home/],
-  ['removes it and makes it again', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); fs.mkdirSync(process.env.MOMM_EVIDENCE_HOME);', /^(?:replaced|wrote to) the caller's evidence home/],
-  ['puts a file in its place', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); fs.writeFileSync(process.env.MOMM_EVIDENCE_HOME, "");', /^replaced the caller's evidence home/],
+  ['removes it and makes it again', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); again(() => fs.mkdirSync(process.env.MOMM_EVIDENCE_HOME));', /^(?:replaced|wrote to) the caller's evidence home/],
+  ['puts a file in its place', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); again(() => fs.writeFileSync(process.env.MOMM_EVIDENCE_HOME, ""));', /^replaced the caller's evidence home/],
   ['writes a folder there and removes it', 'const made = path.join(process.env.MOMM_EVIDENCE_HOME, "made"); fs.mkdirSync(made); fs.rmdirSync(made);', /^wrote to the caller's evidence home and left it empty/],
   ['writes a file there and removes it', 'const made = path.join(process.env.MOMM_EVIDENCE_HOME, "made.json"); fs.writeFileSync(made, "{}"); fs.unlinkSync(made);', /^wrote to the caller's evidence home and left it empty/],
 ];
 check('a child that removes, replaces, fills or writes to the evidence home it is given is reported; one that leaves it alone is not', () => {
   for (const [does, code, reported] of STAND_INS) withHome((home, before) => {
-    const r = start(['-e', `const fs = require('node:fs'), path = require('node:path'); ${code}`], { ...plain, MOMM_EVIDENCE_HOME: home });
+    const r = start(['-e', `${STAND_IN_START}\n${code}`], { ...plain, MOMM_EVIDENCE_HOME: home });
     assert.equal(r.exit, 0, `the stand-in child that ${does} did not run: ${r.ended} ${r.stderr.slice(0, 300)}`);
     const used = usedHome(home, before);
     if (reported === null) assert.deepEqual(used, [], `a child that ${does} is not reported`);
@@ -115,9 +138,10 @@ check('a child that removes, replaces, fills or writes to the evidence home it i
 });
 
 // One at a time: several of these suites time their own children, and a hosted runner has few cores.
+// The control has ended before the evidence home is made, so what is found done to the home was done during the
+// one run that was given it (review rev_20261005102718_5f47d30cf18c, suggestion 7e1367bc).
 for (const suite of CHILDREN) {
-  check(suite, (result) => withHome((home, before) => {
-    const control = start([path.join(root, suite)], plain);
+  check(suite, (result) => { const control = start([path.join(root, suite)], plain); withHome((home, before) => {
     const homed = start([path.join(root, suite)], { ...plain, MOMM_EVIDENCE_HOME: home });
     const used = usedHome(home, before);
     Object.assign(result, { without_evidence_home: { exit: control.exit, ms: control.ms }, with_evidence_home: { exit: homed.exit, ms: homed.ms, evidence_home: used.length ? used.join('; ') : 'as handed over: the same folder, never added to, empty' } });
@@ -126,7 +150,7 @@ for (const suite of CHILDREN) {
     if (homed.exit !== 0) { said(`${suite} with MOMM_EVIDENCE_HOME set`, homed); problems.push(`${suite} ${control.exit === 0 ? 'passes on its own but fails' : 'fails'} when started with MOMM_EVIDENCE_HOME set (${homed.ended}): a suite drops the caller's evidence home in its first statement after the imports.`); }
     for (const what of used) problems.push(`${suite} ${what}.`);
     assert(!problems.length, problems.join(' '));
-  }));
+  }); });
 }
 
 const failed = results.filter((result) => !result.passed);

@@ -7,7 +7,7 @@
       "version": "1.17.2",
       "tag": "momm-1.17.2",
       "changes": [
-        "The suite pack no longer fails when MOMM_EVIDENCE_HOME is set: on 1.17.1, 23 of its 97 commands failed under it (an independent tester found it on the released 1.17.1). On 1.17.0 six commands were tried and each fails the same way; the whole 1.17.0 pack was not run with the variable set. Reviews themselves were not affected.",
+        "The suite pack no longer fails when MOMM_EVIDENCE_HOME is set: on 1.17.1, 23 of its 97 commands failed under it (an independent tester found it on the released 1.17.1). On 1.17.0 six commands were tried and each failed the same way; the whole 1.17.0 pack was not run with the variable set. Reviews themselves were not affected.",
         "setup-ui.mjs --self-test and ledger.mjs --self-test pass whether or not you keep evidence outside your projects; before, they reported a working installation as failing.",
         "The suite runner still keeps its saved report in the evidence home, but starts the suites without it, for MOMM_EVIDENCE_HOME and for --evidence-home alike; a pack run no longer leaves fixture folders in your evidence home.",
         "No change to how a review runs, to SKILL.md, the reviewer roles or the review contract."

@@ -18,8 +18,8 @@ automatic updates off: none of that changes.
   evidence home was told that a working installation was broken.
 - The runner's `--evidence-home` option, new in 1.17.1, had the same effect as the variable.
 - A pack run with a real evidence home left folders for those fixture projects in that home.
-- On 1.17.0 only six commands were tried: five suites and `setup-ui.mjs --self-test`. Each passes with
-  the variable unset and fails with it set. The whole 1.17.0 pack was never run with the variable set,
+- On 1.17.0 only six commands were tried: five suites and `setup-ui.mjs --self-test`. Each passed with
+  the variable unset and failed with it set. The whole 1.17.0 pack was never run with the variable set,
   so there is no count for that release.
 
 Reviews themselves were not affected: with an evidence home they worked before and work now.
@@ -39,9 +39,11 @@ the 1.17.0 pack does the same was not measured; the check below serves for eithe
 folder in an evidence home holds a `project.json` whose `project` is the path of the project the
 folder belongs to. A folder is a fixture's only if all three of these hold:
 - that path lies inside your temporary directory;
-- the first folder name below the temporary directory starts with `momm-` or `momm probes tests-`
-  and ends with six random letters and digits, as in `momm-governor-test-Ab3dE9`. The suites name
-  their temporary projects that way, and all 58 folders of the measured run were of this kind;
+- the first folder name below the temporary directory is a prefix the suites use, then exactly six
+  random letters and digits, as in `momm-governor-test-Ab3dE9`. The prefix is `momm probes tests-`,
+  or `momm-` and one or more words of lower-case letters and digits, each followed by a hyphen. So
+  the six characters come straight after a hyphen, and `momm-draft1` is not such a name. The suites
+  name their temporary projects that way, and all 58 folders of the measured run were of this kind;
 - the `project.json` was written while the pack was running.
 
 Such a folder may be deleted. Leave every other folder. A path that no longer exists does not make a
