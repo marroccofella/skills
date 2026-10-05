@@ -92,9 +92,13 @@ real provider-free dispatcher runs.
 1.17.2 addition: `scripts/evidence-home-isolation.test.mjs` starts six suites directly (`node <suite>`, not
 through `scripts/run-ci-suites.mjs`), each first without `MOMM_EVIDENCE_HOME` and then with it naming a new
 empty folder outside the checkout: scorecard-roster, ledger-serving, probes, cover, quotation-diagnostics
-and ledger-media. Each must pass both ways and leave the folder empty. All six failed that way on the
-released 1.17.1, because a suite inherited the caller's evidence home; three of them do not import the
-test-support module, so their own first statement is what is exercised.
+and ledger-media. Each must pass both ways and leave the folder as it was handed over: still there, the
+same folder, never added to, and empty. A folder that was removed, replaced, or written to and tidied
+counts as used; stand-in children that do each of those things hold the suite to it. Started that way on
+the released 1.17.1, each of the six ended with exit status 1, because a suite inherited the caller's
+evidence home. They are among the 23 commands that failed in the pack, and are not the six further suites
+that passed while writing into the caller's home. Three of them do not import the test-support module, so
+their own first statement is what is exercised.
 
 - `momm/scripts/review-claims.test.mjs`
 - `momm/scripts/review-workflow.test.mjs`

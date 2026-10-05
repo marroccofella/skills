@@ -25,7 +25,9 @@ noted that one suite passed again with the variable removed. That result stands 
   failed. `setup-ui.mjs --self-test` failed on two of its checks for the same reason, and
   `ledger.mjs --self-test`, which no suite runs, on two of its own.
 - **Who was affected.** Anyone running the pack, a suite or one of those two self-tests with the
-  variable set, on 1.17.1 or 1.17.0 (six sampled commands on the 1.17.0 tag fail the same way).
+  variable set on 1.17.1. On 1.17.0 six commands were sampled on the tag (five suites and
+  `setup-ui.mjs --self-test`): each passes with the variable unset and fails with it set. The whole
+  1.17.0 pack was not run with the variable set, so this record gives no count for that release.
   Reviews with an evidence home were not affected; the dispatcher's self-test passed under it.
 - **A second effect.** Six more suites passed under the variable while writing their fixtures'
   evidence into the caller's home. A pack run with a real evidence home therefore left one folder per
@@ -67,12 +69,15 @@ receipt. The two reviews of the fix are listed. The review of the release change
 the new suite and its registration) is added when its receipt is complete; until it is listed, gate 3
 is open.
 
-- `rev_20261004215722_98380aae661e` — the fix (two pieces). Codex and Antigravity ACCEPT, Copilot and
-  Grok MODIFY. Each of the four routes returned valid reviews, and quorum was met on both pieces.
-  Antigravity's answer on piece 2 was refused on both attempts as not strict JSON, so it gave no valid
-  review of that piece; Grok's answer on piece 2 was refused once because a quote did not match the
-  diff and accepted on its retry. 4 WARNING and 1 NITPICK: one real and fixed, four shown not to hold.
-  16 suggestions ruled, five applied. Receipt complete. The real finding: the first version of the
+- `rev_20261004215722_98380aae661e` — the fix (two pieces). Piece 1: four valid reviews, one from each
+  route (Codex, Antigravity, Copilot, Grok), each at the first attempt. Piece 2: three valid reviews,
+  from Codex and Copilot at the first attempt and from Grok on its retry, after its first answer was
+  refused because a quote did not match the diff. Antigravity gave no valid review of piece 2: its
+  answer was refused on both attempts as not strict JSON. Quorum is two valid reviews of a piece, and
+  it was met on both pieces. Verdicts by route: Codex ACCEPT, Copilot MODIFY, Grok MODIFY, and
+  Antigravity ACCEPT, which rests on piece 1 alone. 4 WARNING and 1 NITPICK: one real and fixed, four
+  shown not to hold. 16 suggestions ruled, five applied. Receipt complete.
+  The real finding: the first version of the
   check that holds the isolation line could be passed by nine layouts in which a suite kept or
   restored the caller's home (code sharing a line with the end of a comment or of an import, code after
   the statement on its line, a comment ended by a bare CR or U+2028, the statement inside a second

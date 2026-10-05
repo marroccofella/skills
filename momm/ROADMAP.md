@@ -1,8 +1,9 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.2**, sealed on 5 October 2026; its signed tag `momm-1.17.2` is created by the
-release workflow. The previous signed release is `momm-1.17.1`, 4 October 2026. Nothing else
+only sources. Today they say **1.17.2**, a candidate sealed on 5 October 2026 and not yet published;
+its signed tag `momm-1.17.2` is created by the release workflow. Until then the signed release is
+`momm-1.17.1`, 4 October 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 

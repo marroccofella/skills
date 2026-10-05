@@ -7,8 +7,10 @@
 // statement by its text. None of the three shows the statement working: a run through the runner never
 // hands a suite the variable, and the text check reads the line without running it. So this suite starts
 // a few suites the way a person does, `node <suite>`, with MOMM_EVIDENCE_HOME naming a new empty folder
-// outside the checkout, and holds each to two things: it passes, and the folder is still empty (or gone).
-// Each is first started without the variable (the control), so a failure with it is the variable's doing.
+// outside the checkout, and holds each to two things: it passes, and the folder is as it was handed over:
+// still there, the same folder, never added to, and empty. A folder that is gone was used as much as one
+// that was filled. Each is first started without the variable (the control), so a failure with it is the
+// variable's doing.
 // Zero provider calls, zero network.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,9 +57,24 @@ const listing = (dir, prefix = '') => fs.readdirSync(dir, { withFileTypes: true 
   .flatMap((entry) => (entry.isDirectory() ? [`${prefix}${entry.name}/`, ...listing(path.join(dir, entry.name), `${prefix}${entry.name}/`)] : [prefix + entry.name]));
 const inside = (base, target) => { const relative = path.relative(base, target); return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)); };
 // A new empty folder under its real name (a hosted temp folder is spelled two ways), removed whatever happens.
+// Its modification time is first set to a date long past. A file system moves that time when an entry is
+// added to a folder or removed from it, so a child that wrote there and tidied up afterwards is seen too,
+// however coarse the file system's clock is. The body is given the folder and what it looked like then.
+const LONG_PAST = new Date('2001-01-01T00:00:00Z');
 const withHome = (body) => {
   const home = realTempDir('momm-evidence-home-isolation-');
-  try { return body(home); } finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  try { fs.utimesSync(home, new Date(), LONG_PAST); return body(home, fs.lstatSync(home, { bigint: true })); }
+  finally { fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+};
+// What was done to an evidence home since it was handed over, one phrase each; none when it is the same
+// folder, never added to, and empty. Reading it leaves no mark and is not seen here.
+const usedHome = (home, before) => {
+  let now;
+  try { now = fs.lstatSync(home, { bigint: true }); } catch (error) { return [`removed the caller's evidence home (${error?.code ?? 'no error code'})`]; }
+  if (!now.isDirectory() || now.dev !== before.dev || now.ino !== before.ino) return ['replaced the caller\'s evidence home with another entry of that name'];
+  const left = listing(home);
+  if (left.length) return [`left ${left.length} ${left.length === 1 ? 'entry' : 'entries'} in the caller's evidence home: ${left.slice(0, 12).join(', ')}${left.length > 12 ? ', ...' : ''}`];
+  return now.mtimeNs === before.mtimeNs ? [] : ['wrote to the caller\'s evidence home and left it empty (the folder\'s modification time moved: an entry was added and removed, or the folder was removed and made again)'];
 };
 const results = [];
 const check = (name, body) => {
@@ -74,18 +91,40 @@ check('a child started here sees the evidence home it is given, and the control 
   assert.equal(seen({ ...plain, MOMM_EVIDENCE_HOME: home }), home, 'the other run is started with it');
   assert.equal(process.env.MOMM_EVIDENCE_HOME, undefined, 'this suite dropped its own caller\'s evidence home');
 }));
+// The other half of the harness: what it calls a used evidence home. Review rev_20261005085544_5f04d7ebefc8
+// (deleted-evidence-home-passes): a folder that was gone counted as left empty, so a child that removed the
+// home it was given, or wrote there and tidied up, passed. Stand-in children do each of those things here.
+const STAND_INS = [
+  ['leaves it alone', '', null],
+  ['only reads it', 'fs.readdirSync(process.env.MOMM_EVIDENCE_HOME);', null],
+  ['leaves an entry in it', 'fs.writeFileSync(path.join(process.env.MOMM_EVIDENCE_HOME, "left.json"), "{}");', /^left 1 entry in the caller's evidence home: left\.json$/],
+  ['removes it', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true });', /^removed the caller's evidence home/],
+  ['removes it and makes it again', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); fs.mkdirSync(process.env.MOMM_EVIDENCE_HOME);', /^(?:replaced|wrote to) the caller's evidence home/],
+  ['puts a file in its place', 'fs.rmSync(process.env.MOMM_EVIDENCE_HOME, { recursive: true }); fs.writeFileSync(process.env.MOMM_EVIDENCE_HOME, "");', /^replaced the caller's evidence home/],
+  ['writes a folder there and removes it', 'const made = path.join(process.env.MOMM_EVIDENCE_HOME, "made"); fs.mkdirSync(made); fs.rmdirSync(made);', /^wrote to the caller's evidence home and left it empty/],
+  ['writes a file there and removes it', 'const made = path.join(process.env.MOMM_EVIDENCE_HOME, "made.json"); fs.writeFileSync(made, "{}"); fs.unlinkSync(made);', /^wrote to the caller's evidence home and left it empty/],
+];
+check('a child that removes, replaces, fills or writes to the evidence home it is given is reported; one that leaves it alone is not', () => {
+  for (const [does, code, reported] of STAND_INS) withHome((home, before) => {
+    const r = start(['-e', `const fs = require('node:fs'), path = require('node:path'); ${code}`], { ...plain, MOMM_EVIDENCE_HOME: home });
+    assert.equal(r.exit, 0, `the stand-in child that ${does} did not run: ${r.ended} ${r.stderr.slice(0, 300)}`);
+    const used = usedHome(home, before);
+    if (reported === null) assert.deepEqual(used, [], `a child that ${does} is not reported`);
+    else assert(used.length === 1 && reported.test(used[0]), `a child that ${does} must be reported as that; got ${JSON.stringify(used)}`);
+  });
+});
 
 // One at a time: several of these suites time their own children, and a hosted runner has few cores.
 for (const suite of CHILDREN) {
-  check(suite, (result) => withHome((home) => {
+  check(suite, (result) => withHome((home, before) => {
     const control = start([path.join(root, suite)], plain);
     const homed = start([path.join(root, suite)], { ...plain, MOMM_EVIDENCE_HOME: home });
-    const left = fs.existsSync(home) ? listing(home) : [];
-    Object.assign(result, { without_evidence_home: { exit: control.exit, ms: control.ms }, with_evidence_home: { exit: homed.exit, ms: homed.ms, entries_left_in_home: left.length } });
+    const used = usedHome(home, before);
+    Object.assign(result, { without_evidence_home: { exit: control.exit, ms: control.ms }, with_evidence_home: { exit: homed.exit, ms: homed.ms, evidence_home: used.length ? used.join('; ') : 'as handed over: the same folder, never added to, empty' } });
     const problems = [];
     if (control.exit !== 0) { said(`${suite} without MOMM_EVIDENCE_HOME`, control); problems.push(`${suite} fails without MOMM_EVIDENCE_HOME (${control.ended}), so its run with the variable shows nothing about the variable.`); }
     if (homed.exit !== 0) { said(`${suite} with MOMM_EVIDENCE_HOME set`, homed); problems.push(`${suite} ${control.exit === 0 ? 'passes on its own but fails' : 'fails'} when started with MOMM_EVIDENCE_HOME set (${homed.ended}): a suite drops the caller's evidence home in its first statement after the imports.`); }
-    if (left.length) problems.push(`${suite} left ${left.length} ${left.length === 1 ? 'entry' : 'entries'} in the caller's evidence home: ${left.slice(0, 12).join(', ')}${left.length > 12 ? ', ...' : ''}`);
+    for (const what of used) problems.push(`${suite} ${what}.`);
     assert(!problems.length, problems.join(' '));
   }));
 }

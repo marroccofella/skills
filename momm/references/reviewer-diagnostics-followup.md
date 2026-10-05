@@ -41,9 +41,10 @@ even after every suite passes; keep that nonzero process exit and incomplete rep
 the suite totals. A Windows/Node24.19 run under OneDrive reported this boundary on the final 1.17
 candidate; its cloud-sync/file-locking cause remains unproven. If cloud-synchronized storage is
 unreliable or is refused as a linked entry, use the existing external private `MOMM_EVIDENCE_HOME`
-option in a suitable unsynchronized location. (On 1.17.1 and 1.17.0 that option made 23 of the pack's 97
+option in a suitable unsynchronized location. (On 1.17.1 that option made 23 of the pack's 97
 commands fail, because the suites inherited it; an independent tester found this on the released
-1.17.1. Since 1.17.2 the suites are started without it and the report alone goes to the external home.) Never repair another user's permissions or weaken
+1.17.1. On 1.17.0 six commands were tried and each fails the same way; the whole 1.17.0 pack was not
+run with the option. Since 1.17.2 the suites are started without it and the report alone goes to the external home.) Never repair another user's permissions or weaken
 linked-entry checks to make saving pass. Preserve the original attempt and report reruns separately.
 
 Post one verdict in Discussion #32, linking the follow-up PR and tested full SHA.
