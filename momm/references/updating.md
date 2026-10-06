@@ -148,6 +148,56 @@ need restoring before relinking succeeds. Deleted Git objects, a deleted clone o
 disk failure require a real backup. This is not a promise that rollback survives
 every possible loss. The original branch tip is not moved; checkout stays detached.
 
+### When an update stops with "Harness replay did not verify"
+
+After the checkout the updater runs the installer once for each harness scope in the
+receipt and accepts the update only when every scope's link is verified. If one is
+not, it stops with `Harness replay did not verify <skill> for <harness>`, or with
+`Installer replay failed` when the installer itself reported a failure. It claims no
+installation, and restores the previous one when it can. When that replay fails as
+well, it prints `Automatic recovery incomplete` and the retained recovery command.
+That command is safe to run again: it replays the same scopes, stops in the same way
+while the cause remains, and finishes once the cause is gone.
+
+From 1.17.3 both messages carry the installer's own reason. The installer looks for
+the harness command (`gemini`, `claude` or `agy`) on PATH and asks it for `--version`
+once, with a limit of 30 seconds. What happens next depends on the harness. Claude
+Code and Antigravity are linked by folder links that the installer makes itself.
+Gemini is linked by its own command, `gemini skills link`.
+
+| What the installer finds | Claude Code, Antigravity | Gemini |
+| --- | --- | --- |
+| The command is not on PATH | Skipped; nothing is created. The update stops. | The same. |
+| `--version` reports a failure | Not linked. The update stops. | The same. |
+| `--version` gives no answer in 30 seconds | Linked: the folder link is made and verified. The update goes on. | `gemini skills link` is run. If it succeeds, the skill is linked and the update goes on. If it gives no answer in 30 seconds either, the skill is not linked, `gemini` is not started again for the remaining skills, and the update stops. |
+| `--version` answers | Linked. | `gemini skills link` is run, with the same limit. If it succeeds, the skill is linked. If it gives no answer, the result is as in the row above. |
+
+When `--version` gave no answer, the installer says so. When the harness was linked all the
+same, the updater repeats it in a line that begins `Note:`; when it was not, the reason is
+in the message the update stops with.
+
+What to check, by the reason in the message:
+
+- `<command> command not found on PATH`: the harness command (`gemini`, `claude` or
+  `agy`) is not on the PATH of the terminal the update runs in. Restore it, or use a
+  terminal where `<command> --version` works. Nothing was created for that harness.
+- `found at <path> but ... --version failed`: the command is there and reports a
+  failure. It is not linked; repair that harness first.
+- `found at <path> but gemini skills link did not answer within 30 s`: Gemini links a
+  skill through its own command, and that command did not answer, so the skill is not
+  linked. The update stops with `Installer replay failed`, because the installer
+  itself reported the failure. Repeat the update when the Gemini CLI answers again;
+  `gemini --version` is a quick way to see whether it does.
+
+Installers up to 1.17.2 decided whether a harness command is there by running
+`<command> --version` with a five-second limit, and reported a slower command as
+`not installed`. So an update could stop on a machine where the command works: on the
+maintainer's Windows machine, busy with other sessions, `gemini --version` took
+between 5.5 and 7.7 seconds in four timed runs
+([the measurements](gates-1.17.3.md)). The update to 1.17.3 replays the 1.17.3
+installer. A rollback to 1.17.2 or earlier replays that release's own installer and
+can still stop this way: repeat it when the machine is less busy.
+
 ## Daily notices and agents
 
 Rollback preserves explicitly added harness scopes as well as the earlier code;

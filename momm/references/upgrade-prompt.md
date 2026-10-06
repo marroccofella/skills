@@ -20,7 +20,7 @@ ordinary update and a legacy bootstrap. Stop if verification is unavailable;
 ask before installing a missing verifier.
 
 Read the maintained new/legacy bootstrap guide at
-https://github.com/marroccofella/skills/blob/momm-1.17.2/momm/references/bootstrap.md.
+https://github.com/marroccofella/skills/blob/momm-1.17.3/momm/references/bootstrap.md.
 Do not mistake GitHub's bad_cert/Unverified badge for a gitsign verification result.
 If gitsign is missing, no signature check ran. That is normal on a first install:
 explain in one or two plain sentences what gitsign is and that it is a one-time step,
