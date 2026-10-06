@@ -1,8 +1,20 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.2",
+  "momm": "1.17.3",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.3",
+      "tag": "momm-1.17.3",
+      "changes": [
+        "An update no longer stops with \"Harness replay did not verify\" because a harness command is slow to start: until 1.17.2 the installer called a harness \"not installed\" when its --version took more than five seconds (seen with the Gemini CLI on a busy Windows machine, where it took between 5.5 and 7.7 seconds).",
+        "The installer now finds a harness command on PATH instead of timing it. A command that is found but does not answer --version within 30 seconds still counts as installed, and the installer says so: Claude Code and Antigravity are linked, and Gemini is linked if its own gemini skills link then succeeds; if that gives no answer either, the skill is not linked and the update stops. A command that is not on PATH is skipped as before, and nothing is created for it.",
+        "When a harness cannot be verified, the updater now gives the installer's reason. An update it cannot verify still stops and still leaves the recovery command.",
+        "No change to how a review runs, to SKILL.md, the reviewer roles or the review contract."
+      ],
+      "sha256": "293f121275c6b4d39dd1665e09450cf96bb4921e35a083ec3405e3a12dcf89ab",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
+    },
     {
       "version": "1.17.2",
       "tag": "momm-1.17.2",

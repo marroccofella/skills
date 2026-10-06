@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { recordInstall } from "./momm/scripts/update.mjs";
+import { recordInstall, harnessLauncher } from "./momm/scripts/update.mjs";
 import { readiness } from "./momm/scripts/bootstrap.mjs";
 import { installationCompletion } from "./momm/scripts/installations.mjs";
 // Windows launch guard (see momm/scripts/launch-guard.mjs): a bare command launched without a shell is
@@ -57,10 +57,42 @@ function runCommand(command, args, options = {}) {
     : { command, args };
   return spawnSync(invocation.command, invocation.args, { shell: false, windowsHide: true, encoding: "utf8", ...(win32 ? { env: { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" } } : {}), ...options });
 }
-function commandExists(command) {
-  const probe = runCommand(command, ["--version"], { timeout: 5_000 });
-  return !probe.error && probe.status === 0;
+// Harness command detection (1.17.3; field report, 6 October 2026). Whether a harness is there used to be
+// decided by running `<command> --version` with a five-second limit, and any failure, a timeout included,
+// was read as an absent command: a Gemini CLI that took between 5.5 and 7.7 seconds to start lost its
+// link, and the updater then refused the whole update. Presence is now a PATH lookup (harnessLauncher in update.mjs: an absolute
+// PATH entry outside this clone, real path checked), which does not depend on how fast the command starts.
+// `--version` is still asked, once per run, because a command that is found and reports a failure is not
+// linked, as before. A command that is found and does not answer within the limit is installed: its row and
+// stderr say that it did not answer, and it is linked as an answering one is (claude and antigravity by a
+// folder link; gemini by its own `gemini skills link`, which has to answer as well: a skill whose link
+// command does not answer gets an error row and is not linked). A command that is not found is skipped and
+// nothing is created for it, as before. The limit is the one `gemini skills link` already had; a harness
+// that answers nothing is given up after two of them (its version, then one link command), inside the 180
+// seconds the updater allows a replayed scope and onboarding allows its link. MOMM_HARNESS_TIMEOUT_MS
+// (milliseconds) changes it for a test.
+const HARNESS_TIMEOUT_MS = 30_000;
+const harnessLimit = () => (/^\d{3,5}$/.test(process.env.MOMM_HARNESS_TIMEOUT_MS ?? "") ? Math.min(60_000, Number(process.env.MOMM_HARNESS_TIMEOUT_MS)) : HARNESS_TIMEOUT_MS);
+// SIGKILL: a command that ignores the default signal would hold spawnSync beyond its limit.
+const withinLimit = () => ({ timeout: harnessLimit(), killSignal: "SIGKILL" });
+const timedOut = (result) => result.error?.code === "ETIMEDOUT";
+const harnessCommands = new Map();
+function harnessCommand(command) {
+  if (harnessCommands.has(command)) return harnessCommands.get(command);
+  const name = path.basename(command).replace(/\.exe$/i, ""), found = harnessLauncher(command);
+  let result = { name, state: "absent", detail: `${name} command not found on PATH` };
+  if (found) {
+    const probe = runCommand(command, ["--version"], withinLimit());
+    if (timedOut(probe)) result = { name, state: "unresponsive", path: found, detail: `${name} command found at ${found} but \`${name} --version\` did not answer within ${harnessLimit() / 1000} s` };
+    else if (probe.error || probe.status !== 0) result = { name, state: "failed", path: found, detail: `${name} command found at ${found} but \`${name} --version\` failed (${probe.error ? probe.error.code || "it could not be started" : probe.signal ? `killed by ${probe.signal}` : `exit ${probe.status}`})` };
+    else result = { name, state: "present", path: found };
+    if (result.state === "unresponsive") process.stderr.write(`${result.detail}. It is on PATH, so it is treated as installed.\n`);
+  }
+  harnessCommands.set(command, result);
+  return result;
 }
+const harnessInstalled = (command) => ["present", "unresponsive"].includes(harnessCommand(command).state);
+const notLinked = (command) => ({ status: "skipped", detail: `${harnessCommand(command).detail}; discovery path not modified` });
 function sameTarget(linkPath, sourcePath) {
   try {
     const realpath = process.platform === 'win32' ? fs.realpathSync.native : fs.realpathSync;
@@ -110,11 +142,16 @@ function linkAll(parentDir, skills, options) {
   return skills.map((skill) => linkOne(parentDir, skill, options));
 }
 function linkGemini(skills, options) {
-  if (!commandExists("gemini")) return [{ status: "skipped", detail: "gemini command not installed" }];
+  if (!harnessInstalled("gemini")) return [notLinked("gemini")];
+  // Once gemini has not answered a link command it is not started again in this run: every further skill
+  // would wait out the same limit, and the updater would stop the installer before it could report.
+  let silent = null;
   return skills.map((skill) => {
     const source = path.join(repoRoot, skill);
     if (options.dryRun) return { skill, status: "would_run_native_link", source };
-    const r = runCommand("gemini", ["skills", "link", source, "--scope", "user", "--consent"], { timeout: 30_000 });
+    if (silent) return { skill, status: "error", detail: `not attempted: ${silent}` };
+    const r = runCommand("gemini", ["skills", "link", source, "--scope", "user", "--consent"], withinLimit());
+    if (timedOut(r)) return { skill, status: "error", detail: silent = `gemini command found at ${harnessCommand("gemini").path} but \`gemini skills link\` did not answer within ${harnessLimit() / 1000} s` };
     return r.status === 0 ? { skill, status: "linked" } : { skill, status: "error", detail: (r.stderr || r.stdout || "native link failed").trim().slice(0, 400) };
   });
 }
@@ -133,16 +170,16 @@ function main() {
   let targets = options.targets;
   if (!targets.length && !options.customDirs.length) {
     // Never write into every detected harness by default: name the target.
-    const detected = ["codex", commandExists("gemini") && "gemini", commandExists("claude") && "claude", commandExists(antigravityCommand()) && "antigravity"].filter(Boolean);
+    const detected = ["codex", harnessInstalled("gemini") && "gemini", harnessInstalled("claude") && "claude", harnessInstalled(antigravityCommand()) && "antigravity"].filter(Boolean);
     process.stderr.write(`--target is required (this links skills into an agent harness).\nDetected on this machine: ${detected.join(", ")}\n  node install.mjs --target ${detected[0] ?? "claude"}          # one harness\n  node install.mjs --target ${detected.join(",")}   # the ones you choose\n  node install.mjs --target all --dry-run          # preview every harness\n`);
     process.exitCode = 2;
     return;
   }
   if (targets.includes("auto")) {
     targets = ["codex"];
-    if (commandExists("gemini")) targets.push("gemini");
-    if (commandExists("claude")) targets.push("claude");
-    if (commandExists(antigravityCommand())) targets.push("antigravity");
+    if (harnessInstalled("gemini")) targets.push("gemini");
+    if (harnessInstalled("claude")) targets.push("claude");
+    if (harnessInstalled(antigravityCommand())) targets.push("antigravity");
   }
   if (targets.includes("all")) targets = ["codex", "gemini", "claude", "antigravity"];
   targets = [...new Set(targets)];
@@ -150,16 +187,17 @@ function main() {
   const results = [];
   for (const target of targets) {
     if (target === "codex") results.push({ target, links: linkAll(path.join(os.homedir(), ".agents", "skills"), skills, options) });
-    else if (target === "gemini") results.push({ target, links: linkGemini(skills, options) });
+    else if (target === "gemini") results.push({ target, command: harnessCommand("gemini"), links: linkGemini(skills, options) });
     else if (target === "claude") {
-      results.push(commandExists("claude")
-        ? { target, links: linkAll(path.join(os.homedir(), ".claude", "skills"), skills, options) }
-        : { target, status: "skipped", detail: "claude command not installed; discovery path not modified" });
+      results.push(harnessInstalled("claude")
+        ? { target, command: harnessCommand("claude"), links: linkAll(path.join(os.homedir(), ".claude", "skills"), skills, options) }
+        : { target, command: harnessCommand("claude"), ...notLinked("claude") });
     } else if (target === "antigravity") {
-      if (!commandExists(antigravityCommand())) results.push({ target, status: "skipped", detail: "agy command not installed" });
+      const agy = antigravityCommand();
+      if (!harnessInstalled(agy)) results.push({ target, command: harnessCommand(agy), ...notLinked(agy) });
       else {
-        results.push({ target, scope: "global", links: linkAll(path.join(os.homedir(), ".gemini", "config", "skills"), skills, options) });
-        results.push({ target, scope: "migration_compatible", links: linkAll(path.join(os.homedir(), ".gemini", "antigravity-cli", "skills"), skills, options) });
+        results.push({ target, command: harnessCommand(agy), scope: "global", links: linkAll(path.join(os.homedir(), ".gemini", "config", "skills"), skills, options) });
+        results.push({ target, command: harnessCommand(agy), scope: "migration_compatible", links: linkAll(path.join(os.homedir(), ".gemini", "antigravity-cli", "skills"), skills, options) });
       }
     } else results.push({ target, status: "unsupported", detail: "use --custom-dir with the harness's documented skill parent" });
   }

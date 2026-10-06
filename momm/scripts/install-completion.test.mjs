@@ -12,6 +12,28 @@ assert.throws(()=>replayResult(result({...good,results:[{status:'conflict'}]})),
 assert.throws(()=>replayResult(result({...good,inventory:{upgrade:{complete:true}}})),/sole failure/);
 assert.throws(()=>replayResult({status:null,signal:'SIGTERM'}),/failed/);
 assert.throws(()=>replayResult({status:1,stdout:'partial'}),/complete JSON/);
+// 1.17.3: a replay that failed says why in the installer's own words, without control characters and bounded.
+assert.throws(()=>replayResult(result({...good,results:[{target:'codex',status:'already_linked'},{target:'gemini',links:[{skill:'momm',status:'error',detail:'gemini command found at /fixture/gemini but `gemini skills link` did not\u0007 answer within 30 s'}]}]})),
+  e=>/sole failure: the installer reported error for momm on gemini: gemini command found at \/fixture\/gemini but `gemini skills link` did not answer within 30 s$/.test(e.message));
+assert.throws(()=>replayResult(result({...good,results:[{target:'custom',status:'conflict',detail:'x'.repeat(5000)}]})),e=>/sole failure: the installer reported conflict on custom: x+$/.test(e.message)&&e.message.length<700);
+// Gate review of 1.17.3: the repository installer names the harness command once, on a target that reports
+// through `links`. Every link row keeps it (the updater's note about a silent command is printed from it);
+// a target that names none gains none.
+const silent={name:'gemini',state:'unresponsive',path:'/fixture/gemini',detail:'gemini command found at /fixture/gemini but `gemini --version` did not answer within 30 s'};
+assert.deepEqual(replayResult({status:0,stdout:JSON.stringify({results:[{target:'gemini',command:silent,links:[{skill:'momm',status:'linked'},{skill:'sibling',status:'linked'}]},{target:'codex',links:[{skill:'momm',status:'already_linked'}]},{target:'claude',command:{...silent,name:'claude'},status:'linked'}]})}),
+  [{skill:'momm',status:'linked',target:'gemini',command:silent},{skill:'sibling',status:'linked',target:'gemini',command:silent},{skill:'momm',status:'already_linked',target:'codex'},{target:'claude',command:{...silent,name:'claude'},status:'linked'}]);
+// The harness command block of each installer, run against synthetic outcomes of `<command> --version`. A
+// check ended by a signal has no exit status: the reason names the signal instead of "exit null".
+for (const script of ['../../install.mjs','./install.mjs']) {
+  const source=fs.readFileSync(new URL(script,import.meta.url),'utf8'),block=source.slice(source.indexOf('const HARNESS_TIMEOUT_MS'),source.indexOf('function sameTarget('));
+  assert(block.includes('function harnessCommand('),`${script}: the harness command block was not found`);
+  const probe=outcome=>vm.runInNewContext(`${block};harnessCommand('claude')`,{process:{env:{},stderr:{write(){}}},path,harnessLauncher:()=>'/fixture/claude',runCommand:()=>outcome});
+  const found='claude command found at /fixture/claude but `claude --version`';
+  assert.deepEqual([probe({status:null,signal:'SIGSEGV'}).state,probe({status:null,signal:'SIGSEGV'}).detail],['failed',`${found} failed (killed by SIGSEGV)`],script);
+  assert.deepEqual([probe({status:3,signal:null}).state,probe({status:3,signal:null}).detail],['failed',`${found} failed (exit 3)`],script);
+  assert.equal(probe({status:null,signal:null,error:{code:'EACCES'}}).detail,`${found} failed (EACCES)`,script);
+  assert.deepEqual([probe({status:null,signal:'SIGKILL',error:{code:'ETIMEDOUT'}}).state,probe({status:0,signal:null}).state],['unresponsive','present'],script);
+}
 // Execute each production main with synthetic link/receipt/inventory boundaries.
 // No real discovery folder, account or installed skill is touched.
 for (const script of ['../../install.mjs','./install.mjs']) {

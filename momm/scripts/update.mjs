@@ -111,7 +111,7 @@ function updaterPosixTool(command, cwd, { env, files, project }) {
   }
   throw Object.assign(new Error(`${name} was not found on an absolute PATH entry outside the working directory and the skills clone`), { code: "ENOENT" });
 }
-export function resolveTool(command, cwd, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT } = {}) {
+export function resolveTool(command, cwd, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT, extensions = [".exe", ".com"] } = {}) {
   if (platform !== "win32") return updaterPosixTool(command, cwd, { env, files, project });
   if (/[\\/]/.test(command)) {
     // A relative path with a separator is looked up from the working directory: refused, as on POSIX.
@@ -131,7 +131,7 @@ export function resolveTool(command, cwd, { env = process.env, platform = proces
   // and by real path. Checking only the executable let a link in a project directory on PATH pick
   // any executable outside the project (independent review of 3d7a8be).
   for (const directory of pathValue.split(";").map(d => d.replace(/^"|"$/g, "")).filter(d => updaterEntryOutside(d, root))) {
-    for (const extension of path.extname(command) ? [""] : [".exe", ".com"]) {
+    for (const extension of path.extname(command) ? [""] : extensions) {
       const candidate = path.join(directory, command + extension);
       try {
         if (!fs.statSync(candidate).isFile()) continue;
@@ -143,6 +143,16 @@ export function resolveTool(command, cwd, { env = process.env, platform = proces
     }
   }
   throw Object.assign(new Error(`${command} was not found on an absolute PATH entry outside the working directory`), { code: "ENOENT" });
+}
+// 1.17.3 (field report, 6 October 2026): where a harness launcher (gemini, claude, agy) is, or null. The
+// installers ask this instead of timing `<command> --version`: a Gemini CLI that took more than five seconds
+// to print its version was reported as not installed, and the update that replayed its scope was refused.
+// It is the rule above with the clone as the folder nothing may come from, wherever the installer was
+// started (a home folder that holds the user's own PATH entries must not hide them). On Windows the npm
+// shims count as well, because the installers start these launchers through cmd.exe.
+export function harnessLauncher(command, { env = process.env, platform = process.platform, fs: files = fs, project = CLONE_ROOT } = {}) {
+  try { return resolveTool(command, project, { env, platform, fs: files, project, extensions: [".exe", ".com", ".cmd", ".bat"] }); }
+  catch { return null; }
 }
 export function run(command, args, cwd, options = {}) {
   // Resolved against the PATH the child is given (options.env), the one spawnSync itself would search.
@@ -561,18 +571,28 @@ function assertInstalled(root, expected) {
   if (git(root, "rev-parse", "HEAD") !== expected.commit || current(root).version !== expected.version) throw new Error("Checkout changed during harness replay; refusing to claim installation success.");
   clean(root);
 }
+// 1.17.3: a refused replay repeats what the installer said about each row it did not link, so the person is
+// sent to the cause (a command not found on PATH, one that did not answer, a path that already exists).
+// The text comes from a child process: control characters are removed and it is bounded.
+function replaySaid(rows, where = r => ` ${r.skill ? `for ${r.skill} ` : ""}on ${r.target ?? "an unnamed target"}`) {
+  const said = [...new Set(rows.filter(r => !okLink(r)).map(r => safeText(`${r.status ?? "no status"}${where(r)}${r.detail ? `: ${r.detail}` : ""}`).replace(/\s+/g, " ").trim().slice(0, 300)))];
+  return said.length ? `the installer reported ${said.slice(0, 4).join("; ")}` : "";
+}
 export function replayResult(result) {
   if (result.error || result.signal || ![0, 1].includes(result.status)) throw new Error(`Installer replay failed before a complete result: ${result.error ? safeText(result.error.message).slice(0, 300) : result.signal ? `killed by ${result.signal}` : `exit ${result.status}`}`);
   let output;
   try { output = JSON.parse(result.stdout); } catch { throw new Error('Installer replay returned no complete JSON result'); }
   if (!Array.isArray(output.results) || output.installation?.error) throw new Error('Installer replay did not preserve its installation receipt');
-  const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target })) : [r]);
+  // The repository installer reports every target through `links` and names the harness command once, on the
+  // target: each link row carries it, or the note about a silent command below was never printed for one
+  // (gate review of 1.17.3).
+  const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target, ...(r.command ? { command: r.command } : {}) })) : [r]);
   // A global inventory conflict must not interrupt an otherwise verified scoped
   // replay or undo its receipt. The updater reports it after the transaction.
-  if (result.status === 1 && !(output.inventory?.upgrade?.complete === false && rows.length && rows.every(okLink))) throw new Error('Installer replay failed; inventory is not its sole failure');
+  if (result.status === 1 && !(output.inventory?.upgrade?.complete === false && rows.length && rows.every(okLink))) throw new Error(`Installer replay failed; inventory is not its sole failure${replaySaid(rows) && `: ${replaySaid(rows)}`}`);
   return rows;
 }
-function reinstall(root, lock) {
+function reinstall(root, lock, log = () => {}) {
   if (!Array.isArray(lock.installations) || !lock.installations.length) throw new Error("Receipt lacks per-harness installation scopes; rerun the original explicit installer.");
   for (const scope of lock.installations) {
     if (!["install.mjs", "momm/scripts/install.mjs"].includes(scope.installer) || !Array.isArray(scope.skills) || scope.skills.some(s => !/^[A-Za-z0-9._-]+$/.test(s)) || !(TARGETS.has(scope.target) || (scope.target === "custom" && path.isAbsolute(scope.custom_dir || "")))) throw new Error("Invalid per-harness installation scope");
@@ -581,7 +601,16 @@ function reinstall(root, lock) {
     if (scope.target === "custom") args.push("--custom-dir", scope.custom_dir); else args.push("--target", scope.target);
     const result = spawnSync(process.execPath, args, {cwd:root,encoding:'utf8',shell:false,windowsHide:true,timeout:180_000,maxBuffer:32*1024*1024});
     const rows = replayResult(result);
-    for (const skill of scope.skills) if (!rows.some(r => r.target === scope.target && (r.skill || "momm") === skill && okLink(r) && (scope.target !== "custom" || path.resolve(r.destination || "") === path.join(scope.custom_dir, skill)))) throw new Error(`Harness replay did not verify ${skill} for ${scope.target}`);
+    for (const skill of scope.skills) if (!rows.some(r => r.target === scope.target && (r.skill || "momm") === skill && okLink(r) && (scope.target !== "custom" || path.resolve(r.destination || "") === path.join(scope.custom_dir, skill)))) {
+      // 1.17.3: the refusal is the same; it now ends with the installer's reason. An installer from before
+      // 1.17.3 (a rollback replays the older release's own) says "not installed" for a command that only
+      // took more than five seconds to print its version, so that case is named too.
+      const mine = rows.filter(r => r.target === scope.target && (!r.skill || r.skill === skill)), said = replaySaid(mine, () => "");
+      const hint = mine.some(r => r.status === "skipped") ? " Check that the harness command is on PATH and answers --version, then repeat the command; an installer older than 1.17.3 also reports a command that took more than 5 seconds to answer as not installed." : "";
+      throw new Error(`Harness replay did not verify ${skill} for ${scope.target}: ${said || "the installer returned no result for it"}.${hint}`);
+    }
+    // A command that was found but did not print its version in time is linked, and the installer says so.
+    for (const note of new Set(rows.filter(r => r.target === scope.target && okLink(r) && r.command?.state === "unresponsive").map(r => r.command.detail))) log(`Note: ${String(note).slice(0, 300)}; it was found on PATH, so its link was made and verified.`);
   }
 }
 // ---- --check-all: one read-only report over skill, reviewer CLIs and review history ----
@@ -914,7 +943,7 @@ export async function update(argv, dependencies = {}) {
     const liveHelper = path.join(root, "momm", "scripts", "installations.mjs");
     if (fs.existsSync(liveHelper)) atomic(path.join(dir, "installations.mjs"), fs.readFileSync(liveHelper));
     checkout(root, previous.current.commit);
-    installer(root, previous);
+    installer(root, previous, log);
     assertInstalled(root, previous.current);
     writeJSON(lockFile, { ...previous, current: { ...previous.current, ...current(root) }, previous: null, recovered_at: new Date().toISOString() });
     fs.unlinkSync(journalFile);
@@ -1000,7 +1029,7 @@ export async function update(argv, dependencies = {}) {
         if (git(root, 'rev-parse', 'refs/momm/verified') !== commit) throw new Error('Verified release reference was not promoted');
         git(root, 'fsck', '--connectivity-only', commit);
         checkout(root, commit);
-        installer(root, lock);
+        installer(root, lock, log);
         assertInstalled(root, { commit, version: candidateManifest.momm });
         const next = { ...lock, channel, previous: before,
           current: { ...current(root), tree_sha256: digest, verified: true, signer: SIGNER }, updated_at: new Date().toISOString() };
@@ -1013,7 +1042,7 @@ export async function update(argv, dependencies = {}) {
           clean(root);
           if (![commit, before.current.commit].includes(git(root, "rev-parse", "HEAD"))) throw new Error("Concurrent unrelated checkout detected; recovery will not overwrite it.");
           if (git(root, 'rev-parse', 'HEAD') !== before.current.commit) checkout(root, before.current.commit);
-          installer(root, before); assertInstalled(root, before.current); writeJSON(lockFile, before); fs.unlinkSync(journalFile);
+          installer(root, before, log); assertInstalled(root, before.current); writeJSON(lockFile, before); fs.unlinkSync(journalFile);
         }
         catch (recovery) { throw new Error(`${e.message}\nAutomatic recovery incomplete: ${recovery.message}\nRetained recovery: node "${path.join(dir, "update.mjs")}" --rollback --yes`); }
         throw new Error(`${e.message}\nPrevious installation restored; update not applied.`);
