@@ -52,6 +52,11 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
   table in [updating.md](updating.md).
 - The updater's stop message carries the installer's reason. The refusal, the automatic recovery and
   the retained recovery command are unchanged.
+- Added in the triage of the gate review: the updater's `Note:` line for a harness that was linked
+  although its command did not print its version is printed for receipts written by either
+  installer (before the triage, only for `momm/scripts/install.mjs`); onboarding's `--link` gives
+  the installer 180 seconds instead of 45; a version check ended by a signal is reported as
+  `failed (killed by <signal>)`.
 
 ## Release gates
 
@@ -77,8 +82,11 @@ receipt. None is listed yet; until they are, gate 3 is open.
   reported as "Version check inconclusive" and not ready. It is never called not installed, but it is
   the same limit. Candidate for 1.18.
 - A harness command that answers every call only after 18 to 30 seconds can exceed the updater's 180
-  seconds for one harness when many skills are linked through `gemini skills link`.
-- The installers start a harness by its bare name; the path they found is reported, not pinned.
+  seconds for one harness when many skills are linked through `gemini skills link`. Onboarding's
+  `--link` has the same 180 seconds.
+- The installers start a harness by its bare name; the path they found is reported, not pinned. The
+  two differ only when a folder inside the clone is ahead on PATH and holds a command of the same
+  name.
 - On Windows a harness command that is stopped at the limit can leave a child of its own running.
 
 ## Still required before the tag

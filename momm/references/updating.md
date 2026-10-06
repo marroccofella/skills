@@ -172,9 +172,8 @@ Gemini is linked by its own command, `gemini skills link`.
 | `--version` gives no answer in 30 seconds | Linked: the folder link is made and verified. The update goes on. | `gemini skills link` is run. If it succeeds, the skill is linked and the update goes on. If it gives no answer in 30 seconds either, the skill is not linked, `gemini` is not started again for the remaining skills, and the update stops. |
 | `--version` answers | Linked. | `gemini skills link` is run, with the same limit and the same result if it gives no answer. |
 
-When `--version` gave no answer, the installer says so. The updater repeats it in a
-line that begins `Note:` for a harness that was installed with
-`momm/scripts/install.mjs`.
+When `--version` gave no answer, the installer says so, and the updater repeats it in
+a line that begins `Note:`.
 
 What to check, by the reason in the message:
 
@@ -185,7 +184,9 @@ What to check, by the reason in the message:
   failure. It is not linked; repair that harness first.
 - `found at <path> but gemini skills link did not answer within 30 s`: Gemini links a
   skill through its own command, and that command did not answer, so the skill is not
-  linked. Repeat the update when `gemini --version` answers.
+  linked. The update stops with `Installer replay failed`, because the installer
+  itself reported the failure. Repeat the update when the Gemini CLI answers again;
+  `gemini --version` is a quick way to see whether it does.
 
 Installers up to 1.17.2 decided whether a harness command is there by running
 `<command> --version` with a five-second limit, and reported a slower command as

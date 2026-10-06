@@ -37,7 +37,11 @@ could be stopped this way. Reviews themselves were not affected.
 - When a harness cannot be verified, the updater gives the installer's own reason after `Harness
   replay did not verify`, and after `Installer replay failed` when the installer itself reported a
   failure. It still stops, still claims nothing it could not verify, and still leaves the recovery
-  command.
+  command. When a harness was linked although its command did not print its version, the updater
+  says so in a line that begins `Note:`.
+- A version check that is ended by a signal is reported as `failed (killed by <signal>)`.
+- Onboarding's `--link` gives the installer 180 seconds instead of 45, so a harness command that
+  answers nothing ends with the installer's whole reason and not with a stopped installer.
 - `updating.md` has a section on what those messages mean, with a table of the outcomes and what to
   check.
 
@@ -50,7 +54,7 @@ copy stays the older updater until the update after this one.
 
 **Known limits.** A harness command that answers every call, but only after 18 to 30 seconds each,
 can still exceed the updater's 180 seconds for one harness when many skills are linked through
-`gemini skills link`. Preflight and `--doctor` still give a reviewer CLI five seconds to print its
+`gemini skills link`; onboarding's `--link` has the same 180 seconds. Preflight and `--doctor` still give a reviewer CLI five seconds to print its
 version; a slower one is reported as "Version check inconclusive" and not ready, never as not
 installed. The updater does not check whether a review is running from the installed copy while it
 updates it: do not update while one is. The new code paths for macOS and Linux were first run on the
