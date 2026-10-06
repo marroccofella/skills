@@ -12,6 +12,10 @@ assert.throws(()=>replayResult(result({...good,results:[{status:'conflict'}]})),
 assert.throws(()=>replayResult(result({...good,inventory:{upgrade:{complete:true}}})),/sole failure/);
 assert.throws(()=>replayResult({status:null,signal:'SIGTERM'}),/failed/);
 assert.throws(()=>replayResult({status:1,stdout:'partial'}),/complete JSON/);
+// 1.17.3: a replay that failed says why in the installer's own words, without control characters and bounded.
+assert.throws(()=>replayResult(result({...good,results:[{target:'codex',status:'already_linked'},{target:'gemini',links:[{skill:'momm',status:'error',detail:'gemini command found at /fixture/gemini but `gemini skills link` did not\u0007 answer within 30 s'}]}]})),
+  e=>/sole failure: the installer reported error for momm on gemini: gemini command found at \/fixture\/gemini but `gemini skills link` did not answer within 30 s$/.test(e.message));
+assert.throws(()=>replayResult(result({...good,results:[{target:'custom',status:'conflict',detail:'x'.repeat(5000)}]})),e=>/sole failure: the installer reported conflict on custom: x+$/.test(e.message)&&e.message.length<700);
 // Execute each production main with synthetic link/receipt/inventory boundaries.
 // No real discovery folder, account or installed skill is touched.
 for (const script of ['../../install.mjs','./install.mjs']) {

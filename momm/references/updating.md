@@ -148,6 +148,38 @@ need restoring before relinking succeeds. Deleted Git objects, a deleted clone o
 disk failure require a real backup. This is not a promise that rollback survives
 every possible loss. The original branch tip is not moved; checkout stays detached.
 
+### When an update stops with "Harness replay did not verify"
+
+After the checkout the updater runs the installer once for each harness scope in the
+receipt and accepts the update only when every scope's link is verified. If one is
+not, it stops with `Harness replay did not verify <skill> for <harness>`, claims no
+installation, and restores the previous one when it can. When that replay fails as
+well, it prints `Automatic recovery incomplete` and the retained recovery command.
+That command is safe to run again: it replays the same scopes, stops in the same way
+while the cause remains, and finishes once the cause is gone.
+
+From 1.17.3 the message ends with the installer's own reason. What to check:
+
+- `<command> command not found on PATH`: the harness command (`gemini`, `claude` or
+  `agy`) is not on the PATH of the terminal the update runs in. Restore it, or use a
+  terminal where `<command> --version` works. Nothing was created for that harness.
+- `found at <path> but ... --version failed`: the command is there and reports a
+  failure. It is not linked; repair that harness first.
+- `found at <path> but gemini skills link did not answer within 30 s`: Gemini links a
+  skill through its own command, and that command did not answer. Repeat the update
+  when `gemini --version` answers.
+
+A command that is found but does not print its version within 30 seconds is still
+installed: its link is made and verified, and the installer and the updater say that
+it did not answer.
+
+Installers up to 1.17.2 decided this by running `<command> --version` with a
+five-second limit and reported a slower command as `not installed`, so an update
+could stop on a machine where the command works (the Gemini CLI on Windows can take
+six to eight seconds to start). The update to 1.17.3 replays the 1.17.3 installer.
+A rollback to 1.17.2 or earlier replays that release's own installer and can still
+stop this way: repeat it when the machine is less busy.
+
 ## Daily notices and agents
 
 Rollback preserves explicitly added harness scopes as well as the earlier code;

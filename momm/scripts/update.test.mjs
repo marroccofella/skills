@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as updater from "./update.mjs";
 import { update, parse, git, run, resolveTool, treeHash, readLock, recordInstall, stateDir, dailyCheck, updateCheckDisabled, hash, verifySignature, signingEnv, provenance, newer, captureExec, cliBinary, lastSuccessfulReviews, checkAll, checkAllTable } from "./update.mjs";
 delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
@@ -666,12 +666,18 @@ try {
     // directory first. Dry run with one explicit target: nothing is linked or recorded.
     if (process.platform !== "win32") return;
     const env = { ...process.env };
-    for (const key of Object.keys(env)) if (key.toLowerCase() === "nodefaultcurrentdirectoryinexepath") delete env[key];
+    for (const key of Object.keys(env)) if (["nodefaultcurrentdirectoryinexepath", "path"].includes(key.toLowerCase())) delete env[key];
     for (const [label, installer] of [["root", new URL("../../install.mjs", import.meta.url)], ["momm", new URL("./install.mjs", import.meta.url)]]) {
-      const dir = path.join(checkFixture, `planted-installer-${label}`); fs.mkdirSync(dir, { recursive: true });
+      const dir = path.join(checkFixture, `planted-installer-${label}`), onPath = path.join(checkFixture, `planted-installer-${label}-path`);
+      fs.mkdirSync(dir, { recursive: true }); fs.mkdirSync(onPath, { recursive: true });
       fs.writeFileSync(path.join(dir, "gemini.cmd"), '@echo 9.9.9\r\n@echo ran> "%~dp0planted-marker.txt"\r\n');
-      const p = spawnSync(process.execPath, [fileURLToPath(installer), "--target", "gemini", "--dry-run"], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 60_000 });
+      // 1.17.3: the installers now look for the command on PATH before they start it, so the child is given
+      // a PATH of one folder holding a stand-in gemini.cmd. The probe through cmd.exe therefore still runs
+      // (the marker beside the stand-in proves it), and this machine's own gemini is never started.
+      fs.writeFileSync(path.join(onPath, "gemini.cmd"), '@echo 9.9.9\r\n@echo ran> "%~dp0path-marker.txt"\r\n');
+      const p = spawnSync(process.execPath, [fileURLToPath(installer), "--target", "gemini", "--dry-run"], { cwd: dir, env: { ...env, PATH: onPath }, encoding: "utf8", windowsHide: true, timeout: 60_000 });
       assert.notEqual(p.status, null, `${label}: installer did not finish: ${p.error?.message}`);
+      assert.equal(fs.existsSync(path.join(onPath, "path-marker.txt")), true, `${label} installer did not start the gemini.cmd on its PATH, so the working-directory rule was not exercised`);
       assert.equal(fs.existsSync(path.join(dir, "planted-marker.txt")), false, `${label} installer ran the gemini.cmd planted in its working directory`);
     }
   });
@@ -802,6 +808,261 @@ try {
         assert.equal(refused.error?.code, "ENOENT"); assert.equal(fs.existsSync(sentinel), false, "the planted launcher ran");
       });
     }
+  }
+  // ---- 1.17.3 (field report, 6 October 2026): a harness command that answers slowly ----
+  // Installing 1.17.2 stopped with "Harness replay did not verify momm for gemini". The installers decided
+  // whether a harness exists by running `<command> --version` with a five-second limit and read any failure,
+  // a timeout included, as "not installed"; the Gemini CLI, installed and on PATH, took six to eight seconds.
+  // Every harness command below is a stand-in written into a temporary folder that is the only PATH entry
+  // its child is given (or the first, before a folder that holds Git alone). No provider CLI is started.
+  {
+    const slow = path.join(fixture, "slow-harness"); fs.mkdirSync(slow);
+    const win = process.platform === "win32";
+    // Real paths: a hosted Windows temp folder is an 8.3 short path, and /var is /private/var on macOS.
+    const canonical = p => (win ? fs.realpathSync.native(p) : fs.realpathSync(p));
+    // A launcher (.cmd on Windows, an executable script elsewhere) that starts this Node on a small program.
+    // versionAfter: milliseconds before `--version` prints; null means it never answers. "Never" is a
+    // stand-in that ends by itself once the process that started it is gone (after a timeout on Windows only
+    // the cmd.exe above it is stopped), and after two minutes whatever happens.
+    const fakeHarness = (dir, name, { versionAfter = 0, versionExit = 0, link = "ok" } = {}) => {
+      fs.mkdirSync(dir, { recursive: true });
+      const program = path.join(dir, `${name}-fake.cjs`), calls = path.join(dir, `${name}-calls.jsonl`), launcher = path.join(dir, win ? `${name}.cmd` : name);
+      fs.writeFileSync(program, [
+        'const fs = require("node:fs"), args = process.argv.slice(2);',
+        `fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + "\\n");`,
+        'const never = () => { setInterval(() => { try { process.kill(process.ppid, 0); } catch (error) { if (error.code === "ESRCH") process.exit(9); } }, 200); setTimeout(() => process.exit(9), 120000); };',
+        `const versionAfter = ${JSON.stringify(versionAfter)}, versionExit = ${JSON.stringify(versionExit)}, link = ${JSON.stringify(link)};`,
+        'if (args[0] === "--version") { if (versionAfter === null) never(); else setTimeout(() => { if (versionExit) process.exit(versionExit); process.stdout.write("fake harness 9.9.9\\n"); }, versionAfter); }',
+        'else if (args[0] === "skills" && args[1] === "link") { if (link === "never") never(); else process.stdout.write("fake link made\\n"); }',
+        'else process.exit(2);',
+      ].join("\n") + "\n");
+      fs.writeFileSync(launcher, win ? `@echo off\r\n"${process.execPath}" "${program}" %*\r\n` : `#!/bin/sh\nexec "${process.execPath}" "${program}" "$@"\n`);
+      fs.chmodSync(launcher, 0o755);
+      return { launcher, calls: () => { try { return fs.readFileSync(calls, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } } };
+    };
+    // An installed-from-an-archive tree: the files both installers need, in a folder that is not a Git clone,
+    // so nothing here writes a receipt.
+    const INSTALLER_FILES = ["install.mjs", "momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"];
+    const skillFiles = (root, version) => { write(root, "momm/SKILL.md", "# Fixture skill\n"); write(root, "momm/scripts/multi-review.mjs", `const MOMM_VERSION = '${version}'; console.log('fixture dispatcher');\n`); write(root, "versions.json", JSON.stringify({ momm: version })); };
+    const tree = (root, siblings = []) => { for (const file of INSTALLER_FILES) write(root, file, fs.readFileSync(path.join(source, file))); skillFiles(root, "1.0.0"); for (const name of siblings) write(root, `${name}/SKILL.md`, "A sibling skill\n"); return root; };
+    const INSTALLERS = [["skill", "momm/scripts/install.mjs", []], ["root", "install.mjs", ["--skills", "momm"]]];
+    // The child's environment: the given PATH and nothing else of this machine's, a home of its own, and
+    // the production time limit unless a test names one (MOMM_HARNESS_TIMEOUT_MS, milliseconds).
+    const childEnv = (entries, home, limit) => {
+      const env = { ...process.env };
+      for (const key of Object.keys(env)) if (key.toLowerCase() === "path" || key === "MOMM_HARNESS_TIMEOUT_MS") delete env[key];
+      for (const key of HOME_KEYS) env[key] = home;
+      env.PATH = entries.join(path.delimiter);
+      if (limit) env.MOMM_HARNESS_TIMEOUT_MS = String(limit);
+      return env;
+    };
+    const launch = (script, args, { cwd, env }) => new Promise(resolve => {
+      const started = Date.now(), child = spawn(process.execPath, [script, ...args], { cwd, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "", stderr = "";
+      child.stdout.on("data", chunk => { stdout += chunk; }); child.stderr.on("data", chunk => { stderr += chunk; });
+      const timer = setTimeout(() => child.kill("SIGKILL"), 150_000); // far beyond anything expected below: a hung installer fails its test instead of hanging the suite
+      const done = status => { clearTimeout(timer); resolve({ status, stdout, stderr, ms: Date.now() - started }); };
+      child.on("error", error => { stderr += String(error); done(null); }); child.on("close", done);
+    });
+    const report = (result, what) => { let output; try { output = JSON.parse(result.stdout); } catch { assert.fail(`${what}: no JSON report (exit ${result.status}): ${result.stderr.slice(0, 300)}`); } return output; };
+    const rowsOf = output => output.results.flatMap(r => (r.links ? r.links.map(l => ({ ...l, target: r.target, command: r.command })) : [r]));
+    const linkedAt = (home, root) => canonical(path.join(home, ".claude", "skills", "momm")) === canonical(path.join(root, "momm"));
+    const each = async (dir, root, bin, targets, limit) => Promise.all(INSTALLERS.flatMap(([label, script, extra]) => targets.map(async target => {
+      const home = path.join(dir, `home-${label}-${target}`); fs.mkdirSync(home);
+      const result = await launch(path.join(root, script), [...extra, "--target", target], { cwd: root, env: childEnv([bin], home, limit) });
+      return { what: `${label} installer, ${target}`, target, home, result, said: result.stdout + result.stderr };
+    })));
+    await test("harness_command_that_answers_after_seven_seconds_is_linked_and_never_called_not_installed", async () => {
+      const dir = path.join(slow, "seven"), bin = path.join(dir, "bin"), root = tree(path.join(dir, "tree"));
+      const fakes = { claude: fakeHarness(bin, "claude", { versionAfter: 7_000 }), gemini: fakeHarness(bin, "gemini", { versionAfter: 7_000 }) };
+      // No limit is named: this is the production default, with a command slower than the old five seconds.
+      for (const { what, target, home, result, said } of await each(dir, root, bin, ["claude", "gemini"])) {
+        assert.doesNotMatch(said, /not installed/i, `${what}: a command that is on PATH was called not installed`);
+        const output = report(result, what), rows = rowsOf(output);
+        assert.deepEqual(rows.map(r => r.status), ["linked"], `${what}: ${JSON.stringify(rows)}`);
+        assert.equal(rows[0].command?.state, "present", `${what}: ${JSON.stringify(rows[0].command)}`);
+        assert.equal(canonical(rows[0].command.path), canonical(fakes[target].launcher), `${what}: the command is named by the path it was found at`);
+        assert.equal(output.exit_reason, undefined, `${what}: no link was refused`);
+        assert(result.ms >= 6_500, `${what}: the stand-in did take about seven seconds (${result.ms} ms)`);
+        if (target === "claude") { assert.equal(result.status, 0, result.stderr.slice(0, 300)); assert(linkedAt(home, root), `${what}: the discovery link was not made`); }
+        else assert(fakes.gemini.calls().some(call => call[0] === "skills" && call[1] === "link" && canonical(call[2]) === canonical(path.join(root, "momm"))), `${what}: gemini's own link command was not run`);
+      }
+    });
+    await test("harness_command_that_never_answers_is_reported_as_found_but_silent_in_bounded_time", async () => {
+      const dir = path.join(slow, "never"), bin = path.join(dir, "bin"), root = tree(path.join(dir, "tree"));
+      const fakes = { claude: fakeHarness(bin, "claude", { versionAfter: null }), gemini: fakeHarness(bin, "gemini", { versionAfter: null }) };
+      for (const { what, target, home, result, said } of await each(dir, root, bin, ["claude", "gemini"], 1_500)) {
+        assert.doesNotMatch(said, /not installed/i, `${what}: a command that is on PATH was called not installed`);
+        const rows = rowsOf(report(result, what));
+        // Found on PATH is installed: the link is made, and the row and stderr say plainly that it did not answer.
+        assert.deepEqual(rows.map(r => r.status), ["linked"], `${what}: ${JSON.stringify(rows)}`);
+        assert.equal(rows[0].command?.state, "unresponsive", `${what}: ${JSON.stringify(rows[0].command)}`);
+        assert.equal(canonical(rows[0].command.path), canonical(fakes[target].launcher));
+        assert.match(rows[0].command.detail, new RegExp(`^${target} command found at .+ but \`${target} --version\` did not answer within 1\\.5 s$`));
+        assert.match(result.stderr, new RegExp(`${target} --version\` did not answer within 1\\.5 s`), `${what}: stderr says so as well`);
+        assert(result.ms >= 1_400 && result.ms < 60_000, `${what}: bounded by its own limit, not by the command (${result.ms} ms)`);
+        assert.equal(fakes[target].calls().filter(call => call[0] === "--version").length, 2, "each installer asked once, with no retry");
+        if (target === "claude") assert(linkedAt(home, root), `${what}: the discovery link was not made`);
+      }
+    });
+    await test("gemini_that_does_not_answer_its_link_command_is_named_and_not_started_again", async () => {
+      const dir = path.join(slow, "link-never"), root = tree(path.join(dir, "tree"), ["sibling"]), started = Date.now();
+      const runs = await Promise.all([["skill", "momm/scripts/install.mjs", []], ["root", "install.mjs", ["--skills", "momm,sibling"]]].map(async ([label, script, extra]) => {
+        const bin = path.join(dir, `bin-${label}`), home = path.join(dir, `home-${label}`), fake = fakeHarness(bin, "gemini", { versionAfter: null, link: "never" }); fs.mkdirSync(home);
+        return { label, fake, result: await launch(path.join(root, script), [...extra, "--target", "gemini"], { cwd: root, env: childEnv([bin], home, 1_500) }) };
+      }));
+      for (const { label, fake, result } of runs) {
+        assert.doesNotMatch(result.stdout + result.stderr, /not installed/i, `${label}: a command that is on PATH was called not installed`);
+        const output = report(result, label), rows = rowsOf(output);
+        assert.deepEqual(rows.map(r => r.status), label === "root" ? ["error", "error"] : ["error"], `${label}: ${JSON.stringify(rows)}`);
+        assert.match(rows[0].detail, /^gemini command found at .+ but `gemini skills link` did not answer within 1\.5 s$/);
+        if (label === "root") assert.match(rows[1].detail, /^not attempted: gemini command found at .+ did not answer within 1\.5 s$/);
+        assert.equal(fake.calls().filter(call => call[0] === "skills").length, 1, `${label}: a command that stopped answering was started again`);
+        assert.equal(result.status, 1); assert.match(output.exit_reason, /failed/);
+      }
+      assert(Date.now() - started < 60_000, "two limits and no more, however many skills remain");
+    });
+    await test("absent_harness_command_is_skipped_with_no_discovery_path_created", async () => {
+      const dir = path.join(slow, "absent"), empty = path.join(dir, "empty-path-entry"), root = tree(path.join(dir, "tree")); fs.mkdirSync(empty);
+      for (const { what, target, home, result, said } of await each(dir, root, empty, ["claude", "gemini", "antigravity"])) {
+        const output = report(result, what), rows = rowsOf(output), name = target === "antigravity" ? "agy" : target;
+        assert.deepEqual(rows.map(r => r.status), ["skipped"], `${what}: ${JSON.stringify(rows)}`);
+        assert.equal(rows[0].detail, `${name} command not found on PATH; discovery path not modified`, `${what}: ${rows[0].detail}`);
+        assert.equal(rows[0].command?.state, "absent", `${what}: ${JSON.stringify(rows[0].command)}`);
+        assert.deepEqual(fs.readdirSync(home), [], `${what}: something was created for a harness that is absent`);
+        assert.equal(output.exit_reason, undefined); assert.doesNotMatch(said, /did not answer/);
+        assert(result.ms < 30_000, `${what}: nothing is started for an absent command (${result.ms} ms)`);
+      }
+    });
+    await test("harness_command_whose_version_check_fails_is_not_linked_and_says_what_failed", async () => {
+      const dir = path.join(slow, "failed"), bin = path.join(dir, "bin"), root = tree(path.join(dir, "tree"));
+      const fake = fakeHarness(bin, "claude", { versionExit: 3 });
+      for (const { what, home, result, said } of await each(dir, root, bin, ["claude"])) {
+        assert.doesNotMatch(said, /not installed/i, `${what}: a command that is on PATH was called not installed`);
+        const rows = rowsOf(report(result, what));
+        assert.deepEqual(rows.map(r => r.status), ["skipped"], `${what}: ${JSON.stringify(rows)}`);
+        assert.match(rows[0].detail, /^claude command found at .+ but `claude --version` failed \(exit 3\); discovery path not modified$/);
+        assert.equal(rows[0].command?.state, "failed"); assert.equal(canonical(rows[0].command.path), canonical(fake.launcher));
+        assert.deepEqual(fs.readdirSync(home), [], `${what}: a discovery path was created for a command that reports a failure`);
+      }
+    });
+    await test("harness_launcher_lookup_takes_a_path_entry_outside_the_clone_and_nothing_else", () => {
+      assert.equal(typeof updater.harnessLauncher, "function", "update.mjs must export harnessLauncher");
+      const dir = path.join(slow, "lookup"), bin = path.join(dir, "bin"), fake = fakeHarness(bin, "mommharness");
+      const at = (PATH, project = path.join(dir, "clone")) => updater.harnessLauncher("mommharness", { env: { PATH }, project });
+      fs.mkdirSync(path.join(dir, "clone"));
+      assert.equal(canonical(at(bin)), canonical(fake.launcher), "found on an absolute PATH entry, by its real path");
+      assert.equal(at([path.join(dir, "no-such-folder"), bin].join(path.delimiter)) !== null, true, "an entry that does not exist is passed over");
+      assert.equal(at(path.join(dir, "empty")), null, "not on PATH: absent");
+      for (const relative of [".", "bin", ""]) assert.equal(at(relative), null, "a relative or empty PATH entry is never searched");
+      assert.equal(at(bin, dir), null, "a PATH entry inside the clone supplies nothing");
+      assert.equal(at(bin, bin), null);
+      assert.equal(updater.harnessLauncher("no-such-mommharness", { env: { PATH: bin } }), null);
+      // The npm shim counts for a harness only: Git and gitsign are still resolved as executables.
+      if (win) assert.throws(() => resolveTool("mommharness", path.join(dir, "clone"), { env: { PATH: bin } }), e => e.code === "ENOENT", "a .cmd shim is not a tool the updater starts");
+    });
+    await test("harness_command_is_found_when_the_installer_is_started_from_the_folder_above_its_path_entry", async () => {
+      // A home folder holds the user's own PATH entries (~/.local/bin, the npm prefix): starting the installer
+      // there must not hide them. Only the clone is a folder no harness command may come from.
+      const dir = path.join(slow, "from-home"), bin = path.join(dir, "home-folder", "bin"), root = tree(path.join(dir, "tree"));
+      fakeHarness(bin, "claude");
+      for (const [label, script, extra] of INSTALLERS) {
+        const result = await launch(path.join(root, script), [...extra, "--target", "claude", "--dry-run"], { cwd: path.dirname(bin), env: childEnv([bin], path.dirname(bin)) });
+        assert.deepEqual(rowsOf(report(result, label)).map(r => [r.status, r.command?.state]), [["would_link", "present"]], `${label}: ${result.stdout.slice(0, 300)}`);
+      }
+    });
+    await test("harness_time_limit_default_is_thirty_seconds_in_both_installers_and_fits_the_replay_budget", () => {
+      const block = file => { const text = fs.readFileSync(path.join(source, file), "utf8").replace(/\r\n/g, "\n"), from = text.indexOf("// Harness command detection"), to = text.indexOf("function sameTarget("); assert(from >= 0 && to > from, `${file}: the harness command block was not found`); return text.slice(from, to).trim(); };
+      assert.equal(block("install.mjs"), block("momm/scripts/install.mjs"), "both installers decide with the same code");
+      const limit = /^const HARNESS_TIMEOUT_MS = (\d[\d_]*);$/m.exec(block("install.mjs")), cap = /Math\.min\((\d[\d_]*), Number\(process\.env\.MOMM_HARNESS_TIMEOUT_MS\)\)/.exec(block("install.mjs"));
+      assert(limit && cap, "the limit and the cap on its override are plain constants");
+      const number = text => Number(text.replaceAll("_", ""));
+      assert.equal(number(limit[1]), 30_000, "the production limit");
+      // At most two limits pass before a harness that answers nothing is given up (its version, then one link
+      // command), and the updater gives the whole installer this long for one scope.
+      const budget = /shell:false,windowsHide:true,timeout:(\d[\d_]*),/.exec(fs.readFileSync(path.join(source, "momm/scripts/update.mjs"), "utf8"));
+      assert(budget, "the updater's replay limit was not found");
+      assert(2 * number(cap[1]) < number(budget[1]), "even the largest override leaves the replay inside the updater's limit");
+      for (const file of ["install.mjs", "momm/scripts/install.mjs"]) assert.doesNotMatch(fs.readFileSync(path.join(source, file), "utf8"), /command not installed/, `${file}: "not installed" is not a conclusion the installers can draw from a command that failed to answer`);
+    });
+    // ---- the updater: a slow harness completes; an absent one still stops, and says why ----
+    // A PATH that holds Git and no harness command. On Windows: the folders of the Git installation, its cmd
+    // launcher first (git.exe under mingw64 does not run without its neighbours). Elsewhere Git's own folder
+    // can hold any other command, so Git is offered through a folder that holds a link to it alone.
+    const gitFolders = (() => {
+      const found = resolveTool("git", fixture);
+      if (!win) { const only = path.join(slow, "git-only"); fs.mkdirSync(only); fs.symlinkSync(found, path.join(only, "git")); return [only]; }
+      const installation = path.resolve(git(fixture, "--exec-path"), "../../.."), folders = ["cmd", "mingw64\\bin", "usr\\bin"].map(part => path.join(installation, part)).filter(dir => fs.existsSync(dir));
+      return fs.existsSync(path.join(installation, "cmd", "git.exe")) ? folders : [path.dirname(found)];
+    })();
+    const withEnv = async (changes, run) => {
+      const saved = Object.fromEntries(Object.keys(changes).map(key => [key, process.env[key]]));
+      const put = values => { for (const [key, value] of Object.entries(values)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } };
+      put(changes); try { return await run(); } finally { put(saved); }
+    };
+    // A clone installed for one harness at 1.0.0, with 1.1.0 published: what update --apply meets.
+    const harnessClone = async (name, harness) => {
+      const base = path.join(slow, name), origin = path.join(base, "remote"), clone = path.join(base, "installed"), home = path.join(base, "home"), bin = path.join(base, "bin");
+      fs.mkdirSync(origin, { recursive: true }); fs.mkdirSync(home); git(origin, "init");
+      for (const file of INSTALLER_FILES) write(origin, file, fs.readFileSync(path.join(source, file)));
+      skillFiles(origin, "1.0.0"); const one = commit(origin, "fixture one");
+      git(base, "clone", origin, clone);
+      fakeHarness(bin, harness);
+      const installed = await launch(path.join(clone, "momm/scripts/install.mjs"), ["--target", harness], { cwd: clone, env: childEnv([bin, ...gitFolders], home) });
+      assert.equal(installed.status, 0, `fixture installation failed: ${installed.stderr.slice(0, 300)}`);
+      assert.deepEqual(readLock(clone).targets, [harness], "the receipt lists the harness");
+      skillFiles(origin, "1.1.0"); const two = commit(origin, "fixture two");
+      git(origin, "-c", "user.name=MOMM test", "-c", "user.email=momm-test@example.invalid", "tag", "-a", "momm-1.1.0", "-m", "unsigned fixture");
+      const release = { version: "1.1.0", tag: "momm-1.1.0", sha256: treeHash(origin, "HEAD"), hash_covers: "git-tree-blobs-excluding-versions/1", changes: ["fixture release"] }, logs = [];
+      // update() and the installer it replays read this process's environment: the stand-in first, then Git alone.
+      // No limit is named unless a test sets one on the fixture: the production default applies.
+      const self = { clone, home, bin, one, two, logs, limit: undefined, journal: () => fs.existsSync(path.join(stateDir(clone), "transaction.json")) };
+      self.updating = (...args) => withEnv({ PATH: [bin, ...gitFolders].join(path.delimiter), MOMM_HARNESS_TIMEOUT_MS: self.limit, ...Object.fromEntries(HOME_KEYS.map(key => [key, home])) },
+        () => update(["--repo", clone, ...args], { remote: origin, manifest: async () => ({ momm: "1.1.0", momm_releases: [release] }), log: s => logs.push(s), verifySignature() {} }));
+      return self;
+    };
+    await test("update_completes_when_a_harness_in_the_receipt_answers_after_seven_seconds", async () => {
+      const f = await harnessClone("update-slow", "claude"), started = Date.now();
+      fakeHarness(f.bin, "claude", { versionAfter: 7_000 });
+      await f.updating("--apply", "--yes", "--accept-protocol");
+      const lock = readLock(f.clone);
+      assert.equal(git(f.clone, "rev-parse", "HEAD"), f.two); assert.equal(lock.current.version, "1.1.0"); assert.equal(lock.current.verified, true);
+      assert.deepEqual(lock.targets, ["claude"]); assert.equal(f.journal(), false, "no transaction is left behind");
+      assert(linkedAt(f.home, f.clone), "the harness still loads the updated clone");
+      assert(Date.now() - started >= 6_500, "the stand-in did take about seven seconds");
+      assert(f.logs.some(s => /Signed checkout verified at 1\.1\.0/.test(s)));
+      assert(!f.logs.some(s => /did not answer/.test(s)), "a command that answered, however slowly, is not reported as silent");
+    });
+    await test("update_completes_and_says_so_when_a_harness_in_the_receipt_does_not_answer_its_version", async () => {
+      // Found on PATH is installed: the link is a folder link the updater verifies itself, so the update is
+      // complete, and the updater repeats what the installer said about the command.
+      const f = await harnessClone("update-silent", "claude");
+      fakeHarness(f.bin, "claude", { versionAfter: null }); f.limit = "1500";
+      await f.updating("--apply", "--yes", "--accept-protocol");
+      const lock = readLock(f.clone);
+      assert.equal(git(f.clone, "rev-parse", "HEAD"), f.two); assert.equal(lock.current.version, "1.1.0"); assert.equal(lock.current.verified, true); assert.equal(f.journal(), false);
+      assert(linkedAt(f.home, f.clone), "the harness still loads the updated clone");
+      assert(f.logs.some(s => /^Note: claude command found at .+ but `claude --version` did not answer within 1\.5 s; it was found on PATH, so its link was made and verified\.$/.test(s)), `the updater did not say that the command was silent: ${f.logs.filter(s => /Note/.test(s)).join(" | ")}`);
+    });
+    await test("update_still_stops_and_names_the_cause_when_a_harness_in_the_receipt_is_absent", async () => {
+      const f = await harnessClone("update-absent", "claude");
+      for (const name of fs.readdirSync(f.bin)) fs.rmSync(path.join(f.bin, name)); // the harness was uninstalled after MOMM was installed for it
+      for (const folder of gitFolders) for (const extension of win ? [".exe", ".com", ".cmd", ".bat"] : [""]) assert.equal(fs.existsSync(path.join(folder, `claude${extension}`)), false, "the fixture PATH must not hold a claude");
+      const stopped = async (...args) => { let error; try { await f.updating(...args); } catch (e) { error = e; } assert(error, `${args[0]} must stop while a harness in the receipt is absent`); return error.message; };
+      const reason = /Harness replay did not verify momm for claude: the installer reported skipped: claude command not found on PATH; discovery path not modified/;
+      const applied = await stopped("--apply", "--yes", "--accept-protocol");
+      assert.match(applied, new RegExp(`^${reason.source}`), "the stop message gives the installer's reason");
+      assert.match(applied, new RegExp(`Automatic recovery incomplete: ${reason.source}`), "and so does the recovery that could not finish");
+      assert.match(applied, /Retained recovery: node "[^"]+update\.mjs" --rollback --yes$/, "the retained recovery command is still given");
+      assert.equal(readLock(f.clone).current.version, "1.0.0", "no installation is claimed"); assert.equal(f.journal(), true, "the transaction is kept for recovery");
+      assert.equal(fs.existsSync(path.join(f.home, ".claude", "skills", "momm")), true, "the link made at installation is left as it was");
+      // The retained recovery stops for the same reason while the command is absent, and is safe to run again.
+      assert.match(await stopped("--rollback", "--yes"), new RegExp(`^${reason.source}`)); assert.equal(f.journal(), true);
+      fakeHarness(f.bin, "claude");
+      await f.updating("--rollback", "--yes");
+      assert(f.logs.some(s => /Rollback verified/.test(s))); assert.equal(git(f.clone, "rev-parse", "HEAD"), f.one); assert.equal(f.journal(), false);
+      assert(linkedAt(f.home, f.clone));
+    });
   }
   if (failures) process.exitCode = 1;
   process.stdout.write(JSON.stringify({ passed: failures === 0, tests: results, note: "Positive transaction fixtures inject signature verification; the production unsigned rejection is tested separately. Live trusted-tag verification is a release gate." }, null, 2) + "\n");
