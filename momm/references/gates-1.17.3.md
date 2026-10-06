@@ -54,9 +54,9 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
   the retained recovery command are unchanged.
 - Added in the triage of the gate review: the updater's `Note:` line for a harness that was linked
   although its command did not print its version is printed for receipts written by either
-  installer (before the triage, only for `momm/scripts/install.mjs`); onboarding's `--link` gives
-  the installer 180 seconds instead of 45; a version check ended by a signal is reported as
-  `failed (killed by <signal>)`.
+  installer (before the triage, only for the skill installer, `momm/scripts/install.mjs`);
+  onboarding's `--link` gives the installer 180 seconds instead of 45; a version check ended by a
+  signal is reported as `failed (killed by <signal>)`.
 
 ## Release gates
 
@@ -64,7 +64,7 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
 | --- | --- | --- |
 | 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, a dry run of the installer on the machine where the defect was seen, and the OS by Node matrix | Run output and job logs | named in the pull request |
 | 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.2 and 1.17.1 | Six hosted cells | after the merge |
-| 3. MOMM range reviews of every change, with completion receipts | Receipts | recorded below when complete |
+| 3. MOMM range reviews of every change, with completion receipts | Receipts | two reviews, each with a complete receipt: see Reviews, which also says what was not reviewed |
 | 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
 | 5. Live review with every installed reviewer route valid | Report | see the reviews below, by route and piece |
 | 6. Signed tag `momm-1.17.3` | Release workflow run | approved by the owner's instruction of 6 October 2026, if every gate above passes on the final sealed commit |
@@ -72,8 +72,8 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.3 changes is listed here with a complete
-receipt. One is listed. The last review, of what this one led to and of this record's entries, is
-not yet listed; until it is, gate 3 is open.
+receipt. Listed: the review of the fix and the release changes, and one last review of the changes
+that review led to and of the entries this record had gained by then.
 
 - `rev_20261006114459_9a78d7989ef2` — the fix and the release changes (seven pieces). Quorum is two
   valid reviews of a piece, and it was met on all seven. By piece:
@@ -94,9 +94,10 @@ not yet listed; until it is, gate 3 is open.
   MODIFY; Grok MODIFY, which rests on every piece but 3. 15 WARNING and 8 NITPICK: ten real and
   fixed, thirteen shown not to hold. 61 suggestions ruled, nine applied. Receipt complete.
 
-  The real findings, in the product: for a receipt written by the repository installer the updater
-  printed no `Note:` for a harness that was linked although its command did not print its version
-  (the stop reason was never lost; the note now follows either installer); onboarding's `--link`
+  The real findings, in the product: for a receipt
+  written by the repository installer (the root `install.mjs`) the updater printed no `Note:` for a
+  harness that was linked although its command did not print its version (the stop reason was
+  never lost; the note now follows either installer); onboarding's `--link`
   gave the installer 45 seconds, less than two silent calls of 30, so a Gemini CLI that answered
   nothing was cut off with only "treated as installed" (it now has 180 seconds and ends with the
   whole reason); and the installers' own comment said a silent command "is linked" without the
@@ -116,6 +117,53 @@ not yet listed; until it is, gate 3 is open.
   answered by running the code. Among those: the tests for the silent, absent and failing cases
   are in the updater's suite, which that reviewer's piece did not hold; the lower time bounds
   cannot fail on a slow machine; the lookup is never called without a command name.
+- `rev_20261006133939_a3494fcde4c4` — the last review: what the review above led to in the
+  installers, the updater, onboarding, the two suites and the records, and this record's entries
+  up to then (five pieces). Quorum was met on all five. By piece:
+  - Piece 2 (this record, the notes, `updating.md`) and piece 3 (the skill installer, the updater,
+    onboarding, the installer's completion suite, two records): four valid reviews each, one from
+    each route. Copilot's review of piece 2 was accepted on a retry, after its first answer was
+    refused because a quote did not match the diff.
+  - Piece 1 (the repository installer and the manifest): three valid reviews, from Codex and
+    Copilot at the first attempt and from Grok on a retry after the same kind of refusal.
+    Antigravity's attempt ended with an error and no review.
+  - Piece 4 (the first part of the updater's suite): three valid reviews, from Codex, Antigravity
+    and Copilot. Grok gave no valid review of piece 4: its answer was refused on both attempts
+    because a quote did not match the diff.
+  - Piece 5 (the rest of the updater's suite): two valid reviews, from Codex and Copilot.
+    Antigravity's attempt ended with a provider error (503) and Grok's timed out.
+  - Cover reviews, which do not count towards quorum: Codex for Antigravity on pieces 1 and 5,
+    both valid; Copilot for Grok on piece 5, refused because a quote did not match the diff.
+
+  Verdicts by route: Codex ACCEPT; Antigravity ACCEPT, which rests on pieces 2, 3 and 4; Copilot
+  MODIFY; Grok MODIFY, which rests on pieces 1, 2 and 3. 4 WARNING and 5 NITPICK: two real and
+  fixed, seven shown not to hold. 28 suggestions ruled, five applied. Receipt complete.
+
+  Fixed, all in the records: this record now names each installer with its file where it says
+  which one lacked the `Note:` line (the two sentences agreed, but a reviewer read "the repository
+  installer" as the other file); the Known limits paragraph of the notes is wrapped again;
+  `updating.md` says that the updater repeats the installer's remark only when the harness was
+  linked all the same; and the last row of its table gives success and silence in sentences of
+  their own. Not real: that the manifest contradicts itself, and that it contradicts the
+  installer's comment, about an update that stops (a command that is slow to start and a link
+  command that never answers are two cases, the code treats them as two, and committed tests run
+  both); that onboarding's 180 seconds can be exceeded at the largest limit a caller can set (two
+  limits of 60 seconds and 30 for the rest are inside it); that the updater could replace a
+  command reported on a link row (no installer reports one there); that the suite's stand-in could
+  write into the real home folder (every child gets the fixture's home, and `os.homedir()` follows
+  it); and two questions about helpers defined outside the piece a reviewer saw.
+
+Nothing was reviewed after the last review. What changed after it: the four changes it asked for,
+listed just above, which are in this record, the notes and `updating.md`; and in this record its
+own entry, the opening of this section and the status of gate 3. No product source and no test
+changed after the last review. A record cannot carry the review of its own last lines; they are
+for the reader to check against the receipts. Each receipt was recorded on the tree that held that
+review's own changes; the first binds files that were edited afterwards as described here.
+
+The middle of the fix had fewer reviews than its edges. The skill installer and the updater were
+in piece 3 of the first review, which two routes reviewed (Codex and Copilot) with two cover
+reviews beside them; the last review, where all four routes reviewed that piece, saw those files
+only as the first review's changes to them.
 
 ## Carried forward
 

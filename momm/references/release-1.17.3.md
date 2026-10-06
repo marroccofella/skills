@@ -54,11 +54,11 @@ copy stays the older updater until the update after this one.
 
 **Known limits.** A harness command that answers every call, but only after 18 to 30 seconds each,
 can still exceed the updater's 180 seconds for one harness when many skills are linked through
-`gemini skills link`; onboarding's `--link` has the same 180 seconds. Preflight and `--doctor` still give a reviewer CLI five seconds to print its
-version; a slower one is reported as "Version check inconclusive" and not ready, never as not
-installed. The updater does not check whether a review is running from the installed copy while it
-updates it: do not update while one is. The new code paths for macOS and Linux were first run on the
-hosted matrix; the whole pack was run by the maintainer's harness on Windows only. The limits listed
-in [the 1.17.2 notes](release-1.17.2.md) stand.
+`gemini skills link`; onboarding's `--link` has the same 180 seconds. Preflight and `--doctor` still
+give a reviewer CLI five seconds to print its version; a slower one is reported as "Version check
+inconclusive" and not ready, never as not installed. The updater does not check whether a review is
+running from the installed copy while it updates it: do not update while one is. The new code paths
+for macOS and Linux were first run on the hosted matrix; the whole pack was run by the maintainer's
+harness on Windows only. The limits listed in [the 1.17.2 notes](release-1.17.2.md) stand.
 
 Details: [gate record and finding](gates-1.17.3.md) · [updating](updating.md)

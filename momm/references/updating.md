@@ -170,10 +170,11 @@ Gemini is linked by its own command, `gemini skills link`.
 | The command is not on PATH | Skipped; nothing is created. The update stops. | The same. |
 | `--version` reports a failure | Not linked. The update stops. | The same. |
 | `--version` gives no answer in 30 seconds | Linked: the folder link is made and verified. The update goes on. | `gemini skills link` is run. If it succeeds, the skill is linked and the update goes on. If it gives no answer in 30 seconds either, the skill is not linked, `gemini` is not started again for the remaining skills, and the update stops. |
-| `--version` answers | Linked. | `gemini skills link` is run, with the same limit and the same result if it gives no answer. |
+| `--version` answers | Linked. | `gemini skills link` is run, with the same limit. If it succeeds, the skill is linked. If it gives no answer, the result is as in the row above. |
 
-When `--version` gave no answer, the installer says so, and the updater repeats it in
-a line that begins `Note:`.
+When `--version` gave no answer, the installer says so. When the harness was linked all the
+same, the updater repeats it in a line that begins `Note:`; when it was not, the reason is
+in the message the update stops with.
 
 What to check, by the reason in the message:
 
