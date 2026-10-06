@@ -583,7 +583,10 @@ export function replayResult(result) {
   let output;
   try { output = JSON.parse(result.stdout); } catch { throw new Error('Installer replay returned no complete JSON result'); }
   if (!Array.isArray(output.results) || output.installation?.error) throw new Error('Installer replay did not preserve its installation receipt');
-  const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target })) : [r]);
+  // The repository installer reports every target through `links` and names the harness command once, on the
+  // target: each link row carries it, or the note about a silent command below was never printed for one
+  // (gate review of 1.17.3).
+  const rows = output.results.flatMap(r => r.links ? r.links.map(l => ({ ...l, target: r.target, ...(r.command ? { command: r.command } : {}) })) : [r]);
   // A global inventory conflict must not interrupt an otherwise verified scoped
   // replay or undo its receipt. The updater reports it after the transaction.
   if (result.status === 1 && !(output.inventory?.upgrade?.complete === false && rows.length && rows.every(okLink))) throw new Error(`Installer replay failed; inventory is not its sole failure${replaySaid(rows) && `: ${replaySaid(rows)}`}`);
