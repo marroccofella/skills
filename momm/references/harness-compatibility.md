@@ -21,7 +21,12 @@ Setup Center's explicit version check for current installed/published versions.
 - Guided first run (readiness, privacy explanation, and exact next actions): `node momm/scripts/onboard.mjs --governor <current-harness> --link`
 - Every detected harness at once (you must type it — the installer never guesses): `node momm/scripts/install.mjs --target all`
 - Individually: `--target codex` (links `~/.agents/skills`), `--target claude` (links `~/.claude/skills`), `--target gemini` (uses the native `gemini skills link`)
-- `gemini`, `claude` and `antigravity` are linked only when their command (`gemini`, `claude`, `agy`) is found on PATH. From 1.17.3 this does not depend on how quickly `--version` answers: a command that is found but silent for 30 seconds is still linked, and the result says so. A command that is not found is skipped and nothing is created for it. `codex` links the shared `~/.agents/skills` folder without looking for a command, because the Codex desktop app and IDE read it too.
+- `gemini`, `claude` and `antigravity` are linked only when their command (`gemini`, `claude`, `agy`) is found on PATH. A command that is not found is skipped and nothing is created for it. A command that is found but whose `--version` reports a failure is not linked.
+  - From 1.17.3 this does not depend on how quickly `--version` answers. A command that is found but gives no answer to `--version` in 30 seconds still counts as installed, and the result says that it did not answer.
+  - `claude` and `antigravity` then get their folder links.
+  - `gemini` is linked by its own `gemini skills link`, so it is linked only if that command then succeeds. If that command gives no answer in 30 seconds either, the skill is not linked and the result is an error that names the command.
+  - [Updating](updating.md) has the table of outcomes and what an update does in each.
+- `codex` links the shared `~/.agents/skills` folder without looking for a command, because the Codex desktop app and IDE read it too.
 - Any other Agent Skills host: `--custom-dir <that-host's-skill-parent>`
 - Hosts without skills support: skip installation and pipe into `scripts/multi-review.mjs` directly
 

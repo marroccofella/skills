@@ -14,9 +14,9 @@ reviewers, account logins only and automatic updates off: none of that changes.
   installer decided whether a harness command exists by running `<command> --version` with a
   five-second limit, and treated any failure, a timeout included, as "not installed".
 - The Gemini CLI was installed and on PATH, but took between 5.5 and 7.7 seconds to print its version
-  while other sessions were busy on the machine. So the installer reported `gemini command not
-  installed`, which was false, the updater saw no verified link for a harness its receipt lists, and
-  refused. The recovery replays the same harnesses and stopped the same way.
+  in four timed runs, while other sessions were busy on the machine. So the installer reported
+  `gemini command not installed`, which was false, the updater saw no verified link for a harness its
+  receipt lists, and refused. The recovery replays the same harnesses and stopped the same way.
 - The retained rollback command, run by hand, worked whenever the command happened to answer in time.
   The same update had worked two days earlier, when it did.
 
@@ -26,14 +26,20 @@ could be stopped this way. Reviews themselves were not affected.
 **What changes**
 - The installer finds a harness command on PATH instead of timing it. This holds for `gemini`,
   `claude` and `agy` alike, in both copies of the installer.
-- A command that is found but does not answer `--version` within 30 seconds is still linked, and the
-  installer says that it did not answer. A command that is not on PATH is skipped as before, and
-  nothing is created for it. A command that is found but whose `--version` reports a failure is not
-  linked, as before, and the installer says what failed. The words "not installed" are gone.
+- `--version` is still asked once, with a limit of 30 seconds. A command that is found but gives no
+  answer in that time still counts as installed, and the installer says that it did not answer. Claude
+  Code and Antigravity are then linked by their folder links. Gemini is linked by its own
+  `gemini skills link`: if that command gives no answer within 30 seconds either, the skill is not
+  linked, the installer names the command and does not start it again, and an update stops.
+- A command that is not on PATH is skipped as before, and nothing is created for it. A command that is
+  found but whose `--version` reports a failure is not linked, as before, and the installer says what
+  failed. The words "not installed" are gone.
 - When a harness cannot be verified, the updater gives the installer's own reason after `Harness
-  replay did not verify`. It still stops, still claims nothing it could not verify, and still leaves
-  the recovery command.
-- `updating.md` has a section on what that message means and what to check.
+  replay did not verify`, and after `Installer replay failed` when the installer itself reported a
+  failure. It still stops, still claims nothing it could not verify, and still leaves the recovery
+  command.
+- `updating.md` has a section on what those messages mean, with a table of the outcomes and what to
+  check.
 
 **Updating to 1.17.3 from 1.17.2 or earlier**
 The updater that runs is the installed one, but it replays the installer of the release it has checked

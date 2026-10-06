@@ -19,13 +19,16 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
   record was left and every later update was refused until the retained rollback had been run.
 - **Cause.** The updater runs the installer once for each harness scope in the receipt. The installer's
   `commandExists` ran `<command> --version` with a fixed five-second limit and treated a timeout as
-  absence. `gemini --version` took 7.4, 7.7 and 5.9 seconds in three timed runs on that machine, which
-  was busy with other sessions. The installer therefore printed `gemini command not installed` for a
-  command that is installed and on PATH; a dry run of the installer showed exactly that row.
+  absence. `gemini --version` took 7.4, 7.7 and 5.9 seconds in three consecutive timed runs on that
+  machine, which was busy with other sessions, and 5.5 seconds in a fourth, later run. The installer
+  therefore printed `gemini command not installed` for a command that is installed and on PATH; a dry
+  run of the installer showed exactly that row.
 - **How the update was completed.** With no review running from the installed copy, and with the
-  Gemini CLI's own relaunch switched off for that one command (`GEMINI_CLI_NO_RELAUNCH=true`), its
-  version came back in about 3.8 seconds and the third attempt verified. Nothing in MOMM, the receipt,
-  permissions or system settings was changed. That is a workaround for one machine, not a fix.
+  Gemini CLI's own relaunch switched off for that one command (`GEMINI_CLI_NO_RELAUNCH=true`), the
+  third attempt verified. With the relaunch switched off, `gemini --version` took 4.8, 4.3 and 4.5
+  seconds in three timed runs and 3.8 seconds in each of two later ones: inside the five-second limit
+  every time. Nothing in MOMM, the receipt, permissions or system settings was changed. That is a
+  workaround for one machine, not a fix.
 - **Who was affected.** Anyone updating with a receipt that lists a harness whose command takes more
   than five seconds to print its version. Reviews were not affected. The same update had worked on
   4 October, when the command answered in time, so the defect shows only on a slow start.
@@ -39,11 +42,14 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
   rule for tools (an absolute PATH entry, its real path checked, nothing from inside the clone), with
   the `.cmd` and `.bat` shims that npm writes counted on Windows for harness commands only.
 - `--version` is still asked once, with a limit of 30 seconds. The result is one of four: present;
-  absent (not on PATH), skipped and nothing created; found but silent, linked and said so; found but
-  failing, not linked and said so.
-- Gemini is linked through its own `gemini skills link`. After a silent version check one link is
-  attempted; if that is silent too the row is an error that names the command, and the command is not
-  started again for the remaining skills.
+  absent (not on PATH), skipped and nothing created; found but silent, counted as installed and said
+  so; found but failing, not linked and said so.
+- What follows for a command that is found but silent depends on how its harness is linked. Claude
+  Code and Antigravity get the folder links the installer makes itself. Gemini is linked through its
+  own `gemini skills link`, so after a silent version check that command is still run. If a link
+  command is silent too, its row is an error that names the command, that skill is not linked, the
+  command is not started again for the remaining skills, and an update stops. The outcomes are in one
+  table in [updating.md](updating.md).
 - The updater's stop message carries the installer's reason. The refusal, the automatic recovery and
   the retained recovery command are unchanged.
 
