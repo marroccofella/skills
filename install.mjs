@@ -59,15 +59,18 @@ function runCommand(command, args, options = {}) {
 }
 // Harness command detection (1.17.3; field report, 6 October 2026). Whether a harness is there used to be
 // decided by running `<command> --version` with a five-second limit, and any failure, a timeout included,
-// was read as an absent command: a Gemini CLI that took six seconds to start lost its link, and the updater
-// then refused the whole update. Presence is now a PATH lookup (harnessLauncher in update.mjs: an absolute
+// was read as an absent command: a Gemini CLI that took between 5.5 and 7.7 seconds to start lost its
+// link, and the updater then refused the whole update. Presence is now a PATH lookup (harnessLauncher in update.mjs: an absolute
 // PATH entry outside this clone, real path checked), which does not depend on how fast the command starts.
 // `--version` is still asked, once per run, because a command that is found and reports a failure is not
-// linked, as before. A command that is found and does not answer within the limit is installed: it is
-// linked, and its row and stderr say that it did not answer. A command that is not found is skipped and
+// linked, as before. A command that is found and does not answer within the limit is installed: its row and
+// stderr say that it did not answer, and it is linked as an answering one is (claude and antigravity by a
+// folder link; gemini by its own `gemini skills link`, which has to answer as well: a skill whose link
+// command does not answer gets an error row and is not linked). A command that is not found is skipped and
 // nothing is created for it, as before. The limit is the one `gemini skills link` already had; a harness
 // that answers nothing is given up after two of them (its version, then one link command), inside the 180
-// seconds the updater allows a replayed scope. MOMM_HARNESS_TIMEOUT_MS (milliseconds) changes it for a test.
+// seconds the updater allows a replayed scope and onboarding allows its link. MOMM_HARNESS_TIMEOUT_MS
+// (milliseconds) changes it for a test.
 const HARNESS_TIMEOUT_MS = 30_000;
 const harnessLimit = () => (/^\d{3,5}$/.test(process.env.MOMM_HARNESS_TIMEOUT_MS ?? "") ? Math.min(60_000, Number(process.env.MOMM_HARNESS_TIMEOUT_MS)) : HARNESS_TIMEOUT_MS);
 // SIGKILL: a command that ignores the default signal would hold spawnSync beyond its limit.
@@ -81,7 +84,7 @@ function harnessCommand(command) {
   if (found) {
     const probe = runCommand(command, ["--version"], withinLimit());
     if (timedOut(probe)) result = { name, state: "unresponsive", path: found, detail: `${name} command found at ${found} but \`${name} --version\` did not answer within ${harnessLimit() / 1000} s` };
-    else if (probe.error || probe.status !== 0) result = { name, state: "failed", path: found, detail: `${name} command found at ${found} but \`${name} --version\` failed (${probe.error ? probe.error.code || "it could not be started" : `exit ${probe.status}`})` };
+    else if (probe.error || probe.status !== 0) result = { name, state: "failed", path: found, detail: `${name} command found at ${found} but \`${name} --version\` failed (${probe.error ? probe.error.code || "it could not be started" : probe.signal ? `killed by ${probe.signal}` : `exit ${probe.status}`})` };
     else result = { name, state: "present", path: found };
     if (result.state === "unresponsive") process.stderr.write(`${result.detail}. It is on PATH, so it is treated as installed.\n`);
   }
