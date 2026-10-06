@@ -72,7 +72,50 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
 ## Reviews
 
 Gate 3 is met only when every range review of the 1.17.3 changes is listed here with a complete
-receipt. None is listed yet; until they are, gate 3 is open.
+receipt. One is listed. The last review, of what this one led to and of this record's entries, is
+not yet listed; until it is, gate 3 is open.
+
+- `rev_20261006114459_9a78d7989ef2` — the fix and the release changes (seven pieces). Quorum is two
+  valid reviews of a piece, and it was met on all seven. By piece:
+  - Pieces 1, 2, 4, 5 and 7: four valid reviews each, one from each route (Codex, Antigravity,
+    Copilot, Grok).
+  - Piece 3, which holds the skill installer, the updater and the installer's completion suite: two
+    valid reviews, from Codex and Copilot. Antigravity's attempt ended with a provider error (503)
+    and Grok's timed out.
+  - Piece 6, one of three pieces of the updater's suite: three valid reviews, from Codex, Copilot
+    and Grok. Antigravity's attempt timed out.
+  - Two of the valid reviews were accepted on a retry, after the first answer was refused because
+    a quote did not match the diff: Copilot's of piece 2 and Grok's of piece 6.
+  - Three cover reviews were run in the roles left empty (Codex for Antigravity on pieces 3 and 6,
+    Copilot for Grok on piece 3). A cover review does not count towards quorum; its findings were
+    ruled like any other.
+
+  Verdicts by route: Antigravity ACCEPT, which rests on pieces 1, 2, 4, 5 and 7; Codex and Copilot
+  MODIFY; Grok MODIFY, which rests on every piece but 3. 15 WARNING and 8 NITPICK: ten real and
+  fixed, thirteen shown not to hold. 61 suggestions ruled, nine applied. Receipt complete.
+
+  The real findings, in the product: for a receipt written by the repository installer the updater
+  printed no `Note:` for a harness that was linked although its command did not print its version
+  (the stop reason was never lost; the note now follows either installer); onboarding's `--link`
+  gave the installer 45 seconds, less than two silent calls of 30, so a Gemini CLI that answered
+  nothing was cut off with only "treated as installed" (it now has 180 seconds and ends with the
+  whole reason); and the installers' own comment said a silent command "is linked" without the
+  condition for Gemini. In the records: `updating.md` and `harness-compatibility.md` said the same
+  for every harness (they now give Gemini apart, `updating.md` in a table), and "six to eight
+  seconds" left out two of the four measured runs. In the tests: a variable for the time limit
+  spelt in another case on Windows reached the child; the seven-second test could pass for an
+  installer that never started Gemini's link command, on the other installer's log; the PATH
+  lookup test could not tell a relative or empty entry from an absolute one; the check of the
+  updater's time allowance read the wrong number; and the fixture's `git tag` could start a
+  signing program on a machine set to sign tags.
+
+  Not real: two claims that the bootstrap links name 1.17.3 before its tag (every release is
+  sealed that way); one about the catalogue entry's link to the branch, which is how a candidate
+  is listed and is set to the pull request before the seal; one that the release notes were
+  missing from the range, made from one piece of it; and nine about the code and tests, each
+  answered by running the code. Among those: the tests for the silent, absent and failing cases
+  are in the updater's suite, which that reviewer's piece did not hold; the lower time bounds
+  cannot fail on a slow machine; the lookup is never called without a command name.
 
 ## Carried forward
 
