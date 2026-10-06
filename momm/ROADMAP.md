@@ -1,9 +1,8 @@
 # MOMM Roadmap — alignment record
 
 **Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.3**, a candidate sealed on 6 October 2026 and not yet published: its signed tag
-`momm-1.17.3` will be created by the release workflow when the release gates pass. Until then the signed
-release is `momm-1.17.2`, 5 October 2026. Nothing else
+only sources. Today they say **1.17.3**, released on 6 October 2026; its signed tag `momm-1.17.3` was created by the
+release workflow after exact-main CI and six hosted lifecycle cells passed. The previous signed release is `momm-1.17.2`, 5 October 2026. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -33,10 +32,11 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
-- **Now: 1.17.3 sealed candidate, publication pending.** A patch for the installer and the updater: a
-  harness command that took more than five seconds to answer `--version` was reported as not installed,
-  and an update stopped ([gate record and finding](references/gates-1.17.3.md)). Reviews themselves were
-  not affected.
+- **1.17.3 released.** A patch for the installer and the updater: a harness command that took more
+  than five seconds to answer `--version` was reported as not installed, and an update stopped.
+  Reviews themselves were not affected:
+  [gate record, finding and release closure](references/gates-1.17.3.md). Exact-main CI, signed
+  checkpoint, six hosted lifecycle cells and signed stable publication passed.
 - **1.17.2 released.** A patch for the suite pack and two self-tests, which failed when
   `MOMM_EVIDENCE_HOME` was set (an independent tester got 74 of 97 on 1.17.1). Reviews themselves were
   not affected: [gate record, finding and release closure](references/gates-1.17.2.md). Exact-main CI,

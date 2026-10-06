@@ -1,7 +1,21 @@
 # MOMM 1.17.3 — release notes
 
-**Sealed; publication pending the signed release workflow.** Until the signed tag `momm-1.17.3` is
-published, the current signed release remains 1.17.2. Do not install an unsigned branch as a signed release.
+**Released 6 October 2026.** The signed tag [momm-1.17.3](https://github.com/marroccofella/skills/releases/tag/momm-1.17.3)
+names commit `507e5f778110755be91eebc03ef4309538414857`, the exact sealed candidate tree
+squash-merged from pull request 51. Do not install an unsigned branch as a signed release.
+
+The immutable signed tag retains the pre-publication notes (publication pending) and
+the `version-notes` history entry that were sealed before release. This post-release
+document and the live release page are the publication record; the signed payload is
+not retagged or resealed merely to change its historical notes.
+
+Release evidence: [exact-main CI, 15/15](https://github.com/marroccofella/skills/actions/runs/37485923734),
+[signed checkpoint](https://github.com/marroccofella/skills/actions/runs/37488121871),
+[six hosted lifecycle cells, 13/13 steps each](https://github.com/marroccofella/skills/actions/runs/37489577070),
+and [stable signing and update smoke](https://github.com/marroccofella/skills/actions/runs/37491690164).
+Every lifecycle cell exercised recovery from interrupted upgrades from both 1.17.2 and 1.17.1.
+Fresh-clone verification validated the Git signature, Rekor entry, expected certificate claims
+and sealed payload; an intentionally wrong signing identity was refused.
 
 1.17.3 is a patch for updating MOMM. Nothing changes in how a review runs. One writer, read-only
 reviewers, account logins only and automatic updates off: none of that changes.
