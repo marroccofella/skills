@@ -1,8 +1,10 @@
-# 1.17.3 gate record — candidate, not released
+# 1.17.3 gate record — released 6 October 2026
 
-This record names no current commit: a file cannot name its own commit. The candidate under test is
-the head of the 1.17.3 pull request. The published release stays 1.17.2 until the signed tag
-`momm-1.17.3` exists.
+The signed tag `momm-1.17.3` was published on 6 October 2026 at
+`507e5f778110755be91eebc03ef4309538414857`. The release closure at the end records that immutable
+payload; these later documentation changes do not retag it or change its seal. Statements below that
+say "after the merge" or "still required" are kept as the candidate's history; the closure says what
+happened.
 
 ## Why this release exists
 
@@ -62,12 +64,12 @@ owner instructed the same day that the fix be completed and released as 1.17.3.
 
 | Gate | Evidence required | Status |
 | --- | --- | --- |
-| 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, a dry run of the installer on the machine where the defect was seen, and the OS by Node matrix | Run output and job logs | named in the pull request |
-| 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.2 and 1.17.1 | Six hosted cells | after the merge |
+| 1. The pack in three ways on the sealed commit (nothing set; `MOMM_EVIDENCE_HOME` inherited; `--save-report --evidence-home`), the three self-tests with the variable set and unset, a dry run of the installer on the machine where the defect was seen, and the OS by Node matrix | Run output and job logs | passed: 98 of 98 in each of the three ways on the sealed commit (Windows, Node 22.16), the evidence home left empty or holding only the runner's own run; the three self-tests passed both ways; a dry run of each installer reported the Gemini command as present (the CLI answered in about four seconds, so the dry run did not meet the slow case, which the suites run with stand-in commands); matrix run 37476338674 passed 15/15 on the sealed commit and run 37485923734 passed 15/15 on `main` |
+| 2. Lifecycle drills on the signed checkpoint, upgrading from 1.17.2 and 1.17.1 | Six hosted cells | passed: run 37489577070, six cells, 13/13 steps each, on the signed checkpoint of the merged commit |
 | 3. MOMM range reviews of every change, with completion receipts | Receipts | two reviews, each with a complete receipt: see Reviews, which also says what was not reviewed |
-| 4. Privacy and history scan before every push | Scanner exit 0 | applied to every push |
+| 4. Privacy and history scan before every push | Scanner exit 0 | passed: exit 0, working tree and history clean, before each push of the release branch and of the drills branch |
 | 5. Live review with every installed reviewer route valid | Report | see the reviews below, by route and piece |
-| 6. Signed tag `momm-1.17.3` | Release workflow run | approved by the owner's instruction of 6 October 2026, if every gate above passes on the final sealed commit |
+| 6. Signed tag `momm-1.17.3` | Release workflow run | passed: approved by the owner's instruction of 6 October 2026, if every gate above passes on the final sealed commit; they did, and stable run 37491690164 passed; fresh-clone signature, transparency, identity and payload verification passed |
 
 ## Reviews
 
@@ -182,6 +184,9 @@ only as the first review's changes to them.
 
 ## Still required before the tag
 
+Historical: this section is what the sealed candidate still needed. All five steps were then done; see
+the release closure below.
+
 Owner approval. On 6 October 2026 the owner instructed that 1.17.3 be completed and released. That
 instruction is the owner's approval for the signed tag, on condition that every gate passes on the
 final sealed commit. If a gate does not pass, the tag is not made and the decision goes back to the
@@ -192,3 +197,59 @@ owner.
 3. The squash merge with the sealed tree unchanged, and the matrix green on `main`.
 4. The signed `main-checkpoint`, then the six lifecycle drill cells on it.
 5. The signed tag, then the publication record.
+
+## Release closure — 6 October 2026
+
+The owner instructed the release governor to complete and release 1.17.3. Pull request 51 was marked
+ready and squash-merged through the normal path; no administrative override or alternative route was
+used. The squash commit `507e5f778110755be91eebc03ef4309538414857` has exactly the tree of candidate
+`f6c4ee38ab5660570632b913043b7fca6f1cc48d`. Both commits have the tree
+`bf5525502e56e58d816c792907ad6b3add95d3ed`. The seal is unchanged:
+`293f121275c6b4d39dd1665e09450cf96bb4921e35a083ec3405e3a12dcf89ab`.
+
+- Sealed candidate, on Windows, Node 22.16: the pack passed 98 of 98 with nothing set (under an 8.3
+  short temp path), 98 of 98 with `MOMM_EVIDENCE_HOME` inherited (the home was empty afterwards), and
+  98 of 98 with `--save-report --evidence-home` (the home held only the runner's own run). The
+  dispatcher, Setup Center and ledger self-tests passed with the variable unset and set. A fresh clone
+  of the pushed branch passed the seal check; the pack was not run again in that clone. The hosted
+  matrix on the sealed commit:
+  [run 37476338674](https://github.com/marroccofella/skills/actions/runs/37476338674), 15/15: the fourteen matrix cells and the
+  `site-and-ledger` job.
+- The installer on the machine where the defect was seen: a dry run of each installer for Gemini, from
+  the sealed tree, reported the command as present. The Gemini CLI answered in about four seconds in
+  those two runs, so they did not meet the slow case. The slow and the silent cases are run by the
+  suites, with stand-in commands.
+- Exact-main CI: the same matrix on `main`,
+  [run 37485923734](https://github.com/marroccofella/skills/actions/runs/37485923734), 15/15 on
+  `507e5f778110755be91eebc03ef4309538414857`. It is the run the catalogue entry names as
+  `matrix_run`, as for 1.17.2 and 1.17.1. The hosted runs of this matrix, on the branch and on
+  `main`, are the only place the new code paths ran on macOS and Linux.
+- Signed checkpoint: [run 37488121871](https://github.com/marroccofella/skills/actions/runs/37488121871); tag
+  `momm-main-507e5f778110755be91eebc03ef4309538414857`.
+- Lifecycle drills: [run 37489577070](https://github.com/marroccofella/skills/actions/runs/37489577070) on that checkpoint;
+  six hosted cells (Windows, macOS and Linux, Node 18 and 24), 13/13 steps each: fresh signed install,
+  signed installs of 1.17.2 and 1.17.1, upgrade, rollback, re-upgrade and recovery from an interrupted
+  upgrade from each, and refusal of a damaged payload.
+- Signed stable release: [run 37491690164](https://github.com/marroccofella/skills/actions/runs/37491690164), published
+  2026-10-06T16:00:00Z. The updater smoke on the genuine signature (preview and apply) passed in that run.
+- Fresh-clone verification of the tag: `gitsign verify-tag` with the expected workflow identity
+  validated the Git signature, the Rekor entry and the certificate claims; the same command with
+  another repository's identity was refused; `scripts/momm-release.mjs --check` passed on the tag's
+  checkout; the live `versions.json` on `main` names 1.17.3 with this seal.
+
+What this release did not have. No report from an independent tester of the sealed candidate was on
+pull request 51 or in Discussion 32 when both were read just after the tag was made; the sealed
+candidate had been public for under two hours when the tag was made (from 14:07 to 15:59 UTC).
+The whole pack in the three ways was run on Windows only; on macOS and Linux the evidence is the
+hosted matrix. The drills are GitHub-hosted runners, not the owner's machines, and no drill meets a
+slow harness command. The update that failed on 6 October
+was not repeated from 1.17.2 to 1.17.3 on the maintainer's machine before the tag; that install
+follows the release and needs the owner's acceptance. The skill installer and the updater had two
+valid reviews of the fix itself, as the Reviews section says.
+
+This publication record was reviewed once, as the range from the released commit to the record
+(`rev_20261006160312_1a7d2739fcd0`): four valid reviews, one from each route (Codex, Antigravity,
+Copilot, Grok), each at the first attempt. Codex, Antigravity and Grok ACCEPT; Copilot MODIFY. One
+WARNING: that the catalogue names the wrong run as `matrix_run`. The field is right, and the
+wording of this closure that led to the reading is changed. Six suggestions ruled, two applied.
+Receipt complete. What that review led to, and this paragraph, were not reviewed.
