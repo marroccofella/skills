@@ -61,7 +61,7 @@ stop and report it; do not look for another source and do not continue without t
 ## First establish trust in the bootstrap tool
 
 Older releases do not contain `momm/scripts/bootstrap.mjs`. Obtain the standalone
-[bootstrap source](https://github.com/marroccofella/skills/blob/momm-1.17.2/momm/scripts/bootstrap.mjs)
+[bootstrap source](https://github.com/marroccofella/skills/blob/momm-1.17.3/momm/scripts/bootstrap.mjs)
 separately from the candidate release. Inspect the complete file with your agent
 and approve trusting it before running it; alternatively use a copy your
 organization has already reviewed and distributed. It imports Node builtins only.

@@ -1,8 +1,18 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.2",
+  "momm": "1.17.3",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.3",
+      "tag": "momm-1.17.3",
+      "changes": [
+        "An update no longer stops with \"Harness replay did not verify\" because a harness command is slow to start: until 1.17.2 the installer called a harness \"not installed\" when its --version took more than five seconds (seen with the Gemini CLI on Windows, which took six to eight).",
+        "The installer now finds a harness command on PATH instead of timing it. A command that is found but does not answer --version within 30 seconds is still linked, and the installer says so; a command that is not on PATH is skipped as before, and nothing is created for it.",
+        "When a harness cannot be verified, the updater now gives the installer's reason. An update it cannot verify still stops and still leaves the recovery command.",
+        "No change to how a review runs, to SKILL.md, the reviewer roles or the review contract."
+      ]
+    },
     {
       "version": "1.17.2",
       "tag": "momm-1.17.2",
