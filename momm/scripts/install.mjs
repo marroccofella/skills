@@ -65,8 +65,8 @@ function parseArgs(argv) {
 
 // Harness command detection (1.17.3; field report, 6 October 2026). Whether a harness is there used to be
 // decided by running `<command> --version` with a five-second limit, and any failure, a timeout included,
-// was read as an absent command: a Gemini CLI that took six seconds to start lost its link, and the updater
-// then refused the whole update. Presence is now a PATH lookup (harnessLauncher in update.mjs: an absolute
+// was read as an absent command: a Gemini CLI that took between 5.5 and 7.7 seconds to start lost its
+// link, and the updater then refused the whole update. Presence is now a PATH lookup (harnessLauncher in update.mjs: an absolute
 // PATH entry outside this clone, real path checked), which does not depend on how fast the command starts.
 // `--version` is still asked, once per run, because a command that is found and reports a failure is not
 // linked, as before. A command that is found and does not answer within the limit is installed: its row and

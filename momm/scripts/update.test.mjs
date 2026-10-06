@@ -815,7 +815,7 @@ try {
   // ---- 1.17.3 (field report, 6 October 2026): a harness command that answers slowly ----
   // Installing 1.17.2 stopped with "Harness replay did not verify momm for gemini". The installers decided
   // whether a harness exists by running `<command> --version` with a five-second limit and read any failure,
-  // a timeout included, as "not installed"; the Gemini CLI, installed and on PATH, took six to eight seconds.
+  // a timeout included, as "not installed"; the Gemini CLI, installed and on PATH, took between 5.5 and 7.7 seconds.
   // Every harness command below is a stand-in written into a temporary folder that is the only PATH entry
   // its child is given (or the first, before a folder that holds Git alone). No provider CLI is started.
   {
