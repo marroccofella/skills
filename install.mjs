@@ -21,15 +21,12 @@ import { installationCompletion } from "./momm/scripts/installations.mjs";
 if (process.platform === "win32" && !process.env.NoDefaultCurrentDirectoryInExePath) process.env.NoDefaultCurrentDirectoryInExePath = "1";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
-// Deprecated aliases are not freshly installed by the bulk installer.
-const SKIP = new Set(["multi-llm-review"]);
-
 // A skill is any top-level directory containing a SKILL.md. Names are
 // restricted to a safe charset: a directory named with shell metacharacters
 // must never reach the cmd.exe-wrapped gemini link on Windows.
 function discoverSkills() {
   return fs.readdirSync(repoRoot, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && /^[A-Za-z0-9._-]+$/.test(e.name) && !SKIP.has(e.name))
+    .filter((e) => e.isDirectory() && /^[A-Za-z0-9._-]+$/.test(e.name))
     .filter((e) => fs.existsSync(path.join(repoRoot, e.name, "SKILL.md")))
     .map((e) => e.name)
     .sort();
