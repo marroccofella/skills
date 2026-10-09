@@ -22,7 +22,10 @@ node momm/scripts/setup-ui.mjs --self-test
 
 Record the process exit status immediately after each test (`$LASTEXITCODE` in PowerShell,
 `$?` in a POSIX shell). Then recheck HEAD and clean status. The previous local result is
-152 canonical dashboard checks plus 20 standalone probes, not a result promised for every OS.
+152 canonical dashboard checks plus 20 standalone probes. A subsequent receipt-copy fix
+adds one canonical regression (153 checks). Neither is a result promised for every OS.
+The fresh review still has deferred-open findings/suggestions; see the gate record. This
+candidate is available to investigate them, not a declaration of release readiness.
 
 For wider offline coverage, optionally run:
 

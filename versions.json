@@ -13,7 +13,7 @@
         "CLI updates and account recovery are explained separately. Action receipt copies contain fixed fields only, never commands, OAuth details, local paths or raw diagnostics.",
         "No reviewer additions/removals, model or quota changes, permission relaxation, automatic login or automatic updates. Signed publication remains gated separately."
       ],
-      "sha256": "73561587453e12000f74bd02cf6e57f72e074403234a01228bb6f3c2487f246f",
+      "sha256": "9864aa09127fa240aea2025634fcbf19124ade408613633d4f3bd432c5e19996",
       "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {

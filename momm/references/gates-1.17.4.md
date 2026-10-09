@@ -107,3 +107,28 @@ The candidate has a payload seal for integrity checking, not a signed stable tag
 approval. Exact public HEAD, current CI status and original tester results belong in the
 candidate PR and Discussion #32. Full final pack, hosted matrix, promotion, checkpoint,
 lifecycle drills, stable signing and fresh public verification remain separate gates.
+
+## Fresh public-testing review — still open
+
+`rev_20261009020902_ca60551a26b4` reviewed the dashboard, server, tests and testing notes
+at `4ecb1fb7560417065a5ef4f08210ffba602ace86`, with 2/2 valid external reviews on all five
+pieces. Claude returned MODIFY overall; Copilot ACCEPT. There were no CRITICAL findings;
+24 findings included 11 WARNING claims, and there were 57 suggestions. Agreement score
+was zero; the risk map pointed mainly to client interaction and test-probe quality. These
+are untrusted claims, not 24 independently reproduced defects.
+
+The maintenance table's Copy action receipt button had no delegated handler. A new
+governor-authored production-listener test failed before the fix, then passed after adding
+receipt-copy delegation. Copying does not launch an action; normal action delegation is
+also checked. The canonical suite now runs that regression and passes 153 checks; the
+standalone 20 probes pass separately. This follow-up is not yet covered by a closing review.
+
+One finding is applied with modification; the remaining 23 findings and 57 suggestions
+are explicitly deferred-open for governor investigation/disposition. Many claims cite
+neighboring code missing from their split piece, but that does not automatically refute
+them. No completion receipt is claimed for this fresh review. The testing candidate may
+help reproduce these cases; it must not be represented as ready for stable publication.
+
+Original local receipts, failed attempts and before/after observations remain private.
+The public SHA in the candidate PR supersedes earlier local pins for new testing; those
+earlier results stay historical rather than being reattributed to the new tree.

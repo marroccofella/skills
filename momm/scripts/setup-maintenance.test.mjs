@@ -1799,6 +1799,18 @@ await test('bare HTTP statuses remain generic; only a fixed private-session code
   await c.core.launchAction('antigravity','login');assert.match(c.toasts.at(-1),/reopen the private Setup Center launch link/);
 });
 const dashboardSession={token:'fixture-session',platform:'win32',providers:{codex:{label:'Codex',docs:'x'},copilot:{label:'Copilot',docs:'x'},grok:{label:'Grok',docs:'x'}}};
+await test('maintenance receipt-copy click reaches its production listener and never launches',async()=>{
+  const begin=client.indexOf('maintenanceGrid.addEventListener("click",'),end=client.indexOf('maintenanceGrid.addEventListener("change",',begin);
+  assert(begin>=0&&end>begin,'production maintenance listener exists');let listener;
+  const copies=[],actions=[],context=vm.createContext({maintenanceGrid:{addEventListener:(type,fn)=>{assert.equal(type,'click');listener=fn;}},
+    copySetupText:(text,kind)=>copies.push([text,kind]),receiptCopy:provider=>JSON.stringify({provider,action:'update',status:'launch_requested',completion:'unobserved'}),
+    launchAction:(...args)=>actions.push(args),clockAction(){},timerAction(){},runBatchUpdate(){},runAllUpdates(){}});
+  vm.runInContext(client.slice(begin,end),context);
+  await listener({target:{closest:selector=>selector==='[data-copy-receipt]'?{dataset:{copyReceipt:'codex'}}:null}});
+  assert.equal(copies.length,1,'maintenance receipt click reaches the copy handler exactly once');assert.equal(copies[0][1],'receipt');assert.equal(JSON.parse(copies[0][0]).provider,'codex');assert.equal(actions.length,0,'copy never launches');
+  await listener({target:{closest:selector=>selector==='[data-maint-action]'?{dataset:{maintProvider:'copilot',maintAction:'update'}}:null}});
+  same(actions,[['copilot','update']],'ordinary action delegation is preserved');assert.equal(copies.length,1);
+});
 const dashboardMaintenance=()=>({cli_updates:[
   {agent:'codex',current:'1.0.0',latest:'1.1.0',status:'update_available',installed:true,update_command:'synthetic codex'},
   {agent:'copilot',current:'1.0.0',latest:'1.1.0',status:'update_available',installed:true,update_command:'synthetic copilot'},

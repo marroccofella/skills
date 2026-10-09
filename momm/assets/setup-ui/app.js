@@ -1398,6 +1398,8 @@ grid.addEventListener("click", async (event) => {
   if (testButton) runTest(testButton.dataset.test);
 });
 maintenanceGrid.addEventListener("click", (event) => {
+  const receiptButton = event.target.closest('[data-copy-receipt]');
+  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt');
   const button = event.target.closest("[data-maint-action]");
   if (button) launchAction(button.dataset.maintProvider, button.dataset.maintAction);
   const clockButton = event.target.closest("[data-clock-action]");
