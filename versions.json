@@ -1,8 +1,21 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.3",
+  "momm": "1.17.4",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.17.4",
+      "tag": "momm-1.17.4",
+      "changes": [
+        "Setup Center keeps a tab-local action receipt after a terminal launch; acceptance is distinct from unobserved terminal/login completion, and uncertain responses never imply a successful login.",
+        "Provider cards distinguish local OAuth evidence from live verification, name weak/shared Antigravity evidence, and invalidate previous verification when a new login is requested.",
+        "Inconclusive version checks offer a zero-model discovery retry, the safe version command and fresh-terminal guidance; login commands can be copied without launching anything.",
+        "CLI updates and account recovery are explained separately. Action receipt copies contain fixed fields only, never commands, OAuth details, local paths or raw diagnostics.",
+        "No reviewer additions/removals, model or quota changes, permission relaxation, automatic login or automatic updates. Signed publication remains gated separately."
+      ],
+      "sha256": "7cf76fe903d96769baa2d8c08638a29460067d9165b7b0269888cee501df44f0",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
+    },
     {
       "version": "1.17.3",
       "tag": "momm-1.17.3",

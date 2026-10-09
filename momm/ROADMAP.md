@@ -1,8 +1,9 @@
 # MOMM Roadmap — alignment record
 
-**Current release:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
-only sources. Today they say **1.17.3**, released on 6 October 2026; its signed tag `momm-1.17.3` was created by the
-release workflow after exact-main CI and six hosted lifecycle cells passed. The previous signed release is `momm-1.17.2`, 5 October 2026. Nothing else
+**Manifest version:** `versions.json` (`momm`) and its `references/release-<version>.md` are the
+only sources. Today they say **1.17.4**, a setup-stabilization candidate, not yet published.
+Stable remains **1.17.3**, signed tag `momm-1.17.3`, released on 6 October 2026 after exact-main CI and six hosted lifecycle
+cells passed. The signed tag `momm-1.17.4` will be created only after its release gates pass. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).
 
@@ -32,6 +33,19 @@ or an independent benchmark; publication state belongs in the site changelog.
 
 ## Now / next / later
 
+- **Now: 1.17.4 setup stabilization, publication pending.** Issue #57 exposed transient launch
+  feedback, hidden shared-account caveats and poor version-timeout recovery. The candidate keeps
+  tab-local fixed-field action receipts, separates launch acceptance from unobserved completion,
+  provides safe command copying and discovery retry, and retains explicit synthetic verification.
+  It does not add/remove reviewers or handle browser authentication. Acceptance and limits:
+  [gate record](references/gates-1.17.4.md). Broader reviewer management belongs to 1.18.
+  9 October local follow-up (not released): the Setup Center adds a sticky, denominator-labelled
+  live-verification percentage, an explicit Update all available CLIs action, an in-page exact-command
+  confirmation and a one-click walkthrough. The batch path shares single-action receipts, preserves
+  previous verification on refused launches, avoids raw diagnostic text, and stops on unknown launch
+  or version-change outcomes. Synthetic browser/HTTP checks are not proof of actual OAuth completion
+  or native terminal visibility. These working-tree changes invalidate the prior candidate seal;
+  a fresh final-source review, seal and release gates remain required.
 - **1.17.3 released.** A patch for the installer and the updater: a harness command that took more
   than five seconds to answer `--version` was reported as not installed, and an update stopped.
   Reviews themselves were not affected:

@@ -69,6 +69,35 @@ Add `--link` only when the user wants MOMM added to the current harness's skill 
 
 OAuth presence is only local evidence, not proof that a session is live. The Setup Center makes that distinction visible and fails closed with **Needs login** when its synthetic verification finds an expired or shared session.
 
+### Setup action feedback (1.17.4)
+
+A sign-in click leaves a receipt on its card for the lifetime of that tab, rather than only a
+temporary notification. **Launch request accepted** means the terminal process was admitted;
+the page cannot observe completion inside a detached terminal, prove that a browser opened,
+or certify the login. Finish the provider's login yourself, then choose **Verify after login**.
+That check sends one synthetic provider request and uses allowance, never project source.
+A confirmed login launch clears the previous successful check; a confirmed refusal preserves it.
+An unconfirmed launch invalidates a previous success conservatively, but retains evidence that
+authentication is required. Verification remains separate from
+the terminal action's unobserved completion; receipts are not installation or review receipts.
+
+**Retry discovery** reruns local discovery without a model call. An inconclusive version check
+is not proof of missing installation or authentication. Run the displayed version command in a
+fresh terminal when PATH changed. CLI updates do not repair authentication, quota, retired tiers
+or service outages. A compatibility warning continues to offer its update path, not another login.
+
+**Copy login command** copies a fixed official command and launches nothing. **Copy action receipt**
+copies only provider, action, launch status and `completion: unobserved`; there are no commands,
+OAuth codes/URLs, account identifiers, machine paths or raw diagnostics. Receipts disappear on
+reload. If copying is unavailable, the login command remains visible. A lost launch response is
+unconfirmed: check whether a terminal already opened before retrying.
+
+The page observes a provider launch for at most 15 seconds (120 seconds for the signed-update
+preview's prerequisites). This bounds the page's waiting state, not the terminal or OAuth flow:
+an unconfirmed request can still have launched. No observation timeout automatically retries it.
+After a live check passes, the last terminal action stays explicitly historical and no longer
+tells you to finish logging in. Blocked update actions retain fixed, actionable refusal reasons.
+
 ## Run the first review
 
 Start with one ready reviewer and an explicit minimum-success gate:

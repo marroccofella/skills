@@ -1634,7 +1634,7 @@ function createServer() {
     catch { return sendJson(response, 400, { error: "Invalid request URL" }); }
     try {
       if (request.method === "GET" && Object.hasOwn(STATIC_ASSETS, requestUrl.pathname)) return serveAsset(response, ...STATIC_ASSETS[requestUrl.pathname]);
-      if (requestUrl.pathname.startsWith("/api/") && !authorized(request)) return sendJson(response, 403, { error: "Use the private Setup Center launch link from your terminal." });
+      if (requestUrl.pathname.startsWith("/api/") && !authorized(request)) return sendJson(response, 403, { error: "Use the private Setup Center launch link from your terminal.", reason:'private_session' });
       if (request.method === "GET" && requestUrl.pathname === "/ledger") {
         if (!authorized(request)) {
           const ticket = requestUrl.searchParams.get("ticket"), expires = ledgerTickets.get(ticket);
@@ -1702,17 +1702,18 @@ function createServer() {
           const action = String(body.action || "").toLowerCase();
           const command = actionCommand(provider, action);
           if (!command) return sendJson(response, 400, { error: "Unsupported provider action" });
-          if ((provider !== 'skills' && ['update','install'].includes(action) || body.expected_command) && body.expected_command !== command) return sendJson(response, 409, {error:'Confirm the exact command first. Refresh versions if the installation changed.'});
+          const refuse = (status, reason, error) => sendJson(response, status, {error, receipt:{provider,action,status:'blocked',completion:'unobserved',reason}});
+          if ((provider !== 'skills' && ['update','install'].includes(action) || body.expected_command) && body.expected_command !== command) return refuse(409, 'command_mismatch', 'Confirm the exact command first. Refresh versions if the installation changed.');
           if (provider === "skills" && action === "update") {
             const bootstrap = await bootstrapStatus();
-            if (bootstrap.status !== 'ready_to_verify' || bootstrap.installation?.route !== 'updater_preview') { maintenanceCache=null; return sendJson(response, 409, { error: 'Update prerequisites or installation receipt need attention. Use the bootstrap guide; no update was launched.', guide: 'https://marroccofella.github.io/skills/momm/releases/bootstrap.html', update_readiness: bootstrap }); }
-            if (!fs.existsSync(path.join(skillsRoot, ".git"))) return sendJson(response, 409, { error: "The skills source is not a Git checkout." });
+            if (bootstrap.status !== 'ready_to_verify' || bootstrap.installation?.route !== 'updater_preview') { maintenanceCache=null; return sendJson(response, 409, { error: 'Update prerequisites or installation receipt need attention. Use the bootstrap guide; no update was launched.', guide: 'https://marroccofella.github.io/skills/momm/releases/bootstrap.html', update_readiness: bootstrap, receipt:{provider,action,status:'blocked',completion:'unobserved',reason:'update_prerequisites'} }); }
+            if (!fs.existsSync(path.join(skillsRoot, ".git"))) return refuse(409, 'no_git_checkout', 'The skills source is not a Git checkout.');
             const status = await runCommand("git", ["-C", skillsRoot, "status", "--porcelain"], { timeoutMs: 10_000 });
-            if (status.code !== 0) return sendJson(response, 409, { error: "Git could not verify that the skills checkout is safe to update." });
-            if (status.stdout.trim()) return sendJson(response, 409, { error: "Local skill changes are present. Handle them before updating." });
+            if (status.code !== 0) return refuse(409, 'git_check_failed', 'Git could not verify that the skills checkout is safe to update.');
+            if (status.stdout.trim()) return refuse(409, 'dirty_checkout', 'Local skill changes are present. Handle them before updating.');
           }
-          if (!launchTerminal(command)) return sendJson(response, 500, { error: "Could not open a terminal for this action.", command });
-          return sendJson(response, 202, { launched: true, command, note: actionNote(provider, action) });
+          if (!launchTerminal(command)) return sendJson(response, 500, { error: "Could not open a terminal for this action.", command, receipt: {provider, action, status:'launch_failed', completion:'unobserved'} });
+          return sendJson(response, 202, { launched: true, command, note: actionNote(provider, action), receipt: {provider, action, status:'launch_requested', completion:'unobserved'} });
         }
         if (requestUrl.pathname === "/api/maintenance") {
           const governor = String(body.governor || "codex").toLowerCase();

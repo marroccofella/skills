@@ -216,6 +216,18 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 .timer-row code { display: block; overflow-x: auto; padding: 6px 8px; white-space: pre; font-size: 10px; }
 .batch-cell { width: 28px; padding-right: 0 !important; }
 .batch-cell input { accent-color: var(--green-bright); }
+.setup-toolbar { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+.setup-toolbar strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.setup-toolbar small { display: block; color: var(--muted); }
+.setup-toolbar p { flex-basis: 100%; margin: 0; font-size: 12px; }
+.toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.setup-walkthrough { margin: 18px 0; scroll-margin-top: 150px; }
+.setup-walkthrough ol { padding: 0 28px 18px 42px; line-height: 1.65; }
+.setup-walkthrough li { margin: 10px 0; }
+.action-confirm { max-width: min(680px, 92vw); border: 1px solid var(--line); border-radius: 18px; padding: 24px; background: var(--card); color: var(--ink); }
+.action-confirm::backdrop { background: rgba(0,0,0,.5); }
+.action-confirm pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: 12px/1.65 var(--font-mono); }
+.batch-progress { margin: 10px 0; font-size: 12px; }
 
 /* 1.16 E7 Modalities panel: level chips, blocker badges, planner. */
 .cap-table th, .cap-table td { padding: 8px; vertical-align: top; white-space: normal; }
@@ -242,7 +254,7 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 .plan-candidates { display: block; color: var(--muted); font-size: 10px; }
 
 /* Entrance: panels and cards rise in, staggered by --i set from the render order (rise lives in the theme). */
-.hero, .status-banner, .control-panel, .provider-card, .trust-card, .maintenance-panel { animation: rise var(--dur) var(--ease) both; animation-delay: calc(var(--i, 0) * 55ms); }
+.hero, .status-banner, .control-panel, .trust-card, .maintenance-panel { animation: rise var(--dur) var(--ease) both; animation-delay: calc(var(--i, 0) * 55ms); }
 /* Status meter: a conic ring that sweeps to the completion percentage (--pct set by the page). */
 @property --pct { syntax: "<number>"; inherits: false; initial-value: 0; }
 .status-meter { --pct: 0; position: relative; isolation: isolate; transition: --pct .9s var(--ease); }
