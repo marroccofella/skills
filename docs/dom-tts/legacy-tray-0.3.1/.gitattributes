@@ -1,0 +1,5 @@
+# Preserve archived installed bytes; hashes include original line endings.
+source/** -text
+original-source-hashes.json -text
+packet-manifest.json -text
+verify-packet.cjs text eol=lf

@@ -1,0 +1,42 @@
+{
+  "name": "dom-tts-read-aloud-skill",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Dom TTS Read-Aloud by Prof Dom Marrocco / 42.uk: a Windows read-aloud runtime for Codex.",
+  "type": "commonjs",
+  "scripts": {
+    "speak": "node scripts/speak.js",
+    "stop": "node scripts/stop.js",
+    "status": "node scripts/status.js",
+    "watch": "node scripts/watch-codex.js",
+    "doctor": "node scripts/doctor.js",
+    "doctor:probe": "node scripts/doctor.js --probe",
+    "acceptance": "node scripts/acceptance-test.js",
+    "duplex": "node scripts/duplex-shell.js",
+    "duplex:stop": "node scripts/stop-duplex-shell.js",
+    "duplex:doctor": "node scripts/voice-doctor.js",
+    "duplex:acceptance": "node scripts/duplex-acceptance-test.js",
+    "duplex:record": "node scripts/record-audio.js",
+    "duplex:transcribe": "node scripts/transcribe-audio.js",
+    "avatar": "node scripts/avatar-server.js",
+    "avatar:sb2": "node scripts/avatar-server.js --device sb2",
+    "avatar:sb3": "node scripts/avatar-server.js --device sb3",
+    "avatar:auto:sb2": "node scripts/avatar-screen-switcher.js --device sb2",
+    "avatar:auto:sb3": "node scripts/avatar-screen-switcher.js --device sb3",
+    "avatar:auto:stop": "node scripts/stop-avatar-screen-switcher.js",
+    "avatar:stop": "node scripts/stop-avatar-server.js",
+    "avatar:acceptance": "node scripts/avatar-acceptance-test.js",
+    "avatar:switcher:acceptance": "node scripts/avatar-screen-switcher-acceptance-test.js",
+    "ui:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ui-smoke-test.ps1",
+    "tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tray-app.ps1",
+    "install:dom-tts": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-dom-tts.ps1",
+    "transcript:schema": "node scripts/check-codex-transcript-schema.js",
+    "support:bundle": "node scripts/support-bundle.js",
+    "package:dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/export-distribution.ps1",
+    "settings": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/settings.ps1",
+    "test:dry": "node scripts/speak.js --dry-run --mode diff-summary --profile engineering --text \"M src/app.js\\nError: build failed because fooBar was undefined.\""
+  },
+  "dependencies": {
+    "node-edge-tts": "^1.2.8"
+  }
+}
