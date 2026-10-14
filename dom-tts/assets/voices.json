@@ -1,0 +1,10 @@
+{
+  "defaultProvider": "sapi",
+  "fallbackProvider": "sapi",
+  "profiles": {
+    "concise": { "speed": 1.15, "mode": "summary", "maxChunkChars": 650 },
+    "engineering": { "speed": 0.95, "mode": "full", "maxChunkChars": 520 },
+    "conversational": { "speed": 1, "mode": "informative", "maxChunkChars": 420 }
+  },
+  "providers": { "sapi": { "voice": "" } }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "dom-tts-standard",
+  "version": "0.3.2-dev.1",
+  "private": true,
+  "description": "Windows Standard Mode speech by Prof Dom Marrocco / 42.uk",
+  "type": "commonjs",
+  "scripts": { "test": "node scripts/self-test.js --self-test" }
+}

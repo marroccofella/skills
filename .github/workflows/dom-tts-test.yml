@@ -1,0 +1,28 @@
+name: Dom TTS development baseline
+on:
+  push:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-test.yml']
+  pull_request:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-test.yml']
+permissions:
+  contents: read
+jobs:
+  offline:
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [18, 20, 22, 24]
+        include:
+          - os: windows-latest
+            node: 24.15.0
+          - os: windows-latest
+            node: 24.19.0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node dom-tts/scripts/self-test.js --self-test
