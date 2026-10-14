@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+.npmrc
+.netrc
+id_rsa
+id_ed25519
+.DS_Store
+Thumbs.db
+*.log
