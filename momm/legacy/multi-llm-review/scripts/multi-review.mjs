@@ -8,4 +8,4 @@ process.stderr.write(
     ? `${JSON.stringify({ ts: new Date().toISOString(), event: "deprecated", message: notice })}\n`
     : `[deprecated] ${notice}\n`,
 );
-await import("../../momm/scripts/multi-review.mjs");
+await import("../../../scripts/multi-review.mjs");

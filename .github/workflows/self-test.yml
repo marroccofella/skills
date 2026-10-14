@@ -406,20 +406,20 @@ jobs:
           console.log("private ledger builds from telemetry and writes only inside .ensemble_reviews/");
       - name: Legacy alias forwards
         if: ${{ !cancelled() }}
-        run: node multi-llm-review/scripts/multi-review.mjs --self-test --pretty
+        run: node momm/legacy/multi-llm-review/scripts/multi-review.mjs --self-test --pretty
       - name: Legacy alias keeps --stream stderr NDJSON-pure
         if: ${{ !cancelled() }}
         shell: node {0}
         run: |
           const { spawnSync } = require("node:child_process");
-          const r = spawnSync(process.execPath, ["multi-llm-review/scripts/multi-review.mjs", "--self-test", "--stream"], { encoding: "utf8" });
+          const r = spawnSync(process.execPath, ["momm/legacy/multi-llm-review/scripts/multi-review.mjs", "--self-test", "--stream"], { encoding: "utf8" });
           const lines = r.stderr.trim().split(/\r?\n/).filter(Boolean);
           if (lines.length === 0) throw new Error("expected at least the deprecation event on stderr");
           for (const line of lines) JSON.parse(line);
           console.log(`ok: ${lines.length} stderr line(s), all valid JSON`);
       - name: Legacy install alias forwards (dry run)
         if: ${{ !cancelled() }}
-        run: node multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
+        run: node momm/legacy/multi-llm-review/scripts/install.mjs --target auto --dry-run --pretty
       # Evidence round trip: self-exclusion (zero model calls) must persist a report whose logged sha256
       # matches a fresh read of the file and whose input_sha256 matches the
       # exact piped artifact. Unavailable storage refuses before input/dispatch;
