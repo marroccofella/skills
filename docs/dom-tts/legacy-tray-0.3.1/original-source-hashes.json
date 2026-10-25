@@ -1,0 +1,198 @@
+[
+  {
+    "path": "package-lock.json",
+    "originalSha256": "7f507c8dacf08c022cfef966a57ec34d496eb46ac578f6e5289c48fdd7396e68"
+  },
+  {
+    "path": "package.json",
+    "originalSha256": "83ecd52eb7a76e5b710956134fcf90006760246b25238c3bc2ebc4e1f6543555"
+  },
+  {
+    "path": "assets/avatar-ui.html",
+    "originalSha256": "0f330c0d44d32637ba96130dc2220cd81dc5195d8ff008f69d2b074593bee9f3"
+  },
+  {
+    "path": "assets/read-aloud-icon-small.svg",
+    "originalSha256": "5cbed7874f3d8162f68857c04b7d6e3cca41fa90a2a9115566f291cac948d98e"
+  },
+  {
+    "path": "assets/read-aloud-icon.ico",
+    "originalSha256": "377a9f5f0b7d8143b3f4171782e0153d1e9f43f83136fb8299f892e9a1789c68"
+  },
+  {
+    "path": "assets/read-aloud-icon.png",
+    "originalSha256": "29e0a1e93516ffa286f934b0303a4f94cd90ed694af2c410177b2b3d19cb6f20"
+  },
+  {
+    "path": "assets/read-aloud-icon.svg",
+    "originalSha256": "98b5448e41b68a3f2e7f6b807efd3f7ff7d5bf52f885a1cca1f65472d2b1e107"
+  },
+  {
+    "path": "assets/voices.json",
+    "originalSha256": "68b103eeee4577367dc6f78a9322093549b9bb5133b54018acaab31d9b06059d"
+  },
+  {
+    "path": "scripts/acceptance-test.js",
+    "originalSha256": "904b652a729f3c50dd2a6720a81619d3ad1d3de21ce49a293bba818c86329c5a"
+  },
+  {
+    "path": "scripts/avatar-acceptance-test.js",
+    "originalSha256": "fe9756e3182fcb4e5fe8abfb40b4f46feb8413d49e359cb922cb66eaecefe366"
+  },
+  {
+    "path": "scripts/avatar-screen-switcher-acceptance-test.js",
+    "originalSha256": "f9c8561077dc22b3e44383920cd1a689ef5dacaf12e156e01b208787e4f46c98"
+  },
+  {
+    "path": "scripts/avatar-screen-switcher.js",
+    "originalSha256": "f55e8c8025e6ed6854187fd6fad44e54c02896ede3e0d4dffa5a3367610a3cc7"
+  },
+  {
+    "path": "scripts/avatar-server.js",
+    "originalSha256": "2d562f46cfe838b79e3d531e8261e6e562671a74bd2af172db415759dd8fa496"
+  },
+  {
+    "path": "scripts/avatar-state.js",
+    "originalSha256": "27905beebc450b8dd8481242099d3c9fbbe6d181b737838452ee180d1a88de14"
+  },
+  {
+    "path": "scripts/check-codex-transcript-schema.js",
+    "originalSha256": "37add7b3f5072643e87d8a613b30841b99f8e0a9f53ec3123bc453b47222ba23"
+  },
+  {
+    "path": "scripts/control-panel.ps1",
+    "originalSha256": "18eee9eafb3af769b0a440d9a60cc256f962c42221330b12b836745e99f2422b"
+  },
+  {
+    "path": "scripts/dedupe-acceptance-test.js",
+    "originalSha256": "3f15fbd005ac44425a9f80e6985d57e75bff1804e93335c330e99d7f28fb9cbf"
+  },
+  {
+    "path": "scripts/doctor.js",
+    "originalSha256": "8b150ee0d7239f9d0d3ac07a76c5e745f1a24a2deb5a452a2a7766fd5760d780"
+  },
+  {
+    "path": "scripts/duplex-acceptance-test.js",
+    "originalSha256": "eed4cd07ae29e05a5a8af18c67d85306fa2a869831a90f11b3e284185f287db5"
+  },
+  {
+    "path": "scripts/duplex-shell.js",
+    "originalSha256": "06fe7ade9d641224e394cc024d89d5059bc383740ffdb96680bff0eff37f8d7f"
+  },
+  {
+    "path": "scripts/export-distribution.ps1",
+    "originalSha256": "7bcc213ef4e0c1e73ea453fefeaca47dc4bb5f2aa91b91e7be1631a4539fbaa7"
+  },
+  {
+    "path": "scripts/export-package.ps1",
+    "originalSha256": "b67af93457cb35c74c2d5813ee47e1c69db8f37928bab14dc73b78be2b65b4b5"
+  },
+  {
+    "path": "scripts/install-dom-tts.ps1",
+    "originalSha256": "eb25490776abdc14fb10737e589b71e88957fc4b648ef82e7f61136c9dd0a3c4"
+  },
+  {
+    "path": "scripts/install.ps1",
+    "originalSha256": "300086e216777aed89f09e2d8b2ffb569e2367410b7f879f067d8cba86212deb"
+  },
+  {
+    "path": "scripts/openclaw-acceptance-test.js",
+    "originalSha256": "355db3f59a292f0754259867c54c57434055ed2ad91e84d4bac8bd9167b10fe1"
+  },
+  {
+    "path": "scripts/record-audio.js",
+    "originalSha256": "1ad1fe309c85e6e43765dbc7f3dfaeff7f4fc915ae2742294d7285f64d6f1ceb"
+  },
+  {
+    "path": "scripts/settings.ps1",
+    "originalSha256": "9b3985e87dcee23bbac17d4ce8c1636eb0902876e9088c718b69e788de8b6a28"
+  },
+  {
+    "path": "scripts/speak.js",
+    "originalSha256": "46489a7459bed67f852d7a63aeb8f2703d5c4d055fbfd1ed23501013ea6e02f7"
+  },
+  {
+    "path": "scripts/start-global-watcher.ps1",
+    "originalSha256": "24760a244f25172e5766a15f81d7a682c8d168d779a660413c61b88fc5f3e844"
+  },
+  {
+    "path": "scripts/start-watcher.ps1",
+    "originalSha256": "7421c0707591892364d52f0da0b24e2c41d236098e218a8046dea2a9c9c85b66"
+  },
+  {
+    "path": "scripts/status.js",
+    "originalSha256": "506c38744b8ec02107c8926b27a9ecc6b2958b1d98d7ecb8c545e0efb00a851f"
+  },
+  {
+    "path": "scripts/stop-avatar-screen-switcher.js",
+    "originalSha256": "d2bddb0ba7b7945322e8e0579b982434f4caa6251f6a1e106c7f37e8ccb5b67c"
+  },
+  {
+    "path": "scripts/stop-avatar-server.js",
+    "originalSha256": "223cdd3143bfe58923a49ab7ce2a9088667a3f464390dc740e91773298f085aa"
+  },
+  {
+    "path": "scripts/stop-duplex-shell.js",
+    "originalSha256": "cf599ae440ebac700eaa94ed6626978a2d366316c646e30688f16f719cc47958"
+  },
+  {
+    "path": "scripts/stop-watcher.ps1",
+    "originalSha256": "eb7caf8e63ff4c9864087363066a456bbe144244f0111d467d28ada495512e9c"
+  },
+  {
+    "path": "scripts/stop.js",
+    "originalSha256": "a1bbf4ef5182eda43112d3aac3f9ca2e63d0297bc43e48022bb8b2a58ea2e1ce"
+  },
+  {
+    "path": "scripts/summarize.js",
+    "originalSha256": "c12399b44fed38ba2ee2dbe98e3ac689037b02bc92f8189029dd6a7a954a4bcc"
+  },
+  {
+    "path": "scripts/support-bundle.js",
+    "originalSha256": "b50370b171d700c58292bf82ac056f7360a16c72073f2863841ca2e186e43394"
+  },
+  {
+    "path": "scripts/telemetry.js",
+    "originalSha256": "64843261ee05b7a03df0b54248043aabf1bec052afbbdff20a8b05c67ccdefc7"
+  },
+  {
+    "path": "scripts/transcribe-audio.js",
+    "originalSha256": "abb126aecf048664e0d393a7b0982133af13bc3494351124271f5492db85c412"
+  },
+  {
+    "path": "scripts/tray-app.ps1",
+    "originalSha256": "ac420650f3aa833d6be2fe6289fee438221d056a3f7c6b76202ce54c87722cc1"
+  },
+  {
+    "path": "scripts/ui-smoke-test.ps1",
+    "originalSha256": "fa2d3e85921020fa49e05ff486b4f384be3ec74ae1b50cbbb209ede32ce64e3c"
+  },
+  {
+    "path": "scripts/voice-doctor.js",
+    "originalSha256": "d8304f8f955748ec218ad7ef6de2716fbc794124c9c66d20337925a50c03aa95"
+  },
+  {
+    "path": "scripts/voice-runtime.js",
+    "originalSha256": "00465657c41e3c89c95f1f262d229ca1010b844974d50c5784f9813205947ef4"
+  },
+  {
+    "path": "scripts/watch-all-codex.js",
+    "originalSha256": "ba6e4b3d8d0dfeed40e97353e1424b9f8b4165b342da99af7de77831b3d1e35e"
+  },
+  {
+    "path": "scripts/watch-codex.js",
+    "originalSha256": "8881f76a8f647849d7cb0c3a498a7027298ccd8bce8707f9343c0e60e98d086b"
+  },
+  {
+    "path": "scripts/providers/edge.js",
+    "originalSha256": "aa51f64150b0521c75485fa30607ebdd709c391c4dff4118f8815b0ddce6c994"
+  },
+  {
+    "path": "scripts/providers/piper.js",
+    "originalSha256": "5e844f9abc25e204e335dd1548e10c9d24c398dd9b143436158f069ea9cd9935"
+  },
+  {
+    "path": "scripts/providers/sapi.js",
+    "originalSha256": "3f97d0ee8a705f81d3bdb17aeb58bc505bb90b6b9b04f97bf35684bf68bc86b2"
+  }
+]

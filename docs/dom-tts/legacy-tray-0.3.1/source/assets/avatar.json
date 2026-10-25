@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "host": "127.0.0.1",
+  "port": 42742,
+  "launchBrowser": false,
+  "privacy": { "localOnly": true, "retainAudio": false },
+  "devices": { "faceSensorEnabled": false, "showOnLockPage": false }
+}
