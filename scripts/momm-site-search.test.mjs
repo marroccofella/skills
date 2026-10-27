@@ -5,6 +5,28 @@ import {fileURLToPath} from 'node:url';
 import {SITE,PROMPTUS,BIO_SOURCE,UNLV_SOURCE,canonicalUrl,pageMetadata,enhanceSearch,addAttribution,evidenceBenefits,answers,definition} from './momm-site-search.mjs';
 delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
+// A verified landing page can have a body without a footer. Keep attribution
+// inside that body and stable when the deterministic renderer runs again.
+{
+  const output={'docs/index.html':'<!doctype html><html><head><meta name="msvalidate.01" content="test"></head><body><main>Skill directory</main>\n</body></html>\n'};
+  addAttribution(output);
+  const once=output['docs/index.html'];
+  assert(once.indexOf('<!-- MOMM CREDIT START -->')<once.indexOf('</body>'),'attribution must stay inside an explicit body');
+  assert.equal((once.match(/MOMM CREDIT START/g)||[]).length,1);
+  assert(once.includes('<meta name="msvalidate.01" content="test">'));
+  addAttribution(output);assert.equal(output['docs/index.html'],once,'body-only landing page must render idempotently');
+  for(const raw of ['<script>const example="</body>";</script>','<!-- example </body> -->','<textarea>example </body></textarea>']) {
+    const fixture={'t.html':'<!doctype html><html><body>'+raw+'<main>Directory</main>\n</body></html><!-- trailing </body> -->\n'};
+    addAttribution(fixture);const result=fixture['t.html'];assert(result.includes(raw),'raw text stays untouched');
+    assert(result.indexOf('MOMM CREDIT START')>result.indexOf('</main>'));
+    assert(result.indexOf('MOMM CREDIT START')<result.indexOf('</body></html>'));
+    addAttribution(fixture);assert.equal(fixture['t.html'],result);
+  }
+  assert.throws(()=>addAttribution({'broken.html':'<html><body></body><script></script></html>'}),/Unsupported closing body boundary: broken\.html/);
+  const fragment={'fragment.html':'<main>Directory</main>'};addAttribution(fragment);const rendered=fragment['fragment.html'];
+  assert(rendered.includes('<main>Directory</main>'));addAttribution(fragment);assert.equal(fragment['fragment.html'],rendered);
+}
+
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const catalogue=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json')));
 const version=JSON.parse(fs.readFileSync(path.join(root,'versions.json'))).momm;
