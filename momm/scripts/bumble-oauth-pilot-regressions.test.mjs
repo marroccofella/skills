@@ -3,8 +3,8 @@ delete process.env.MOMM_EVIDENCE_HOME;
 const source=fs.readFileSync(new URL('./bumble-oauth-pilot.mjs',import.meta.url),'utf8');
 const H=b=>crypto.createHash('sha256').update(b).digest('hex');
 const mode=process.argv[2]??'all';
-if(process.argv.length>3||!['all','--clock','--connection'].includes(mode))throw Error('Use --clock or --connection, or no argument for both broker controls');
-if(mode==='--connection'){
+if(process.argv.length>3||!['all','--clock','--connection'].includes(mode))throw Error('Use --clock or --connection, or no argument for all five controls');
+if(mode==='all'||mode==='--connection'){
  const begin=source.indexOf(' const config=Object.freeze(fields(p.config,CONFIG));'),end=source.indexOf('\n let previous=',begin);assert(begin>=0&&end>begin);const segment=source.slice(begin,end);
  for(const bad of [{base_url:{x:1},server_name:42},{base_url:'http://100.126.129.80:5441/v1',server_name:'reviewer.example'},{base_url:'https://127.0.0.1/v1',server_name:'reviewer.example'}]){
   const config={base_url:'https://100.126.129.80:5441/v1',server_name:'reviewer.example',certificate_sha256:H('x'),scope_binding:H('x'),baseline_report_sha256:H('x'),association_sha256:H('x'),validator_sha256:H('x'),policy_sha256:H('x'),trust_sha256:H('x'),disclosure_sha256:H('x'),logging_sha256:H('x'),...bad};
@@ -12,7 +12,8 @@ if(mode==='--connection'){
   assert.throws(()=>vm.runInContext(segment,context),/refused/,'invalid connection must be rejected before admission/private material');
  }
  console.log(JSON.stringify({passed:3,scope:'actual constructor connection-validation segment; no I/O'}));
-}else{
+}
+if(mode!=='--connection'){
 let persisted=0,terminal=0,caught=null,value=null;
 if(mode!=='--clock'){
 const tail=source.slice(source.indexOf('   let envelope=null;'),source.lastIndexOf('\n  }\n });'));
@@ -23,6 +24,6 @@ assert.equal(caught,null,'validator exception must not escape the admitted-attem
 }
 let called=0;const begin=source.indexOf('privateBytes=takeBumbleOAuthPeerHandoff(handoff).bytes;'),end=source.indexOf('\n   }catch',begin),segment=source.slice(begin,end);assert(begin>=0&&end>begin);
 const late=vm.createContext({takeBumbleOAuthPeerHandoff:()=>({bytes:Buffer.from('synthetic-only')}),handoff:{},check(){},remaining:()=>0.5,fail(){throw Error('late');},executor:{async execute(_bytes,o){called++;assert(o.timeoutMs>0);}},privateBytes:null,spawned:0});
-await assert.rejects(vm.runInContext('(async()=>{'+segment+'})()',late));assert.equal(called,0,'sub-millisecond budget must refuse before invoking executor');assert.equal(late.spawned,0);
+await assert.rejects(vm.runInContext('(async()=>{'+segment+'})()',late),{message:'late'});assert.equal(called,0,'sub-millisecond budget must refuse before invoking executor');assert.equal(late.spawned,0);
 console.log(JSON.stringify({passed:mode==='--clock'?1:2,scope:'actual broker tail/dispatch segment under injected validator fault and sub-millisecond budget; no network operations'}));
 }

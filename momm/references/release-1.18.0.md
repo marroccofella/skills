@@ -15,6 +15,13 @@ authoritative backend task and physical-release evidence, a genuine BAB review,
 whole-candidate peer review and hosted/platform qualification remain open.
 Pushing this development branch does not install or release version 1.18.
 
+30 October test-quality follow-up: the default regression mode now executes all
+five connection/broker controls, and the budget test requires its exact rejection
+instead of accepting an unrelated scripting error. Both defects were reproduced
+before repair and passed the same controls afterward. Antigravity returned this
+scoped test review; Claude timed out. Its two-reviewer quorum remains unmet, and
+this is not whole-candidate review closure.
+
 27 October working scope: the installed protocol and current BAB qualification
 route remain OAuth-only, without an API-key fallback. The new private OAuth frame,
 peer worker and discovery/code-exchange transport are development components tested
