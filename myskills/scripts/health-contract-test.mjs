@@ -8,10 +8,20 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+delete process.env.MOMM_EVIDENCE_HOME;
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(scriptDir, "..", "..");
 const runner = path.join(scriptDir, "run-all.mjs");
 const versions = JSON.parse(fs.readFileSync(path.join(skillRoot, "versions.json"), "utf8"));
+const development = versions.momm_development;
+const developmentValid = development === undefined || (development && typeof development === "object"
+  && !Array.isArray(development) && Object.keys(development).sort().join(",") === "notes_path,stable,version"
+  && development.stable === versions.momm && /^\d+\.\d+\.\d+$/.test(development.version)
+  && development.version !== versions.momm
+  && development.notes_path === `momm/references/release-${development.version}.md`
+  && fs.existsSync(path.join(skillRoot, development.notes_path)));
+const expectedMomm = developmentValid && development ? development.version : versions.momm;
 const canonical = ["momm", "myrepo", "yorkshire-pudding", "myautoness", "promptus-clone-voice"];
 const expectedAliases = {
   momm: [],
@@ -71,8 +81,9 @@ const tests = {
   "quick mode never invents GitHub readiness": quickMyrepo?.dependencies?.gh_cli === "not_checked"
     && quickMyrepo?.dependencies?.gh_auth === "not_checked",
   "quick mode never invents Promptus readiness": quickPromptus?.status === "not_checked",
-  "code versions align with the published manifest": full.myskills_version === versions.myskills
-    && versionOf(["momm", "scripts", "multi-review.mjs"], "momm") === versions.momm
+  "development metadata keeps the stable version explicit": Boolean(developmentValid),
+  "code versions align with the declared stable or development manifest": full.myskills_version === versions.myskills
+    && versionOf(["momm", "scripts", "multi-review.mjs"], "momm") === expectedMomm
     && versionOf(["myrepo", "scripts", "publish.mjs"], "myrepo") === versions.myrepo,
   "canonical and callable-alias versions align": versions["yorkshire-pudding"] === versions.yorky
     && versions["promptus-clone-voice"] === versions.myvoice,

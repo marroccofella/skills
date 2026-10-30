@@ -607,6 +607,7 @@ export function preparePrivateEvidence(p){ fs.mkdirSync(p,{recursive:true,mode:0
     assert.equal(listed.status, 0, listed.stderr);
     const commands = listed.stdout.trimEnd().split('\n');
     assert(commands.length > 80, 'the suite list was found');
+    assert(commands.includes('myskills/scripts/health-contract-test.mjs'), 'the local pack must include the hosted canonical version/health gate');
     for (const command of commands) {
       const [file, ...flags] = command.split(' ');
       assert(fs.existsSync(new URL('../' + file, import.meta.url)), `listed command is not a repository file: ${command}`);

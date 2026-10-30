@@ -21,6 +21,8 @@ try{
   const scope={connector_id:'c',credential_epoch:'1',endpoint_id:'e',trust_sha256:'a'.repeat(64)};
   assert.notEqual(credentialScope(scope),credentialScope({...scope,endpoint_id:'other'}));
   const plain=Buffer.from('synthetic-data-not-an-api-key'),entropy=Buffer.alloc(32,1),calls=[];
+  // This seam resolves a native Windows executable; POSIX still exercises refusal above.
+  if(process.platform==='win32'){
   const protector=windowsOpaqueProtector(async(command,args,options)=>{calls.push({command,args,options});return {code:0,timedOut:false,outputLimited:false,stdout:Buffer.from('synthetic-protected-envelope').toString('base64')};},{platform:'win32'});
   await protector.protect(plain,entropy);
   assert(!calls[0].args.join(' ').includes(plain.toString()));
@@ -28,6 +30,7 @@ try{
   assert.equal(JSON.parse(calls[0].options.input).data,plain.toString('base64'),'opaque data is stdin only');assert.equal(calls[0].options.timeoutMs,10000);
   for(const result of [{code:1,stdout:'private diagnostic'},{code:0,timedOut:true,stdout:'Zm9v'},{code:0,outputLimited:true,stdout:'Zm9v'},{code:0,stdout:'not base64!'}]){
     const failed=windowsOpaqueProtector(async()=>result,{platform:'win32'});await assert.rejects(failed.unprotect(plain,entropy),/Protected store|protected-store/i);
+  }
   }
   let native_crypto_executed=false;
   if(process.platform==='win32'){

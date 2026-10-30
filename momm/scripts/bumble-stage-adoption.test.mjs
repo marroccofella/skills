@@ -4,6 +4,8 @@ import {realTempDir} from './private-test-fixture.mjs';
 import {BumbleStage} from './bumble-stage.mjs';import {BumbleCapacity} from './bumble-capacity.mjs';import {BumbleFixtureLedger} from './bumble-fixtures.mjs';
 import {qualificationBinding,fixtureFrameBinding} from './bumble-qualification.mjs';import {qualifyBumbleWithLedger} from './bumble-qualification-ledger.mjs';
 delete process.env.MOMM_EVIDENCE_HOME;
+// Test-owned writes only: product filesystem APIs and the process umask stay unchanged.
+const writeFixture=(file,data,options)=>fs.writeFileSync(file,data,{mode:0o600,...(typeof options==='string'?{encoding:options}:options)});
 const H=b=>crypto.createHash('sha256').update(b).digest('hex'),parent=realTempDir('momm-stage-recovery-'),ownerParent=path.dirname(parent),source='const n = 1;';
 const frame=[['d','defect'],['c','control']].map(([id,kind])=>({id,kind,sha256:H(id),split:'qualification'}));
 const worker={worker_id:'w',connector_id:'c',endpoint_id:'e',adapter_sha256:H('a'),model_lineage_sha256:H('m'),task_type:'t',role_version:'1',role_sha256:H('r'),schema_sha256:H('s'),fixture_suite_sha256:fixtureFrameBinding(frame),config_epoch:'1',credential_epoch:'1',trust_sha256:H('trust')};
@@ -49,10 +51,10 @@ try{
     const capacityId=JSON.parse(fs.readFileSync(path.join(f.root,'stage.json'),'utf8')).attempts[0].capacity_reservation_id;
     f.capacity.terminal(capacityId,{transport:'cancelled',payload:'unavailable',now:13});
     assert.throws(()=>f.stage.reconcile(a.reservation_id),/Conflicting original global terminal/);
-    const changed=JSON.parse(original);changed.at=14;fs.writeFileSync(file,JSON.stringify(changed)+'\n');
-    assert.throws(()=>f.stage.reconcile(a.reservation_id),/digest changed/);fs.writeFileSync(file,original);
-    const intent=JSON.parse(originalIntent);intent.attempt_id='other-attempt';fs.writeFileSync(intentFile,JSON.stringify(intent)+'\n');
-    assert.throws(()=>f.stage.reconcile(a.reservation_id),/intent is unbound/);fs.writeFileSync(intentFile,originalIntent);
+    const changed=JSON.parse(original);changed.at=14;writeFixture(file,JSON.stringify(changed)+'\n');
+    assert.throws(()=>f.stage.reconcile(a.reservation_id),/digest changed/);writeFixture(file,original);
+    const intent=JSON.parse(originalIntent);intent.attempt_id='other-attempt';writeFixture(intentFile,JSON.stringify(intent)+'\n');
+    assert.throws(()=>f.stage.reconcile(a.reservation_id),/intent is unbound/);writeFixture(intentFile,originalIntent);
     fs.unlinkSync(intentFile);assert.throws(()=>f.stage.reconcile(a.reservation_id),error=>{if(error?.code!=='ENOENT'||error.path!==intentFile)throw error;return true;},'missing intent must refuse at its exact original path');
     assert.deepEqual(fs.readFileSync(file),original);assert.equal(f.capacity.summary().held,1);assert.equal(f.stage.summary().attempts[0].state,'transmission_possible');
   },
@@ -73,7 +75,7 @@ try{
     const partial=owned('partial-result'),p=partial.stage.reserve(reserve);assert(p.admitted);partial.stage.markTransmissionPossible(p.reservation_id,12);const partialFile=path.join(partial.root,'result-'+p.reservation_id+'.json');
     fs.openSync=function(target,...args){if(target===partialFile)throw Error('Synthetic partial result-create refusal');return open.call(fs,target,...args);};
     try{assert.throws(()=>partial.stage.finish(p.reservation_id,{bytes:'',transport:'refused',finished:false,now:13}),/Synthetic partial result-create refusal/);}finally{fs.openSync=open;}
-    const partialIntentFile=path.join(partial.root,'terminal-intent-'+p.reservation_id+'.json'),partialIntent=fs.readFileSync(partialIntentFile),partialGlobal=partial.capacity.summary(),fragment=Buffer.from('{');fs.writeFileSync(partialFile,fragment);
+    const partialIntentFile=path.join(partial.root,'terminal-intent-'+p.reservation_id+'.json'),partialIntent=fs.readFileSync(partialIntentFile),partialGlobal=partial.capacity.summary(),fragment=Buffer.from('{');writeFixture(partialFile,fragment);
     assert.throws(()=>partial.stage.finish(p.reservation_id,{bytes:'',transport:'refused',finished:false,now:14}),/digest changed/,'an existing partial result is never overwritten');assert.deepEqual(fs.readFileSync(partialFile),fragment);assert.deepEqual(fs.readFileSync(partialIntentFile),partialIntent);assert.deepEqual(partial.capacity.summary(),partialGlobal);
     const o=owned('overflow'),b=o.stage.reserve(reserve);assert(b.admitted);o.stage.markTransmissionPossible(b.reservation_id,12);
     const result=o.stage.finish(b.reservation_id,{bytes:Buffer.alloc(7000,97),transport:'success',finished:true,now:13});

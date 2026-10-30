@@ -46,7 +46,7 @@ Set-Acl -LiteralPath $directory -AclObject $acl
     } else fs.chmodSync(root,0o700);
     // An entry that appeared before the access list or mode was applied keeps its own access.
     if(fs.readdirSync(root).length)throw Error('Disposable synthetic test directory is not empty after protection; refused');
-    return root;
+    return fs.realpathSync.native(root);
   } catch(error) {
     // Exact freshly allocated target only, never a caller's existing directory.
     fs.rmSync(root,{recursive:true,force:true});throw error;

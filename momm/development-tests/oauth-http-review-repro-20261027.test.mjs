@@ -5,8 +5,8 @@ import {validateBumbleOAuthMetadata,validateBumbleOAuthTokenEnvelope} from '../s
 
 delete process.env.MOMM_EVIDENCE_HOME;
 const H=b=>crypto.createHash('sha256').update(b).digest('hex'),cert=Buffer.from('synthetic-public-certificate');
-const profile={schema:'momm-bumble-oauth-profile/1',issuer:'https://issuer.example.test:5441',resource:'https://100.126.129.80:5441/v1',client_id:'momm-synthetic-repro',redirect_uri:'http://127.0.0.1:54321/momm/oauth/callback',scopes:['momm.infer'],config_epoch:'synthetic-1'};
-const config=()=>({socket_address:'100.126.129.80',port:5441,server_name:'issuer.example.test',certificate_sha256:H(cert),deadline:Date.now()+20000});
+const profile={schema:'momm-bumble-oauth-profile/1',issuer:'https://issuer.example.test:5441',resource:'https://100.64.0.42:5441/v1',client_id:'momm-synthetic-repro',redirect_uri:'http://127.0.0.1:54321/momm/oauth/callback',scopes:['momm.infer'],config_epoch:'synthetic-1'};
+const config=()=>({socket_address:'100.64.0.42',port:5441,server_name:'issuer.example.test',certificate_sha256:H(cert),deadline:Date.now()+20000});
 const authorize=q=>({schema:'momm-bumble-oauth-http-approval/1',operation:q.operation,endpoint:q.endpoint,profile_sha256:q.profile_sha256,connection_sha256:q.connection_sha256,request_sha256:q.request_sha256,valid_until:q.deadline});
 const cases={
  async 'request-binding'(){

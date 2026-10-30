@@ -1,5 +1,10 @@
 # 1.16.1 offline test catalog
 
+30 October 1.18 development inventory: the local runner now includes
+`myskills/scripts/health-contract-test.mjs`, matching the hosted stable/development
+version gate. The selection is 180 commands; the earlier 179-command result is
+historical and is not a pass for this expanded selection.
+
 This is the living inventory of offline suites: it keeps its 1.16.1 name (pinned by CONTRIBUTING and
 the workflow tests) and also lists every suite added in 1.17.
 

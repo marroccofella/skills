@@ -6,8 +6,8 @@ const mode=process.argv[2]??'all';
 if(process.argv.length>3||!['all','--clock','--connection'].includes(mode))throw Error('Use --clock or --connection, or no argument for all five controls');
 if(mode==='all'||mode==='--connection'){
  const begin=source.indexOf(' const config=Object.freeze(fields(p.config,CONFIG));'),end=source.indexOf('\n let previous=',begin);assert(begin>=0&&end>begin);const segment=source.slice(begin,end);
- for(const bad of [{base_url:{x:1},server_name:42},{base_url:'http://100.126.129.80:5441/v1',server_name:'reviewer.example'},{base_url:'https://127.0.0.1/v1',server_name:'reviewer.example'}]){
-  const config={base_url:'https://100.126.129.80:5441/v1',server_name:'reviewer.example',certificate_sha256:H('x'),scope_binding:H('x'),baseline_report_sha256:H('x'),association_sha256:H('x'),validator_sha256:H('x'),policy_sha256:H('x'),trust_sha256:H('x'),disclosure_sha256:H('x'),logging_sha256:H('x'),...bad};
+ for(const bad of [{base_url:{x:1},server_name:42},{base_url:'http://100.64.0.42:5441/v1',server_name:'reviewer.example'},{base_url:'https://127.0.0.1/v1',server_name:'reviewer.example'}]){
+  const config={base_url:'https://100.64.0.42:5441/v1',server_name:'reviewer.example',certificate_sha256:H('x'),scope_binding:H('x'),baseline_report_sha256:H('x'),association_sha256:H('x'),validator_sha256:H('x'),policy_sha256:H('x'),trust_sha256:H('x'),disclosure_sha256:H('x'),logging_sha256:H('x'),...bad};
   const context=vm.createContext({Object,URL,net,H,SHA:v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v),fields:v=>({...v}),CONFIG:Object.keys(config),p:{config,config_sha256:H(JSON.stringify(config)),baseline_report_sha256:config.baseline_report_sha256},fail(){throw Error('refused');}});
   assert.throws(()=>vm.runInContext(segment,context),/refused/,'invalid connection must be rejected before admission/private material');
  }

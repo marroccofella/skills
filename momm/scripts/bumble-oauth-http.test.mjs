@@ -8,8 +8,8 @@ import {discoverBumbleOAuth,exchangeBumbleOAuthCode} from './bumble-oauth-http.m
 delete process.env.MOMM_EVIDENCE_HOME;
 const H=b=>crypto.createHash('sha256').update(b).digest('hex');
 const cert=Buffer.from('synthetic-public-certificate-not-a-TLS-test');
-const profile={schema:'momm-bumble-oauth-profile/1',issuer:'https://issuer.example.test:5441',resource:'https://100.126.129.80:5441/v1',client_id:'momm-synthetic-http',redirect_uri:'http://127.0.0.1:54321/momm/oauth/callback',scopes:['momm.models.read','momm.infer'],config_epoch:'synthetic-1'};
-const config=()=>({socket_address:'100.126.129.80',port:5441,server_name:'issuer.example.test',certificate_sha256:H(cert),deadline:Date.now()+29000});
+const profile={schema:'momm-bumble-oauth-profile/1',issuer:'https://issuer.example.test:5441',resource:'https://100.64.0.42:5441/v1',client_id:'momm-synthetic-http',redirect_uri:'http://127.0.0.1:54321/momm/oauth/callback',scopes:['momm.models.read','momm.infer'],config_epoch:'synthetic-1'};
+const config=()=>({socket_address:'100.64.0.42',port:5441,server_name:'issuer.example.test',certificate_sha256:H(cert),deadline:Date.now()+29000});
 const authorize=q=>({schema:'momm-bumble-oauth-http-approval/1',operation:q.operation,endpoint:q.endpoint,profile_sha256:q.profile_sha256,connection_sha256:q.connection_sha256,request_sha256:q.request_sha256,valid_until:q.deadline});
 function fresh(options={}){
  const at=Date.now(),authority=createTemporaryBumbleOAuthAuthority({issuer:profile.issuer,resource:profile.resource,client_id:profile.client_id,redirect_uri:profile.redirect_uri,scopes:profile.scopes,model_id:'synthetic-model',expires_at:at+600000});
@@ -28,7 +28,7 @@ async function exchangeFlow(f){const contract=await discover(f),now=Date.now(),i
 let passed=0;async function check(name,fn){await fn();passed++;}
 await check('real PKCE core through mocked discovery/token requests and exact TLS/socket options',async()=>{const f=fresh();try{const x=await exchangeFlow(f),expected=H(x.exchange.body.toString()),token=await exchangeBumbleOAuthCode(x.contract,x.exchange,config(),{certificate:cert},{authorize,request:f.request});
  assert.equal(f.record.calls,2);assert.deepEqual(f.record.bodyHashes,[expected]);assert.equal(token.resource,profile.resource);assert.equal(token.completion,false);assert.equal(token.quorum_votes,0);assert.throws(()=>JSON.stringify(token));
- for(const o of f.record.options){assert.equal(o.hostname,'100.126.129.80');assert.equal(o.servername,'issuer.example.test');assert.equal(o.port,5441);assert.equal(o.rejectUnauthorized,true);assert.equal(o.agent,false);assert.equal(H(o.ca),H(cert));assert.equal(typeof o.checkServerIdentity,'function');}
+ for(const o of f.record.options){assert.equal(o.hostname,'100.64.0.42');assert.equal(o.servername,'issuer.example.test');assert.equal(o.port,5441);assert.equal(o.rejectUnauthorized,true);assert.equal(o.agent,false);assert.equal(H(o.ca),H(cert));assert.equal(typeof o.checkServerIdentity,'function');}
  assert.equal(f.record.options[0].path,'/.well-known/oauth-authorization-server');assert.equal(f.record.options[1].path,'/token');assert.equal(f.record.options[1].headers['Content-Type'],'application/x-www-form-urlencoded');token.access_token.fill(0);
  await assert.rejects(exchangeBumbleOAuthCode(x.contract,x.exchange,config(),{certificate:cert},{authorize,request:f.request}),{code:'owned_unmodified_exchange_required'});assert.equal(f.record.calls,2);
  }finally{f.authority.close();}});
