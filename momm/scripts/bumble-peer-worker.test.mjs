@@ -11,7 +11,7 @@ if(process.platform!=='win32') {
   process.exit(0);
 }
 const H=value=>crypto.createHash('sha256').update(value).digest('hex');
-const home=privateTestFixture('momm-peer-worker-');
+const home=fs.realpathSync.native(privateTestFixture('momm-peer-worker-'));
 const fakeKey='synthetic-only-not-a-real-credential-123456';
 fs.writeFileSync(path.join(home,'key.json'),JSON.stringify({api_key:fakeKey}),{mode:0o600});
 fs.writeFileSync(path.join(home,'trust.crt'),'synthetic-trust-fixture',{mode:0o600});

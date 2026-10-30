@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';import fs from 'node:fs';import path fro
 import {captureBumbleOAuthWorker,BUMBLE_OAUTH_WORKER_FILES} from './bumble-protected-execution.mjs';
 import {privateTestFixture} from './private-test-fixture.mjs';import {defaultExec} from './probes.mjs';
 delete process.env.MOMM_EVIDENCE_HOME;
-const H=b=>crypto.createHash('sha256').update(b).digest('hex'),origin=path.dirname(fileURLToPath(import.meta.url)),home=privateTestFixture('momm-oauth-captured-controls-');
+const H=b=>crypto.createHash('sha256').update(b).digest('hex'),origin=path.dirname(fileURLToPath(import.meta.url)),home=fs.realpathSync.native(privateTestFixture('momm-oauth-captured-controls-'));
 for(const name of BUMBLE_OAUTH_WORKER_FILES)fs.copyFileSync(path.join(origin,name),path.join(home,name));
 // Generated trusted test worker observes only an instrumented test buffer array;
 // no token, certificate or network operation is involved. No product file edited.

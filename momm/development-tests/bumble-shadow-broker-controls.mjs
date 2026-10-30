@@ -11,7 +11,7 @@ import {preparePrivateEvidence} from '../scripts/evidence-permissions.mjs';
 import {evidenceDir} from '../scripts/evidence-location.mjs';
 delete process.env.MOMM_EVIDENCE_HOME;
 const H=value=>crypto.createHash('sha256').update(value).digest('hex');
-const project=fs.realpathSync(process.cwd()),home=privateTestFixture('momm-shadow-broker-');
+const project=fs.realpathSync(process.cwd()),home=fs.realpathSync.native(privateTestFixture('momm-shadow-broker-'));
 process.env.MOMM_EVIDENCE_HOME=home;preparePrivateEvidence(evidenceDir({cwd:project,env:process.env}));
 const keys=crypto.generateKeyPairSync('ed25519');
 const public_key_pem=keys.publicKey.export({type:'spki',format:'pem'}),public_key_sha256=H(keys.publicKey.export({type:'spki',format:'der'}));
