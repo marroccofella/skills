@@ -6,7 +6,7 @@ import {createBumbleReleaseVerifier} from './bumble-release-receipt.mjs';import 
 delete process.env.MOMM_EVIDENCE_HOME;
 // Test-owned writes only: product filesystem APIs and the process umask stay unchanged.
 const writeFixture=(file,data,options)=>fs.writeFileSync(file,data,{mode:0o600,...(typeof options==='string'?{encoding:options}:options)}); // test isolation: fixtures choose their own evidence home
-const parent=privateTestFixture('momm-stage-release-'),H=v=>crypto.createHash('sha256').update(v).digest('hex'),now=Date.now(),deadline=now+1800000;
+const parent=fs.realpathSync.native(privateTestFixture('momm-stage-release-')),H=v=>crypto.createHash('sha256').update(v).digest('hex'),now=Date.now(),deadline=now+1800000;
 const frame=[{id:'d',kind:'defect',sha256:H('d'),split:'qualification'},{id:'c',kind:'control',sha256:H('c'),split:'qualification'}],scope_binding=H('scope');
 const identity={worker_id:'w',connector_id:'c',endpoint_id:'e',adapter_sha256:H('a'),model_lineage_sha256:H('m'),task_type:'t',role_version:'1',role_sha256:H('r'),schema_sha256:H('s'),fixture_suite_sha256:fixtureFrameBinding(frame),config_epoch:'1',credential_epoch:'1',trust_sha256:H('trust')};
 const policy={schema:'momm-bumble-qualification-policy/1',policy_id:'p',task_type:'t',required_defects:1,required_controls:1,max_missed_defects:0,max_false_candidates:0,lifetime_ms:3600000,max_observations:2};
