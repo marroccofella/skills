@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';import https from 'node:https';import {EventEmitter} from 'node:events';
+import {spawnSync} from 'node:child_process';
 import {privateTestFixture} from './private-test-fixture.mjs';
 import {validateShadowConnection, readProtectedServiceKey, runPeerShadowWorker} from './bumble-peer-worker.mjs';
 import {prepareBumblePeerRequest} from './bumble-peer-review.mjs';
@@ -13,8 +14,33 @@ if(process.platform!=='win32') {
 const H=value=>crypto.createHash('sha256').update(value).digest('hex');
 const home=fs.realpathSync.native(privateTestFixture('momm-peer-worker-'));
 const fakeKey='synthetic-only-not-a-real-credential-123456';
-fs.writeFileSync(path.join(home,'key.json'),JSON.stringify({api_key:fakeKey}),{mode:0o600});
-fs.writeFileSync(path.join(home,'trust.crt'),'synthetic-trust-fixture',{mode:0o600});
+fs.writeFileSync(path.join(home,'key.json'),JSON.stringify({api_key:fakeKey}),{mode:0o600,flag:'wx'});
+fs.writeFileSync(path.join(home,'trust.crt'),'synthetic-trust-fixture',{mode:0o600,flag:'wx'});
+// Only these freshly allocated synthetic files take an explicit user owner. An elevated
+// server token may otherwise default to an administrator-group owner, which the real reader refuses.
+const ownFixtureFile=file=>{
+  const stat=fs.lstatSync(file);
+  assert(path.dirname(file)===home&&['key.json','trust.crt'].includes(path.basename(file)));
+  assert(stat.isFile()&&!stat.isSymbolicLink()&&stat.nlink===1);
+  const script=String.raw`$ErrorActionPreference='Stop'
+Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+$file=([Console]::In.ReadToEnd()|ConvertFrom-Json).path
+$me=[Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl=Get-Acl -LiteralPath $file
+$beforeOwner=($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $me.Value)
+$access=$acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)
+$acl.SetOwner($me)
+Set-Acl -LiteralPath $file -AclObject $acl
+$after=Get-Acl -LiteralPath $file
+@{before_current_user=$beforeOwner;after_current_user=($after.GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $me.Value);access_unchanged=($access -ceq $after.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access))}|ConvertTo-Json -Compress`;
+  const payload=JSON.stringify({path:file}).replace(/[^\x20-\x7e]/g,unit=>'\\u'+unit.charCodeAt(0).toString(16).padStart(4,'0'));
+  const result=spawnSync(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command',script],{input:payload,encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:4096});
+  if(result.status!==0||result.error)throw Error(`Could not set synthetic fixture owner (status ${result.status??'none'})`);
+  const observed=JSON.parse(result.stdout.replace(/^\uFEFF/,''));
+  assert.equal(typeof observed.before_current_user,'boolean');assert.equal(observed.after_current_user,true);assert.equal(observed.access_unchanged,true);
+  return observed;
+};
+console.log(JSON.stringify({synthetic_fixture_ownership:{key:ownFixtureFile(path.join(home,'key.json')),trust:ownFixtureFile(path.join(home,'trust.crt'))}}));
 const connection={connect_address:'100.100.1.2',port:11438,tls_identity:'192.168.1.2',certificate_file:path.join(home,'trust.crt'),certificate_sha256:H('synthetic-trust-fixture'),credential_file:path.join(home,'key.json'),model:'synthetic-model',credential_epoch:1};
 const frame={artifact:'export const value = 1;',model:'synthetic-model',max_tokens:1024,role:'architect',role_version:'1'};
 const job=()=>({schema:'momm-bumble-peer-worker/1',attempt_id:crypto.randomUUID(),connection,connection_sha256:H(JSON.stringify(connection)),request_sha256:prepareBumblePeerRequest(frame).request_sha256,deadline:Date.now()+180000,frame});
