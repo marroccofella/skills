@@ -25,10 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     # The safety workflow spreads these suites over fifteen parallel jobs (a fourteen-cell matrix and one
     # Linux job); this job runs all of them
-    # in sequence. Measured end to end at 527s on the maintainer machine (61 suites, 23 September
-    # 2026), so 45 minutes leaves room for a runner several times slower. The point is that a
-    # signed release must never be killed AFTER the suites passed.
-    timeout-minutes: 45
+    # in sequence. The 167-command local Windows pack took 70m44s on19 October2026;
+    # the former45-minute budget no longer fits even that observed offline run.
+    # Two hours bounds the full pack plus setup/signing/publication headroom.
+    # Hosted/platform success and exact-commit approval remain separate gates.
+    timeout-minutes: 120
     permissions:
       contents: write
       actions: read
@@ -69,6 +70,87 @@ jobs:
           node momm/scripts/stabilisation.test.mjs
           node momm/scripts/setup-ui.mjs --self-test
           node momm/scripts/setup-maintenance.test.mjs
+          node momm/scripts/reviewer-registry.test.mjs
+          node momm/scripts/reviewer-auth-choice.test.mjs
+          node momm/scripts/bumble-contract.test.mjs
+          node momm/scripts/bumble-task-metadata.test.mjs
+          node momm/scripts/bumble-contract-attestation.test.mjs
+          node momm/scripts/bumble-contract-grounding.test.mjs
+          node momm/scripts/bumble-contract-decoding.test.mjs
+          node momm/scripts/bumble-stage-attestation-before.test.mjs
+          node momm/scripts/bumble-raw-evidence.test.mjs
+          node momm/scripts/bumble-task-unicode.test.mjs
+          node momm/scripts/bumble-task-identity.test.mjs
+          node momm/scripts/bumble-stage-revalidation.test.mjs
+          node momm/scripts/bumble-stage-review-probes.test.mjs
+          node momm/scripts/bumble-stage-probe-evidence.test.mjs
+          node momm/scripts/bumble-immutable-file.test.mjs
+          node momm/scripts/bumble-immutable-boundary-probes.test.mjs
+          node momm/scripts/bumble-publication-followup.test.mjs
+          node momm/scripts/bumblers-ui.test.mjs
+          node momm/scripts/bumble-hardening.test.mjs
+          node momm/scripts/registry-hardening.test.mjs
+          node momm/scripts/bumblers-behavior.test.mjs
+          node momm/scripts/bumblers-boundaries.test.mjs
+          node momm/scripts/reviewer-endpoint.test.mjs
+          node momm/scripts/bumble-qualification.test.mjs
+          node momm/scripts/bumble-qualification-regressions.test.mjs
+          node momm/scripts/bumble-fixtures.test.mjs
+          node momm/scripts/bumble-qualification-ledger.test.mjs
+          node momm/scripts/bumble-stage.test.mjs
+          node momm/scripts/bumble-secret-store.test.mjs
+          node momm/scripts/bumble-capacity.test.mjs
+          node momm/scripts/bumble-capacity-sensitivity.test.mjs
+          node momm/scripts/bumble-store-boundaries.test.mjs
+          node momm/scripts/bumble-review-regressions.test.mjs
+          node momm/scripts/bumble-runtime-boundaries.test.mjs
+          node momm/scripts/bumble-native.test.mjs
+          node momm/scripts/bumble-peer-budget.test.mjs
+          node momm/scripts/bumble-release-receipt.test.mjs
+          node momm/scripts/bumble-peer-review.test.mjs
+          node momm/scripts/bumble-peer-worker.test.mjs
+          node momm/scripts/bumble-peer-shadow.test.mjs
+          node momm/scripts/bumble-shadow-broker.test.mjs
+          node momm/scripts/bumble-protected-execution.test.mjs
+          node momm/scripts/bumble-shadow-coordinator.test.mjs
+          node momm/scripts/bumble-final-regressions.test.mjs
+          node momm/scripts/bumble-stage-capacity.test.mjs
+          node momm/scripts/bumble-stage-recovery.test.mjs
+          node momm/scripts/bumble-transmission-recovery.test.mjs
+          node momm/scripts/bumble-stage-adoption.test.mjs
+          node momm/scripts/bumble-stage-admission.test.mjs
+          node momm/scripts/bumble-stage-headroom.test.mjs
+          node momm/scripts/bumble-stage-release.test.mjs
+          node momm/scripts/bumble-plan-retirement.test.mjs
+          node momm/scripts/bumble-plan-restoration.test.mjs
+          node momm/scripts/bumble-pure-review-probes.test.mjs
+          node momm/scripts/bumble-qualification-sensitivity.test.mjs
+          node momm/scripts/bumble-transport.test.mjs
+          node momm/scripts/bumble-worker-binding.test.mjs
+          node momm/scripts/bumble-oauth-contract.test.mjs
+          node momm/scripts/bumble-oauth-authority.test.mjs
+          node momm/scripts/bumble-oauth-discovery.test.mjs
+          node momm/scripts/bumble-oauth-journal.test.mjs
+          node momm/scripts/bumble-oauth-receiver.test.mjs
+          node momm/scripts/bumble-request.test.mjs
+          node momm/scripts/bumble-baseline.test.mjs
+          node momm/scripts/bumble-oauth-handoff.test.mjs
+          node momm/scripts/bumble-oauth-peer-handoff.test.mjs
+          node momm/scripts/bumble-oauth-http.test.mjs
+          node momm/scripts/sanitizer-source-regression.test.mjs
+          node momm/scripts/dispatcher-review-regressions.test.mjs
+          node momm/scripts/bumble-oauth-http-review-regressions.test.mjs
+          node momm/scripts/bumble-oauth-worker-review-regressions.test.mjs
+          node momm/scripts/bumble-oauth-peer-worker.test.mjs
+          node momm/scripts/bumble-oauth-pilot.test.mjs
+          node momm/scripts/bumble-oauth-captured-regressions.test.mjs
+          node momm/scripts/bumble-oauth-pilot-regressions.test.mjs
+          node momm/scripts/bumble-oauth-pilot-regressions.test.mjs --connection
+          node momm/scripts/bumble-handoff-boundaries.test.mjs
+          node momm/scripts/bumble-custody-review-regressions.test.mjs
+          node momm/scripts/bumble-handoff-clock.test.mjs
+          node momm/scripts/bumble-oauth-vault.test.mjs
+          node momm/scripts/bumble-oauth-panel.test.mjs
           node momm/scripts/governor.test.mjs
           node momm/scripts/installations.test.mjs
           node momm/scripts/scorecard.test.mjs

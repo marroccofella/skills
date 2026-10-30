@@ -8,7 +8,10 @@ on:
 
 jobs:
   self-test:
-    timeout-minutes: 25
+    # The completed 167-command local Windows pack took 70m44s on 19 October.
+    # Keep a finite bound with 25% execution headroom plus five minutes of setup.
+    # This is a scheduling budget, not a hosted/platform qualification claim.
+    timeout-minutes: 100
     runs-on: ${{ matrix.os }}
     env:
       NO_UPDATE_CHECK: '1'
@@ -226,7 +229,7 @@ jobs:
         run: node momm/scripts/modality-evaluation.test.mjs
       - name: guided image generation rounds, fake runner only (1.17 E)
         if: ${{ !cancelled() }}
-        timeout-minutes: 3
+        timeout-minutes: 6
         run: node momm/scripts/generation-rounds.test.mjs
       - name: Windows launch guard on every process-launching script
         if: ${{ !cancelled() }}
@@ -307,6 +310,330 @@ jobs:
         if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/setup-maintenance.test.mjs
+      - name: Reviewer registry and persisted settings (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/reviewer-registry.test.mjs
+      - name: Reviewer OAuth default and explicit key-mode settings (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/reviewer-auth-choice.test.mjs
+      - name: Bumbler task and admission contracts (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-contract.test.mjs
+      - name: Bumbler task metadata capture (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-task-metadata.test.mjs
+      - name: Bumbler explicit completion attestations (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-contract-attestation.test.mjs
+      - name: Bumbler bounded source grounding work (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-contract-grounding.test.mjs
+      - name: Bumbler exact response text identity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-contract-decoding.test.mjs
+      - name: Bumbler stage completion entry boundaries (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 6
+        run: node momm/scripts/bumble-stage-attestation-before.test.mjs
+      - name: Bumbler exact raw response retention (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-raw-evidence.test.mjs
+      - name: Bumbler well-formed task text (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-task-unicode.test.mjs
+      - name: Bumbler bounded restored task identity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-task-identity.test.mjs
+      - name: Bumbler immutable legacy response revalidation (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 6
+        run: node momm/scripts/bumble-stage-revalidation.test.mjs
+      - name: Bumbler sealed-terminal and denied-output invariants (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 12
+        run: node momm/scripts/bumble-stage-review-probes.test.mjs
+      - name: Bumbler terminal-refusal and fixture-report evidence (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 12
+        run: node momm/scripts/bumble-stage-probe-evidence.test.mjs
+      - name: Bumbler exclusive complete-byte publication (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-immutable-file.test.mjs
+      - name: Bumbler publication uncertainty and unusable identity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-immutable-boundary-probes.test.mjs
+      - name: Bumbler reserved names and close-outcome custody (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-publication-followup.test.mjs
+      - name: Bumbler frontend safety invariants
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumblers-ui.test.mjs
+      - name: Bumbler worker validation and admission hardening (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-hardening.test.mjs
+      - name: Reviewer registry hardening (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/registry-hardening.test.mjs
+      - name: Bumbler production client behavior (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumblers-behavior.test.mjs
+      - name: Bumbler session and view-revision boundaries (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumblers-boundaries.test.mjs
+      - name: Reviewer endpoint boundaries (local synthetic server)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/reviewer-endpoint.test.mjs
+      - name: Bumbler qualification identity and expiry (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-qualification.test.mjs
+      - name: Bumbler qualification review regressions (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-qualification-regressions.test.mjs
+      - name: Bumbler private fixture burns and restart accounting (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-fixtures.test.mjs
+      - name: Bumbler qualification requires its original private attempt journal (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-qualification-ledger.test.mjs
+      - name: Bumbler sealed baseline and supplementary-stage reservations (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-stage.test.mjs
+      - name: Bumbler credential policy precedes every secret operation (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-secret-store.test.mjs
+      - name: Bumbler global cross-run capacity reservations (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-capacity.test.mjs
+      - name: Bumbler retirement admission test sensitivity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-capacity-sensitivity.test.mjs
+      - name: Bumbler private-store and capacity binding boundaries (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-store-boundaries.test.mjs
+      - name: Bumbler material-claim regressions (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-review-regressions.test.mjs
+      - name: Bumbler runtime record and projection boundaries (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-runtime-boundaries.test.mjs
+      - name: Bumbler native entry remains policy gated (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-native.test.mjs
+      - name: Bumbler approval-scoped atomic capacity budget (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: node momm/scripts/bumble-peer-budget.test.mjs
+      - name: Bumbler pinned owner release accounting (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-release-receipt.test.mjs
+      - name: Bumbler peer contract bridge (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-peer-review.test.mjs
+      - name: Bumbler protected shadow worker (synthetic; Windows storage only)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-peer-worker.test.mjs
+      - name: Bumbler shadow admission and evidence (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-peer-shadow.test.mjs
+      - name: Bumbler signed protected-plan broker (synthetic, no model calls)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: node momm/scripts/bumble-shadow-broker.test.mjs
+      - name: Bumbler captured worker code custody (offline, no credentials)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-protected-execution.test.mjs
+      - name: Bumbler baseline-first protected shadow coordinator (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: node momm/scripts/bumble-shadow-coordinator.test.mjs
+      - name: Bumbler first-use and compatibility regressions (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-final-regressions.test.mjs
+      - name: Bumbler stage binds global physical capacity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-stage-capacity.test.mjs
+      - name: Bumbler terminal preconditions and unsent write-fault recovery (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 8
+        run: node momm/scripts/bumble-stage-recovery.test.mjs
+      - name: Bumbler original transmission-intent reconciliation (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-transmission-recovery.test.mjs
+      - name: Bumbler immutable original-result adoption and conflict refusal (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 6
+        run: node momm/scripts/bumble-stage-adoption.test.mjs
+      - name: Bumbler original admission identity and no-resend recovery (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-stage-admission.test.mjs
+      - name: Bumbler reserves terminal storage headroom before admission (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-stage-headroom.test.mjs
+      - name: Bumbler exact cross-store physical-release adoption (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: node momm/scripts/bumble-stage-release.test.mjs
+      - name: Bumbler retirement preserves original accounting (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-plan-retirement.test.mjs
+      - name: Bumbler restored planner journal and audit binding (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-plan-restoration.test.mjs
+      - name: Bumbler strict digest types and independent safe plan accounting (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-pure-review-probes.test.mjs
+      - name: Bumbler qualification test positive-control sensitivity (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-qualification-sensitivity.test.mjs
+      - name: Bumbler native producer and parent attempt binding (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-worker-binding.test.mjs
+      - name: Bumbler OAuth metadata and PKCE contract foundations (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-contract.test.mjs
+      - name: Bumbler temporary OAuth authority and client exchange (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-authority.test.mjs
+      - name: Bumbler public OAuth discovery and trust boundary (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-discovery.test.mjs
+      - name: Bumbler OAuth immutable operation journal (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: node momm/scripts/bumble-oauth-journal.test.mjs
+      - name: Bumbler owned OAuth callback receiver (localhost synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-receiver.test.mjs
+      - name: Bumbler complete encoded request budget preflight (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-request.test.mjs
+      - name: Bumbler original sealed baseline ownership (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: node momm/scripts/bumble-baseline.test.mjs
+      - name: Bumbler complete private OAuth frame custody (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-handoff.test.mjs
+      - name: Bumbler canonical peer OAuth frame custody (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-peer-handoff.test.mjs
+      - name: Bumbler OAuth discovery and code exchange (mocked HTTPS only)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-http.test.mjs
+      - name: Sanitizer source-preservation and credential controls (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/sanitizer-source-regression.test.mjs
+      - name: Dispatcher numeric, metadata and agreement controls (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/dispatcher-review-regressions.test.mjs
+      - name: OAuth HTTP peer-review regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-http-review-regressions.test.mjs
+      - name: OAuth worker peer-review regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-worker-review-regressions.test.mjs
+      - name: Bumbler OAuth peer worker (mocked HTTPS, closed native entry)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-peer-worker.test.mjs
+      - name: Bumbler protected OAuth pilot (synthetic approvals and HTTPS)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: node momm/scripts/bumble-oauth-pilot.test.mjs
+      - name: Bumbler OAuth captured input regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-captured-regressions.test.mjs
+      - name: Bumbler OAuth pilot fault regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-pilot-regressions.test.mjs
+      - name: Bumbler OAuth connection preflight regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-pilot-regressions.test.mjs --connection
+      - name: Bumbler handoff revocation and binding boundaries (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-handoff-boundaries.test.mjs
+      - name: Bumbler owned clock and reentrant custody regressions (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: node momm/scripts/bumble-custody-review-regressions.test.mjs
+      - name: Bumbler caller-clock custody boundaries (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: node momm/scripts/bumble-handoff-clock.test.mjs
+      - name: Bumbler protected OAuth session storage (synthetic)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: node momm/scripts/bumble-oauth-vault.test.mjs
+      - name: Bumbler OAuth-only draft panel (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-oauth-panel.test.mjs
+      - name: Bumbler supervised transport stays policy gated (offline)
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
+        run: node momm/scripts/bumble-transport.test.mjs
       - name: Setup Center JavaScript syntax
         if: ${{ !cancelled() }}
         # bash on every OS, as for the suite lists: under the Windows default (PowerShell) only the last

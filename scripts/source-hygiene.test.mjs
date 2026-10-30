@@ -186,7 +186,7 @@ check('no tracked test compares the unresolved temp folder with a real path', ()
   }
   assert.deepEqual(bad, [], 'compare fs.realpathSync.native results on both sides, or start from realTempDir() in momm/scripts/private-test-fixture.mjs');
 });
-check('realTempDir gives the real native path of a new temp folder, however the environment spells it', () => {
+check('temporary fixture helpers preserve their explicit path contracts under an alias', () => {
   // A link stands in for the hosted runners' spellings: the child is told its temp folder is the link.
   const parent = fs.realpathSync.native(os.tmpdir()), base = realTempDir('momm-hygiene-real-');
   try {
@@ -196,11 +196,14 @@ check('realTempDir gives the real native path of a new temp folder, however the 
     const target = path.join(base, 'target'), link = path.join(base, 'spelled-differently');
     fs.mkdirSync(target); fs.symlinkSync(target, link, 'junction');
     const helper = pathToFileURL(path.join(root, 'momm/scripts/private-test-fixture.mjs')).href;
-    const child = spawnSync(process.execPath, ['--input-type=module', '-e', 'const m = await import(process.argv[1]); process.stdout.write(m.realTempDir("momm-hygiene-child-"));', helper],
+    for (const method of ['realTempDir', 'privateTestFixture']) {
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', 'const m = await import(process.argv[1]); process.stdout.write(m[process.argv[2]]("momm-hygiene-child-"));', helper, method],
       { encoding: 'utf8', windowsHide: true, timeout: 30_000, env: { ...process.env, TMPDIR: link, TEMP: link, TMP: link } });
     assert.equal(child.status, 0, child.stderr);
-    assert.equal(path.dirname(child.stdout), target, 'the real folder, not the spelling the environment gave');
+    assert.equal(path.dirname(child.stdout), method === 'realTempDir' ? target : link,
+      'realTempDir resolves aliases; privateTestFixture preserves its established path spelling');
     assert(path.basename(child.stdout).startsWith('momm-hygiene-child-') && fs.statSync(child.stdout).isDirectory());
+    }
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 check('realTempDir leaves no folder behind when the real path cannot be read', () => {

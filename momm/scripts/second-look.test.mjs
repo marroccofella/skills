@@ -300,7 +300,7 @@ try {
     const cli = (...args) => spawnSync(process.execPath, [path.join(scripts, "multi-review.mjs"), ...args], { cwd: dir, encoding: "utf8", windowsHide: true, timeout: 30000, env: { ...process.env, NO_UPDATE_CHECK: "1", GOVERNING_AGENT: "" } });
     const timeout = cli("--second-look", "rev_20260929000000_none", "--finding", CLAIM.id, "--timeout", "abc");
     assert.equal(timeout.status, 1, timeout.stderr);
-    assert.match(timeout.stderr, /Timeout and size limits must be numbers/);
+    assert.match(timeout.stderr, /--timeout requires a finite timer-safe number of seconds/);
     const extra = cli("--second-look", "rev_20260929000000_none", "--finding", CLAIM.id, "--strict");
     assert.equal(extra.status, 1);
     assert.match(extra.stderr, /--second-look takes only --finding, --reviewers <route>, --governor, --timeout, --effort and --pretty; remove --strict/);

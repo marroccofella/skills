@@ -1,0 +1,33 @@
+// Governor-authored synthetic restoration boundaries; no worker or transport.
+import assert from 'node:assert/strict';import {BumblePlan} from './bumble-plan.mjs';
+delete process.env.MOMM_EVIDENCE_HOME;
+const limits={global:2,per_group:2,max_tasks:3,max_candidates:3,max_bytes:100,max_investigations:2,deadline:1000,negative_ids:['n'],minimum_negatives:1};
+const request=id=>({task_id:id,resource_group:'g',source_ip_group:'ip'}),empty=()=>new BumblePlan(limits).snapshot();
+const negative=()=>{const p=new BumblePlan(limits),id=p.admit(request('n'),1);p.terminal(id,'scoped_negative',{bytes:7});return p.snapshot();};
+const refuse=s=>assert.throws(()=>new BumblePlan(limits,s),/restored|audit|journal|account|overflow|identity/i);
+const appendAdmission=(s,task_id,resource_group,source_ip_group)=>{const r={id:'forged-'+task_id,task_id,resource_group,source_ip_group,state:'admitted',released:false},e={event:'admitted',...r};if(s.state.attempts.some(a=>a.event==='admitted'&&Object.hasOwn(a,'now')))e.now=5;s.state.reservations.push(r);s.state.tasks++;s.state.attempts.push(e);};
+const cases={
+ globalReplayCap(){const l={...limits,global:1},p=new BumblePlan(l);p.admit(request('a'),1);const s=p.snapshot();appendAdmission(s,'b','other','other');assert.throws(()=>new BumblePlan(l,s));},
+ resourceReplayCap(){const l={...limits,per_group:1},p=new BumblePlan(l);p.admit(request('a'),1);const s=p.snapshot();appendAdmission(s,'b','g','other');assert.throws(()=>new BumblePlan(l,s));},
+ ipReplayCap(){const l={...limits,per_group:1},p=new BumblePlan(l);p.admit(request('a'),1);const s=p.snapshot();appendAdmission(s,'b','other','ip');assert.throws(()=>new BumblePlan(l,s));},
+ retiredReplayAdmission(){const p=new BumblePlan(limits),id=p.admit(request('a'),1);p.retire('g');p.terminal(id,'known_not_sent');assert.equal(p.admit(request('b'),4),null,'retirement remains a tombstone after every original hold is released');const s=p.snapshot();appendAdmission(s,'b','g','other');refuse(s);},
+ callerClockIsNotAuthority(){const options={...limits,deadline:100},p=new BumblePlan(options),id=p.admit(request('a'),50);p.terminal(id,'known_not_sent');assert(p.admit(request('b'),10),'pure caller-clock planning does not attest actual wall time');const r=new BumblePlan(options,p.snapshot());assert.equal(r.coverage().completion,false);assert.equal(r.coverage().quorum_votes,0);assert.equal(r.coverage().unresolved_reservations,1);},
+ constructorArgumentsRequired(){assert.throws(()=>new BumblePlan(),TypeError);assert.throws(()=>new BumblePlan({}),/Invalid.*deadline/i);},
+ overflowReplayAdmission(){const p=new BumblePlan(limits),id=p.admit(request('a'),1);p.terminal(id,'candidate',{bytes:101,candidates:1,remote_release_verified:true});const s=p.snapshot();appendAdmission(s,'b','other','other');refuse(s);},
+ admissionClockJournal(){const p=new BumblePlan(limits);p.admit(request('a'),1);const s=p.snapshot();assert.equal(s.state.attempts[0].now,1);s.state.attempts[0].now=limits.deadline;refuse(s);assert.throws(()=>new BumblePlan(limits).admit(request('a'),1.5));},
+ erasedInvestigation(){const p=new BumblePlan(limits);assert(p.investigate());assert(p.investigate());assert.equal(p.investigate(),false);const s=p.snapshot();s.state.investigations=0;s.state.halted=false;refuse(s);},
+ erasedInvestigationLatch(){const p=new BumblePlan(limits);p.investigate();p.investigate();const legal=p.snapshot();assert.equal(new BumblePlan(limits,legal).coverage().halted,false);p.investigate();const s=p.snapshot();s.state.halted=false;refuse(s);},
+ legacyJournalQuarantine(){const p=new BumblePlan(limits);p.admit(request('a'),1);const s=p.snapshot();s.schema='momm-bumble-plan/1';delete s.state.attempts[0].now;const bytes=JSON.stringify(s);assert.throws(()=>new BumblePlan(limits,s),/legacy|reconciliation/i);assert.equal(JSON.stringify(s),bytes);},
+ unbackedNegative(){const s=empty();s.state.negatives=['n'];refuse(s);},
+ duplicateTask(){const p=new BumblePlan(limits);p.admit(request('n'),1);p.admit(request('m'),2);const s=p.snapshot();s.state.reservations[1].task_id='n';refuse(s);},
+ missingTerminal(){const s=negative();s.state.attempts=s.state.attempts.filter(a=>a.event!=='terminal');refuse(s);},
+ erasedBytes(){const s=negative();s.state.bytes=0;refuse(s);},
+ erasedHalt(){const p=new BumblePlan(limits),id=p.admit(request('n'),1);p.terminal(id,'candidate',{bytes:101,candidates:1,remote_release_verified:true});const s=p.snapshot();s.state.halted=false;refuse(s);},
+ wrongOutcome(){const s=negative();s.state.reservations[0].state='candidate';refuse(s);},
+ extraAdmission(){const s=empty();s.state.attempts.push({event:'admitted',id:'invented',task_id:'m',resource_group:'g',source_ip_group:'ip',state:'admitted',released:false});refuse(s);},
+ wrongRelease(){const s=negative();s.state.reservations[0].released=true;refuse(s);},
+ physicalReleaseHistory(){const p=new BumblePlan(limits),id=p.admit(request('m'),1);p.terminal(id,'outcome_unknown',{bytes:7,candidates:1});const proof={receipt_sha256:'a'.repeat(64),at:3};assert.equal(p.adoptPhysicalRelease(id,proof),true);assert.equal(p.adoptPhysicalRelease(id,proof),false);const s=p.snapshot(),r=new BumblePlan(limits,s);assert.equal(r.coverage().unresolved_reservations,0);assert.equal(r.state.bytes,7);assert.equal(r.state.candidates,1);assert.equal(r.state.reservations[0].state,'outcome_unknown');for(const edit of [v=>v.state.attempts.pop(),v=>v.state.attempts.push({...v.state.attempts.at(-1)}),v=>v.state.attempts.at(-1).receipt_sha256=true,v=>v.state.attempts.at(-1).at=-1,v=>v.state.reservations[0].released=false]){const altered=structuredClone(s);edit(altered);refuse(altered);}assert.throws(()=>p.adoptPhysicalRelease(id,{...proof,receipt_sha256:'b'.repeat(64)}));},
+ missingAudit(){const s=negative();s.state.negatives=[];refuse(s);},
+ controls(){assert.equal(new BumblePlan(limits,empty()).coverage().audit,'audit_unmet');const s=negative();assert.equal(new BumblePlan(limits,s).coverage().audit,'sample_met');assert.equal(new BumblePlan(limits,s).state.bytes,7);const p=new BumblePlan(limits),id=p.admit(request('m'),1);p.retire('g');p.terminal(id,'outcome_unknown',{bytes:2});const r=new BumblePlan(limits,p.snapshot());assert.equal(r.coverage().unresolved_reservations,1);assert.equal(r.coverage().completion,false);assert.equal(r.coverage().quorum_votes,0);}
+};
+const selected=process.argv[2];if(selected){assert(cases[selected]);cases[selected]();}else for(const run of Object.values(cases))run();console.log(JSON.stringify({passed:true,case:selected||'all',checks:selected?1:Object.keys(cases).length,scope:'synthetic local planner restoration; not authenticated journal or physical release verification'}));

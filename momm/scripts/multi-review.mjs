@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { update, dailyCheck, updateCheckDisabled, provenance, parse as parseUpdateOptions } from "./update.mjs";
 import { PEER_CONTRACT, reviewProblem, quotationDiagnostics } from "./review-contract.mjs";
+import {REVIEW_JSON_SCHEMA} from './review-contract-schema.mjs';
 import { captureSourceSnapshot, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { inventory as installationsInventory } from "./installations.mjs";
 import { createProcessScope, executableOutside } from "./process-scope.mjs";
@@ -28,6 +29,8 @@ import { preparePrivateEvidence, requirePrivateEvidence, createEvidenceWorkspace
 import { evidenceLocation, evidenceDir, recordEvidenceProject, takeEvidenceHomeOption, evidenceRefusal, EVIDENCE_FOLDER } from "./evidence-location.mjs";
 import { knownIncompatibility, settleCompatibility, rememberedNotice } from "./compatibility.mjs";
 import { repeatedStatusNotices, diffInputNotice } from "./run-notices.mjs";
+import {applyReviewerSettings} from './reviewer-selection.mjs';
+import {runNativeBumbleStage} from './bumble-native.mjs';
 
 // Windows: for a bare command name (git.exe, a reviewer CLI, taskkill) both
 // cmd.exe and libuv's own shell:false lookup try the WORKING DIRECTORY before
@@ -40,7 +43,7 @@ if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
-const MOMM_VERSION = "1.17.3";
+const MOMM_VERSION = "1.18.0";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -438,12 +441,20 @@ function stripJpegMetadata(buffer) {
   const parts = [buffer.subarray(0, 2)];
   let offset = 2;
   let stripped = false;
-  while (offset + 4 <= buffer.length && buffer[offset] === 0xff) {
-    const marker = buffer[offset + 1];
-    if (marker === 0xda) { parts.push(buffer.subarray(offset)); offset = buffer.length; break; } // start of scan: rest is image data
-    const size = buffer.readUInt16BE(offset + 2) + 2;
+  while (offset < buffer.length) {
+    const start = offset;
+    if (buffer[offset] !== 0xff) throw new Error("Malformed JPEG marker before scan");
+    while (offset < buffer.length && buffer[offset] === 0xff) offset++;
+    if (offset >= buffer.length) throw new Error("Truncated JPEG marker");
+    const marker = buffer[offset++];
+    if (marker === 0xd9) { parts.push(buffer.subarray(start, offset)); stripped ||= offset < buffer.length; offset = buffer.length; break; }
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { parts.push(buffer.subarray(start, offset)); continue; }
+    if (offset + 2 > buffer.length) throw new Error("Truncated JPEG segment");
+    const size = buffer.readUInt16BE(offset);
+    if (size < 2 || size > buffer.length - offset) throw new Error("Invalid JPEG segment length");
+    if (marker === 0xda) { parts.push(buffer.subarray(start)); offset = buffer.length; break; } // entropy data remains unchanged
     if (marker === 0xe1 || marker === 0xe2) stripped = true; // APP1 (EXIF/XMP) / APP2
-    else parts.push(buffer.subarray(offset, offset + size));
+    else parts.push(buffer.subarray(start, offset + size));
     offset += size;
   }
   if (offset < buffer.length) parts.push(buffer.subarray(offset));
@@ -461,6 +472,7 @@ function stripPngMetadata(buffer) {
     const length = buffer.readUInt32BE(offset);
     const type = buffer.subarray(offset + 4, offset + 8).toString("latin1");
     const total = 12 + length;
+    if (total > buffer.length - offset) throw new Error("Invalid PNG chunk length");
     if (drop.has(type)) stripped = true;
     else parts.push(buffer.subarray(offset, offset + total));
     if (type === "IEND") break;
@@ -773,51 +785,6 @@ Prefer 1–3 short single-line excerpts with a one- or two-sentence assessment e
 At most 50 findings and 20 suggestions; do not silently omit work to meet these limits: report incomplete if necessary. Finding limits: id 80, target_file 500, issue/rationale 2000, test_suggestion 1500 UTF-16 code units; suggestions 500 UTF-16 code units each. Non-BMP symbols such as emoji count as two units. Use unique finding ids.
 Describe only defects genuinely present in the artifact; never emit placeholder or example text.`;
 
-// Antigravity's generation hint. Other routes receive the prose contract;
-// every completed reply is independently checked by reviewProblem below.
-const REVIEW_JSON_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["review_status", "reviewed_scope", "verdict", "confidence", "findings", "summary", "suggested_improvements"],
-  properties: {
-    review_status: { type: "string", enum: ["complete", "incomplete"] },
-    reviewed_scope: { type: "array", maxItems: 12, items: { anyOf: [
-      { type: "object", additionalProperties: false, required: ["quote", "assessment"], properties: { quote: { type: "string", maxLength: 500 }, assessment: { type: "string", maxLength: 1000 } } },
-      // 1.17 A3: valid only when that attachment was sent in this run (checked by reviewProblem).
-      { type: "object", additionalProperties: false, required: ["attachment_sha256", "observation", "assessment"], properties: { attachment_sha256: { type: "string", maxLength: 64 }, observation: { type: "string", maxLength: 500 }, assessment: { type: "string", maxLength: 1000 }, region: { type: "array", items: { type: "integer", minimum: 0 }, minItems: 4, maxItems: 4 } } },
-    ] } },
-    verdict: { type: "string", enum: ["ACCEPT", "MODIFY", "REJECT"] },
-    suggested_improvements: { type: "array", maxItems: 20, items: { type: "string", maxLength: 500 } },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
-    findings: {
-      type: "array",
-      maxItems: 50,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "severity", "target_file", "line_range", "issue", "rationale", "test_suggestion"],
-        properties: {
-          id: { type: "string", maxLength: 80 },
-          severity: { type: "string", enum: ["CRITICAL", "WARNING", "NITPICK"] },
-          target_file: { type: ["string", "null"], maxLength: 500 },
-          line_range: {
-            anyOf: [
-              { type: "array", prefixItems: [{ type: "integer" }, { type: "integer" }], minItems: 2, maxItems: 2 },
-              { type: "null" },
-            ],
-          },
-          issue: { type: "string", maxLength: 2000 },
-          rationale: { type: "string", maxLength: 2000 },
-          test_suggestion: { type: ["string", "null"], maxLength: 1500 },
-          region: { type: "array", items: { type: "integer", minimum: 0 }, minItems: 4, maxItems: 4 },
-          // 1.17 B2: optional; must equal review-contract.mjs CLAIM_TYPES (most blocking first).
-          claim_type: { type: "string", enum: ["DEFECT", "RISK", "QUESTION", "IDEA", "NOISE"] },
-        },
-      },
-    },
-    summary: { type: "string", maxLength: 1000 },
-  },
-};
 
 function normalizeAgentName(value) {
   const name = String(value || "").trim().toLowerCase();
@@ -982,12 +949,12 @@ function parseArgs(argv) {
     }
     else if (arg === "--capabilities") options.capabilitiesMatrix = true;
     else if (arg === "--json") options.json = true;
-    else if (arg === "--timeout") { options.timeoutMs = Math.max(1, Number(next())) * 1000; options.timeoutExplicit = true; }
+    else if (arg === "--timeout") { const raw = next(), seconds = Number(raw), milliseconds = Math.max(1, seconds) * 1000; if (!String(raw).trim() || !Number.isFinite(seconds) || !Number.isSafeInteger(milliseconds) || milliseconds > 2147483647) throw new Error("--timeout requires a finite timer-safe number of seconds"); options.timeoutMs = milliseconds; options.timeoutExplicit = true; }
     else if (arg === "--effort") {
       options.effort = next();
       if (!["default", "medium"].includes(options.effort)) throw new Error("--effort must be default or medium");
     }
-    else if (arg === "--max-bytes") options.maxBytes = Math.max(1, Number(next()));
+    else if (arg === "--max-bytes") { const raw = next(), bytes = Number(raw); if (!String(raw).trim() || !Number.isFinite(bytes) || !Number.isSafeInteger(Math.max(1, bytes))) throw new Error("--max-bytes requires a finite safe integer"); options.maxBytes = Math.max(1, bytes); }
     else if (arg === "--strict") options.strict = true;
     else if (arg === "--retry-invalid") options.retryInvalid = true;
     else if (arg === "--cover") options.cover = true;
@@ -1085,10 +1052,17 @@ function sanitizeText(text) {
     /\bsk-[A-Za-z0-9]{20,}\b/g,
     /\bAKIA[0-9A-Z]{16}\b/g,
     /((?:api[_-]?key|password|secret|bearer)\s*[:=]\s*["']?)[^\s"']{8,}/gi,
+    /\b(bearer[ \t]+)[A-Za-z0-9._~+\/-]{8,}=*/gi,
   ];
   let value = text;
-  for (const pattern of patterns) {
-    value = value.replace(pattern, (_match, prefix) => {
+  for (const [patternIndex, pattern] of patterns.entries()) {
+    value = value.replace(pattern, (match, prefix, offset, input) => {
+      // Unquoted calls/arrows in explicit declarations are source expressions.
+      // Retain the original literal rule for ambiguous bare values and quotes.
+      if (patternIndex === 3 && typeof prefix === "string" && !/["']$/.test(prefix)) {
+        const before = input.slice(0, offset).split(/\r?\n/).at(-1), expression = match.slice(prefix.length);
+        if (/\b(?:const|let|var)\s+$/.test(before) && /^(?:[$A-Z_a-z][\w$]*(?:\.[\w$]+)*\(|\([^)]*\)=>)/.test(expression)) return match;
+      }
       redactions += 1;
       // The first pattern has no capture group, so `prefix` is the numeric
       // match offset — only prepend it when it is an actual captured string.
@@ -2138,7 +2112,8 @@ function rationalize(results, { prose = false, artifact = null } = {}) {
       // name, so they can never collide across reviewers.
       const idKey = `${(finding.target_file || "").toLowerCase()}|${finding.id.toLowerCase()}`;
       const quoted = prose || !normalizedRange(finding) ? quotationKey(grouped, finding, result.agent, prose, corpus) : null;
-      let key = byId.get(idKey) ?? quoted ?? (prose ? null : overlappingKey(grouped, finding)) ?? fingerprint(finding);
+      const priorKeys = byId.get(idKey) ?? [], priorKey = priorKeys.find(candidate => prose || !disjointRanges(grouped.get(candidate), finding));
+      let key = priorKey ?? quoted ?? (prose ? null : overlappingKey(grouped, finding)) ?? fingerprint(finding);
       // Precise locations beat fuzzy wording in BOTH directions: if the
       // candidate group sits at line ranges that demonstrably do not overlap
       // this finding's, they are different defects however similarly they are
@@ -2147,7 +2122,7 @@ function rationalize(results, { prose = false, artifact = null } = {}) {
       if (!prose && collision && disjointRanges(collision, finding)) {
         key = `${key}|@${Math.min(finding.line_range[0], finding.line_range[1])}`;
       }
-      byId.set(idKey, key);
+      if (!priorKeys.includes(key)) byId.set(idKey, [...priorKeys, key]);
       const existing = grouped.get(key);
       if (!existing) grouped.set(key, { ...finding, sources: [result.agent] });
       else {
@@ -3038,6 +3013,16 @@ async function selfTest(pretty) {
       const src = "const url = `${base}/api?key=${key}`; const k = process.env.OPENAI_API_KEY; import sklearn as sk-learn";
       return sanitizeText(src).value === src;
     })(),
+    code_assignments_survive_sanitizer_but_literals_do_not: (() => {
+      const code = ["const secret=own(privateInput,['access_token','certificate']);", "const secret=()=>({access_token:Buffer.from(x)});",
+        "const password=hashPassword(input.password);", "const bearer=headers.authorization.slice(7);", "apiKey = await loadApiKey(profile);"];
+      const quoted = ['secret = "', 'synthetic'.repeat(3), '"'].join('');
+      const bearer = ['Authorization: Bearer ', 'synthetic'.repeat(3)].join('');
+      return code.every(line => sanitizeText(line).value === line)
+        && sanitizeText(quoted).value === 'secret = "[REDACTED]"'
+        && sanitizeText('api_key=' + 'synthetic'.repeat(3)).value === 'api_key=[REDACTED]'
+        && sanitizeText(bearer).value === 'Authorization: Bearer [REDACTED]';
+    })(),
     verify_first_flags_only_low_precision_single_sources: (() => {
       const trackRecord = {
         copilot: { applied: 1, rejected: 9, samples: 10, precision: 0.1 },
@@ -3482,6 +3467,9 @@ async function main() {
     return;
   }
   if (options.selfTest) { await selfTest(options.pretty); return; }
+  let reviewerSelection;
+  try { reviewerSelection = applyReviewerSettings(options); }
+  catch(error) { process.stderr.write(`Reviewer settings refused: ${error.message}\n`); process.exitCode=4; return; }
   if (options.capabilitiesMatrix) {
     // The effective matrix for this machine: baseline plus still-valid overlay,
     // rendered by the registry module; the pipeline summary is derived from it.
@@ -3789,6 +3777,7 @@ async function main() {
     attempt_accounting: attemptTotals(attemptEvidence),
     ...(options.label ? { label: options.label } : {}),
     governor: options.governor,
+    reviewer_selection: reviewerSelection,
     input_bytes: byteLength,
     // Binds this report to the exact sanitized artifact the reviewers
     // received — byte count alone cannot distinguish same-length inputs.
@@ -3960,6 +3949,18 @@ async function main() {
   if (evidence.error && options.stream) {
     emitEvent(true, { event: "evidence_error", stage: evidence.failed_stage, error: evidence.error });
   }
+  // Supplementary workers never inform the independent baseline before its
+  // original reports are sealed. The current closed-policy gate reads no key
+  // or caller hook and performs no remote preflight/inference.
+  let bumble = {schema:'momm-bumble-native-readiness/1',status:'baseline_not_sealed',dispatched:0,credentials_read:false,quorum_votes:0,completion:false};
+  if(evidence.persisted && !evidence.error){
+    try { bumble = await runNativeBumbleStage({project_root:process.cwd(),run_id:runId,baseline_report_sha256:evidence.report_sha256,source_sha256:report.input_sha256,runProcess}); }
+    catch {
+      // Preserve the original baseline and never print raw worker diagnostics.
+      // A throwing future adapter cannot prove zero sends or physical release.
+      bumble = {schema:'momm-bumble-native-readiness/1',status:'supplementary_failed',dispatched:null,credentials_read:null,remote_outcome:'unknown',quorum_votes:0,completion:false};
+    }
+  }
   emitEvent(options.stream, {
     event: "final",
     run_id: runId,
@@ -4024,7 +4025,7 @@ async function main() {
   }
   // dispatcher_version already lives inside the report; update_available is an
   // additive, optional field (unknown-field-safe, so REPORT_SCHEMA is unchanged).
-  process.stdout.write(`${JSON.stringify({ ...report, evidence, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
+  process.stdout.write(`${JSON.stringify({ ...report, evidence, bumble, update_available: newer || null }, null, options.pretty ? 2 : 0)}\n`);
   if (options.strict && strictPolicyFailed(results, options.governor)) process.exitCode = 2;
   if (options.minSuccess && !quorumMet) {
     const failure = quorumFailure(externalSuccesses, options.minSuccess, pieceResults);

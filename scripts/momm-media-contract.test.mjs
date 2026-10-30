@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -9,13 +8,12 @@ import * as contract from '../momm/scripts/review-contract.mjs';
 import * as media from '../momm/scripts/media-bytes.mjs';
 import { JPEG } from '../momm/scripts/media-fixtures.mjs';
 import { syntheticPng } from '../momm/scripts/probes.mjs';
+import { REVIEW_JSON_SCHEMA as schema } from '../momm/scripts/review-contract-schema.mjs';
 delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-media-contract-'));
 process.on('exit', () => fs.rmSync(scratch, { recursive: true, force: true }));
 const source = fs.readFileSync(new URL('../momm/scripts/multi-review.mjs', import.meta.url), 'utf8');
-const start = source.indexOf('const REVIEW_JSON_SCHEMA = '), end = source.indexOf('\nfunction normalizeAgentName', start);
-assert.ok(start >= 0 && end > start);
-const schema = vm.runInNewContext(source.slice(start, end) + '\nREVIEW_JSON_SCHEMA');
+assert.match(source, /import\s*\{\s*REVIEW_JSON_SCHEMA\s*\}\s*from\s*['"]\.\/review-contract-schema\.mjs['"]/);
 const finding = { id: 'hat-contact', severity: 'WARNING', target_file: 'cat.png', line_range: null, issue: 'The brim intersects an ear.', rationale: 'The request specifies natural anatomy.', test_suggestion: null, region: [20, 30, 40, 50] };
 const reply = f => ({ review_status: 'complete', reviewed_scope: [{ quote: 'natural anatomy', assessment: 'Check the visible ear.' }], verdict: 'MODIFY', confidence: 0.8, summary: 'Image has a contact artifact.', suggested_improvements: [], findings: [f] });
 const region = schema.properties.findings.items.properties.region;

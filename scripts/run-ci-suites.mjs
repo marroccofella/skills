@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs every `node <suite>` command the self-test workflow runs, in order, on this machine, and prints one
+// Runs the MOMM/repository suites and canonical skill-health contract from the workflow, in order, and prints one
 // line per suite with its exit code and time. For reviewers who want the offline CI locally (MOMM 1.17
 // reviewer pack, section 3). It runs only repository test files named in the workflow; it contacts no
 // provider, installs nothing and changes nothing outside the temporary folders the suites create.
@@ -21,7 +21,7 @@ import { randomUUID, createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflow = fs.readFileSync(path.join(root, '.github/workflows/self-test.yml'), 'utf8');
-const commands = [...new Set([...workflow.matchAll(/node ((?:momm\/scripts|scripts)\/[A-Za-z0-9_./-]+\.mjs)([^\n"]*)/g)]
+const commands = [...new Set([...workflow.matchAll(/node ((?:(?:momm\/scripts|scripts)\/[A-Za-z0-9_./-]+|myskills\/scripts\/health-contract-test)\.mjs)([^\n"]*)/g)]
   .map((m) => [m[1], ...m[2].trim().split(/\s+/).filter(Boolean)].join(' ')))];
 // Strict options (1.17.1 R6): `--grpe --list` used to list every suite and exit 0, and `--grpe` alone
 // ran them all. true marks an option that takes a value.

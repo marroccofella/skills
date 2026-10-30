@@ -64,12 +64,14 @@ await check('dashboard preserves unknown and disallows unknown maintenance actio
   assert.equal(state({ agent: 'copilot', installed: false, ready: false }), 'install');
   const rowStart = ui.indexOf('function cliRow('), rowEnd = ui.indexOf('function renderMaintenance(', rowStart);
   const escapeStart = ui.indexOf('function escapeHtml('), escapeEnd = ui.indexOf('\nfunction showToast(', escapeStart);
+  const receiptStart = ui.indexOf('function receiptHtml('), receiptEnd = ui.indexOf('\nfunction renderActionViews(', receiptStart);
   assert(rowStart >= 0 && rowEnd > rowStart && escapeStart >= 0 && escapeEnd > escapeStart, 'Inspect changed dashboard extraction boundaries');
   // The page's own escaping helper, so an escaping regression in the row stays visible.
-  const row = vm.runInNewContext(ui.slice(escapeStart, escapeEnd) + ui.slice(rowStart, rowEnd) + ';cliRow', {
+  assert(receiptStart >= 0 && receiptEnd > receiptStart, 'production receipt helper is present');
+  const row = vm.runInNewContext(ui.slice(escapeStart, escapeEnd) + ui.slice(start, end) + ui.slice(receiptStart, receiptEnd) + ui.slice(rowStart, rowEnd) + ';cliRow', {
     session: { providers: { copilot: { label: 'Copilot <b>', docs: 'https://example.invalid/help?a=1&b=2' } } },
     governorSelect: { value: 'codex' }, updateAttempts: new Map(), isBatchable: () => false,
-    miniStatus: String,
+    miniStatus: String, actionReceipts: new Map(), liveResults: new Map(), report: null, batchRunning: false,
   });
   const html = row({ agent: 'copilot', installed: null, update_command: 'must-not-run', status: 'unknown' });
   assert(html.includes('Version unknown'));

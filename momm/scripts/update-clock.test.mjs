@@ -41,6 +41,15 @@ function env(overrides = {}) {
 const ok = (version, etag = '"v1"') => ({ status: 200, headers: { etag, "last-modified": "Sat, 12 Sep 2026 10:00:00 GMT" }, body: { momm: version, version } });
 const CODEX_URL = "https://registry.npmjs.org/@openai%2fcodex/latest";
 
+await test("an explicitly unpublished development manifest is not a release notice", async () => {
+  const e = env({ sources: [skillSource()], installed: {skill:"1.17.3"}, responses: {
+    [MANIFEST_URL]: {...ok("1.17.3"), body: {momm:"1.17.3", momm_development:{version:"1.18.0", stable:"1.17.3", notes_path:"momm/references/release-1.18.0.md"}, momm_releases:[{version:"1.17.3",tag:"momm-1.17.3",sha256:"a".repeat(64),hash_covers:"git-tree-blobs-excluding-versions/1"}]}}
+  }});
+  const result = await e.clock.trigger("manual");
+  assert.equal(result.results[0].latest, "1.17.3");
+  assert.equal(e.clock.status().sources[0].update_available, false);
+});
+
 await test("defaults: auto_update off, intervals 30 min / 24 h, validation rejects bad types", () => {
   const { home } = env();
   const s = readSettings(home);

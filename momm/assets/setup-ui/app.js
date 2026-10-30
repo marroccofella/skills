@@ -58,6 +58,11 @@ const planResult = document.querySelector("#plan-result");
 const staleNotice = document.querySelector("#stale-notice");
 
 let session = null;
+let reviewerSessionValidated=false;
+let reviewerSessionState='pending';
+const reviewerSessionSubscribers=new Set();
+function publishReviewerSession(value){reviewerSessionState=value?'valid':'invalid';for(const subscriber of reviewerSessionSubscribers){try{subscriber(value);}catch{}}}
+window.mommSetupSession={subscribe(fn){reviewerSessionSubscribers.add(fn);if(reviewerSessionState!=='pending'){try{fn(reviewerSessionValidated?session?.token??null:null);}catch{}}return()=>reviewerSessionSubscribers.delete(fn);},invalidate(value){if(session?.token===value){reviewerSessionValidated=false;publishReviewerSession(null);}}};
 let capabilities = null;
 // route -> the modality probe job that owns the route's buttons until it settles.
 const capabilityJobs = new Map();
@@ -72,12 +77,40 @@ let clockState = null;
 let clockError = null;
 let clockPoll = null;
 let batchRunning = false;
+let batchProgress = null;
+let quickProgress = null;
+let confirmationPending = false;
 // Batch ticks live here, not in the DOM: renderMaintenance replaces the table
 // on every refresh (and between batch steps), and the checkbox is re-emitted
 // from this Set so a selection survives the re-render.
 const batchSelected = new Set();
 const liveResults = new Map();
 const updateAttempts = new Map();
+// Tab-local, fixed-field receipts. A detached terminal's exit/login outcome is not observable here.
+const actionReceipts = new Map();
+const LOGIN_COMMANDS = Object.freeze({codex:'codex login',claude:'claude',gemini:'gemini',antigravity:'agy login',copilot:'copilot login',grok:'grok login'});
+const ACTION_LABELS = Object.freeze({launching:'Launching terminal…',launch_requested:'Launch request accepted. Terminal and login completion are not observed.',launch_failed:'Terminal was not launched.',launch_unconfirmed:'Launch could not be confirmed. Check for an open terminal before trying again.',blocked:'Action blocked. Refresh discovery and confirm the command again.'});
+const ACTION_REASONS = Object.freeze({dirty_checkout:'Action blocked: handle local skill changes before updating. Nothing was launched.',git_check_failed:'Action blocked: Git could not verify the checkout. Inspect its state before updating.',no_git_checkout:'Action blocked: this is not a Git checkout. Follow the bootstrap guide.',update_prerequisites:'Action blocked: Check update prerequisites and the installation receipt. Follow the bootstrap guide.',command_mismatch:'Action blocked: refresh versions and confirm the exact command again.',private_session:'Action blocked: reopen the private Setup Center launch link.',unsupported_action:'Unsupported provider action. Nothing was launched.'});
+
+function receiptCopy(provider) {
+  const receipt = actionReceipts.get(provider);
+  return receipt ? JSON.stringify({provider:receipt.provider,action:receipt.action,status:receipt.status,completion:receipt.completion}, null, 2) : null;
+}
+function receiptHtml(provider, state) {
+  const receipt = actionReceipts.get(provider);
+  if (!receipt) return '';
+  const next = receipt.status !== 'launch_requested' || state === 'ready' || state === 'testing' ? '' : receipt.action === 'login' ? ' Finish the provider login yourself, then choose Verify after login (one synthetic provider request).' : ' Finish in the terminal, then check again.';
+  return `<p class="card-copy card-hint" role="status">Last terminal action: ${escapeHtml(ACTION_REASONS[receipt.reason] || ACTION_LABELS[receipt.status])}${next}${state === 'ready' ? ' A separate live check has passed; this does not observe terminal completion.' : ''}</p><button class="inline-action" data-copy-receipt="${escapeHtml(provider)}">Copy action receipt</button>`;
+}
+function renderActionViews() {
+  try { render(); if (maintenance) renderMaintenance(); return true; }
+  catch { return false; }
+}
+async function copySetupText(text, kind) {
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); showToast(kind === 'login' ? 'Login command copied. Run it yourself in a terminal when sign-in is needed.' : 'Action receipt copied. Fixed fields only, not commands or private diagnostics.'); }
+  catch { showToast('Clipboard unavailable. The safe login command is shown on the card.'); }
+}
 // Governor transitions: the epoch is bumped on every change, so a status poll
 // or verification job started under the previous governor is recognised as
 // stale when it answers and dropped instead of populating the new view.
@@ -102,6 +135,44 @@ function showToast(message) {
   toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove("show"), 4200);
+}
+
+// In-page confirmation keeps the command preview visible without a blocking browser dialog.
+// The fallback serves older browsers and the DOM-only regression fixture, never skips consent.
+async function confirmSetupAction(message) {
+  if (confirmationPending) return false;
+  const dialog = document.querySelector('#action-confirm');
+  if (typeof dialog?.showModal !== 'function') return window.confirm(message);
+  confirmationPending = true;
+  const previous = document.activeElement;
+  document.querySelector('#action-confirm-copy').textContent = message;
+  return new Promise(resolve => {
+    const finish = accepted => {
+      dialog.close(); confirmationPending = false;
+      dialog.oncancel = null;
+      document.querySelector('#action-confirm-accept').onclick = null;
+      document.querySelector('#action-confirm-cancel').onclick = null;
+      previous?.focus?.(); resolve(accepted);
+    };
+    dialog.oncancel = event => { event.preventDefault(); finish(false); };
+    document.querySelector('#action-confirm-accept').onclick = () => finish(true);
+    document.querySelector('#action-confirm-cancel').onclick = () => finish(false);
+    try { dialog.showModal(); document.querySelector('#action-confirm-cancel').focus?.(); }
+    catch { finish(false); }
+  });
+}
+
+function renderOperation() {
+  const testing = reviewerRoutes().filter(route=>routeState(route)==='testing');
+  const batchText = batchProgress ? `${batchRunning ? 'CLI update batch' : 'Last CLI update batch'}: ${batchProgress.processed} of ${batchProgress.total} actions accounted for (${Math.round(100 * batchProgress.processed / batchProgress.total)}%). ${batchProgress.phase}` : '';
+  const text = batchRunning ? batchText
+    : quickSetupRunning ? quickProgress ? `Connection checks: ${quickProgress.completed} of ${quickProgress.total} finished. ${quickProgress.current || ''}` : 'Quick Setup: checking discovery and CLI compatibility.'
+    : testing.length ? `Verifying ${testing.length} reviewer connection${testing.length===1?'':'s'}: ${testing.map(route=>providerLabel(route.agent)).join(', ')}. Waiting for a final synthetic check result.`
+    : refreshing ? 'Checking reviewer discovery. No model call.' : batchText || 'No operation running.';
+  const node = document.querySelector('#operation-status');
+  if (node) node.textContent = text;
+  const batchNode = document.querySelector('#batch-progress');
+  if (batchNode) batchNode.textContent = batchText ? batchText + ' Action progress is not successful installation.' : '';
 }
 
 // The server is long-running: after an update it still serves the code it started
@@ -159,6 +230,8 @@ async function api(path, options = {}) {
   if (!response.ok) {
     const error = new Error(value.error || "Setup Center could not complete that action.");
     error.status = response.status;
+    error.action_receipt = value.receipt;
+    error.action_reason = value.reason;
     error.setup_center = value.setup_center; // a failed refresh still says when the server is stale
     throw error;
   }
@@ -198,9 +271,11 @@ function routeCopy(route, state) {
     const model = typeof record.model === "string" && record.model ? `the configured model ${record.model.slice(0, 80)}` : "its configured model";
     return `The installed CLI${version} needs an update to work with ${model}.`;
   }
-  if (state === "unknown") return route.note || "The version check did not complete. Retry discovery or explicitly verify the connection; this is not proof that installation or login is needed.";
+  if (state === "unknown") return `${route.version_status === 'error' ? 'The version check failed or its result was unreadable' : 'The version check did not complete'}; installation and account readiness are unknown. Retry discovery (no model call), or run the version command below in a fresh terminal so PATH changes are loaded. This is not proof that login or an update is needed.`;
   if (state === "ready") return "Connection verified with a harmless synthetic sentence. Ready for peer review.";
-  if (state === "detected") return "A local account session was found. Verify it without sending repository code.";
+  if (state === "detected") return route.agent === 'antigravity'
+    ? "Local OAuth evidence was found, but it is weak/shared with Gemini CLI. This account is not live-verified. Verify it without sending repository code."
+    : "Local OAuth evidence was found; this account is not live-verified. Verify it without sending repository code.";
   if (state === "testing") return "Checking the connection with a synthetic sentence. This can take about a minute.";
   if (state === "failed") {
     const result = liveResults.get(route.agent)?.result;
@@ -235,7 +310,11 @@ function providerCard(route) {
   const { cli, models } = providerMaintenance(route.agent);
   const detectedVersion = String(cli?.current || route.version || (route.installed === false ? "Not detected" : "Version unknown")).split("\n")[0];
   const cliText = cli?.status === "update_available" ? `${detectedVersion} → ${cli.latest}` : detectedVersion;
-  const authText = state === "ready" ? "Verified" : route.ready ? "Session found" : state === "unknown" || state === "update" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
+  const authText = state === "ready" ? "Live verified" : state === 'testing' ? 'Live check running' : state === 'failed' ? "Not verified" : state === 'detected' ? "Local evidence only" : state === "unknown" || state === "update" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
+  const receipt = actionReceipts.get(route.agent);
+  const verifyLabel = receipt?.action === 'login' ? 'Verify after login' : 'Verify connection';
+  const loginCommand = LOGIN_COMMANDS[route.agent];
+  const loginCopy = loginCommand && !['update','ready','testing','install'].includes(state) ? `<p class="card-copy card-hint">Safe login command: <code>${escapeHtml(loginCommand)}</code>${route.agent === 'claude' ? ' — then type /login.' : route.agent === 'gemini' ? ' — then type /auth (eligible organization account only).' : ''}</p><button class="inline-action" data-copy-login="${route.agent}">Copy login command</button>` : '';
   let mainAction = "";
   // The update state offers the existing update action, with the command this Setup Center verified
   // for the installation. Without one, the official command from preflight is shown as text only.
@@ -244,10 +323,10 @@ function providerCard(route) {
   const updateCopy = state !== "update" || canUpdate ? "" : `<p class="card-copy card-hint">${hint ? `Run this in a terminal, then choose Check again: <code>${escapeHtml(hint)}</code>` : "Use the provider’s official update command (see Help), then choose Check again."}</p>`;
   if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button>`;
   else if (state === "update") mainAction = canUpdate ? `<button class="button primary" data-action="update" data-provider="${route.agent}">Update CLI…</button>` : "";
-  else if (state === "unknown") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify connection</button>`;
-  else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}">Sign in</button>${state === 'failed' && route.ready ? `<button class="button ghost" data-test="${route.agent}">Verify again</button>` : ''}`;
+  else if (state === "unknown") mainAction = `<button class="button ghost" data-discovery="${route.agent}">Retry discovery</button><button class="button ghost" data-test="${route.agent}">${verifyLabel}</button>`;
+  else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}" ${receipt?.status === 'launching' ? 'disabled' : ''}>Sign in</button><button class="button ghost" data-test="${route.agent}">Verify after login</button>`;
   else if (state === 'failed') mainAction = `<button class="button ghost" data-test="${route.agent}">Retry check</button>`;
-  else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">Verify connection</button>`;
+  else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">${verifyLabel}</button>`;
   else if (state === "ready") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify again</button>`;
   else mainAction = '<button class="button primary" disabled>Verifying…</button>';
   const updateAction = !canUpdate && cli?.status === "update_available" && cli.update_command ? `<button class="inline-action" data-action="update" data-provider="${route.agent}">Update</button>` : "";
@@ -257,7 +336,7 @@ function providerCard(route) {
         <div class="provider-name"><span class="provider-icon">${escapeHtml(provider.label.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(provider.label)}</h3><small class="version">Peer reviewer</small></div></div>
         <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", update: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
       </div>
-      <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>${updateCopy}
+      <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>${updateCopy}${state === 'unknown' && loginCommand ? `<p class="card-copy card-hint">Version command: <code>${escapeHtml((route.agent === 'antigravity' ? 'agy' : route.agent) + ' --version')}</code></p>` : ''}
       <div class="provider-facts">
         <div class="provider-fact"><span>CLI</span><div class="provider-fact-line"><strong title="${escapeHtml(cliText)}">${escapeHtml(cliText)}</strong>${updateAction}</div></div>
         <div class="provider-fact"><span>Account</span><strong>${escapeHtml(authText)}</strong></div>
@@ -265,16 +344,16 @@ function providerCard(route) {
         <div class="provider-fact"><span>Modalities</span><strong title="What this reviewer can consume via --attach; text-only routes sit out media reviews as unsupported">${escapeHtml((provider.modalities || ["text"]).join(" · "))}</strong></div>
       </div>
       <div class="card-actions">${mainAction}<a class="docs-link" href="${provider.docs}" target="_blank" rel="noreferrer">Help ↗</a></div>
+      ${loginCopy}${receiptHtml(route.agent, state)}
+      ${cli?.status === 'update_available' ? '<p class="card-copy card-hint">CLI updates and account recovery are separate. Updating does not fix missing authentication, quota, a retired tier or a provider outage.</p>' : ''}
     </article>`;
 }
 
 function render() {
   if (!report) return;
   const routes = reviewerRoutes();
-  const milestones = routes.reduce((count, route) => count + Number(route.installed === true) + Number(Boolean(route.ready)) + Number(routeState(route) === "ready"), 0);
-  const possibleMilestones = routes.length * 3;
-  const percent = possibleMilestones ? Math.round((milestones / possibleMilestones) * 100) : 100;
   const verified = routes.filter((route) => routeState(route) === "ready").length;
+  const percent = routes.length ? Math.round(100 * verified / routes.length) : null;
   const signIns = routes.filter((route) => routeState(route) === 'login' || (routeState(route) === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')).length;
   const failedChecks = routes.filter(route => routeState(route) === 'failed' && liveResults.get(route.agent)?.result?.route_status !== 'authentication_required').length;
   const installs = routes.filter((route) => routeState(route) === "install").length;
@@ -290,18 +369,27 @@ function render() {
   if (failedChecks) remaining.push(`${failedChecks} failed check${failedChecks === 1 ? '' : 's'} to investigate`);
   if (verifications) remaining.push(`${verifications} detected session${verifications === 1 ? "" : "s"} to verify`);
   if (updates) remaining.push(`${updates} provider CLI update${updates === 1 ? "" : "s"}`);
-  setupPercent.textContent = `${percent}%`;
-  progress.style.width = `${percent}%`;
-  document.querySelector(".status-meter")?.style?.setProperty?.("--pct", String(percent));
+  setupPercent.textContent = percent === null ? '—' : `${percent}%`;
+  const compact = document.querySelector('#setup-percent-compact');
+  if (compact) compact.textContent = setupPercent.textContent;
+  const detail = document.querySelector('#setup-progress-detail');
+  if (detail) detail.textContent = `${verified} of ${routes.length} reviewers live-verified. Installation and session hints are not verification.`;
+  progress.style.width = `${percent ?? 0}%`;
+  const meter = document.querySelector('#readiness-progress');
+  meter?.setAttribute?.('aria-valuenow', String(percent ?? 0));
+  meter?.setAttribute?.('aria-valuetext', `${verified} of ${routes.length} reviewers live-verified`);
+  document.querySelector(".status-meter")?.style?.setProperty?.("--pct", String(percent ?? 0));
   const anyTesting = routes.some((route) => routeState(route) === "testing");
   Array.from(document.querySelectorAll?.(".progress-track") ?? []).forEach((track) => track.classList?.toggle?.("running", anyTesting));
-  statusTitle.textContent = percent === 100 ? "Setup complete" : `Setup ${percent}% complete`;
-  summary.textContent = remaining.length ? remaining.join(" · ") : "Every reviewer is installed, connected, and verified.";
+  statusTitle.textContent = percent === null ? 'No reviewers selected' : percent === 100 ? 'All reviewer connections verified' : `${percent}% of reviewer connections verified`;
+  summary.textContent = !routes.length ? 'No reviewer routes are selected. CLI maintenance is separate from review readiness.' : remaining.length ? remaining.join(" · ") : "Every reviewer is installed, connected, and verified.";
   quickSetupButton.textContent = quickSetupRunning ? "Running checks…" : verifications ? `Verify ${verifications} detected session${verifications === 1 ? "" : "s"}` : "Run Quick Setup";
   quickSetupNote.textContent = signIns ? "Verifies detected sessions automatically. Provider sign-in opens visibly and still needs you." : "Uses harmless synthetic text only—never project content.";
   grid.innerHTML = routes.map(providerCard).join("");
   // Stagger the entrance animation in render order (motion layer reads --i).
   Array.from(grid.children ?? []).forEach((card, index) => card.style?.setProperty?.("--i", String(index)));
+  renderOperation();
+  updateBatchButton();
 }
 
 function statusPresentation(status) {
@@ -333,8 +421,8 @@ function cliRow(item) {
   return `<tr><td class="batch-cell">${batchable ? `<input type="checkbox" data-batch="${item.agent}" aria-label="Select ${escapeHtml(provider.label)} for batch update" ${batchSelected.has(item.agent) ? 'checked' : ''} ${batchRunning ? 'disabled' : ''}>` : ''}</td><th scope="row">${escapeHtml(provider.label)}<small>${escapeHtml(controller || 'Reviewer CLI')}</small></th>
     <td>${escapeHtml(item.current || (item.installed === false ? 'Not detected' : 'Version unknown'))}<small>${escapeHtml(item.installation?.kind || 'unknown')} install</small></td>
     <td>${escapeHtml(item.latest || 'Unavailable')}<small>${escapeHtml(item.source)}</small></td>
-    <td>${miniStatus(item.status)}${attempt ? `<small role="status">${escapeHtml(attempt.message)}</small>` : ''}</td>
-    <td>${action ? `<button class="mini-button" data-maint-provider="${item.agent}" data-maint-action="${action}">${label}</button>` : `<a href="${escapeHtml(provider.docs)}" target="_blank" rel="noreferrer">Update guide ↗</a>`}</td></tr>`;
+    <td>${miniStatus(item.status)}${attempt ? `<small role="status">${escapeHtml(attempt.message)}${attempt.observed === false ? ' This earlier update is excluded from Update all until version evidence changes. Check the terminal; retry only with explicit confirmation through the individual action.' : ''}</small>` : ''}</td>
+    <td>${action ? `<button class="mini-button" data-maint-provider="${item.agent}" data-maint-action="${action}" ${batchRunning || actionReceipts.get(item.agent)?.status === 'launching' ? 'disabled' : ''}>${label}</button>` : `<a href="${escapeHtml(provider.docs)}" target="_blank" rel="noreferrer">Update guide ↗</a>`}${receiptHtml(item.agent, routeState(report?.routes?.find(route=>route.agent===item.agent) || {agent:item.agent}))}</td></tr>`;
 }
 
 function renderMaintenance() {
@@ -378,9 +466,10 @@ function renderMaintenance() {
 
   maintenanceGrid.innerHTML = `
     <article class="health-card wide">
-      <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div><div class="skill-actions"><button id="batch-update" class="mini-button" type="button" disabled>Update selected…</button></div></div>
+      <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div><div class="skill-actions"><button id="update-all" class="mini-button" type="button" disabled>Update all available CLIs…</button><button id="batch-update" class="mini-button" type="button" disabled>Update selected…</button></div></div>
+      <p id="batch-progress" class="batch-progress" aria-live="off"></p>
       <div class="cli-table-scroll"><table class="momm-table cli-table"><thead><tr><th><span class="sr-only">Select for batch update</span></th><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
-      <p class="environment-note">Checks never install updates. Each update shows its command and needs your confirmation. Tick several and use Update selected to see every exact command, confirm once, and run them one after another with a version re-check between. Unknown means unverified, not current. Installation versions do not prove account access or a successful review. After an updater finishes, use Check everything to verify the detected version.</p>
+      <p class="environment-note">Checks never install updates. Update all available CLIs includes only known updates with verified commands; unknown, missing and package-manager-owned installations stay separate. Every command is shown before your confirmation. Updates run one after another with a version re-check between; the batch stops if a launch or version change is unconfirmed. Installation versions do not prove account access or a successful review.</p>
     </article>
     <article id="update-clock-card" class="health-card wide"></article>
     <article class="health-card wide">
@@ -407,6 +496,7 @@ function renderMaintenance() {
     </details>`;
   renderUpdateClock();
   updateBatchButton();
+  renderOperation();
 }
 
 async function loadMaintenance(force = false) {
@@ -463,6 +553,7 @@ async function refresh() {
   refreshEpoch = governorEpoch;
   refreshButton.disabled = true;
   summary.textContent = "Checking this computer…";
+  renderOperation();
   const asked = ++staleNoticeAsked;
   try {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
@@ -487,18 +578,45 @@ async function refresh() {
   } finally {
     refreshing = false;
     refreshButton.disabled = false;
+    renderOperation();
     if (refreshAgain) { refreshAgain = false; refresh(); }
   }
 }
 
-async function launchAction(provider, action) {
+async function launchAction(provider, action, options = {}) {
+  if (!['login','install','update','models','diff','commit'].includes(action) || (provider !== 'skills' && !Object.hasOwn(LOGIN_COMMANDS, provider))) { showToast(ACTION_REASONS.unsupported_action); return; }
+  if (actionReceipts.get(provider)?.status === 'launching' || (batchRunning && !options.batch)) return;
+  if (runningTests.has(provider)) { showToast('Wait for this provider’s live connection check to finish before opening a terminal action.'); return; }
+  // An observation timeout cannot cancel or disprove the server's terminal launch.
+  // A retry is a new explicit owner decision, not an automatic reconciliation or resend.
+  const previousAction = actionReceipts.get(provider);
+  if ((previousAction?.status === 'launch_unconfirmed' || previousAction?.status === 'launch_requested' && previousAction.action === 'update' && updateAttempts.get(provider)?.observed !== true) && !await confirmSetupAction('The previous terminal launch is unconfirmed or its completion is still unobserved. Check for an existing terminal first. Do you explicitly want to try this action again?')) return;
   const cli = maintenance?.cli_updates.find(item => item.agent === provider);
   const command = action === 'update' ? cli?.update_command : action === 'install' ? (cli?.install_command || session.providers[provider]?.install?.[session.platform]) : null;
   if (['install','update'].includes(action) && provider !== 'skills' && !command) { showToast('No verified update command for this installation. Use its update guide.'); return; }
-  if (["install", "update"].includes(action) && !window.confirm(`Open a visible terminal and run this ${action === "install" ? "official installer" : provider === 'skills' ? 'MOMM update preview (no installation)' : "provider update"}?\n\n${command || 'Preview the signed MOMM update and policy diff.'}`)) return;
+  if (options.batch && command !== options.expectedCommand) return {provider,action,status:'blocked',reason:'command_mismatch',completion:'unobserved'};
+  if (["install", "update"].includes(action) && !options.batch && !await confirmSetupAction(`Open a visible terminal and run this ${action === "install" ? "official installer" : provider === 'skills' ? 'MOMM update preview (no installation)' : "provider update"}?\n\n${command || 'Preview the signed MOMM update and policy diff.'}`)) return;
+  // Consent is asynchronous: a sibling click may have been admitted while this preview was open.
+  if (actionReceipts.get(provider)?.status === 'launching') return;
+  if (runningTests.has(provider)) { showToast('The provider started a live check while confirmation was open. Wait for it to finish and confirm again.'); return; }
+  const receipt = {provider,action,status:'launching',completion:'unobserved'};
+  actionReceipts.set(provider, receipt);
+  if (!renderActionViews()) { receipt.status='blocked'; renderActionViews(); showToast('The action could not be displayed. No terminal request was sent. Reload this page.'); return receipt; }
+  let deadline;
   try {
-    const result = await api("/api/action", { method: "POST", body: JSON.stringify({ provider, action, expected_command: command }) });
-    showToast(`${result.note || "Follow the instructions in the terminal."} This page will keep checking.`);
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const result = await Promise.race([
+      api("/api/action", { method: "POST", body: JSON.stringify({ provider, action, expected_command: command }), ...(controller ? {signal:controller.signal} : {}) }),
+      new Promise((_, reject) => { deadline = setTimeout(() => { controller?.abort(); reject(new Error('Launch observation timed out.')); }, provider === 'skills' ? 120_000 : 15_000); })
+    ]);
+    clearTimeout(deadline);
+    receipt.status = result.launched === true ? 'launch_requested' : 'launch_failed';
+    // Keep known authentication failures and confirmed checks when no terminal was admitted.
+    // A confirmed new login invalidates only a prior success, never the evidence that login is needed.
+    if (result.launched === true && ['login','update'].includes(action) && liveResults.get(provider)?.status === 'success') liveResults.delete(provider);
+    if (!renderActionViews()) { showToast(result.launched === true ? 'Launch request accepted, but this page could not refresh. Check the terminal, then reload this page before another action.' : 'Terminal was not launched, and this page could not refresh. Reload this page before another action.'); return receipt; }
+    showToast(ACTION_LABELS[receipt.status]);
+    if (result.launched !== true) return receipt;
     if (["login", "install"].includes(action)) {
       let attempts = 0;
       const poll = setInterval(async () => {
@@ -519,9 +637,22 @@ async function launchAction(provider, action) {
         if (remaining > 0) setTimeout(() => poll(remaining-1), 10_000);
         else { attempt.message = 'No version change observed. Finish in the terminal, then Check everything.'; renderMaintenance(); }
       };
-      setTimeout(() => poll(11),10_000);
+      if (!options.batch) setTimeout(() => poll(11),10_000);
     }
-  } catch (error) { showToast(error.message); }
+  } catch (error) {
+    clearTimeout(deadline);
+    if (receipt.status === 'launch_requested') { showToast('Launch request accepted, but this page could not refresh. Check the terminal, then refresh the page.'); return receipt; }
+    // A lost response does not prove no terminal was launched; do not invite blind retries.
+    const refused = error.action_receipt?.provider === provider && error.action_receipt?.action === action && error.action_receipt?.status === 'launch_failed';
+    receipt.status = error.status === 409 || error.status === 400 || error.status === 403 ? 'blocked' : refused ? 'launch_failed' : 'launch_unconfirmed';
+    const reason = error.action_receipt?.provider === provider && error.action_receipt?.action === action ? error.action_receipt.reason : null;
+    if (Object.hasOwn(ACTION_REASONS, reason)) receipt.reason = reason;
+    else if (error.action_reason === 'private_session') receipt.reason = 'private_session';
+    if (['login','update'].includes(action) && receipt.status === 'launch_unconfirmed' && liveResults.get(provider)?.status === 'success') liveResults.delete(provider);
+    const refreshed = renderActionViews();
+    showToast((ACTION_REASONS[receipt.reason] || ACTION_LABELS[receipt.status]) + (refreshed ? '' : ' This page could not refresh. Reload it before another action.'));
+  }
+  return receipt;
 }
 
 // One verification per provider at a time. The entry in runningTests is the
@@ -595,13 +726,17 @@ async function runQuickSetup() {
       return;
     }
     let passed = 0;
+    quickProgress = {total:eligible.length,completed:0,current:''};
     for (const route of eligible) {
+      quickProgress.current = `Verifying ${providerLabel(route.agent)}…`; renderOperation();
       const result = await runTest(route.agent, false);
+      quickProgress.completed += 1; renderOperation();
       if (result.status === "success") passed += 1;
     }
     showToast(`Quick Setup finished: ${passed} of ${eligible.length} connection${eligible.length === 1 ? "" : "s"} verified.`);
   } finally {
     quickSetupRunning = false;
+    quickProgress = null;
     quickSetupButton.disabled = false;
     render();
   }
@@ -983,57 +1118,94 @@ function toggleBatch(agent, checked) {
 
 function updateBatchButton() {
   const button = document.querySelector("#batch-update");
-  if (!button) return;
   const count = selectedBatch().length;
-  button.disabled = batchRunning || !count;
-  button.textContent = batchRunning ? "Updating…" : count ? `Update ${count} selected…` : "Update selected…";
+  if (button) {
+    button.disabled = batchRunning || !count;
+    button.textContent = batchRunning ? "Updating…" : count ? `Update ${count} selected…` : "Update selected…";
+  }
+  const available = availableUpdates().length;
+  for (const selector of ['#update-all','#update-all-top']) {
+    const all = document.querySelector(selector);
+    if (!all) continue;
+    all.disabled = batchRunning || !available;
+    all.textContent = available ? `Update all available CLIs (${available})…` : 'Update all available CLIs…';
+  }
+}
+
+function availableUpdates() {
+  return (maintenance?.cli_updates || []).filter(item=>item.status==='update_available' && isBatchable(item)
+    && !runningTests.has(item.agent)
+    && !['launching','launch_unconfirmed'].includes(actionReceipts.get(item.agent)?.status)
+    && !(actionReceipts.get(item.agent)?.status==='launch_requested' && actionReceipts.get(item.agent)?.action==='update' && updateAttempts.get(item.agent)?.observed!==true)
+    && !(updateAttempts.get(item.agent)?.observed === false));
+}
+
+async function runAllUpdates() {
+  return runBatchUpdate(availableUpdates().map(item=>item.agent));
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitForVersionChange(provider, before, attempts = 12) {
+async function waitForVersionChange(provider, before, attempts = 60) {
+  const deadline = Date.now() + 120_000;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    await sleep(10_000);
-    await loadMaintenance(true);
+    await sleep(attempt === 0 ? 5_000 : 10_000);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    let timer;
+    try { await Promise.race([loadMaintenance(true), new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Version observation timed out')),Math.min(30_000,remaining));})]); }
+    catch { return null; }
+    finally { clearTimeout(timer); }
     const current = maintenance?.cli_updates.find((item) => item.agent === provider)?.current;
     if (current && current !== before) return current;
   }
   return null;
 }
 
-async function runBatchUpdate() {
+async function runBatchUpdate(agents = null) {
   if (batchRunning || !maintenance) return;
-  const selected = selectedBatch().map((agent) => maintenance.cli_updates.find((item) => item.agent === agent)).filter(Boolean);
-  const runnable = selected.filter((item) => item.installed && item.update_command);
+  const selected = (agents || selectedBatch()).map((agent) => maintenance.cli_updates.find((item) => item.agent === agent)).filter(Boolean);
+  const runnable = selected.filter((item) => item.installed && item.update_command).map(item=>({...item}));
   const refused = selected.filter((item) => !(item.installed && item.update_command));
   if (!runnable.length) { showToast("No selected CLI has a verified update command. Package-manager installs update through their manager."); return; }
   const list = runnable.map((item) => `${providerLabel(item.agent)}: ${item.update_command}`).join("\n");
-  if (!window.confirm(`Open a visible terminal for each of these ${runnable.length} update command${runnable.length === 1 ? "" : "s"}, one after another, re-checking the detected version after each?\n\n${list}${refused.length ? `\n\nSkipped (no verified command): ${refused.map((item) => providerLabel(item.agent)).join(", ")}` : ""}`)) return;
+  if (!await confirmSetupAction(`Open a visible terminal for each of these ${runnable.length} update command${runnable.length === 1 ? "" : "s"}, one after another, re-checking the detected version after each?\n\n${list}${refused.length ? `\n\nSkipped (no verified command): ${refused.map((item) => providerLabel(item.agent)).join(", ")}` : ""}`)) return;
+  if (batchRunning) return;
   batchRunning = true;
+  batchProgress = {total:runnable.length,processed:0,phase:'Starting confirmed commands.'};
   updateBatchButton();
+  renderOperation();
   const outcomes = [];
   try {
     for (const item of runnable) {
       const before = item.current;
-      try {
-        await api("/api/action", { method: "POST", body: JSON.stringify({ provider: item.agent, action: "update", expected_command: item.update_command }) });
-        const attempt = { before, observed: false, message: "Updater opened (batch). Waiting for the detected version to change…" };
-        updateAttempts.set(item.agent, attempt);
-        liveResults.delete(item.agent);
-        renderMaintenance(); render();
+      batchProgress.phase = `Requesting ${providerLabel(item.agent)} update…`; renderOperation();
+      const receipt = await launchAction(item.agent,'update',{batch:true,expectedCommand:item.update_command});
+      if (receipt?.status === 'launch_requested') {
+        const attempt = updateAttempts.get(item.agent);
+        if (!attempt) { batchProgress.processed += 1; batchProgress.phase='Stopped: launch accepted but version tracking is unavailable. Remaining commands were not launched.'; outcomes.push(`${providerLabel(item.agent)}: accepted, tracking unavailable`); break; }
+        batchProgress.phase = `Waiting for ${providerLabel(item.agent)} version evidence, not estimated installation progress.`;
+        renderMaintenance(); renderOperation();
         const after = await waitForVersionChange(item.agent, before);
         attempt.observed = Boolean(after);
         attempt.message = after ? `Detected ${before || "unknown"} → ${after}. Verify connection again.` : "No version change observed. Finish in the terminal, then Check everything.";
         outcomes.push(`${providerLabel(item.agent)} ${after ? `${before || "?"} → ${after}` : "not verified"}`);
-      } catch (error) { outcomes.push(`${providerLabel(item.agent)} refused: ${error.message}`); }
+        batchProgress.processed += 1;
+        if (!after) { batchProgress.phase = 'Stopped: version change unconfirmed; remaining commands were not launched.'; break; }
+      } else {
+        outcomes.push(`${providerLabel(item.agent)}: ${ACTION_REASONS[receipt?.reason] || ACTION_LABELS[receipt?.status] || 'not launched'}`);
+        batchProgress.processed += 1;
+        if (!receipt || ['launch_unconfirmed','launching'].includes(receipt.status)) { batchProgress.phase='Stopped: launch unconfirmed; remaining commands were not launched.'; break; }
+      }
       renderMaintenance();
     }
+    if (batchProgress.processed === batchProgress.total && !batchProgress.phase.startsWith('Stopped')) batchProgress.phase = 'All action outcomes recorded. Check versions and verify connections separately.';
   } finally {
     batchRunning = false;
-    batchSelected.clear(); // the queue was consumed; a fresh selection starts the next batch
+    for (const item of runnable.slice(0,batchProgress.processed)) batchSelected.delete(item.agent);
     renderMaintenance(); render();
   }
-  showToast(`Batch update finished. ${outcomes.join(" · ")}`);
+  showToast(`Batch action results. ${outcomes.join(" · ")}`);
 }
 
 // --- Modalities panel (1.16 E7) ----------------------------------------------------------
@@ -1219,13 +1391,20 @@ capabilitiesGrid.addEventListener("click", (event) => {
 capabilitiesRefreshButton.addEventListener("click", loadCapabilities);
 planForm.addEventListener("submit", runPlan);
 
-grid.addEventListener("click", (event) => {
+grid.addEventListener("click", async (event) => {
+  const loginCopy = event.target.closest('[data-copy-login]');
+  const receiptButton = event.target.closest('[data-copy-receipt]');
+  if (loginCopy) return copySetupText(LOGIN_COMMANDS[loginCopy.dataset.copyLogin], 'login');
+  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt');
+  if (event.target.closest('[data-discovery]')) return refresh();
   const actionButton = event.target.closest("[data-action]");
   const testButton = event.target.closest("[data-test]");
   if (actionButton) launchAction(actionButton.dataset.provider, actionButton.dataset.action);
   if (testButton) runTest(testButton.dataset.test);
 });
 maintenanceGrid.addEventListener("click", (event) => {
+  const receiptButton = event.target.closest('[data-copy-receipt]');
+  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt');
   const button = event.target.closest("[data-maint-action]");
   if (button) launchAction(button.dataset.maintProvider, button.dataset.maintAction);
   const clockButton = event.target.closest("[data-clock-action]");
@@ -1233,6 +1412,7 @@ maintenanceGrid.addEventListener("click", (event) => {
   const timerButton = event.target.closest("[data-timer-action]");
   if (timerButton) timerAction(timerButton.dataset.timerAction);
   if (event.target.closest("#batch-update")) runBatchUpdate();
+  if (event.target.closest("#update-all")) runAllUpdates();
 });
 maintenanceGrid.addEventListener("change", (event) => {
   if (event.target.matches("[data-clock-setting]")) setClockSetting(event.target.dataset.clockSetting, event.target.checked);
@@ -1246,6 +1426,8 @@ usageRefreshButton.addEventListener("click", loadUsage);
 quickSetupButton.addEventListener("click", runQuickSetup);
 refreshButton.addEventListener("click", refresh);
 maintenanceRefreshButton.addEventListener("click", () => loadMaintenance(true));
+document.querySelector('#update-all-top')?.addEventListener('click', runAllUpdates);
+document.querySelector('#walkthrough-open')?.addEventListener('click', () => { const details = document.querySelector('#setup-walkthrough'); if (details) details.open = true; });
 // Every in-flight status poll and verification job belongs to the previous
 // governor from here on: refresh() drops a stale answer, runTest() drops a
 // stale job, and a fresh poll is queued for the new selection.
@@ -1298,6 +1480,7 @@ function launchToken() {
 function forgetLaunchToken(token) {
   const key = "momm-local-session";
   try { if (token && sessionStorage.getItem(key) === token) sessionStorage.removeItem(key); } catch {}
+  if(typeof window!=='undefined')window.mommSetupSession?.invalidate?.(token);
 }
 
 (async () => {
@@ -1306,6 +1489,7 @@ function forgetLaunchToken(token) {
     // The launch capability stays the one read from the private fragment or
     // tab storage: header authority never depends on the reply repeating it.
     session = { ...(await api("/api/session")), token: session.token };
+    reviewerSessionValidated=true;publishReviewerSession(session.token);
     await refresh();
     loadMaintenance(false);
     loadGuidance();
@@ -1316,6 +1500,7 @@ function forgetLaunchToken(token) {
     // An explicit rejection retires the stored capability; an unreachable or
     // busy server does not. Recovery is the new launch link from the terminal.
     if (error?.status === 403) { forgetLaunchToken(session?.token); session = null; }
+    if (!reviewerSessionValidated && reviewerSessionState !== 'invalid') publishReviewerSession(null);
     summary.textContent = "Setup Center could not start.";
     showToast(error.message);
   }

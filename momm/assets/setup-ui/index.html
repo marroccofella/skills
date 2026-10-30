@@ -35,6 +35,11 @@
       </header>
 
       <div id="stale-notice" class="stale-notice-region" role="status" aria-live="polite" aria-atomic="true"></div>
+      <aside class="setup-toolbar" aria-label="Setup progress and CLI updates">
+        <div><strong id="setup-percent-compact">—</strong> <span>reviewers verified</span><small id="setup-progress-detail" aria-live="polite">Checking reviewer readiness…</small></div>
+        <div class="toolbar-actions"><button id="update-all-top" class="button primary" type="button" disabled>Update all available CLIs…</button><a id="walkthrough-open" class="button secondary" href="#setup-walkthrough">Setup walkthrough</a></div>
+        <p id="operation-status" role="status" aria-live="polite">No operation running.</p>
+      </aside>
 
       <main id="top">
         <section class="hero">
@@ -49,18 +54,18 @@
               <li><span>✓</span>No API keys</li>
               <li><span>✓</span>No passwords collected</li>
               <li><span>✓</span>No project code sent during setup</li>
-              <li><span>✓</span>Every login opens visibly</li>
+              <li><span>✓</span>Login stays in your own terminal and browser</li>
             </ul>
           </aside>
         </section>
 
         <section class="status-banner" aria-labelledby="status-title">
-          <div class="status-meter" aria-hidden="true"><strong id="setup-percent">0%</strong><span>complete</span></div>
+          <div class="status-meter"><strong id="setup-percent">—</strong><span>verified</span></div>
           <div class="status-copy">
             <p class="step-label">System status</p>
             <h2 id="status-title">Checking your setup…</h2>
             <p id="summary" class="summary" aria-live="polite">Reviewing local connections and updates.</p>
-            <div class="progress-track" aria-hidden="true"><span id="progress"></span></div>
+            <div class="progress-track" id="readiness-progress" role="progressbar" aria-label="Live-verified reviewers" aria-valuemin="0" aria-valuemax="100"><span id="progress"></span></div>
           </div>
           <div class="status-actions">
             <button id="quick-setup" class="button primary light" type="button">Run Quick Setup</button>
@@ -68,6 +73,17 @@
             <small id="quick-setup-note">Verifies detected sessions. Interactive sign-in still needs you.</small>
           </div>
         </section>
+
+        <details id="setup-walkthrough" class="diagnostics setup-walkthrough">
+          <summary><span>Setup walkthrough</span><span class="health-count">Check → update → sign in → verify</span></summary>
+          <ol>
+            <li><strong>Check this computer.</strong> Use Check again for installation and account discovery, or Check everything for CLI versions. Neither proves a live connection.</li>
+            <li><strong>Update if needed.</strong> Update all available CLIs lists only known available updates with a verified command. Inspect the commands and confirm. Missing, unknown and package-manager-owned installations need their separate guides.</li>
+            <li><strong>Finish in your terminal.</strong> Launch accepted is not update or login success. If no terminal appears, use the safe command or guide on the card; do not keep clicking an unconfirmed launch.</li>
+            <li><strong>Sign in yourself.</strong> Use the provider card and complete its official terminal/browser flow. MOMM never collects passwords or authentication codes.</li>
+            <li><strong>Verify the connection.</strong> Quick Setup or Verify connection sends disclosed synthetic text to the selected provider. The readiness percentage counts only live checks that passed, not installations or local session hints.</li>
+          </ol>
+        </details>
 
         <section class="control-panel" aria-labelledby="setup-title">
           <div class="panel-head">
@@ -80,6 +96,7 @@
           <div id="provider-grid" class="provider-grid" aria-live="polite"></div>
         </section>
 
+        <section id="bumblers-panel" class="control-panel bumbler-panel" aria-label="Bumbler Bees"></section>
         <section class="maintenance-panel usage-panel" aria-labelledby="usage-title">
           <div class="maintenance-head">
             <div>
@@ -171,5 +188,12 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="/app.js" defer></script>
+    <script src="/bumblers.js" defer></script>
+    <dialog id="action-confirm" class="action-confirm" aria-labelledby="action-confirm-title" aria-describedby="action-confirm-copy">
+      <h2 id="action-confirm-title">Confirm terminal action</h2>
+      <pre id="action-confirm-copy"></pre>
+      <p>No sign-in or update is complete until you finish it and recheck.</p>
+      <div class="toolbar-actions"><button id="action-confirm-cancel" class="button secondary" type="button">Cancel</button><button id="action-confirm-accept" class="button primary" type="button">Confirm and open terminal</button></div>
+    </dialog>
   </body>
 </html>

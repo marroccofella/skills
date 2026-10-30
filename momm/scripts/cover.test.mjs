@@ -33,7 +33,7 @@ const COVERED = new Set(["timeout", "invalid_output", "provider_unavailable", "e
 function productionChain() {
   const slice = (from, to) => { const a = source.indexOf(from), b = source.indexOf(to, a); assert.ok(a > 0 && b > a, `${from} not found`); return source.slice(a, b); };
   const code = [
-    slice("const REVIEW_PROMPT = `", "const REVIEW_JSON_SCHEMA"),
+    slice("const REVIEW_PROMPT = `", "\nfunction normalizeAgentName("),
     slice("const DEFAULT_PERSONAS = {", "function inertPathLabel("),
     slice("function extractJsonObjects(", "\nfunction fingerprint("),
     slice("const PROVIDER_RETRY_DELAY_MS", "function createUi("),

@@ -72,11 +72,17 @@ check('one generated release status line', () => {
   assert(readme.indexOf(line) < readme.indexOf('## Install MOMM in one line'), 'the status line belongs above the install instructions');
   for (const [, target] of line.matchAll(/\]\(([^)]+)\)/g))
     if (!target.startsWith('https://')) assert(fs.existsSync(new URL('../' + target, import.meta.url)), 'the status line links to a missing file: ' + target);
-  assert.equal(read('docs/momm/index.html').split(releaseStatusHtml(status)).length - 1, 1, 'the home page disagrees with versions.json and the release catalogue: run node scripts/render-momm-site.mjs');
+  assert.equal(read('docs/momm/index.html').split(releaseStatusHtml({...status,development:null})).length - 1, 1, 'the home page disagrees with the public release catalogue: run node scripts/render-momm-site.mjs');
   // The line follows the records. With a candidate under test, publishing it (the same entry becomes a
   // release) must leave one stable version and no candidate; without one, there is nothing under test.
   const newest = catalogue[catalogue.length - 1];
-  if (newest.kind === 'version-notes') {
+  if (manifest.momm_development) {
+    assert.equal(status.development.version,manifest.momm_development.version);
+    assert.equal(status.stable.version,manifest.momm_development.stable);
+    assert.equal(status.candidate?.version,newest.kind==='version-notes'?newest.version:undefined);
+    assert(line.includes(`Local development: [${manifest.momm_development.version}, unpublished, not a test candidate]`));
+    assert(!manifest.momm_releases.some(r=>r.version===manifest.momm_development.version),'no release tag is invented for unpublished development');
+  } else if (newest.kind === 'version-notes') {
     assert.equal(status.candidate?.version, manifest.momm);
     assert.notEqual(status.stable.version, manifest.momm, 'a candidate under test is not the stable release');
     assert(line.includes(`Candidate under test: [${manifest.momm}, not released]`));

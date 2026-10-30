@@ -60,7 +60,9 @@ const brief = (role, { version = "1", reviewBy = "2027-03-29", extra = "", body 
 
 // The production contract builder, not a copy: the prompt head plus the persona/contract functions.
 function contractBuilder() {
-  const head = source.slice(source.indexOf("const REVIEW_PROMPT = `"), source.indexOf("const REVIEW_JSON_SCHEMA"));
+  const start = source.indexOf("const REVIEW_PROMPT = `"), end = source.indexOf("\nfunction normalizeAgentName(", start);
+  assert.ok(start >= 0 && end > start, "production prompt boundaries not found");
+  const head = source.slice(start, end);
   const body = source.slice(source.indexOf("const DEFAULT_PERSONAS = {"), source.indexOf("function inertPathLabel("));
   assert.ok(head.length > 100 && body.includes("function buildContract("), "contract source not found");
   return vm.runInNewContext(`${head}\n${body}\n({ buildContract, personaFor })`, { ...(roles ?? {}) });

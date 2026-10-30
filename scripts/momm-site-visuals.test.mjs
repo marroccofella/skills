@@ -14,6 +14,9 @@ assert.equal((html.match(/<desc /g)||[]).length,5,'each chart needs an accessibl
 assert(html.includes('zero-second reviews. claude'), 'description punctuation must preserve word endings');
 assert.throws(()=>releasePanel({momm:'9.0.0',momm_releases:[]}),/changelog missing/);
 const release=releasePanel({momm:'9.0.0',momm_releases:[{version:'9.0.0',tag:'momm-9.0.0',changes:['<script>not markup</script>']}]});
+const development=releasePanel({momm:'1.17.3',momm_development:{version:'1.18.0',stable:'1.17.3',notes_path:'momm/references/release-1.18.0.md'},momm_releases:[]});
+assert(development.includes('LOCAL DEVELOPMENT · NOT RELEASED'));
+assert(!development.includes('/releases/tag/'),'unfinished development must not invent a public tag link');
 assert(release.includes('MOMM <span>9.0.0'));assert(!release.includes('<script>'));
 const tour=JSON.parse(fs.readFileSync(new URL('../docs/momm/tour.json',import.meta.url),'utf8'));
 assert(!tourSection({...tour,status:'pending_voice_acceptance'},tour.version).includes('<video'),'pending narration must not become a public video');
@@ -25,7 +28,7 @@ const manifestNow=JSON.parse(fs.readFileSync(new URL('../versions.json',import.m
 const catalogueNow=JSON.parse(fs.readFileSync(new URL('../momm/references/release-history.json',import.meta.url),'utf8'));
 const publishedNow=catalogueNow.some(r=>r.version===manifestNow.momm&&r.kind==='release'&&r.tag&&r.published_date);
 assert.equal(home.includes('CURRENT STABLE'),publishedNow,'home banner must match the catalogue publication state');
-if(!publishedNow)assert(home.includes('CHECK PUBLICATION'),'an unpublished checkout must say so on the home page');
+if(!publishedNow)assert(home.includes(manifestNow.momm_development?'LOCAL DEVELOPMENT · NOT RELEASED':'CHECK PUBLICATION'),'an unpublished checkout must say so on the home page');
 assert(home.includes('id="walkthrough"'));
 const acceptedTour=tourSection({...tour,status:'accepted'},tour.version);
 assert(acceptedTour.includes('<video controls'));
