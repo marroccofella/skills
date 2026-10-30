@@ -3,14 +3,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {llmsText} from './momm-site-discovery.mjs';
+import {releaseStatus} from './momm-site-home.mjs';
 delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
-const version=JSON.parse(read('versions.json')).momm;
+const manifest=JSON.parse(read('versions.json')),version=manifest.momm;
 const text=read('docs/momm/llms.txt');
-assert.equal(text,llmsText(version),'published text matches the versioned generator');
-assert(read('scripts/render-momm-site.mjs').includes("output['docs/momm/llms.txt'] = llmsText(version);"),'renderer keeps the versioned guide wired into its output set');
+const stable=releaseStatus(manifest,JSON.parse(read('momm/references/release-history.json'))).stable.version;
+assert.equal(text,llmsText(stable),'published stable guide is not relabelled with an unpublished checkout version');
+assert(read('scripts/render-momm-site.mjs').includes("output['docs/momm/llms.txt'] = llmsText(status.stable.version);"),'renderer keeps the stable guide wired into its output set');
 assert(fs.existsSync(path.join(root,'docs/.nojekyll')),'raw Markdown documentation requires Pages without Jekyll processing');
 const hub=read('docs/index.html');
 assert(hub.includes('<meta name="google-site-verification" content="MmBxQeWgAlwSuRf05d7MuOxD0jiPd0pcTz8Frgwzd94" />'),'preserve Google ownership proof');
@@ -34,7 +36,12 @@ assert(visible.includes('href="../sitemap.xml"'),'project sitemap linked from ho
 for(const word of ['governor','reviewer','quorum','Install in one line']) assert(visible.includes(word),`${word} available without JS or video`);
 assert(home.includes('<meta name="robots" content="index,follow">'));
 const sitemap=read('docs/sitemap.xml');
-for(const page of ['', 'install.html','start.html','reference.html','evidence.html',`releases/${version}.html`]) assert(sitemap.includes(`<loc>https://marroccofella.github.io/skills/momm/${page}</loc>`));
+for(const page of ['', 'install.html','start.html','reference.html','evidence.html',...(manifest.momm_development?[]:[`releases/${version}.html`])]) assert(sitemap.includes(`<loc>https://marroccofella.github.io/skills/momm/${page}</loc>`));
+if(manifest.momm_development){
+  const developmentVersion=manifest.momm_development.version;
+  assert(!sitemap.includes(`/releases/${developmentVersion}.html`),'unpublished development is not a public sitemap record');
+  assert(!text.includes('Published stable version: '+developmentVersion));
+}
 for(const name of fs.readdirSync(path.join(root,'docs/momm/watch')).filter(n=>n.endsWith('.html'))) {
   const html=read(`docs/momm/watch/${name}`);
   if(/<meta\b[^>]*name="robots"[^>]*content="[^"]*noindex/i.test(html)) {

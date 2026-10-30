@@ -3,6 +3,75 @@
 This is the living inventory of offline suites: it keeps its 1.16.1 name (pinned by CONTRIBUTING and
 the workflow tests) and also lists every suite added in 1.17.
 
+The existing workflow-contract suite now also checks the measured local167-command
+pack against explicit100-minute safety/120-minute release job ceilings and three
+bounded offline-step timing floors. Its failing-before/passing-after evidence is
+separate from hosted CI. Command selection is unchanged at167; the19October
+167/167 snapshot is historical after the22October workflow/test/document edits.
+
+The local 1.18 development selection also runs the governor-authored boundary
+probes directly, with no provider calls:
+
+The 16 October selection additionally registers captured worker code custody
+and the baseline-first protected shadow coordinator in both workflows (167
+commands registered, not a passing pack). The former executes a pinned captured
+ESM graph after replacing its synthetic on-disk originals; the latter uses sealed
+synthetic baseline files, generated owner signatures and the actual captured child
+to test protected-preflight refusal and held accounting. Neither makes a remote
+model request, provisions a real signer, establishes operator provenance or
+qualifies the normal native dispatcher. Existing failed pack records remain.
+
+- `momm/scripts/bumble-protected-execution.test.mjs`: pinned in-memory worker
+  graph, actual supervised malformed-job refusals and post-capture source replacement.
+- `momm/scripts/bumble-shadow-coordinator.test.mjs`: generated signed execution
+  approval, sealed baseline binding, current source checks and held accounting.
+- `momm/scripts/bumble-shadow-broker.test.mjs`: exact signed synthetic plan,
+  one-shot request claims, revocation and existing shared capacity binding.
+
+- `momm/development-tests/bumble-contract-boundary-probes.test.mjs`: three explicit
+  `--case` selections (`attestation`, `grounding`, `decoding`) cover missing host
+  completion evidence, deterministic tail-copy work, Unicode refusal and preserved
+  original BOM byte identity. These exact probe bytes are used for retained
+  before/after records, so the filename remains unchanged.
+- `momm/development-tests/bumble-stage-attestation-before.test.mjs`: private-store
+  synthetic fixtures verify the public stage entry requires explicit transport and
+  finality, refuses ill-formed source text before encoding, and retains the original
+  transmission hold. It is a reusable before/after regression despite its filename.
+
+Both existing workflows run byte-identical canonical mirrors under `momm/scripts`:
+`momm/scripts/bumble-contract-boundary-probes.test.mjs` and
+`momm/scripts/bumble-stage-attestation-before.test.mjs`. The workflow contract
+checks parity against the original probes; the local runner therefore includes
+all four commands without broadening its allowed paths. It uses fixed
+no-argument entry points for attestation, grounding and decoding;
+the shared probe bytes stay identical to their original before/after records.
+The stage probe now imports the skill-local fixture helper. Its import-context
+change creates a new test hash; the older test records remain historical.
+The new tests do not grant
+native activation, worker qualification, release quorum or hosted-platform evidence.
+
+Additional 1.18 regression probes retain exact original test bytes in both
+development and canonical locations: `bumble-raw-identity-probes.test.mjs`
+has fixed raw-evidence, task-Unicode and restored-task entry points. The
+`bumble-stage-revalidation.test.mjs` suite uses fresh synthetic legacy fixtures
+to check immutable companions, altered fields/counts, corruption, restart and
+interrupted adoption. Both workflows run all four commands. These are private
+store and contract controls, not an independent baseline or live-node qualification.
+The shared `bumble-stage-review-probes.test.mjs` then checks that sealed terminal
+evidence excludes a later send permit, and that a closed admission denial cannot
+reserve future response headroom. Exact before/after bytes are mirrored and run
+in both workflows; no network call or release is part of those controls.
+
+The canonical capacity fixture now has free/held owner-map reason contrasts,
+observed synchronous path operations and a legitimate-evidence positive control.
+Three isolated mutation/output controls verify that these checks actually notice
+the known weak-test regressions. `bumble-stage-probe-evidence.test.mjs` additionally
+checks that an unrelated terminal-refusal error cannot pass and that unmeasured
+activity counters are not emitted. Both workflows register it (164 commands).
+These are bounded test-evidence regressions, not transport instrumentation,
+backend release or native qualification. Earlier 163-command results retain
+their original frozen scope and are not relabelled as this selection.
+
 `momm/scripts/scope-closure.test.mjs` reproduces stale update results, native
 owner-only export/refusal (including forced companion overwrite), and checks
 the current acceptance guide's retry and ledger-ticket instructions.
@@ -109,11 +178,87 @@ their own first statement is what is exercised.
 - `momm/scripts/attachment-cleanup.test.mjs`
 - `momm/scripts/attempts.test.mjs`
 - `momm/scripts/bootstrap.test.mjs`
+- `momm/scripts/bumble-baseline.test.mjs`
+- `momm/scripts/bumble-capacity-sensitivity.test.mjs`
+- `momm/scripts/bumble-capacity.test.mjs`
+- `momm/scripts/bumble-contract-attestation.test.mjs`
+- `momm/scripts/bumble-contract-boundary-probes.test.mjs`
+- `momm/scripts/bumble-contract-decoding.test.mjs`
+- `momm/scripts/bumble-contract-grounding.test.mjs`
+- `momm/scripts/bumble-contract.test.mjs`
+- `momm/scripts/bumble-custody-review-regressions.test.mjs`
+- `momm/scripts/bumble-final-regressions.test.mjs`
+- `momm/scripts/bumble-fixtures.test.mjs`
+- `momm/scripts/bumble-handoff-boundaries.test.mjs`
+- `momm/scripts/bumble-handoff-clock.test.mjs`
+- `momm/scripts/bumble-hardening.test.mjs`
+- `momm/scripts/bumble-immutable-boundary-probes.test.mjs`
+- `momm/scripts/bumble-immutable-file.test.mjs`
+- `momm/scripts/bumble-native.test.mjs`
+- `momm/scripts/bumble-oauth-authority.test.mjs` — temporary issuer/client exchange,
+  consent, replay, scope, expiry, revocation and one-review admission controls.
+  In-process only; not an SB2 OAuth service or live BAB qualification.
+- `momm/scripts/bumble-oauth-captured-regressions.test.mjs` — actual child controls for owned raw-input wiping, mandatory positive supervisor timeout and canonical OAuth frame encoding.
+- `momm/scripts/bumble-oauth-contract.test.mjs`
+- `momm/scripts/bumble-oauth-discovery.test.mjs`
+- `momm/scripts/bumble-oauth-handoff.test.mjs`
+- `momm/scripts/bumble-oauth-http-review-regressions.test.mjs` — exact byte mirror of the governor's HTTP review reproductions/investigations; synthetic dependency-fault and data-shape controls only.
+- `momm/scripts/bumble-oauth-http.test.mjs` — owned single-use PKCE exchange, fixed socket/TLS binding, default host denial and bounded discovery/token responses; in-process issuer and mocked HTTPS only.
+- `momm/scripts/bumble-oauth-journal.test.mjs`
+- `momm/scripts/bumble-oauth-panel.test.mjs`
+- `momm/scripts/bumble-oauth-peer-handoff.test.mjs` — canonical whole-artifact peer request byte/hash binding, OAuth-only private frame custody, default denial, grant revocation and single original release; synthetic, not a transport or live qualification.
+- `momm/scripts/bumble-oauth-peer-worker.test.mjs` — exact canonical OAuth bytes, separate Tailscale socket/TLS identity, bounded private frame/response, error/reflection/5xx controls and default closed entry; mocked HTTPS only.
+- `momm/scripts/bumble-oauth-pilot-regressions.test.mjs` — injected validator failure still records an admitted attempt; a sub-millisecond budget refuses before executor invocation, without renewing the deadline.
+- `momm/scripts/bumble-oauth-pilot.test.mjs` — signed one-use plan, original sealed baseline/source, captured OAuth worker graph, unchanged parent supervision, synthetic PKCE/HTTPS composition, shared capacity and retained unknown holds; no real BAB inference or native activation.
+- `momm/scripts/bumble-oauth-receiver.test.mjs`
+- `momm/scripts/bumble-oauth-vault.test.mjs`
+- `momm/scripts/bumble-oauth-worker-review-regressions.test.mjs` — exact byte mirror of corrected worker VM/owned-child controls; native policy stays closed, no real request.
+- `momm/scripts/bumble-peer-budget.test.mjs`
+- `momm/scripts/bumble-peer-review.test.mjs`
+- `momm/scripts/bumble-peer-shadow.test.mjs`
+- `momm/scripts/bumble-peer-worker.test.mjs`
+- `momm/scripts/bumble-plan-restoration.test.mjs`
+- `momm/scripts/bumble-plan-retirement.test.mjs`
+- `momm/scripts/bumble-publication-followup.test.mjs`
+- `momm/scripts/bumble-pure-review-probes.test.mjs`
+- `momm/scripts/bumble-qualification-ledger.test.mjs`
+- `momm/scripts/bumble-qualification-regressions.test.mjs`
+- `momm/scripts/bumble-qualification-sensitivity.test.mjs`
+- `momm/scripts/bumble-qualification.test.mjs`
+- `momm/scripts/bumble-raw-evidence.test.mjs`
+- `momm/scripts/bumble-raw-identity-probes.test.mjs`
+- `momm/scripts/bumble-release-receipt.test.mjs`
+- `momm/scripts/bumble-request.test.mjs`
+- `momm/scripts/bumble-review-regressions.test.mjs`
+- `momm/scripts/bumble-runtime-boundaries.test.mjs`
+- `momm/scripts/bumble-secret-store.test.mjs`
+- `momm/scripts/bumble-stage-admission.test.mjs`
+- `momm/scripts/bumble-stage-adoption.test.mjs`
+- `momm/scripts/bumble-stage-attestation-before.test.mjs`
+- `momm/scripts/bumble-stage-capacity.test.mjs`
+- `momm/scripts/bumble-stage-headroom.test.mjs`
+- `momm/scripts/bumble-stage-probe-evidence.test.mjs`
+- `momm/scripts/bumble-stage-recovery.test.mjs`
+- `momm/scripts/bumble-stage-release.test.mjs`
+- `momm/scripts/bumble-stage-revalidation.test.mjs`
+- `momm/scripts/bumble-stage-review-probes.test.mjs`
+- `momm/scripts/bumble-stage.test.mjs`
+- `momm/scripts/bumble-store-boundaries.test.mjs`
+- `momm/scripts/bumble-task-identity.test.mjs`
+- `momm/scripts/bumble-task-metadata.test.mjs`
+- `momm/scripts/bumble-task-unicode.test.mjs`
+- `momm/scripts/bumble-transmission-recovery.test.mjs`
+- `momm/scripts/bumble-transport.test.mjs`
+- `momm/scripts/bumble-worker-binding.test.mjs`
+- `momm/scripts/bumblers-behavior.test.mjs`
+- `momm/scripts/bumblers-boundaries.test.mjs`
+- `momm/scripts/bumblers-ui.test.mjs`
 - `momm/scripts/capabilities.test.mjs`
 - `momm/scripts/codex-isolation.test.mjs`
 - `momm/scripts/compatibility.test.mjs`
 - `momm/scripts/copilot-transport.test.mjs`
 - `momm/scripts/cover.test.mjs`
+- `momm/scripts/dispatcher-review-regressions.test.mjs` — exact byte mirror of numeric, metadata-header/bounds and disjoint-ID corroboration controls; synthetic data only.
 - `momm/scripts/entrypoint.test.mjs`
 - `momm/scripts/evidence-location.test.mjs`
 - `momm/scripts/expiry-regression.test.mjs`
@@ -135,14 +280,21 @@ their own first statement is what is exercised.
 - `momm/scripts/probes.test.mjs`
 - `momm/scripts/process-scope.test.mjs`
 - `momm/scripts/quotation-diagnostics.test.mjs`
+- `momm/scripts/registry-hardening.test.mjs`
 - `momm/scripts/review-answer.test.mjs`
+- `momm/scripts/reviewer-auth-choice.test.mjs`
+- `momm/scripts/reviewer-endpoint.test.mjs`
+- `momm/scripts/reviewer-registry.test.mjs`
 - `momm/scripts/roles.test.mjs`
 - `momm/scripts/run-notices.test.mjs`
+- `momm/scripts/sanitizer-source-regression.test.mjs` — synthetic credential-preservation matrix, explicit JavaScript declaration/call controls and HTTP Bearer redaction; no language-parser or universal secret-detection claim.
 - `momm/scripts/scheduler.test.mjs`
 - `momm/scripts/scorecard-roster.test.mjs`
 - `momm/scripts/scorecard.test.mjs`
 - `momm/scripts/second-look.test.mjs`
 - `momm/scripts/setup-maintenance.test.mjs`
+- `momm/scripts/setup-publication-review.test.mjs`
+- `momm/scripts/setup-review-regressions.test.mjs`
 - `momm/scripts/shutdown.test.mjs`
 - `momm/scripts/split.test.mjs`
 - `momm/scripts/stabilisation.test.mjs`

@@ -48,6 +48,12 @@ assert.equal((homeCinema(tour,tour.version,films.map(f=>({...f,status:'pending'}
   const stableRow={version:'1.17.0',kind:'release',tag:'momm-1.17.0',published_date:'2026-10-03T17:50:26Z',notes_path:'momm/references/release-1.17.0.md'};
   const notesRow={version:'1.17.1',kind:'version-notes',notes_path:'momm/references/release-1.17.1.md'};
   const manifestFor=(version,rows=[{version:'1.17.1',tag:'momm-1.17.1'},{version:'1.17.0',tag:'momm-1.17.0'},{version:'1.14.1',tag:'momm-1.14.1',legacy_unsigned:true}])=>({momm:version,momm_releases:rows});
+  const developing=releaseStatus({...manifestFor('1.17.0'),momm_development:{version:'1.18.0',stable:'1.17.0',notes_path:'momm/references/release-1.18.0.md'}},[stableRow,notesRow]);
+  assert.equal(developing.development.version,'1.18.0');
+  assert.equal(developing.candidate.version,'1.17.1');
+  assert(releaseStatusHtml(developing).includes('Local development: '));
+  assert(releaseStatusMarkdown(developing).includes('unpublished, not a test candidate'));
+  assert.throws(()=>releaseStatus({...manifestFor('1.18.0'),momm_development:{version:'1.18.0',stable:'1.16.0',notes_path:'momm/references/release-1.18.0.md'}},[stableRow,notesRow]),/development/i);
   // A sealed candidate that is not published: the stable release and the candidate, each with its link.
   const testing=releaseStatus(manifestFor('1.17.1'),[stableRow,notesRow]);
   assert.equal(plain(releaseStatusHtml(testing)),'Stable: 1.17.0 (signed tag) · Candidate under test: 1.17.1, not released');
@@ -99,7 +105,7 @@ assert.equal((homeCinema(tour,tour.version,films.map(f=>({...f,status:'pending'}
   // The published home page carries today's line exactly once, directly under the version pill.
   const manifestNow=JSON.parse(fs.readFileSync(new URL('../versions.json',import.meta.url),'utf8'));
   const catalogueNow=JSON.parse(fs.readFileSync(new URL('../momm/references/release-history.json',import.meta.url),'utf8'));
-  const line=releaseStatusHtml(releaseStatus(manifestNow,catalogueNow));
+  const line=releaseStatusHtml({...releaseStatus(manifestNow,catalogueNow),development:null});
   assert.equal(home.split(line).length-1,1,'the home page must carry the generated status line once: run node scripts/render-momm-site.mjs');
   assert.equal((home.match(/id="release-status"/g)||[]).length,1);
   assert(home.indexOf('class="release-pill"')<home.indexOf(line)&&home.indexOf(line)<home.indexOf('<h1>'),'the status line sits between the version pill and the headline');

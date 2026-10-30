@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+delete process.env.MOMM_EVIDENCE_HOME; // each suite owns its fixture evidence location
 const source = fs.readFileSync(new URL('../assets/setup-ui/app.js', import.meta.url), 'utf8');
 const start = source.indexOf('maintenanceGrid.addEventListener("click",');
 const end = source.indexOf('maintenanceGrid.addEventListener("change",', start);

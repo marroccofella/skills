@@ -29,7 +29,8 @@ assert.equal([...hub.matchAll(/data-momm-version/g)].length, 1, 'hub needs one g
 assert(hub.includes(`<span data-momm-version>${expectedVersion}</span>`), 'hub must show the exact manifest version');
 const sitemap = fs.readFileSync(path.join(root, 'docs/sitemap.xml'), 'utf8');
 assert(!sitemap.includes('<lastmod>2026-09-04</lastmod>'), 'do not reuse the historical evidence date as current page modification time');
-for (const page of ['start.html', 'updates.html', 'reference.html', 'technical.html', 'watch/overview.html', 'watch/setup.html', 'watch/trailer.html', `releases/${expectedVersion}.html`, 'releases/upgrade.html'])
+const developmentMetadata=JSON.parse(fs.readFileSync(path.join(root,'versions.json'))).momm_development;
+for (const page of ['start.html', 'updates.html', 'reference.html', 'technical.html', 'watch/overview.html', 'watch/setup.html', 'watch/trailer.html', ...(developmentMetadata?[]:[`releases/${expectedVersion}.html`]), 'releases/upgrade.html'])
   assert(sitemap.includes(`https://marroccofella.github.io/skills/momm/${page}`), `sitemap omits ${page}`);
 const files = ["index.html", "start.html", "updates.html", "evidence.html", "technical.html", "reference.html", "data/index.html"];
 let localLinks = 0;
@@ -113,7 +114,12 @@ for(const name of ['index','upgrade',...releases.map(r=>r.version)]){
   }
 }
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'versions.json')));
-assert(releases.some(r=>r.version===manifest.momm),'current version missing from archive');
+if(manifest.momm_development){
+  const dev=manifest.momm_development;
+  assert.equal(dev.stable,manifest.momm);
+  assert(!fs.existsSync(path.join(root,`docs/momm/releases/${dev.version}.html`)),'unpublished local notes do not belong in deployable public HTML');
+  assert(!releases.some(r=>r.version===dev.version),'unfinished development must not be inserted into public history');
+}else assert(releases.some(r=>r.version===manifest.momm),'current version missing from archive');
 for(const entry of releases)assert(manifest.momm_releases.some(r=>r.version===entry.version),'missing changelog entry '+entry.version);
 assert.equal(s.log_successes, s.stored_successes + s.summary_only_successes);
 assert.equal(s.dispositions, Object.values(s.decisions).reduce((a, b) => a + b, 0));

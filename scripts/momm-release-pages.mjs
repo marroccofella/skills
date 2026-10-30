@@ -45,7 +45,7 @@ export function markdown(text) {
 }
 const shell=(title,body)=>`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · MOMM</title><link rel="stylesheet" href="../site.css"><script src="../site.js" defer></script></head><body><a class="skip" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="../index.html"><span class="mark">◆</span> momm <span class="brand-note">by 42.uk</span></a><nav aria-label="Release navigation"><a href="index.html">All versions</a><a href="../install.html">Install</a><a href="../updates.html">Update safely</a><a href="../start.html">Get started</a></nav><a class="repo" href="https://github.com/marroccofella/skills">GitHub ↗</a></header><main id="main">${body}</main><footer><a href="https://42.uk">◆ 42.uk</a><p>RELAX. IT'S ALREADY OVER.</p><a href="https://github.com/marroccofella/skills/blob/main/LICENSE">MIT licence</a></footer></body></html>\n`;
-export function releasePages(root) {
+export function releasePages(root,{includeDevelopment=false}={}) {
   const catalogue=JSON.parse(fs.readFileSync(path.join(root,'momm/references/release-history.json'),'utf8')),seen=new Set(),output={};
   if(!Array.isArray(catalogue)||!catalogue.length)throw Error('Release catalogue missing');
   for(const entry of catalogue){
@@ -67,6 +67,13 @@ export function releasePages(root) {
     output[`docs/momm/releases/${entry.version}.html`]=shell('Version '+entry.version,body);
   }
   const ordered=[...catalogue].reverse();
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'versions.json'),'utf8'));
+  const development=manifest.momm_development;
+  if(development&&includeDevelopment){
+    if(development.stable!==manifest.momm||!/^\d+\.\d+\.\d+$/.test(development.version)||development.notes_path!==`momm/references/release-${development.version}.md`||seen.has(development.version))throw Error('Invalid development note identity');
+    const notes=fs.readFileSync(path.join(root,development.notes_path),'utf8');
+    output[`docs/momm/releases/${development.version}.html`]=shell('Local development '+development.version,`<section class="page-hero"><p class="eyebrow">LOCAL DEVELOPMENT · NOT RELEASED</p><h1>MOMM <span>${escape(development.version)}</span></h1><p class="lead">This checkout contains unfinished development, not a published package or public test candidate. No public source identity or release tag is asserted.</p></section><div class="doc-body wide">${markdown(notes)}<p><a href="index.html">← Published history and candidate notes</a></p></div>`).replace('</head>','<meta name="robots" content="noindex,nofollow"></head>');
+  }
   output['docs/momm/releases/index.html']=shell('Version history',`<section class="page-hero"><p class="eyebrow">VERSION HISTORY</p><h1>Every change.<br><span>Its original record.</span></h1><p class="lead">Release notes, historical tags and published code milestones are distinguished—not silently treated as equivalent releases.</p></section><div class="doc-body wide"><aside class="notice"><strong>Gaps stay visible.</strong><p>No public 1.6–1.8 release is evidenced. The installed 1.11/1.12 development line is described in <a href="1.13.0.html">1.13.0’s reconciliation notes</a>, not invented as separate public releases.</p></aside>${ordered.map(e=>`<section><p class="eyebrow">${escape(kinds[e.kind])}</p><h2><a href="${e.version}.html">${escape(e.version)} →</a></h2><p>${escape(e.summary)}</p></section>`).join('')}</div>`);
   const prompt=fs.readFileSync(path.join(root,'momm/references/upgrade-prompt.md'),'utf8').replace(/^# [^\n]+\r?\n\r?\n/,'');
   const bootstrap=fs.readFileSync(path.join(root,'momm/references/bootstrap.md'),'utf8');

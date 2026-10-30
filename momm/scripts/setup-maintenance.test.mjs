@@ -10,6 +10,7 @@ const source = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8
 const start = source.indexOf('function parseVersion('), end = source.indexOf('// Returns true only if a terminal');
 assert(start >= 0 && end > start);
 const passed = [], failures = [];
+function sessionCore(js){const begin=js.indexOf('let reviewerSessionValidated='),end=js.indexOf('let capabilities =',begin);assert(begin>=0&&end>begin,'shared session source is included');return js.slice(begin,end);}
 async function test(name, fn) {
   let deadline;
   try { await Promise.race([Promise.resolve().then(fn),new Promise((_,reject)=>{deadline=setTimeout(()=>reject(Error('Test did not settle within 30 seconds')),30_000);})]); passed.push(name); }
@@ -199,8 +200,8 @@ await test('bootstrap keeps the launch capability when the session reply omits o
       sessionStorage:{getItem:()=>null,setItem(){}},history:{replaceState(){}},
       fetch:async(url,options)=>{requests.push({url,headers:options.headers});return {ok:true,json:async()=>url==='/api/session'?reply:{url:'/ledger?ticket='+'0'.repeat(48)}};},
       refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
-      summary:{},showToast:message=>finish(message)});
-    vm.runInContext('var session=null;'+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd)+';this.call=api;this.current=()=>session;',c);
+      window:{},summary:{},showToast:message=>finish(message)});
+    vm.runInContext('var session=null;'+sessionCore(js)+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd)+';this.call=api;this.current=()=>session;',c);
     assert.equal(await started,null,'bootstrap must complete');
     assert.equal(requests[0].headers['X-MOMM-Token'],token,'the session read itself carries the launch capability');
     await c.call('/api/ledger-ticket',{method:'POST',body:'{}'});
@@ -223,8 +224,8 @@ await test('a rejected stored launch token is forgotten; a transient failure kee
       sessionStorage:{getItem:k=>stored.get(k)??null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},history:{replaceState(){}},
       fetch:async(url,options)=>{requests.push(options.headers['X-MOMM-Token']);return respond(options.headers['X-MOMM-Token']);},
       refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
-      summary:{},showToast:message=>finish(message)});
-    vm.runInContext('var session=null;'+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd),c);
+      window:{},summary:{},showToast:message=>finish(message)});
+    vm.runInContext('var session=null;'+sessionCore(js)+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd),c);
     return {message:await done,requests};
   };
   const server=token=>token===fresh?{ok:true,status:200,json:async()=>({platform:'test',providers:{}})}
@@ -555,6 +556,31 @@ await test('request body decodes split UTF-8 once and closes oversize streams',a
   for(const byte of bytes) request.emit('data',Buffer.from([byte]));request.emit('end');assert.equal((await promise).text,'😀');
   const oversized=new EventEmitter();let destroyed=false;oversized.destroy=()=>{destroyed=true;};const pending=read(oversized);
   oversized.emit('data',Buffer.alloc(5000));await assert.rejects(pending);assert.equal(destroyed,true);
+});
+await test('reviewer settings malformed JSON is not misreported as a private-store failure',async()=>{
+  const a=source.indexOf('function readBody('),b=source.indexOf('function authorized(',a);
+  const read=vm.runInNewContext(source.slice(a,b)+';readBody',{Buffer});
+  const request=new EventEmitter();const parsed=read(request,48000);
+  request.emit('data',Buffer.from('{broken'));request.emit('end');
+  let error;try{await parsed;}catch(e){error=e;}
+  assert.equal(error?.code,'invalid_request_json');
+  const h=handler({},true,{readBody:async()=>{throw error;}});
+  const response=await h.serve({method:'POST',url:'/api/reviewers',headers:{origin:'http://127.0.0.1:1',host:'127.0.0.1:1'},socket:{}},{});
+  assert.equal(response.status,400);assert.equal(response.value.code,'invalid_request_json');
+});
+await test('reviewer settings enforce session, same origin, methods and structured store errors',async()=>{
+  let writes=0;const store={snapshot:()=>({revision:0,profiles:[]}),command:()=>{writes++;return {revision:1};}};
+  const serve=handler({},true,{reviewerRegistryStore:()=>store}).serve;
+  const request={url:'/api/reviewers',socket:{},headers:{host:'127.0.0.1:1',origin:'http://127.0.0.1:1'}};
+  assert.equal((await serve({...request,method:'GET'},{})).status,200);
+  assert.equal((await serve({...request,method:'POST'},{})).status,200);assert.equal(writes,1);
+  assert.equal((await serve({...request,method:'POST',headers:{...request.headers,origin:'http://evil.test'}},{})).status,403);assert.equal(writes,1);
+  assert.equal((await serve({...request,method:'DELETE'},{})).status,405);
+  assert.equal((await handler({},false,{reviewerRegistryStore:()=>store}).serve({...request,method:'GET'},{})).status,403);
+  for(const code of ['connector_conflict','policy_required','not_found','stale_revision']){
+    const failed=handler({},true,{reviewerRegistryStore:()=>({command(){throw Object.assign(Error('Safe configuration error'),{code});}})});
+    const response=await failed.serve({...request,method:'POST'},{});assert.equal(response.value.code,code);assert.equal(response.status,['stale_revision','policy_required'].includes(code)?409:400);
+  }
 });
 // Drains host microtasks so promise chains inside the vm context settle.
 const flush=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setImmediate(r));};

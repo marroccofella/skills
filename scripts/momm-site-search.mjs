@@ -73,8 +73,12 @@ export function pageMetadata(file, catalogue) {
   return {title:`MOMM ${version}: ${kind}`, description, release};
 }
 
-export function enhanceSearch(output, {version, catalogue}) {
+export function enhanceSearch(output, {version, catalogue, development=null}) {
   for (const [file, original] of Object.entries(output)) {
+    if(development && file===`docs/momm/releases/${development.version}.html`) {
+      if(!original.includes('LOCAL DEVELOPMENT · NOT RELEASED')||!original.includes('content="noindex,nofollow"'))throw Error('Development page must remain explicitly unpublished and unindexed');
+      continue;
+    }
     if (!file.endsWith('.html') || file.startsWith('docs/momm/watch/') || !(file.startsWith('docs/momm/') || file==='docs/evidence/index.html')) continue; // Watch pages own their VideoObject graph.
     const meta=pageMetadata(file,catalogue),url=canonicalUrl(file);
     const crumbs=[['Skills',SITE],['MOMM',SITE+'momm/']];

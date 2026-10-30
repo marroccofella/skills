@@ -40,16 +40,19 @@ export function releaseStatus(manifest,catalogue){
   const candidate=newest.kind==='version-notes'?newest:null;
   // Implied by the order check above; kept as a second guard on the claim the line makes.
   if(candidate&&!newerVersion(candidate.version,stable.version))throw Error(`Candidate ${candidate.version} is not newer than the stable release ${stable.version}`);
-  const current=(candidate??stable).version;
+  const d=manifest.momm_development;
+  if(d && (typeof d!=='object'||Array.isArray(d)||Object.keys(d).sort().join(',')!=='notes_path,stable,version'||d.stable!==manifest.momm||d.stable!==stable.version||!newerVersion(d.version,(candidate??stable).version)||d.notes_path!==`momm/references/release-${d.version}.md`))throw Error('Invalid development version metadata');
+  const current=d?stable.version:(candidate??stable).version;
   if(manifest.momm!==current)throw Error(`versions.json says ${manifest.momm}; the release catalogue says ${current} is ${candidate?'under test':'the stable release'}`);
   // "Signed" is the manifest's own record for that tag, not an assumption about every release.
   const signed=(manifest.momm_releases??[]).some(release=>release.version===stable.version&&release.tag===stable.tag&&!release.legacy_unsigned);
   const named=entry=>({version:entry.version,notes_path:entry.notes_path??null});
-  return {stable:{...named(stable),signed},candidate:candidate&&named(candidate)};
+  return {stable:{...named(stable),signed},candidate:candidate&&named(candidate),development:d?named(d):null};
 }
 const statusParts=(status,link)=>[
   ['Stable: ',`${status.stable.version} (${status.stable.signed?'signed tag':'tag, not signed'})`,link(status.stable)],
-  ...(status.candidate?[['Candidate under test: ',`${status.candidate.version}, not released`,link(status.candidate)]]:[])];
+  ...(status.candidate?[['Candidate under test: ',`${status.candidate.version}, not released`,link(status.candidate)]]:[]),
+  ...(status.development?[['Local development: ',`${status.development.version}, unpublished, not a test candidate`,link(status.development)]]:[])];
 export function releaseStatusHtml(status){
   return `<p class="micro" id="release-status">${statusParts(status,entry=>`releases/${entry.version}.html`).map(([label,text,href])=>`${label}<a href="${esc(href)}">${esc(text)}</a>`).join(' · ')}</p>`;
 }

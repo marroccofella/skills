@@ -160,6 +160,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const published = catalogue.some(r => r.version === version && r.kind === 'release' && r.tag && r.published_date);
   // Stable version and any candidate under test, in one line for the home page and the README (1.17.1 S10).
   const status = releaseStatus(manifest, catalogue);
+  // Deployable HTML describes publicly installable software. Checkout state is
+  // kept in the branch README/notes, not promoted through public page chrome.
+  const publicStatus={...status,development:null};
+  const publicManifest=Object.fromEntries(Object.entries(manifest).filter(([key])=>key!=='momm_development'));
   if (Object.values(s.decisions).reduce((a, b) => a + b, 0) !== s.dispositions) throw new Error("Disposition buckets do not reconcile");
   for (const key of Object.keys(s.decisions)) if (s.routes.reduce((n, r) => n + r[key], 0) + s.coalition[key] !== s.decisions[key]) throw new Error(`Attribution buckets do not reconcile: ${key}`);
   if (s.summary_only_successes < 0) throw new Error("Stored successes exceed run log successes; reconcile the source export first");
@@ -180,10 +184,10 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
     output[file] = output[file].replace('</header>', '</header>' + banner(prefix))
       .replace('</head>', `<link rel="icon" type="image/svg+xml" href="${prefix}favicon.svg"></head>`);
   }
-  output['docs/momm/index.html'] = homeWithReleaseStatus(output['docs/momm/index.html'], status)
+  output['docs/momm/index.html'] = homeWithReleaseStatus(output['docs/momm/index.html'], publicStatus)
     .replace(/<div class="reviewers">[\s\S]*?<\/div>/, () => `<div class="reviewers">${['codex','claude','antigravity','copilot','grok'].map(r=>brandBadge(r)).join('')}</div>`)
-    .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
-    .replace('<section class="principles">', () => releasePanel(manifest, published) + '<section class="principles">')
+    .replace('<section class="principles">', () => homeDiagrams() + homeCinema(tour, status.stable.version, films) + '<!-- MOMM HOME COMPANIONS -->' + '<section class="principles">')
+    .replace('<section class="principles">', () => releasePanel(publicManifest, published) + '<section class="principles">')
     .replace('</head>', '<link rel="stylesheet" href="home.css"><link rel="stylesheet" href="workflow.css"><script type="module" src="home-player.mjs"></script><script type="module" src="workflow.mjs"></script></head>')
     .replace('See a real review</a>', 'See a real review</a><a class="button" href="#architecture-library">Explore the workflow ↓</a><a class="button" href="#walkthrough">Watch / read the tour ↓</a>');
   output['docs/momm/start.html'] = output['docs/momm/start.html'].replace('<section id="install">', `<section class="notice"><h2>Recommended: let your agent verify the release first</h2><p><a class="button primary" href="install.html">Install or upgrade in one line →</a></p><p>A clone starts on the default branch, which can contain unreleased work. Before executing the manual installer below, select the published signed release, verify its expected signing identity and package hash, and read its installer help. The copyable prompt covers those steps and asks before installing missing prerequisites.</p></section><section id="install">`);
@@ -195,7 +199,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('<section id="privacy">', `<section id="modalities"><h2>Not just code: prose and supported attachments</h2><p>Use MOMM for manuscripts, specifications and other text when sharing with the selected providers is permitted. The same rule applies: reviewers make claims; the governor verifies and records decisions.</p><p>Text routes include Codex, Claude Code, Antigravity, Copilot and Grok. Verified attachment adapters differ: Codex supports images; Claude supports images and PDFs; Gemini supports images, PDFs, audio and video where the account is eligible. Other routes stay text-only until verified. Run preflight for the installed adapter’s actual capability; a provider logo is not evidence of multimedia support.</p><p>The historical public ledger contains the manuscript specimen <code>rev_20260904131823_wvxh</code>. <a href="../evidence/index.html">Inspect the sanitized specimen →</a> · <a href="https://github.com/marroccofella/skills/blob/main/momm/SKILL.md">Read the current protocol ↗</a></p><p>Strict review-contract rejection and input/source size ceilings remain possible. The source completion validator covers local text and supported Git text additions/modifications, not every binary, rename, deletion or media lifecycle.</p></section><section id="privacy">`);
   output['docs/momm/reference.html'] = output['docs/momm/reference.html'].replace('</main>', () => answerSection()+'</main>');
   output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">','<section class="doc-body wide"><h2>New to MOMM?</h2><p><a href="reference.html#questions">Read the answers about reviewers, privacy, costs, installation and evidence →</a></p><p>Reading with an assistant? <a href="llms.txt">Plain-text MOMM guide (llms.txt)</a> · <a href="../sitemap.xml">Site map</a>. The same workflow and safety boundaries are available in the written guides; no video or JavaScript is required to understand them.</p></section><section class="cta">');
-  output['docs/momm/llms.txt'] = llmsText(version);
+  output['docs/momm/llms.txt'] = llmsText(status.stable.version);
   output['docs/momm/index.html'] = output['docs/momm/index.html'].replace('<section class="cta">', () => projectStory()+'<section class="cta">');
   output['docs/momm/evidence.html'] = output['docs/momm/evidence.html'].replace('<section id="real-review">', () => evidenceBenefits(s)+'<section id="real-review">');
   output['docs/momm/data/route-outcomes.json'] = JSON.stringify(chartSeries(data).routes, null, 2) + '\n';
@@ -243,7 +247,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   const versionMarker = /<span data-momm-version>[^<]*<\/span>/g;
   if ([...hub.matchAll(versionMarker)].length !== 1) throw new Error('Hub must contain exactly one MOMM version marker');
   output['docs/index.html'] = hub.replace(versionMarker, () => `<span data-momm-version>${esc(version)}</span>`);
-  enhanceSearch(output, {version, catalogue});
+  enhanceSearch(output, {version, catalogue,development:status.development});
   for (const file of Object.keys(output).filter(f => f.startsWith('docs/momm/') && f.endsWith('.html'))) {
     const prefix = file.includes('/releases/') || file.includes('/data/') ? '../' : '';
     output[file] = output[file].replace('</head>', `<link rel="stylesheet" href="${prefix}technical.css"></head>`);
@@ -261,7 +265,7 @@ export function renderPublic({ root = ROOT, check = false, sourceData } = {}) {
   output['docs/video-sitemap.xml']='<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">'+videoEntries.join('')+'</urlset>\n';
   // lastmod is optional. Do not mislabel the evidence snapshot date, build time
   // or a moving Git HEAD as the last meaningful edit of every generated page.
-  const urls = Object.keys(output).filter(f => f.endsWith('.html')).map(f =>
+  const urls = Object.keys(output).filter(f => f.endsWith('.html')&&!/<meta\b[^>]*name="robots"[^>]*content="[^"]*noindex/i.test(output[f])).map(f =>
     'https://marroccofella.github.io/skills/' + f.slice('docs/'.length).replace(/(^|\/)index\.html$/, '$1')).sort();
   // Sibling skill guides are maintained outside the MOMM renderer.
   // Explicit publication catalogue: untracked scratch directories cannot add URLs.

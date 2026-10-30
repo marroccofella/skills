@@ -13,6 +13,7 @@ import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTi
 import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
 import { evidenceDir } from "./evidence-location.mjs";
+import {ReviewerRegistry} from './reviewer-registry.mjs';
 
 // Windows: a bare command name (git.exe, powershell.exe, cmd.exe, a CLI version
 // probe) is looked up in the WORKING DIRECTORY before PATH, by cmd.exe and by
@@ -462,6 +463,7 @@ async function maintenanceReport(governor) {
   const routesReport = await readiness('other');
   let localVersions = {};
   try { localVersions = JSON.parse(fs.readFileSync(localVersionsFile, "utf8")); } catch {}
+  if(localVersions.momm_development?.version)localVersions.momm=localSkillVersion()||localVersions.momm;
   const [publishedResult, codexLatestResult, claudeLatestResult, geminiLatestResult, copilotLatestResult, grokUpdate, gitVersion, gitStatus, shellVersion, models, bootstrap] = await Promise.all([
     fetchJson(publishedVersionsUrl).catch(() => null),
     fetchJson("https://registry.npmjs.org/@openai%2fcodex/latest").catch(() => null),
@@ -1429,14 +1431,14 @@ function readBody(request, limit = 4096) {
     request.on("data", (chunk) => {
       if (failed) return;
       const buffer = Buffer.from(chunk); bytes += buffer.length;
-      if (bytes > limit) { failed=true; chunks.length=0; reject(new Error("Request body too large")); request.destroy(); return; }
+      if (bytes > limit) { failed=true; chunks.length=0; reject(Object.assign(new Error("Request body too large"),{code:'request_body_too_large'})); request.destroy(); return; }
       chunks.push(buffer);
     });
     request.on("end", () => {
       if (failed) return;
       const body = Buffer.concat(chunks).toString('utf8');
       try { resolve(body ? JSON.parse(body) : {}); }
-      catch { reject(new Error("Request body must be JSON")); }
+      catch { reject(Object.assign(new Error("Request body must be JSON"),{code:'invalid_request_json'})); }
     });
     request.on("error", reject);
   });
@@ -1454,6 +1456,7 @@ const STATIC_ASSETS = Object.freeze({
   "/momm-theme.css": ["momm-theme.css", "text/css; charset=utf-8"],
   "/styles.css": ["styles.css", "text/css; charset=utf-8"],
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
+  "/bumblers.js": ["bumblers.js", "text/javascript; charset=utf-8"],
 });
 
 function serveAsset(response, file, contentType) {
@@ -1621,6 +1624,8 @@ function createVersionWatch({ read = installedDispatcherVersion, log = (line) =>
   };
 }
 const setupCenterVersion = createVersionWatch();
+let savedReviewerRegistry;
+function reviewerRegistryStore() { return savedReviewerRegistry ||= new ReviewerRegistry(); }
 
 function createServer() {
   // Navigation cannot send a custom header. Exchange an authenticated request
@@ -1635,6 +1640,24 @@ function createServer() {
     try {
       if (request.method === "GET" && Object.hasOwn(STATIC_ASSETS, requestUrl.pathname)) return serveAsset(response, ...STATIC_ASSETS[requestUrl.pathname]);
       if (requestUrl.pathname.startsWith("/api/") && !authorized(request)) return sendJson(response, 403, { error: "Use the private Setup Center launch link from your terminal.", reason:'private_session' });
+      if (requestUrl.pathname === '/api/reviewers') {
+        try {
+          if (request.method === 'GET') {
+            const number=(name,fallback)=>{const value=Number(requestUrl.searchParams.get(name)??fallback);return Number.isSafeInteger(value)&&value>=0?value:fallback;};
+            return sendJson(response,200,reviewerRegistryStore().snapshot({query:requestUrl.searchParams.get('q')||'',state:requestUrl.searchParams.get('state')||'visible',offset:number('offset',0),limit:number('limit',25)}));
+          }
+          if (request.method === 'POST') {
+            if (!request.headers.origin || request.headers.origin !== `http://${request.headers.host}`) return sendJson(response,403,{error:'Use the same local dashboard origin.'});
+            const body=await readBody(request,48_000);
+            return sendJson(response,200,reviewerRegistryStore().command(body));
+          }
+          return sendJson(response,405,{error:'Unsupported method.'});
+        } catch (error) {
+          const known=['invalid_configuration','invalid_endpoint','invalid_certificate','invalid_state','not_found','stale_revision','registry_busy','registry_full','storage_budget','policy_required','adapter_required','unsupported_schema','connector_conflict','invalid_request_json','request_body_too_large'];
+          const code=known.includes(error.code)?error.code:'private_store_unavailable';
+          return sendJson(response,code==='request_body_too_large'?413:['stale_revision','registry_busy','policy_required'].includes(code)?409:400,{code,error:known.includes(error.code)?error.message:'Owner-only reviewer settings could not be verified. No permissions were repaired.'});
+        }
+      }
       if (request.method === "GET" && requestUrl.pathname === "/ledger") {
         if (!authorized(request)) {
           const ticket = requestUrl.searchParams.get("ticket"), expires = ledgerTickets.get(ticket);

@@ -1,0 +1,18 @@
+// Governor-authored pure-function controls. No provider, file attachment or I/O dispatch.
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+
+delete process.env.MOMM_EVIDENCE_HOME;
+const source=fs.readFileSync(new URL('../scripts/multi-review.mjs',import.meta.url),'utf8');
+function declaration(name){const start=source.indexOf('function '+name+'('),end=source.indexOf('\n}',start);assert(start>=0&&end>start);return source.slice(start,end+2);}
+const jpeg=vm.runInNewContext('('+declaration('stripJpegMetadata')+')',{Buffer}),png=vm.runInNewContext('('+declaration('stripPngMetadata')+')',{Buffer});
+const parse=vm.runInNewContext('('+declaration('parseArgs')+')',{process:{env:{}},normalizeAgentName:v=>v??null,DEFAULT_TIMEOUT_MS:180000,DEFAULT_MAX_BYTES:120000});
+const rangeStart=source.indexOf('const normalizedRange ='),rangeEnd=source.indexOf('\n};',rangeStart)+3;assert(rangeStart>=0&&rangeEnd>rangeStart);
+const merge=vm.runInNewContext(source.slice(rangeStart,rangeEnd)+'\n'+['fingerprint','disjointRanges','overlappingKey','rationalize'].map(declaration).join('\n')+'\nrationalize',{SEVERITY_RANK:{CRITICAL:3,WARNING:2,NITPICK:1},CLAIM_TYPE_RANK:{DEFECT:5,RISK:4,QUESTION:3,IDEA:2,NOISE:1}});
+const cases={
+ 'jpeg-fill'(){for(const fill of [1,2,5]){const marker=Buffer.from([...Array(fill).fill(0xff),0xe1,0,8,69,120,105,102,0,0]),input=Buffer.concat([Buffer.from([0xff,0xd8]),marker,Buffer.from([0xff,0xd9])]),before=Buffer.from(input),r=jpeg(input);assert.equal(r.stripped,true);assert.equal(r.buffer.includes(Buffer.from('Exif')),false);assert.deepEqual(input,before);}},
+ 'numeric-options'(){for(const flag of ['--timeout','--max-bytes'])for(const raw of ['abc','NaN','Infinity','1e309',''])assert.throws(()=>parse([flag,raw]),new RegExp(flag.slice(2)));assert.equal(parse(['--timeout','90']).timeoutMs,90000);assert.equal(parse(['--max-bytes','400000']).maxBytes,400000);},
+ 'same-id-disjoint'(){const mk=(agent,range)=>({status:'success',agent,review:{findings:[{id:'null-check',severity:'WARNING',target_file:'synthetic.js',line_range:range,issue:'Missing null check',claim_type:'DEFECT'}]}});for(const ranges of [[[10,12],[50,52],[10,12]],[[10,12],[50,52],[50,52]],[[50,52],[10,12],[50,52]]]){const result=JSON.parse(JSON.stringify(merge([mk('first',ranges[0]),mk('second',ranges[1]),mk('third',ranges[2])])));assert.equal(result.length,2);const joined=result.find(r=>r.line_range[0]===ranges[2][0]);assert.equal(joined.sources.length,2);assert(joined.sources.includes('third'));}},
+ 'segment-bounds'(){for(const input of [Buffer.from([0xff,0xd8,0xff,0xe1,0,1,0xff,0xd9]),Buffer.from([0xff,0xd8,0xff,0xe1,0xff,0xff,0,0])])assert.throws(()=>jpeg(input));const signature=Buffer.from([137,80,78,71,13,10,26,10]);assert.throws(()=>png(Buffer.concat([signature,Buffer.from([0xff,0xff,0xff,0xff]),Buffer.from('tEXt'),Buffer.alloc(4)])));},
+ 'unmatched-prose-is-not-a-contract'(){const extract=vm.runInNewContext('('+declaration('extractJsonObjects')+')');const values=extract('Unmatched prose " followed by {"SYNTHETIC":true}');assert(Array.isArray(values));/* Existing rejection/recovery policy stays explicit; no fuzzy parser change. */}
+};
+const mode=process.argv[2]??'all';if(mode!=='all'&&!Object.hasOwn(cases,mode))throw Error('Known reproduction mode required.');let passed=0;for(const [name,fn]of Object.entries(cases))if(mode==='all'||mode===name){fn();passed++;console.log(JSON.stringify({name,passed:true}));}assert(passed>0);console.log(JSON.stringify({passed,scope:'synthetic source-function tests only; no attachment transmission or provider calls'}));

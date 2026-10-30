@@ -58,6 +58,11 @@ const planResult = document.querySelector("#plan-result");
 const staleNotice = document.querySelector("#stale-notice");
 
 let session = null;
+let reviewerSessionValidated=false;
+let reviewerSessionState='pending';
+const reviewerSessionSubscribers=new Set();
+function publishReviewerSession(value){reviewerSessionState=value?'valid':'invalid';for(const subscriber of reviewerSessionSubscribers){try{subscriber(value);}catch{}}}
+window.mommSetupSession={subscribe(fn){reviewerSessionSubscribers.add(fn);if(reviewerSessionState!=='pending'){try{fn(reviewerSessionValidated?session?.token??null:null);}catch{}}return()=>reviewerSessionSubscribers.delete(fn);},invalidate(value){if(session?.token===value){reviewerSessionValidated=false;publishReviewerSession(null);}}};
 let capabilities = null;
 // route -> the modality probe job that owns the route's buttons until it settles.
 const capabilityJobs = new Map();
@@ -1475,6 +1480,7 @@ function launchToken() {
 function forgetLaunchToken(token) {
   const key = "momm-local-session";
   try { if (token && sessionStorage.getItem(key) === token) sessionStorage.removeItem(key); } catch {}
+  if(typeof window!=='undefined')window.mommSetupSession?.invalidate?.(token);
 }
 
 (async () => {
@@ -1483,6 +1489,7 @@ function forgetLaunchToken(token) {
     // The launch capability stays the one read from the private fragment or
     // tab storage: header authority never depends on the reply repeating it.
     session = { ...(await api("/api/session")), token: session.token };
+    reviewerSessionValidated=true;publishReviewerSession(session.token);
     await refresh();
     loadMaintenance(false);
     loadGuidance();
@@ -1493,6 +1500,7 @@ function forgetLaunchToken(token) {
     // An explicit rejection retires the stored capability; an unreachable or
     // busy server does not. Recovery is the new launch link from the terminal.
     if (error?.status === 403) { forgetLaunchToken(session?.token); session = null; }
+    if (!reviewerSessionValidated && reviewerSessionState !== 'invalid') publishReviewerSession(null);
     summary.textContent = "Setup Center could not start.";
     showToast(error.message);
   }

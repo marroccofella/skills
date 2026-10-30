@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {fileURLToPath} from 'node:url';
+delete process.env.MOMM_EVIDENCE_HOME; // each suite owns its fixture evidence location
 const suite = fs.readFileSync(new URL('./setup-maintenance.test.mjs', import.meta.url), 'utf8');
 const client = fs.readFileSync(new URL('../assets/setup-ui/app.js', import.meta.url), 'utf8');
 const flush = async () => { for (let i=0;i<12;i++) await new Promise(resolve=>setImmediate(resolve)); };

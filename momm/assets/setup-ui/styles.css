@@ -300,3 +300,12 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
   .maintenance-head .button { width: 100%; }
   footer { align-items: flex-start; flex-direction: column; padding: 22px 0; }
 }
+/* 1.18 registry controls share the existing palette, not independent theme tokens. */
+.bumbler-panel { margin-block: 24px; }
+.bee-tools { display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin-block:16px; }
+.bee-tools label,.bee-editor label { display:grid; gap:6px; }
+.bee-editor { width:min(720px,calc(100vw - 32px)); max-height:85vh; overflow:auto; }
+.bee-editor form { display:grid; gap:12px; }
+.bee-editor input,.bee-editor select,.bee-editor textarea,.bee-tools input,.bee-tools select { padding:10px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:8px; width:100%; box-sizing:border-box; }
+.bee-editor pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.bee-card .toolbar-actions { flex-wrap:wrap; }

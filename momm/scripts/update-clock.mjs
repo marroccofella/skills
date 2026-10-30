@@ -20,7 +20,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {MANIFEST_URL, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled, systemTool, resolveTool } from "./update.mjs";
+import {MANIFEST_URL, publishedVersion, checkoutVersion, newer, atomic, safeText, stateDir, repoRoot, cliBinary, locateBinary, updateCheckDisabled, systemTool, resolveTool } from "./update.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
 // THIS process's current directory before PATH unless this process carries the variable. Kept inline so
 // a script copied on its own still runs.
@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   auto_update: Object.freeze({ enabled: false, skill: true, clis: true, models: true, accept_protocol: false }),
   clock: Object.freeze({ min_interval_ms: 30 * 60_000, max_interval_ms: DAY }),
 });
-export function localSkillVersion() { try { return JSON.parse(fs.readFileSync(path.join(ROOT, "versions.json"), "utf8")).momm || null; } catch { return null; } }
+export function localSkillVersion() { try { return checkoutVersion(JSON.parse(fs.readFileSync(path.join(ROOT, "versions.json"), "utf8"))) || null; } catch { return null; } }
 const USER_AGENT = `momm-update-clock/${localSkillVersion() || "unknown"}`;
 // A missing file is the fallback; an unreadable or unparseable one is the fallback
 // PLUS a notice, so a truncated settings/state file degrades to defaults instead of
@@ -282,7 +282,7 @@ const semver = v => String(v || "").match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0
 // ---- sources -----------------------------------------------------------------
 export const skillSource = () => ({ name: "skill", kind: "skill", url: MANIFEST_URL, async check(ctx, entry) {
   const r = await conditionalGet(ctx, MANIFEST_URL, entry);
-  return r.notModified ? r : { latest: semver(r.body.momm), etag: r.etag, last_modified: r.last_modified };
+  return r.notModified ? r : { latest: semver(publishedVersion(r.body)), etag: r.etag, last_modified: r.last_modified };
 } });
 export const npmSource = cli => {
   const url = `https://registry.npmjs.org/${NPM_PACKAGES[cli].replace("/", "%2f")}/latest`;

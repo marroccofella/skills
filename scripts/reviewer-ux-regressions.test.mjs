@@ -24,6 +24,9 @@ await test('same-document private launch link restarts authenticated bootstrap w
   sessionStorage:{getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)},history:{replaceState(){location.hash='';}},
   window:{addEventListener:(name,fn)=>listeners.set(name,fn)},
   api:async()=>{calls++;throw Error('Synthetic denied session');},refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){}});
+ const seamStart=client.indexOf('let reviewerSessionValidated='),seamEnd=client.indexOf('let capabilities =',seamStart);
+ assert(seamStart>=0&&seamEnd>seamStart,'the real shared-session core must accompany bootstrap');
+ vm.runInContext(client.slice(seamStart,seamEnd),c);
  vm.runInContext(client.slice(client.indexOf('function launchToken() {')),c);
  await new Promise(r=>setImmediate(r));
  assert.equal(calls,0,'bare shell must not call authenticated API');

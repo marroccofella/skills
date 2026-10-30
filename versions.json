@@ -1,6 +1,11 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.17.4",
+  "momm": "1.17.3",
+  "momm_development": {
+    "version": "1.18.0",
+    "stable": "1.17.3",
+    "notes_path": "momm/references/release-1.18.0.md"
+  },
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
     {
