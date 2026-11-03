@@ -418,6 +418,15 @@ try {
   const resolved = fs.realpathSync.native(root), temporary = fs.realpathSync.native(os.tmpdir());
   assert(resolved.startsWith(temporary + path.sep) && path.basename(resolved).startsWith('momm-review-answer-test-'));
   fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  await check('a refused summary says which rule it broke, with only its type or length', () => {
+    const base = { review_status: 'complete', verdict: 'ACCEPT', confidence: 0.9 }, artifact = 'const a = 1;\n';
+    const problem = (summary) => reviewProblem({ ...base, ...(summary === undefined ? {} : { summary }) }, artifact);
+    assert.equal(problem(undefined), 'missing summary');
+    assert.equal(problem('   '), 'blank summary');
+    assert.equal(problem(42), 'summary is not text (number)');
+    assert.equal(problem('x'.repeat(1001)), 'summary is 1001 characters, over the 1000 limit');
+    assert.doesNotMatch(problem('x'.repeat(1000)), /summary/, 'a summary at the limit is accepted');
+  });
 }
 
 const failed = checks.filter((c) => !c.passed);
