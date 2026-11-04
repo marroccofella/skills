@@ -54,3 +54,15 @@ not match the artifact, a status and no vote. No findings; 11 suggestions, each 
 - **Rejected:** a default-dispatch test, which would launch real reviewer CLIs; a pending-save test,
   since the save already compares the switch before resetting; reformatting one-line assertions; and
   a test-only assertion with no failing baseline, deferred to 1.18.2.
+
+## Hosted CI failure and follow-up review
+
+Hosted CI on the first sealed candidate `7f9260e` failed `attachment-cleanup.test.mjs` on every
+platform: that suite runs `main()` on its own in a sandbox, and the `defaultBumblers` helper added
+for the switch was defined outside it. The local checks before sealing had not included that suite.
+Commit `1f3ba08` moves the helper inside `main()` with its two callers, and the candidate was
+resealed. Follow-up review `rev_20261104121549_05a3e2f4b61b` (Codex, Antigravity, Copilot and Grok
+all accepted) raised one WARNING, that the diff did not show every caller was inside `main()`:
+investigated with a recorded test and rejected. Its four suggestions asked for coverage that
+already exists or for a guard on values `loadBumblers` already validates; all rejected with
+reasons. Governor-recorded complete. The full pack now runs before any sealed push.
