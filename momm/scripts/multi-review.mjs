@@ -2378,8 +2378,6 @@ function authEvidence(agent) {
 // Zero model calls: version probes plus auth evidence for every requested
 // route, so a user sees exactly which reviewers will join and what to run to
 // bring the missing ones online — before any tokens are spent.
-// Saved Bumblers join default runs unless switched off; a switched-off one is used only when named.
-const defaultBumblers = (bumblers) => Object.keys(bumblers).filter((name) => bumblers[name].enabled !== false);
 
 async function preflightCheck(reviewers, governor, bumblers = Object.create(null)) {
   const knownAdapters = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
@@ -3491,6 +3489,9 @@ async function secondLookCommand(options, reviewerSelection) {
 }
 
 async function main() {
+  // Saved Bumblers join default runs unless switched off; a switched-off one is used only when named.
+  // Kept inside main, with its only callers, so suites that load main on its own still see it.
+  const defaultBumblers = (bumblers) => Object.keys(bumblers).filter((name) => bumblers[name].enabled !== false);
   // --evidence-home <dir> sets MOMM_EVIDENCE_HOME for this process and its children (1.17 A7).
   takeEvidenceHomeOption(process.argv, process.env);
   if (process.argv[2] === "evidence") { evidenceCommand(process.argv.slice(3)); return; }
