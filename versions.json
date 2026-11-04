@@ -10,7 +10,9 @@
         "A saved Bumbler can be switched off for default reviews: untick \"Joins default reviews\" in the Setup Center, or set \"enabled\": false in bumblers.json. It stays saved and listed, and is used only when you name it in --reviewers.",
         "A review or second look refused for its summary now says which rule it broke: missing, blank, not text, or over the 1000-character limit, giving only the type or length and never the summary text. Before, every case read \"missing or oversized summary\".",
         "No change to the reviewer CLIs, OAuth-only authentication, the review contract or what counts as a valid review."
-      ]
+      ],
+      "sha256": "7caddbaa29b2bc1db4ba70824f3e464b5c128cac181d7afae68a50984b69481c",
+      "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
       "version": "1.18.0",
