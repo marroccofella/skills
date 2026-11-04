@@ -1,8 +1,8 @@
 {
-  "checkpoint": "4ef1698662fee5e7ee5f945eb0e6eb95b139d7ea",
-  "expect": "1.18.0",
+  "checkpoint": "99b5819e4bae01542ecaa53bdaf7d6eb0e3d6885",
+  "expect": "1.18.1",
   "from": [
-    "momm-1.17.3",
-    "momm-1.17.2"
+    "momm-1.18.0",
+    "momm-1.17.3"
   ]
 }
