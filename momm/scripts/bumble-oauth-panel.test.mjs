@@ -68,6 +68,10 @@ async function reviewPool(){
   const f={name:{value:'bad'},base_url:{value:'x'},model:{value:'m'},max_tokens:{value:'1'},timeout_seconds:{value:'1'},guidance:{value:''}};let resets=0;
   await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){resets++;}}});assert.match(node('bump-status').textContent,/invalid or reserved/);assert.equal(resets,0,'a refused save keeps what was typed');
   f.name.value='good';await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){resets++;}}});assert.equal(node('bump-status').textContent,'Saved.');assert.equal(resets,1);assert.match(node('bump-list').innerHTML,/No Bumblers saved/);
+  assert(!Object.hasOwn(calls.at(-1).entry,'enabled'),'a Bumbler saved without the switch stays on by default');
+  // Unticking "joins default reviews" saves the Bumbler switched off.
+  f.name.value='quiet';f.enabled={checked:false};await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){}}});assert.equal(calls.at(-1).entry.enabled,false,'the switch is saved as off');
+  f.name.value='loud';f.enabled={checked:true};await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){}}});assert(!Object.hasOwn(calls.at(-1).entry,'enabled'),'ticked means the default, on');
 }
 async function reviewPoolOrder(){
   const nodes=new Map();let publish,release;const pending=[];

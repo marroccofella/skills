@@ -140,6 +140,9 @@ several people may answer 429 when it is full: the Bumbler waits as the server a
 again, but never past its time limit, and the report counts those busy answers in
 `busy_waits`. Only 429 is asked again; a timeout or broken connection is not, because
 the model may already have started. Set `wait_when_busy: false` to ask exactly once.
+Set `enabled: false` (in the Setup Center, untick "Joins default reviews") to keep a
+Bumbler saved and listed without it joining default reviews; naming it in `--reviewers`
+still uses it.
 `rest_seconds` is a pause for the whole Bumbler: a piece that is ready to go waits
 until that long after the latest answer. Two Bumblers on the same model are two
 samples of one model, not two kinds of reviewer; each valid review still counts once. The name is your choice, in

@@ -2378,6 +2378,9 @@ function authEvidence(agent) {
 // Zero model calls: version probes plus auth evidence for every requested
 // route, so a user sees exactly which reviewers will join and what to run to
 // bring the missing ones online — before any tokens are spent.
+// Saved Bumblers join default runs unless switched off; a switched-off one is used only when named.
+const defaultBumblers = (bumblers) => Object.keys(bumblers).filter((name) => bumblers[name].enabled !== false);
+
 async function preflightCheck(reviewers, governor, bumblers = Object.create(null)) {
   const knownAdapters = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
   return Promise.all([...new Set(reviewers)].map(async (agent) => {
@@ -3542,7 +3545,7 @@ async function main() {
   if (options.versions || options.expectVersion) throw new Error("--versions and --expect belong to --doctor: use --doctor --versions [--expect <version>]");
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
-    const entries = await preflightCheck(!options.reviewersExplicit && options.bumblers ? [...options.reviewers, ...Object.keys(options.bumblers)] : options.reviewers, options.governor, options.bumblers);
+    const entries = await preflightCheck(!options.reviewersExplicit && options.bumblers ? [...options.reviewers, ...defaultBumblers(options.bumblers)] : options.reviewers, options.governor, options.bumblers);
     process.stdout.write(`${JSON.stringify({ policy: "oauth-only", model_calls_made: false, routes: entries, caveat: "presence evidence does not prove a live session; a route can still fail closed at dispatch" }, null, options.pretty ? 2 : 0)}\n`);
     if (process.stderr.isTTY) {
       const color = process.env.NO_COLOR ? (_c, t) => t : (c, t) => `${c}${t}${ANSI.reset}`;
@@ -3616,7 +3619,7 @@ async function main() {
     }
   }
   // A saved Bumbler is a reviewer in the pool unless the run names its reviewers.
-  if (!options.reviewersExplicit && options.bumblers) options.reviewers = [...options.reviewers, ...Object.keys(options.bumblers)];
+  if (!options.reviewersExplicit && options.bumblers) options.reviewers = [...options.reviewers, ...defaultBumblers(options.bumblers)];
   assertReviewerSelection(options, reviewerSelection);
   const uniqueReviewers = [...new Set(options.reviewers)];
   // 1.17 B1: every role brief loads from momm/roles before anything is dispatched; a missing or
