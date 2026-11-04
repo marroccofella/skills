@@ -1,4 +1,8 @@
-# 1.18.0 gate record
+# 1.18.0 gate record — released 3 November 2026
+
+The signed tag `momm-1.18.0` was published on 3 November 2026 at 00:08:38 UTC on `4ef1698`, the squash
+merge of sealed candidate `ca3efd2` with its tree unchanged. This record was completed after the tag;
+later documentation changes do not retag the release or change its seal.
 
 ## Why this release exists
 
@@ -27,11 +31,11 @@ changed and what the first Bumbler, Bab, actually achieved.
 | Gate | Evidence | Status |
 |---|---|---|
 | 1. Final review of the Bumbler code, governor-recorded complete | Run `rev_20261102161835_b21cc084fe09`, completion receipt | passed |
-| 2. Hosted matrix on the sealed commit and on `main` | Run ids | pending |
-| 3. Full pack on the sealed commit, locally and by Hal independently | Run output | pending |
-| 4. Signed `main-checkpoint` and the six lifecycle drill cells on it | Run ids | pending |
-| 5. Privacy and history scan before every push | Scanner exit 0 | passed so far |
-| 6. Signed tag `momm-1.18.0` and fresh-clone verification | Release workflow run | pending |
+| 2. Hosted matrix on the sealed commit and on `main` | Run ids | passed: sealed `ca3efd2` run 41520225936, 15/15 (Windows 22.x re-run after a 4-minute step timeout on a slow runner, every test in that step having passed); `main` `4ef1698` push run 41539145899, 15/15 |
+| 3. Full pack on the sealed commit, locally and by Hal independently | Run output | passed: 182/182 locally (Windows, Node 24.22.1, spaced TMP) and 182/182 by Hal (Windows, Node 24.19.0, fresh clone, 650 tracked files unchanged), each on `ca3efd2`, with Hal's fresh-clone seal check and site check |
+| 4. Signed `main-checkpoint` and the six lifecycle drill cells on it | Run ids | passed: checkpoint run 41546981968 (`momm-main-4ef1698…`); lifecycle run 41547634368 on drills commit `128e96a`, six GitHub-hosted cells (Windows, macOS, Linux; Node 18 and 24), 13/13 steps each, upgrading from 1.17.3 and 1.17.2, receipts audited by Hal |
+| 5. Privacy and history scan before every push | Scanner exit 0 | passed: exit 0, tree and history clean, before every push of the release branch and the drills branch |
+| 6. Signed tag `momm-1.18.0` and fresh-clone verification | Release workflow run | passed: signing run 41549965633, gitsign good signature from the main release-workflow identity, Rekor entry and certificate claims validated; a fresh clone of the tag resolves to `4ef1698` and `momm-release.mjs --check` verifies seal `716f749e…`. GitHub's own tag label reads verified false (bad_cert), as it does for `momm-1.17.3`: it does not validate these keyless certificates |
 
 ## Final review
 

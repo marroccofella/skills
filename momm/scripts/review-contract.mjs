@@ -9,6 +9,9 @@ export const PEER_CONTRACT = "momm-peer-review/3";
 // separate from severity: a CRITICAL or WARNING gates acceptance whatever its type.
 export const CLAIM_TYPES = Object.freeze(["DEFECT", "RISK", "QUESTION", "IDEA", "NOISE"]);
 const text = (s, max) => typeof s === "string" && s.trim().length > 0 && s.length <= max;
+// Which summary rule an answer broke, with only its type or length, never its text. Length is in UTF-16 units
+// (string length), so an emoji counts as two. Shared by the peer-review and second-look validators.
+export const summaryProblem = (s, max) => s === undefined || s === null ? "missing summary" : typeof s !== "string" ? `summary is not text (${Array.isArray(s) ? "array" : typeof s})` : !s.trim() ? "blank summary" : s.length > max ? `summary is ${s.length} characters (UTF-16 units), over the ${max} limit` : null;
 const pixels = (r) => Array.isArray(r) && r.length === 4 && r.every(n => Number.isInteger(n) && n >= 0);
 const bound = (n) => Number.isInteger(n) && n > 0;
 // An attachment observation cannot be checked against pixels; it is anchored only to the digest of an
@@ -107,7 +110,8 @@ export function reviewProblem(p, artifact, { attachments = [] } = {}) {
   if (!p || p.review_status !== "complete") return "review_incomplete: explicit completed review required";
   if (!["ACCEPT", "MODIFY", "REJECT"].includes(p.verdict)) return "invalid verdict";
   if (typeof p.confidence !== "number" || !Number.isFinite(p.confidence) || p.confidence < 0 || p.confidence > 1) return "invalid confidence";
-  if (!text(p.summary, 1000)) return "missing or oversized summary";
+  const summary = summaryProblem(p.summary, 1000);
+  if (summary) return summary;
   const scoped = scopeProblem(p.reviewed_scope, artifact, { attachments });
   if (scoped) return scoped;
   if (!Array.isArray(p.suggested_improvements) || p.suggested_improvements.length > 20 || !p.suggested_improvements.every(s => text(s, 500))) return "invalid or over-limit suggestions; nothing may be silently dropped";

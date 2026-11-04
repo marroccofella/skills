@@ -1,0 +1,220 @@
+name: Dom TTS portable core
+on:
+  push:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-0.4.yml']
+  pull_request:
+    paths: ['dom-tts/**', '.github/workflows/dom-tts-0.4.yml']
+  workflow_dispatch:
+concurrency:
+  group: dom-tts-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  cancel-superseded-candidate-checks:
+    # One-time migration for older runs that predate the concurrency/freshness
+    # safeguards. Only these reviewed old heads of this candidate branch qualify.
+    if: github.event_name == 'push' && github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/codex/dom-tts-expanded-rc2-20261104'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Cancel only verified superseded candidate runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          const repo = process.env.GITHUB_REPOSITORY;
+          const branch = 'codex/dom-tts-expanded-rc2-20261104';
+          const current = process.env.GITHUB_SHA;
+          const ownId = Number(process.env.GITHUB_RUN_ID);
+          if (repo !== 'marroccofella/skills' || process.env.GITHUB_REF !== 'refs/heads/' + branch) throw Error('Cleanup scope refused');
+          const headers = {Authorization: 'Bearer ' + process.env.GH_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'};
+          async function api(route, method = 'GET') {
+            const response = await fetch('https://api.github.com/repos/' + repo + '/' + route, {method, headers, signal: AbortSignal.timeout(10000)});
+            if (!response.ok) throw Error('Cleanup API refused: ' + response.status);
+            return response.status === 202 || response.status === 204 ? null : response.json();
+          }
+          const oldRuns = [
+            [41795000339, 'a049401d6df10cb32ab711ce53ca7a148b82bc19'],
+            [41792769063, '25afa6bd23938f2bc9f46d7ba81909e56b109518'],
+            [41792819351, '25afa6bd23938f2bc9f46d7ba81909e56b109518'],
+            [41792819426, '25afa6bd23938f2bc9f46d7ba81909e56b109518'],
+            [41795007291, 'a049401d6df10cb32ab711ce53ca7a148b82bc19'],
+            [41795007325, 'a049401d6df10cb32ab711ce53ca7a148b82bc19']
+          ];
+          const allowedPaths = new Set(['.github/workflows/dom-tts-0.4.yml', '.github/workflows/self-test.yml']);
+          async function validate(id, expected) {
+            if ((await api('git/ref/heads/' + branch)).object.sha !== current) throw Error('Cleanup head superseded');
+            const run = await api('actions/runs/' + id);
+            if (!(id < ownId) || run.id !== id || run.repository.full_name !== repo || run.head_repository.full_name !== repo || run.head_branch !== branch || run.head_sha !== expected || run.head_sha === current || !['push', 'pull_request'].includes(run.event) || !allowedPaths.has(run.path)) throw Error('Old run identity changed');
+            return run;
+          }
+          function checkFinished(run) {
+            if (run.event === 'push' && run.path === '.github/workflows/dom-tts-0.4.yml' && run.conclusion === 'success') throw Error('Old publication finished; inspect before release');
+          }
+          const pending = new Set();
+          const deadline = Date.now() + 240000;
+          for (const [id, expected] of oldRuns) {
+            let run = await validate(id, expected);
+            if (run.status === 'completed') {
+              checkFinished(run);
+              console.log('Retained completed run ' + id);
+              continue;
+            }
+            if (!['queued', 'in_progress', 'waiting', 'pending', 'requested'].includes(run.status)) throw Error('Old run state unrecognized');
+            run = await validate(id, expected);
+            if (run.status !== 'completed') await api('actions/runs/' + id + '/cancel', 'POST');
+            pending.add(id);
+          }
+          while (pending.size && Date.now() < deadline) {
+            await Promise.all([...pending].map(async id => {
+              const run = await api('actions/runs/' + id);
+              if (run.status === 'completed') {
+                checkFinished(run);
+                pending.delete(id);
+                console.log('Superseded run settled ' + id);
+              }
+            }));
+            if (pending.size) await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          if (pending.size) throw Error('Old run cancellation unconfirmed');
+          NODE
+  offline:
+    # Expanded Windows fixtures retain every uncached ACL query. Recovery alone
+    # performs 40 queries; measured 18-21 s/query is 12-14 min before other checks.
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 40 || 15 }}
+    defaults:
+      run:
+        working-directory: dom-tts
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15-intel, macos-14]
+        node: [18, 20, 22, 24]
+        include:
+          - os: ubuntu-24.04-arm
+            node: 24
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+      - run: node tests/browser-build-check.cjs
+      - run: node tests/browser-command-check.cjs
+      - run: node tests/browser-diagnostics-check.cjs
+      - run: node tests/browser-http-body-check.cjs
+      - run: node tests/browser-migration-check.cjs
+      - run: node tests/browser-owner-check.cjs
+      - run: node tests/browser-player-check.cjs
+      - run: node tests/browser-queue-check.cjs
+      - run: node tests/browser-history-check.cjs
+      - run: node tests/browser-pressure-check.cjs
+      - run: node tests/browser-source-check.cjs
+      - run: node tests/browser-delivery-readiness-check.cjs
+      - run: node tests/codex-paragraph-relay-check.cjs
+      - run: node tests/codex-notify-check.cjs
+      - run: node tests/codex-default-check.cjs
+      - run: node tests/codex-default-diagnostics-check.cjs
+      - run: node tests/build-check.cjs
+      - run: node tests/browser-recovery-check.cjs
+      - run: node tests/browser-restart-check.cjs
+      - run: node tests/browser-screen-check.cjs
+      - run: node tests/browser-session-check.cjs
+      - run: node tests/browser-speed-check.cjs
+      - run: node tests/delta-narrator-check.cjs
+      - run: node tests/markdown-progress-check.cjs
+      - run: node tests/markdown-rich-check.cjs
+      - run: node tests/reply-stream-check.cjs
+      - run: node tests/reply-admission-check.cjs
+      - run: node tests/harness-adapter-check.cjs
+      - run: node tests/harness-hook-check.cjs
+      - run: node tests/harness-stream-cli-check.cjs
+      - run: node tests/optional-voice-check.cjs
+      - run: node tests/install-recovery-check.cjs
+      - run: node tests/install-concurrency-check.cjs
+      - run: node tests/native-migration-check.cjs
+      - run: node tests/windows-release-check.cjs
+      - run: node tests/windows-setup-check.cjs
+      - run: node tests/readiness-check.cjs
+      - run: node tests/windows-helper-check.cjs
+      - run: node tests/stream-cli-check.cjs
+      - run: node tests/control-server-check.cjs
+      - run: node tests/source-docs-check.cjs
+      - run: node tests/source-reader-checks.cjs
+      - run: node tests/segment-stream-checks.cjs
+      - run: node tests/native-timeout-check.cjs
+      - run: node tests/native-ipc-check.cjs
+      - run: node tests/native-ipc-check.cjs --synchronous
+      - run: node tests/native-ipc-check.cjs --late-progress
+      - run: node tests/native-ipc-check.cjs --child-error
+      - run: node tests/native-spawn-check.cjs
+      - run: node tests/native-stop-send-check.cjs
+      - run: node tests/native-stop-send-check.cjs --callback
+      - run: node tests/native-lease-check.cjs
+      - run: node tests/native-lease-check.cjs --normal
+      - run: node tests/native-lease-check.cjs --startup
+      - run: node tests/native-policy-check.cjs
+      - run: node tests/native-heartbeat-check.cjs
+      - run: node tests/native-heartbeat-check.cjs --nonzero
+      - run: node tests/native-heartbeat-check.cjs --active-failure
+      - run: node tests/native-heartbeat-check.cjs --late-progress
+      - run: node tests/playback-abort-check.cjs
+      - run: node tests/native-player-check.cjs
+      - run: node tests/isolated-check-diagnostic.cjs
+      - run: node tests/isolated-cleanup-check.cjs
+      - run: node tests/isolated-player-check.cjs
+      - run: node -e "require('./scripts/package').verify()"
+      - run: node tests/install-check.cjs
+      - run: node tests/native-boundary.cjs
+      - if: runner.os == 'Windows'
+        run: node tests/windows-privacy.cjs
+      - name: Diagnose Windows permission helper after failure
+        if: failure() && runner.os == 'Windows'
+        run: node tests/windows-permission-probe.cjs
+  portable-package:
+    needs: offline
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Repository source hygiene before release artifacts
+        timeout-minutes: 3
+        run: node scripts/source-hygiene.test.mjs
+      - name: Build verified expanded source candidate
+        working-directory: dom-tts
+        run: node scripts/build.js --out '${{ runner.temp }}/dom-tts-source.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dom-tts-portable-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/dom-tts-source.zip
+            ${{ runner.temp }}/dom-tts-source.zip.sha256.json
+          if-no-files-found: error
+          retention-days: 90
+  publish-candidate:
+    needs: [portable-package, cancel-superseded-candidate-checks]
+    if: github.event_name == 'push' && github.repository == 'marroccofella/skills' && github.ref == 'refs/heads/codex/dom-tts-expanded-rc2-20261104'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dom-tts-portable-${{ github.sha }}
+          path: candidate
+      - name: Verify and publish commit-pinned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api repos/marroccofella/skills/git/ref/heads/codex/dom-tts-expanded-rc2-20261104 --jq '.object.sha')" = "$GITHUB_SHA"
+          node -e "const fs=require('node:fs'),c=require('node:crypto'),p=require('./dom-tts/package.json'),r=require('./candidate/dom-tts-source.zip.sha256.json');if(p.version!=='0.5.0-rc.2'||r.version!==p.version||r.signed!==false||r.sha256!==c.createHash('sha256').update(fs.readFileSync('./candidate/dom-tts-source.zip')).digest('hex'))throw Error('Candidate verification failed')"
+          gh api --method POST repos/marroccofella/skills/git/refs -f ref=refs/tags/dom-tts-0.5.0-rc.2 -f sha="$GITHUB_SHA" > /dev/null
+          gh release create dom-tts-0.5.0-rc.2 candidate/dom-tts-source.zip candidate/dom-tts-source.zip.sha256.json --repo marroccofella/skills --verify-tag --prerelease --latest=false --title 'Dom TTS 0.5.0-rc.2 — portable source candidate' --notes-file dom-tts/references/release-candidate.md

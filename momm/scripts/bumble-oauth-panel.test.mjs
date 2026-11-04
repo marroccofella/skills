@@ -68,6 +68,14 @@ async function reviewPool(){
   const f={name:{value:'bad'},base_url:{value:'x'},model:{value:'m'},max_tokens:{value:'1'},timeout_seconds:{value:'1'},guidance:{value:''}};let resets=0;
   await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){resets++;}}});assert.match(node('bump-status').textContent,/invalid or reserved/);assert.equal(resets,0,'a refused save keeps what was typed');
   f.name.value='good';await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){resets++;}}});assert.equal(node('bump-status').textContent,'Saved.');assert.equal(resets,1);assert.match(node('bump-list').innerHTML,/No Bumblers saved/);
+  assert(!Object.hasOwn(calls.at(-1).entry,'enabled'),'a Bumbler saved without the switch stays on by default');
+  // Unticking "joins default reviews" saves the Bumbler switched off.
+  f.name.value='quiet';f.enabled={checked:false};await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){}}});assert.equal(calls.at(-1).entry.enabled,false,'the switch is saved as off');
+  f.name.value='loud';f.enabled={checked:true};await node('bump-form').onsubmit({preventDefault(){},currentTarget:{elements:f,reset(){}}});assert(!Object.hasOwn(calls.at(-1).entry,'enabled'),'ticked means the default, on');
+  // Typing a saved name sets the switch from that entry, so re-saving a switched-off Bumbler keeps it off.
+  saved=[{name:'shy',model:'m',base_url:'http://127.0.0.1:1/v1',max_tokens:1,timeout_seconds:1,enabled:false},{name:'bab',model:'m',base_url:'http://127.0.0.1:2/v1',max_tokens:1,timeout_seconds:1}];node('bump-refresh').onclick();await flush();
+  const box={checked:true},typing=value=>node('bump-form').oninput({target:{name:'name',value},currentTarget:{elements:{enabled:box}}});
+  typing('shy');assert.equal(box.checked,false,'a switched-off saved Bumbler fills the box unticked');typing('bab');assert.equal(box.checked,true,'an on one fills it ticked');box.checked=false;typing('new-one');assert.equal(box.checked,false,'a new name leaves the box as the user set it');
 }
 async function reviewPoolOrder(){
   const nodes=new Map();let publish,release;const pending=[];

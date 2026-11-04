@@ -44,7 +44,7 @@ if (process.platform === "win32") process.env.NoDefaultCurrentDirectoryInExePath
 const processScope = createProcessScope();
 processScope.installSignalHandlers();
 
-const MOMM_VERSION = "1.18.0";
+const MOMM_VERSION = "1.18.1";
 const REPORT_SCHEMA = "momm-report/1";
 const VERSIONS_URL = "https://raw.githubusercontent.com/marroccofella/skills/main/versions.json";
 
@@ -2378,6 +2378,7 @@ function authEvidence(agent) {
 // Zero model calls: version probes plus auth evidence for every requested
 // route, so a user sees exactly which reviewers will join and what to run to
 // bring the missing ones online — before any tokens are spent.
+
 async function preflightCheck(reviewers, governor, bumblers = Object.create(null)) {
   const knownAdapters = new Set(["codex", "gemini", "claude", "antigravity", "copilot", "grok"]);
   return Promise.all([...new Set(reviewers)].map(async (agent) => {
@@ -3488,6 +3489,9 @@ async function secondLookCommand(options, reviewerSelection) {
 }
 
 async function main() {
+  // Saved Bumblers join default runs unless switched off; a switched-off one is used only when named.
+  // Kept inside main, with its only callers, so suites that load main on its own still see it.
+  const defaultBumblers = (bumblers) => Object.keys(bumblers).filter((name) => bumblers[name].enabled !== false);
   // --evidence-home <dir> sets MOMM_EVIDENCE_HOME for this process and its children (1.17 A7).
   takeEvidenceHomeOption(process.argv, process.env);
   if (process.argv[2] === "evidence") { evidenceCommand(process.argv.slice(3)); return; }
@@ -3542,7 +3546,7 @@ async function main() {
   if (options.versions || options.expectVersion) throw new Error("--versions and --expect belong to --doctor: use --doctor --versions [--expect <version>]");
   if (options.doctor) { await doctor(options.pretty); return; }
   if (options.preflight) {
-    const entries = await preflightCheck(!options.reviewersExplicit && options.bumblers ? [...options.reviewers, ...Object.keys(options.bumblers)] : options.reviewers, options.governor, options.bumblers);
+    const entries = await preflightCheck(!options.reviewersExplicit && options.bumblers ? [...options.reviewers, ...defaultBumblers(options.bumblers)] : options.reviewers, options.governor, options.bumblers);
     process.stdout.write(`${JSON.stringify({ policy: "oauth-only", model_calls_made: false, routes: entries, caveat: "presence evidence does not prove a live session; a route can still fail closed at dispatch" }, null, options.pretty ? 2 : 0)}\n`);
     if (process.stderr.isTTY) {
       const color = process.env.NO_COLOR ? (_c, t) => t : (c, t) => `${c}${t}${ANSI.reset}`;
@@ -3616,7 +3620,7 @@ async function main() {
     }
   }
   // A saved Bumbler is a reviewer in the pool unless the run names its reviewers.
-  if (!options.reviewersExplicit && options.bumblers) options.reviewers = [...options.reviewers, ...Object.keys(options.bumblers)];
+  if (!options.reviewersExplicit && options.bumblers) options.reviewers = [...options.reviewers, ...defaultBumblers(options.bumblers)];
   assertReviewerSelection(options, reviewerSelection);
   const uniqueReviewers = [...new Set(options.reviewers)];
   // 1.17 B1: every role brief loads from momm/roles before anything is dispatched; a missing or

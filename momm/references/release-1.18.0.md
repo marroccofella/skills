@@ -1,8 +1,7 @@
-# MOMM 1.18.0 — release candidate
+# MOMM 1.18.0 — released 3 November 2026
 
-Sealed for release on 2 November 2026 with the owner's approval to merge and sign once every
-gate passes on the sealed commit; see the [gate record](gates-1.18.0.md). Until the signed tag
-`momm-1.18.0` exists, 1.17.3 remains the stable release.
+Signed tag `momm-1.18.0`, published 3 November 2026 after every gate passed on the sealed commit;
+see the [gate record](gates-1.18.0.md).
 
 1.18 includes the Setup Center fixes prepared as 1.17.4 ([notes](release-1.17.4.md)), which
 was never published separately: the owner folded it into 1.18 on 2 November 2026. Native

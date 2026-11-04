@@ -24,3 +24,6 @@ docs/momm/brands/*.svg text eol=lf
 *.mp4 binary
 *.flac binary
 *.wav binary
+
+# Skill source manifests hash exact bytes, including captured test fixtures.
+dom-tts/** -text

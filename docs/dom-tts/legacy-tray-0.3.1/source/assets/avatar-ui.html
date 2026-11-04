@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dom TTS Avatar</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(4, 12, 10, 0.78);
+      --line: rgba(134, 255, 204, 0.32);
+      --text: #e9fff7;
+      --muted: #9ac7b8;
+      --danger: #ff6f91;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #020403;
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0;
+      touch-action: none;
+    }
+
+    canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #020403;
+      cursor: pointer;
+    }
+
+    .chrome {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(10px);
+      z-index: 4;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    body.device-mode .chrome {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(16px);
+    }
+
+    body.device-mode.controls-open .chrome,
+    body.device-mode .chrome:focus-within {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    body.device-mode.sensor-busy canvas {
+      cursor: wait;
+    }
+
+    body.device-mode.avatar-standby canvas {
+      cursor: default;
+    }
+
+    body.device-mode.avatar-standby .status {
+      opacity: 0;
+    }
+
+    body.device-mode.avatar-active .status {
+      opacity: 0.86;
+    }
+
+    .turn {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      height: 42px;
+      border: 1px solid rgba(154, 255, 213, 0.38);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.45);
+      color: var(--text);
+      padding: 0 12px;
+      font: inherit;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(126, 255, 200, 0.8);
+      box-shadow: 0 0 0 3px rgba(66, 255, 138, 0.16);
+    }
+
+    button {
+      height: 42px;
+      min-width: 74px;
+      border: 1px solid rgba(154, 255, 213, 0.38);
+      border-radius: 6px;
+      background: rgba(7, 29, 22, 0.86);
+      color: var(--text);
+      font: 600 14px "Segoe UI", system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: rgba(126, 255, 200, 0.86);
+      background: rgba(19, 58, 45, 0.92);
+    }
+
+    button:disabled {
+      color: var(--muted);
+      cursor: wait;
+      opacity: 0.68;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 8px;
+    }
+
+    .status {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      pointer-events: none;
+      font-size: 14px;
+      line-height: 1.3;
+      color: var(--muted);
+      text-shadow: 0 0 18px rgba(66, 255, 138, 0.35);
+      z-index: 5;
+    }
+
+    body.device-mode .status {
+      justify-content: center;
+      transition: opacity 180ms ease;
+    }
+
+    .status strong {
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .error {
+      color: var(--danger);
+      max-width: min(58ch, 70vw);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    @media (max-width: 720px) {
+      .chrome {
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .turn {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      input {
+        grid-column: 1 / -1;
+      }
+
+      .actions {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="avatar"></canvas>
+  <div class="status" aria-live="polite">
+    <strong id="agent">BOB</strong>
+    <span id="phase">READY</span>
+    <span id="error" class="error"></span>
+  </div>
+  <div class="chrome">
+    <form class="turn" id="turn">
+      <input id="text" name="text" autocomplete="off" value="">
+      <button type="button" id="bob">Bob</button>
+      <button type="button" id="bab">Bab</button>
+    </form>
+    <div class="actions">
+      <button type="button" id="record">Listen</button>
+      <button type="button" id="stop">Stop</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("avatar");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const agentEl = document.getElementById("agent");
+    const phaseEl = document.getElementById("phase");
+    const errorEl = document.getElementById("error");
+    const textEl = document.getElementById("text");
+    const buttons = [...document.querySelectorAll("button")];
+
+    const params = new URLSearchParams(window.location.search);
+    const requestedDeviceId = String(params.get("device") || "").trim().toLowerCase();
+    const wantsFullscreen = params.get("fullscreen") === "1";
+    const autoSwitchPage = params.get("autoswitch") === "1";
+    const fallbackDevices = {
+      sb2: { agent: "bab", label: "SB2 / BAB" },
+      sb3: { agent: "bob", label: "SB3 / BOB" },
+    };
+
+    const glyphs = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$#@%&+=:;".split("");
+    const faces = {
+      bob: {
+        id: "bob",
+        label: "BOB",
+        color: "#42ff8a",
+        secondaryColor: "#78ffd0",
+        expression: "deadpan",
+        seed: 17,
+      },
+      bab: {
+        id: "bab",
+        label: "BAB",
+        color: "#66d9ff",
+        secondaryColor: "#f0ff80",
+        expression: "bright",
+        seed: 43,
+      },
+    };
+    let state = {
+      activeAgent: "bob",
+      phase: "ready",
+      spokenText: "",
+      userText: "",
+      error: "",
+      config: {},
+    };
+    let dpr = 1;
+    let width = 1;
+    let height = 1;
+    let lastSnapshotAt = 0;
+    let controlsTimer = 0;
+    let sensorBusy = false;
+
+    function configuredDevice() {
+      if (!requestedDeviceId) return null;
+      return state.config?.devices?.map?.[requestedDeviceId] || fallbackDevices[requestedDeviceId] || null;
+    }
+
+    function isDeviceMode() {
+      return Boolean(configuredDevice());
+    }
+
+    function deviceAgent() {
+      const id = String(configuredDevice()?.agent || "").toLowerCase();
+      return faces[id] ? id : "";
+    }
+
+    function primaryAgent() {
+      return deviceAgent() || (faces[state.activeAgent] ? state.activeAgent : "bob");
+    }
+
+    function isBusyPhase(phase) {
+      return ["listening", "thinking", "speaking", "error"].includes(displayPhase(phase));
+    }
+
+    function deviceAutoHideWhenIdle() {
+      return autoSwitchPage && isDeviceMode() && state.config?.devices?.autoHideWhenIdle !== false;
+    }
+
+    function isDeviceCutInActive() {
+      if (!isDeviceMode()) return true;
+      const assigned = deviceAgent();
+      if (!assigned) return false;
+      if (sensorBusy) return true;
+      return state.activeAgent === assigned && isBusyPhase(state.phase);
+    }
+
+    function shouldRenderDeviceFace() {
+      return !deviceAutoHideWhenIdle() || isDeviceCutInActive();
+    }
+
+    function syncDeviceBody() {
+      const device = configuredDevice();
+      const assigned = deviceAgent();
+      const cutInActive = isDeviceCutInActive();
+      const standby = deviceAutoHideWhenIdle() && !cutInActive;
+      document.body.classList.toggle("device-mode", Boolean(device));
+      document.body.classList.toggle("avatar-active", Boolean(device) && (cutInActive || !deviceAutoHideWhenIdle()));
+      document.body.classList.toggle("avatar-standby", Boolean(device) && standby);
+      document.body.classList.toggle("autoswitch-page", autoSwitchPage);
+      document.body.classList.toggle("sensor-busy", sensorBusy);
+      document.body.dataset.device = requestedDeviceId || "local";
+      document.body.dataset.assignedAgent = assigned || "";
+      document.body.dataset.avatarActive = cutInActive ? "true" : "false";
+      document.querySelector(".status").style.opacity = device ? (standby ? "0" : "0.86") : "";
+    }
+
+    function resize() {
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      width = Math.max(1, window.innerWidth);
+      height = Math.max(1, window.innerHeight);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function hexToRgb(hex) {
+      const clean = String(hex || "#42ff8a").replace("#", "");
+      const value = Number.parseInt(clean.length === 3 ? clean.split("").map(ch => ch + ch).join("") : clean, 16);
+      return {
+        r: (value >> 16) & 255,
+        g: (value >> 8) & 255,
+        b: value & 255,
+      };
+    }
+
+    function rgba(hex, alpha) {
+      const c = hexToRgb(hex);
+      return `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
+    }
+
+    function mixEnergy(text) {
+      let total = 0;
+      for (let i = 0; i < text.length; i += 1) total += text.charCodeAt(i) * (i + 3);
+      return (total % 997) / 997;
+    }
+
+    function speechStartMs() {
+      const candidates = [
+        state.tts?.updatedAt,
+        state.avatar?.lastEventAt,
+        state.queue?.startedAt,
+        state.queue?.updatedAt,
+        state.lastEventAt,
+      ];
+      for (const value of candidates) {
+        const parsed = Date.parse(value || "");
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return Date.now();
+    }
+
+    function speechUnits(text) {
+      const clean = String(text || "").toLowerCase();
+      return clean.match(/[aeiouy]+|[bcdfghjklmnpqrstvwxyz]+|[0-9]+|[.,!?;:]+/g) || [];
+    }
+
+    function speechMouthOpen(face, time, text) {
+      const units = speechUnits(text);
+      if (!units.length) return face.id === "bob" ? 0.075 : 0.09;
+      const speed = Math.max(0.65, Math.min(1.7, Number(state.tts?.speed || state.config?.speechSpeed || 1)));
+      const elapsed = Math.max(0, Date.now() - speechStartMs()) * speed;
+      const unitMs = face.id === "bob" ? 118 : 104;
+      const index = Math.floor(elapsed / unitMs) % units.length;
+      const unit = units[index] || "";
+      const next = units[(index + 1) % units.length] || "";
+      const local = (elapsed % unitMs) / unitMs;
+      const vowel = /[aeiouy]/.test(unit);
+      const plosive = /[pbtdkg]/.test(unit);
+      const sibilant = /[szxcj]/.test(unit);
+      const punctuation = /[.,!?;:]/.test(unit);
+      const shape = punctuation ? 0.05 : vowel ? 0.84 : plosive ? 0.22 : sibilant ? 0.34 : 0.5;
+      const attack = Math.sin(Math.PI * local);
+      const jitter = Math.sin(time * 0.021 + mixEnergy(unit + next) * 12) * 0.025;
+      const base = face.id === "bob" ? 0.055 : 0.07;
+      const range = face.id === "bob" ? 0.25 : 0.31;
+      return Math.max(0.025, base + range * shape * attack + jitter);
+    }
+
+    function chromeHeight() {
+      const chrome = document.querySelector(".chrome");
+      return chrome ? chrome.offsetHeight : 64;
+    }
+
+    function displayPhase(phase) {
+      const value = String(phase || "idle").toLowerCase();
+      if (!value || value === "ready" || value === "stopped" || value === "dry-run") return "idle";
+      return value;
+    }
+
+    function deviceOwnsDisplayTurn() {
+      if (!isDeviceMode()) return true;
+      if (sensorBusy) return true;
+      const assigned = deviceAgent();
+      return Boolean(assigned && state.activeAgent === assigned && isBusyPhase(state.phase));
+    }
+
+    function displayedPhase() {
+      if (isDeviceMode() && !deviceOwnsDisplayTurn()) return "idle";
+      return displayPhase(state.phase);
+    }
+
+    function displayedText() {
+      if (isDeviceMode() && !deviceOwnsDisplayTurn()) return "";
+      return displayedPhase() === "speaking" ? state.spokenText : state.userText;
+    }
+
+    function activeSpeechText(face, faceOwnsTurn) {
+      if (!faceOwnsTurn) return "";
+      return state.spokenText || state.tts?.currentChunk || state.avatar?.speakingText || state.userText || face.label;
+    }
+
+    function faceGeometry(face, index) {
+      if (isDeviceMode()) {
+        const compactDevice = width < 760;
+        const panelW = width;
+        const panelH = height;
+        const cx = width / 2;
+        const cy = height * (compactDevice ? 0.49 : 0.5);
+        const rx = Math.max(compactDevice ? 104 : 150, Math.min(width * 0.34, height * 0.34));
+        const ry = Math.max(compactDevice ? 140 : 210, Math.min(width * 0.45, height * 0.43));
+        const jaw = face.id === "bob" ? 0.22 : 0.08;
+        return { compact: compactDevice, left: 0, top: 0, panelW, panelH, cx, cy, rx, ry, jaw };
+      }
+      const compact = width < 760;
+      const topReserve = compact ? 48 : 56;
+      const bottomReserve = Math.max(compact ? 136 : 96, chromeHeight() + 28);
+      const availableH = Math.max(220, height - topReserve - bottomReserve);
+      const panelW = compact ? width : width / 2;
+      const panelH = compact ? (availableH - 10) / 2 : availableH;
+      const left = compact ? 0 : index * panelW;
+      const top = compact ? topReserve + index * (panelH + 10) : topReserve;
+      const cx = left + panelW / 2;
+      const cy = top + panelH * (compact ? 0.52 : 0.48);
+      const rx = Math.max(compact ? 62 : 96, Math.min(panelW * (compact ? 0.27 : 0.31), panelH * 0.34));
+      const ry = Math.max(compact ? 84 : 122, Math.min(panelW * (compact ? 0.32 : 0.38), panelH * 0.42));
+      const jaw = face.id === "bob" ? 0.22 : 0.08;
+      return { compact, left, top, panelW, panelH, cx, cy, rx, ry, jaw };
+    }
+
+    function isInsideHead(x, y, g, face, margin = 0) {
+      const rx = Math.max(1, g.rx - margin);
+      const ry = Math.max(1, g.ry - margin);
+      const dx = (x - g.cx) / rx;
+      const dy = (y - g.cy) / ry;
+      const base = dx * dx + dy * dy;
+      const jawBoost = face.id === "bob" && y > g.cy + ry * 0.18 && Math.abs(dx) < 0.66 ? -0.13 : 0;
+      const hairHalo = face.id === "bab" && y < g.cy - ry * 0.55 && Math.abs(dx) < 0.9 ? -0.045 : 0;
+      return base + jawBoost + hairHalo <= 1;
+    }
+
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, value));
+    }
+
+    function faceDepth(x, y, g, face) {
+      const dx = (x - g.cx) / g.rx;
+      const dy = (y - g.cy) / g.ry;
+      const dome = clamp01(1 - dx * dx * 0.92 - dy * dy * 0.82);
+      const nose = clamp01(1 - Math.abs(dx) / 0.16 - Math.abs(dy - 0.04) / 0.42) * (face.id === "bob" ? 0.34 : 0.28);
+      const brow = clamp01(1 - Math.abs(dy + 0.24) / 0.11 - Math.abs(dx) / 0.74) * (face.id === "bob" ? 0.18 : 0.1);
+      const cheek = clamp01(1 - Math.abs(Math.abs(dx) - 0.42) / 0.24 - Math.abs(dy - 0.16) / 0.28) * (face.id === "bob" ? 0.18 : 0.26);
+      const chin = clamp01(1 - Math.abs(dy - 0.58) / 0.2 - Math.abs(dx) / (face.id === "bob" ? 0.58 : 0.42)) * (face.id === "bob" ? 0.2 : 0.13);
+      return clamp01(dome * 0.68 + nose + brow + cheek + chin);
+    }
+
+    function drawFaceContours(face, g, color, secondary, active, intensity, time) {
+      const contourAlpha = active ? 0.34 : 0.16;
+      const brightAlpha = active ? 0.78 : 0.3;
+      const perspective = Math.sin(time * 0.0012 + face.seed) * 0.018;
+      ctx.save();
+      ctx.globalAlpha = intensity;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = active ? 1.35 : 0.9;
+
+      for (const lat of [-0.62, -0.42, -0.22, 0.02, 0.24, 0.46, 0.64]) {
+        const y = g.cy + g.ry * lat;
+        const w = g.rx * Math.sqrt(Math.max(0.08, 1 - lat * lat)) * (face.id === "bob" ? 0.88 : 0.94);
+        ctx.strokeStyle = rgba(lat < -0.48 ? secondary : color, contourAlpha * (1 - Math.abs(lat) * 0.35));
+        ctx.beginPath();
+        ctx.ellipse(g.cx, y, w, g.ry * (0.018 + Math.abs(lat) * 0.012), perspective, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      for (const lon of [-0.66, -0.42, -0.2, 0, 0.2, 0.42, 0.66]) {
+        const sidePull = lon * g.rx;
+        ctx.strokeStyle = rgba(lon === 0 ? secondary : color, lon === 0 ? brightAlpha * 0.5 : contourAlpha);
+        ctx.beginPath();
+        ctx.moveTo(g.cx + sidePull * 0.18, g.cy - g.ry * 0.86);
+        ctx.bezierCurveTo(
+          g.cx + sidePull * (0.96 + perspective), g.cy - g.ry * 0.45,
+          g.cx + sidePull * (1.05 - perspective), g.cy + g.ry * 0.32,
+          g.cx + sidePull * (face.id === "bob" ? 0.54 : 0.4), g.cy + g.ry * 0.82,
+        );
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = rgba(secondary, brightAlpha);
+      ctx.lineWidth = active ? 2.2 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(g.cx - g.rx * 0.5, g.cy - g.ry * 0.3);
+      ctx.bezierCurveTo(g.cx - g.rx * 0.25, g.cy - g.ry * 0.39, g.cx + g.rx * 0.25, g.cy - g.ry * 0.39, g.cx + g.rx * 0.5, g.cy - g.ry * 0.3);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba(color, active ? 0.62 : 0.24);
+      ctx.lineWidth = active ? 1.8 : 1;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(g.cx + side * g.rx * 0.18, g.cy - g.ry * 0.05);
+        ctx.bezierCurveTo(
+          g.cx + side * g.rx * 0.44, g.cy + g.ry * 0.04,
+          g.cx + side * g.rx * 0.54, g.cy + g.ry * 0.26,
+          g.cx + side * g.rx * (face.id === "bob" ? 0.46 : 0.52), g.cy + g.ry * 0.45,
+        );
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = rgba(secondary, active ? 0.7 : 0.28);
+      ctx.lineWidth = active ? 1.6 : 1;
+      ctx.beginPath();
+      ctx.moveTo(g.cx, g.cy - g.ry * 0.28);
+      ctx.bezierCurveTo(g.cx + g.rx * 0.08, g.cy - g.ry * 0.08, g.cx + g.rx * 0.04, g.cy + g.ry * 0.14, g.cx, g.cy + g.ry * 0.25);
+      ctx.bezierCurveTo(g.cx - g.rx * 0.08, g.cy + g.ry * 0.13, g.cx - g.rx * 0.04, g.cy - g.ry * 0.08, g.cx, g.cy - g.ry * 0.28);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba(color, active ? 0.52 : 0.22);
+      ctx.beginPath();
+      if (face.id === "bob") {
+        ctx.moveTo(g.cx - g.rx * 0.55, g.cy + g.ry * 0.42);
+        ctx.lineTo(g.cx - g.rx * 0.34, g.cy + g.ry * 0.68);
+        ctx.lineTo(g.cx, g.cy + g.ry * 0.75);
+        ctx.lineTo(g.cx + g.rx * 0.34, g.cy + g.ry * 0.68);
+        ctx.lineTo(g.cx + g.rx * 0.55, g.cy + g.ry * 0.42);
+      } else {
+        ctx.moveTo(g.cx - g.rx * 0.44, g.cy + g.ry * 0.36);
+        ctx.bezierCurveTo(g.cx - g.rx * 0.26, g.cy + g.ry * 0.58, g.cx + g.rx * 0.26, g.cy + g.ry * 0.58, g.cx + g.rx * 0.44, g.cy + g.ry * 0.36);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawScanlines(time) {
+      ctx.fillStyle = "rgba(0, 0, 0, 1)";
+      ctx.fillRect(0, 0, width, height);
+      const gradient = ctx.createRadialGradient(width / 2, height * 0.48, 10, width / 2, height * 0.48, Math.max(width, height) * 0.78);
+      gradient.addColorStop(0, "rgba(15, 55, 42, 0.55)");
+      gradient.addColorStop(0.55, "rgba(2, 10, 8, 0.78)");
+      gradient.addColorStop(1, "rgba(0, 0, 0, 1)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "rgba(122, 255, 204, 0.055)";
+      for (let y = (time * 0.035) % 6; y < height; y += 6) {
+        ctx.fillRect(0, y, width, 1);
+      }
+    }
+
+    function drawStandby(time) {
+      ctx.fillStyle = "rgba(0, 0, 0, 1)";
+      ctx.fillRect(0, 0, width, height);
+      const assigned = deviceAgent();
+      const color = assigned ? (state.config?.faces?.[assigned]?.color || faces[assigned].color) : "#42ff8a";
+      ctx.fillStyle = rgba(color, 0.025);
+      for (let y = (time * 0.018) % 8; y < height; y += 8) {
+        ctx.fillRect(0, y, width, 1);
+      }
+      ctx.strokeStyle = rgba(color, 0.08);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(10.5, 10.5, width - 21, height - 21);
+    }
+
+    function drawMatrixFace(face, index, time) {
+      const assigned = deviceAgent();
+      if (deviceAutoHideWhenIdle() && !shouldRenderDeviceFace()) return;
+      if (isDeviceMode() && assigned && face.id !== assigned) return;
+      const cfgFace = state.config?.faces?.[face.id] || {};
+      const color = cfgFace.color || face.color;
+      const secondary = cfgFace.secondaryColor || face.secondaryColor;
+      const g = faceGeometry(face, index);
+      const faceOwnsTurn = state.activeAgent === face.id || (sensorBusy && assigned === face.id);
+      const phase = isDeviceMode() && assigned === face.id ? displayedPhase() : displayPhase(state.phase);
+      const assignedIdle = isDeviceMode() && assigned === face.id && !["speaking", "thinking", "listening"].includes(phase);
+      const active = faceOwnsTurn || assignedIdle || (!isDeviceMode() && !faces[state.activeAgent] && face.id === "bob");
+      const speaking = faceOwnsTurn && phase === "speaking";
+      const thinking = faceOwnsTurn && phase === "thinking";
+      const listening = faceOwnsTurn && phase === "listening";
+      const idle = active && !speaking && !thinking && !listening;
+      const intensity = active ? 1 : 0.44;
+      const speed = Number(state.config?.animationSpeed || 1);
+      const cell = Math.max(g.compact ? 9 : 12, Math.min(18, Math.floor(g.rx / 9)));
+      const speechText = activeSpeechText(face, faceOwnsTurn);
+      const textEnergy = mixEnergy(speechText || face.label);
+      const pulse = 0.7 + Math.sin(time * 0.004 + face.seed) * 0.18;
+      const mouthOpen = speaking
+        ? speechMouthOpen(face, time, speechText) * Number(state.config?.mouthSensitivity || 1)
+        : listening
+          ? 0.09 + Math.abs(Math.sin(time * 0.007)) * 0.04
+          : 0.035;
+
+      ctx.save();
+      ctx.globalAlpha = intensity;
+      ctx.fillStyle = rgba(color, active ? 0.075 : 0.03);
+      ctx.fillRect(g.left + 10, g.top + 4, g.panelW - 20, g.panelH - 8);
+      ctx.strokeStyle = rgba(active ? secondary : color, active ? 0.38 : 0.15);
+      ctx.lineWidth = active ? 2 : 1;
+      ctx.strokeRect(g.left + 10.5, g.top + 4.5, g.panelW - 21, g.panelH - 9);
+      ctx.strokeStyle = rgba(color, active ? 0.24 : 0.08);
+      ctx.beginPath();
+      ctx.moveTo(g.left + 18, g.top + 18);
+      ctx.lineTo(g.left + g.panelW - 18, g.top + 18);
+      ctx.moveTo(g.left + 18, g.top + g.panelH - 20);
+      ctx.lineTo(g.left + g.panelW - 18, g.top + g.panelH - 20);
+      ctx.stroke();
+
+      const columns = Math.ceil(g.panelW / cell);
+      ctx.font = `${Math.floor(cell * 0.92)}px Consolas, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let c = 0; c < columns; c += 1) {
+        const x = g.left + c * cell + cell / 2;
+        const fall = (time * 0.035 * speed + c * 47 + face.seed * 19) % (g.panelH + cell * 18);
+        for (let r = -18; r < g.panelH / cell + 12; r += 1) {
+          const y = g.top + ((r * cell + fall) % (g.panelH + cell * 18)) - cell * 9;
+          if (!isInsideHead(x, y, g, face, cell * 0.64)) continue;
+          const dx = Math.abs((x - g.cx) / g.rx);
+          const dy = Math.abs((y - g.cy) / g.ry);
+          const edge = Math.sqrt(dx * dx + dy * dy);
+          const depth = faceDepth(x, y, g, face);
+          const contourBand = Math.abs(depth * 8 - Math.round(depth * 8)) < 0.032;
+          const featureBand = contourBand || Math.abs(y - (g.cy - g.ry * 0.16)) < cell * 1.2 || Math.abs(y - (g.cy + g.ry * 0.36)) < cell * 1.4;
+          const alpha = Math.max(0.12, Math.min(1, (1 - edge * 0.55) * pulse * (0.58 + depth * 0.62) + (featureBand ? 0.2 : 0))) * intensity;
+          ctx.fillStyle = rgba(featureBand ? secondary : color, alpha);
+          const glyphIndex = Math.abs(c * 13 + r * 7 + face.seed + Math.floor(time * 0.02)) % glyphs.length;
+          const glyph = glyphs[glyphIndex];
+          ctx.fillText(glyph, x, y);
+        }
+      }
+
+      const headGlow = ctx.createRadialGradient(g.cx, g.cy, Math.min(g.rx, g.ry) * 0.1, g.cx, g.cy, Math.max(g.rx, g.ry) * 1.08);
+      headGlow.addColorStop(0, rgba(secondary, active ? 0.12 : 0.04));
+      headGlow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = headGlow;
+      ctx.fillRect(g.cx - g.rx * 1.25, g.cy - g.ry * 1.18, g.rx * 2.5, g.ry * 2.36);
+
+      drawFaceContours(face, g, color, secondary, active, intensity, time);
+
+      ctx.strokeStyle = rgba(color, active ? 0.94 : 0.38);
+      ctx.lineWidth = active ? 2.5 : 1.2;
+      ctx.beginPath();
+      ctx.ellipse(g.cx, g.cy, g.rx, g.ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (face.id === "bob") {
+        ctx.beginPath();
+        ctx.moveTo(g.cx - g.rx * 0.62, g.cy + g.ry * 0.42);
+        ctx.lineTo(g.cx - g.rx * 0.42, g.cy + g.ry * 0.76);
+        ctx.lineTo(g.cx + g.rx * 0.42, g.cy + g.ry * 0.76);
+        ctx.lineTo(g.cx + g.rx * 0.62, g.cy + g.ry * 0.42);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(g.cx, g.cy - g.ry * 0.42, g.rx * 0.88, Math.PI * 1.04, Math.PI * 1.96);
+        ctx.strokeStyle = rgba(secondary, active ? 0.64 : 0.24);
+        ctx.stroke();
+      }
+
+      const eyeY = g.cy - g.ry * 0.17;
+      const eyeW = g.rx * (face.id === "bob" ? 0.2 : 0.18);
+      const eyeGap = g.rx * 0.31;
+      ctx.strokeStyle = rgba(secondary, active ? 0.95 : 0.42);
+      ctx.lineWidth = active ? 3 : 2;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        if (face.id === "bob") {
+          ctx.moveTo(g.cx + side * eyeGap - eyeW, eyeY);
+          ctx.lineTo(g.cx + side * eyeGap + eyeW, eyeY - g.ry * 0.02 * side);
+        } else {
+          ctx.arc(g.cx + side * eyeGap, eyeY, eyeW, 0.08 * Math.PI, 0.92 * Math.PI, side < 0);
+        }
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = rgba(secondary, active ? 0.9 : 0.36);
+      if (face.id === "bob") {
+        ctx.fillRect(g.cx - eyeGap - eyeW * 0.16, eyeY - 2, eyeW * 0.32, 4);
+        ctx.fillRect(g.cx + eyeGap - eyeW * 0.16, eyeY - 2, eyeW * 0.32, 4);
+        ctx.strokeStyle = rgba(color, active ? 0.65 : 0.22);
+        ctx.beginPath();
+        ctx.moveTo(g.cx - g.rx * 0.45, g.cy - g.ry * 0.3);
+        ctx.lineTo(g.cx - g.rx * 0.12, g.cy - g.ry * 0.24);
+        ctx.moveTo(g.cx + g.rx * 0.45, g.cy - g.ry * 0.3);
+        ctx.lineTo(g.cx + g.rx * 0.12, g.cy - g.ry * 0.24);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(g.cx - eyeGap, eyeY, Math.max(2.5, eyeW * 0.18), 0, Math.PI * 2);
+        ctx.arc(g.cx + eyeGap, eyeY, Math.max(2.5, eyeW * 0.18), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = rgba(secondary, active ? 0.58 : 0.22);
+        ctx.beginPath();
+        ctx.arc(g.cx - g.rx * 0.68, g.cy + g.ry * 0.12, g.rx * 0.18, Math.PI * 0.35, Math.PI * 1.38);
+        ctx.arc(g.cx + g.rx * 0.68, g.cy + g.ry * 0.12, g.rx * 0.18, Math.PI * 1.62, Math.PI * 0.65);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = rgba(color, active ? 0.72 : 0.26);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(g.cx, g.cy - g.ry * 0.06);
+      ctx.lineTo(g.cx - g.rx * 0.06, g.cy + g.ry * 0.17);
+      ctx.lineTo(g.cx + g.rx * 0.07, g.cy + g.ry * 0.19);
+      ctx.stroke();
+
+      const mouthY = g.cy + g.ry * (face.id === "bob" ? 0.39 : 0.38);
+      const mouthW = g.rx * (face.id === "bob" ? 0.34 : 0.32);
+      const mouthScale = face.id === "bob" ? 0.26 : 0.34;
+      const mouthMin = face.id === "bob" ? 3.5 : 4.5;
+      const mouthMax = g.ry * (face.id === "bob" ? 0.105 : 0.14);
+      const mouthH = Math.min(mouthMax, Math.max(mouthMin, g.ry * mouthOpen * mouthScale));
+      ctx.strokeStyle = rgba(secondary, active ? 1 : 0.42);
+      ctx.fillStyle = rgba(secondary, active ? 0.16 : 0.04);
+      ctx.lineWidth = active ? 3 : 2;
+      ctx.beginPath();
+      ctx.ellipse(g.cx, mouthY, mouthW, mouthH, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (face.id === "bob" && !speaking) {
+        ctx.beginPath();
+        ctx.moveTo(g.cx - mouthW * 0.82, mouthY);
+        ctx.lineTo(g.cx + mouthW * 0.82, mouthY);
+        ctx.stroke();
+      }
+
+      if (thinking) {
+        ctx.strokeStyle = rgba(secondary, 0.78);
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i += 1) {
+          const offset = ((time * 0.05 + i * 48) % 190) - 95;
+          ctx.beginPath();
+          ctx.arc(g.cx, g.cy, Math.max(g.rx, g.ry) + offset, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      if (listening || idle) {
+        ctx.strokeStyle = rgba(color, listening ? 0.8 : 0.36);
+        ctx.lineWidth = 1;
+        const base = g.ry * 1.05 + Math.sin(time * 0.006 + face.seed) * 8;
+        ctx.beginPath();
+        ctx.arc(g.cx, g.cy, base, -0.16 * Math.PI, 0.16 * Math.PI);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(g.cx, g.cy, base, 0.84 * Math.PI, 1.16 * Math.PI);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = rgba(color, active ? 0.96 : 0.42);
+      ctx.font = `700 ${g.compact ? 15 : 18}px Consolas, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(face.label, g.cx, g.top + g.panelH - (g.compact ? 18 : 26));
+
+      ctx.restore();
+    }
+
+    function drawMessage(time) {
+      if (deviceAutoHideWhenIdle() && !shouldRenderDeviceFace()) return;
+      const text = displayedText();
+      if (!text) return;
+      const maxW = Math.min(width - 32, 760);
+      const x = width / 2;
+      const y = isDeviceMode() && !document.body.classList.contains("controls-open")
+        ? Math.max(74, height - 76)
+        : Math.max(74, height - chromeHeight() - 34);
+      ctx.save();
+      ctx.font = "16px Segoe UI, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const clean = text.replace(/\s+/g, " ").trim();
+      const clipped = clean.length > 118 ? `${clean.slice(0, 115)}...` : clean;
+      const metrics = ctx.measureText(clipped);
+      const boxW = Math.min(maxW, metrics.width + 34);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+      ctx.strokeStyle = "rgba(134, 255, 204, 0.26)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x - boxW / 2, y - 22, boxW, 44, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = `rgba(233, 255, 247, ${0.74 + Math.sin(time * 0.004) * 0.1})`;
+      ctx.fillText(clipped, x, y + 1);
+      ctx.restore();
+    }
+
+    function updateLabels() {
+      const active = primaryAgent();
+      const device = configuredDevice();
+      agentEl.textContent = device?.label || faces[active].label;
+      phaseEl.textContent = displayedPhase().toUpperCase();
+      errorEl.textContent = state.error || "";
+      syncDeviceBody();
+    }
+
+    function frame(time) {
+      if (deviceAutoHideWhenIdle() && !shouldRenderDeviceFace()) {
+        drawStandby(time);
+        if (Date.now() - lastSnapshotAt > 2600) {
+          phaseEl.textContent = "RECONNECTING";
+        }
+        requestAnimationFrame(frame);
+        return;
+      }
+      drawScanlines(time);
+      drawMatrixFace(faces.bob, 0, time);
+      drawMatrixFace(faces.bab, 1, time);
+      drawMessage(time);
+      if (Date.now() - lastSnapshotAt > 2600) {
+        phaseEl.textContent = "RECONNECTING";
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function applySnapshot(snapshot) {
+      state = {
+        ...state,
+        ...snapshot,
+        activeAgent: snapshot.activeAgent || state.activeAgent || "bob",
+        phase: displayPhase(snapshot.phase),
+        spokenText: snapshot.spokenText || snapshot.avatar?.speakingText || "",
+        userText: snapshot.userText || "",
+        error: snapshot.error || "",
+      };
+      for (const faceId of Object.keys(faces)) {
+        const cfg = state.config?.faces?.[faceId];
+        if (cfg) {
+          faces[faceId].label = cfg.label || faces[faceId].label;
+          faces[faceId].color = cfg.color || faces[faceId].color;
+          faces[faceId].secondaryColor = cfg.secondaryColor || faces[faceId].secondaryColor;
+        }
+      }
+      lastSnapshotAt = Date.now();
+      updateLabels();
+    }
+
+    async function postJson(path, payload) {
+      const busyButtons = buttons.filter(button => button.id !== "stop");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), path === "/turn" ? 4000 : 16000);
+      busyButtons.forEach(button => { button.disabled = true; });
+      try {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload || {}),
+          signal: controller.signal,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (data.snapshot) applySnapshot(data.snapshot);
+        return data;
+      } catch (error) {
+        errorEl.textContent = error.name === "AbortError" ? "Request still running" : error.message;
+      } finally {
+        clearTimeout(timeout);
+        busyButtons.forEach(button => { button.disabled = false; });
+        if (!isDeviceMode()) textEl.focus();
+      }
+    }
+
+    function revealControls(ms) {
+      if (!isDeviceMode()) return;
+      const duration = Number(ms || state.config?.devices?.controlsRevealMs || 2600);
+      document.body.classList.add("controls-open");
+      clearTimeout(controlsTimer);
+      controlsTimer = setTimeout(() => {
+        document.body.classList.remove("controls-open");
+      }, Math.max(900, duration));
+    }
+
+    async function tryEnterFullscreen() {
+      if (!wantsFullscreen || document.fullscreenElement) return;
+      const request = document.documentElement.requestFullscreen || document.body.requestFullscreen;
+      if (!request) return;
+      try {
+        await request.call(document.documentElement);
+      } catch {
+        // Browser fullscreen requires a user gesture; the face press is that gesture when the browser allows it.
+      }
+    }
+
+    function faceAtPoint(x, y) {
+      const candidates = isDeviceMode() ? [deviceAgent()].filter(Boolean) : ["bob", "bab"];
+      for (const id of candidates) {
+        const face = faces[id];
+        const index = isDeviceMode() ? 0 : (id === "bob" ? 0 : 1);
+        if (face && isInsideHead(x, y, faceGeometry(face, index), face)) return id;
+      }
+      return "";
+    }
+
+    async function startListening(agent) {
+      const active = faces[agent] ? agent : primaryAgent();
+      if (sensorBusy) return;
+      sensorBusy = true;
+      syncDeviceBody();
+      applySnapshot({ activeAgent: active, phase: "listening", error: "" });
+      try {
+        await postJson("/record-once", { agent: active });
+      } finally {
+        sensorBusy = false;
+        syncDeviceBody();
+      }
+    }
+
+    function turn(agent) {
+      const text = textEl.value.trim();
+      if (!text) return;
+      textEl.value = "";
+      applySnapshot({ activeAgent: agent, phase: "thinking", userText: text, error: "" });
+      postJson("/turn", { agent, text });
+    }
+
+    document.getElementById("bob").addEventListener("click", () => turn("bob"));
+    document.getElementById("bab").addEventListener("click", () => turn("bab"));
+    document.getElementById("record").addEventListener("click", () => {
+      startListening(primaryAgent());
+    });
+    document.getElementById("stop").addEventListener("click", () => postJson("/stop", {}));
+    document.getElementById("turn").addEventListener("submit", event => {
+      event.preventDefault();
+      turn(primaryAgent());
+    });
+    canvas.addEventListener("pointerdown", event => {
+      if (event.button && event.button !== 0) return;
+      const hit = faceAtPoint(event.clientX, event.clientY) || (isDeviceMode() ? primaryAgent() : "");
+      if (!hit) return;
+      event.preventDefault();
+      revealControls(900);
+      tryEnterFullscreen();
+      startListening(hit);
+    });
+    window.addEventListener("pointermove", event => {
+      if (isDeviceMode() && event.clientY > height - 118) revealControls();
+    });
+    window.addEventListener("keydown", event => {
+      if (isDeviceMode() && (event.key === "Tab" || event.key === "Escape" || event.key === "Enter")) revealControls();
+    });
+
+    function connectEvents() {
+      const events = new EventSource("/events");
+      events.addEventListener("snapshot", event => {
+        try {
+          applySnapshot(JSON.parse(event.data));
+        } catch {
+          errorEl.textContent = "Snapshot parse failed";
+        }
+      });
+      events.onerror = () => {
+        events.close();
+        setTimeout(connectEvents, 1200);
+      };
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+    syncDeviceBody();
+    connectEvents();
+    fetch("/snapshot").then(response => response.json()).then(applySnapshot).catch(() => {});
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

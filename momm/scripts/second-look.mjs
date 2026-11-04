@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { scopeProblem } from "./review-contract.mjs";
+import { scopeProblem, summaryProblem } from "./review-contract.mjs";
 import { resolveGit, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { evidenceDir, evidenceReference, evidenceFile } from "./evidence-location.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
@@ -173,7 +173,8 @@ export function secondLookProblem(p, artifact) {
   if (!p || typeof p !== "object" || p.review_status !== "complete") return "second look incomplete: review_status must be complete";
   if (!SECOND_LOOK_VERDICTS.includes(p.verdict)) return "a second look answers CONFIRM or REFUTE";
   if (typeof p.confidence !== "number" || !Number.isFinite(p.confidence) || p.confidence < 0 || p.confidence > 1) return "invalid confidence";
-  if (!text(p.summary, 1000)) return "missing or oversized summary";
+  const summary = summaryProblem(p.summary, 1000);
+  if (summary) return summary;
   if (!Array.isArray(p.findings) || p.findings.length) return "a second look raises no findings: findings must be an empty array";
   if (!Array.isArray(p.suggested_improvements) || p.suggested_improvements.length) return "a second look makes no suggestions: suggested_improvements must be an empty array";
   return scopeProblem(p.reviewed_scope, artifact, { attachments: [] });

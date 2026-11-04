@@ -1,0 +1,5 @@
+// Real operating-system failed spawn, no speech engine or private input.
+const assert=require('node:assert/strict'),cp=require('node:child_process'),path=require('node:path');
+const original=cp.fork;cp.fork=(file,args,options)=>original(file,args,{...options,execPath:path.join(__dirname,'nonexistent-dom-tts-node-executable')});
+const native=require('../scripts/providers/native');
+(async()=>{let handle;const start=Date.now();try{await native.runChild({file:process.execPath,args:[]},'',{stopped:()=>false,setChild:v=>handle=v},()=>{});assert.fail('Expected failed spawn');}catch(e){assert.match(e.message,/Native speech executable is missing/);}finally{cp.fork=original;}assert.equal(handle,null);assert.ok(Date.now()-start<5000,'failed spawn did not settle promptly');console.log('PASS: failed spawn without PID settles and clears ownership');})().catch(e=>{console.error(e.message);process.exitCode=1});

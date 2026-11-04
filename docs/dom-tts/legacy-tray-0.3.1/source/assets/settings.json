@@ -1,0 +1,18 @@
+{
+  "provider": "sapi",
+  "voice": "",
+  "speed": 1,
+  "mode": "informative",
+  "profile": "conversational",
+  "phase": "final_answer",
+  "streamMessages": false,
+  "includeCodeBlocks": false,
+  "includeCommandBlocks": false,
+  "speakStartup": false,
+  "dedupe": true,
+  "maxChunkChars": 420,
+  "pollMs": 1000,
+  "watchCodex": false,
+  "watchOpenClaw": false,
+  "watchAgentLab": false
+}
