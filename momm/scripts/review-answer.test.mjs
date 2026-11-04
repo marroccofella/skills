@@ -418,16 +418,24 @@ try {
   const resolved = fs.realpathSync.native(root), temporary = fs.realpathSync.native(os.tmpdir());
   assert(resolved.startsWith(temporary + path.sep) && path.basename(resolved).startsWith('momm-review-answer-test-'));
   fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-  await check('a refused summary says which rule it broke, with only its type or length', () => {
-    const base = { review_status: 'complete', verdict: 'ACCEPT', confidence: 0.9 }, artifact = 'const a = 1;\n';
-    const problem = (summary) => reviewProblem({ ...base, ...(summary === undefined ? {} : { summary }) }, artifact);
-    assert.equal(problem(undefined), 'missing summary');
-    assert.equal(problem('   '), 'blank summary');
-    assert.equal(problem(42), 'summary is not text (number)');
-    assert.equal(problem('x'.repeat(1001)), 'summary is 1001 characters, over the 1000 limit');
-    assert.doesNotMatch(problem('x'.repeat(1000)), /summary/, 'a summary at the limit is accepted');
-  });
 }
+
+await check('a refused summary says which rule it broke; a complete review at the limit is accepted', () => {
+  const problem = (summary) => { const p = structuredClone(payload); if (summary === undefined) delete p.summary; else p.summary = summary; return reviewProblem(p, artifact); };
+  assert.equal(reviewProblem(payload, artifact), null, 'the fixture itself is a complete valid review');
+  assert.equal(problem(undefined), 'missing summary');
+  assert.equal(problem(null), 'missing summary');
+  assert.equal(problem('   '), 'blank summary');
+  assert.equal(problem(42), 'summary is not text (number)');
+  assert.equal(problem(['SENTINEL_SUMMARY_TEXT']), 'summary is not text (array)');
+  assert.equal(problem({ text: 'SENTINEL_SUMMARY_TEXT' }), 'summary is not text (object)');
+  assert.equal(problem('S'.repeat(1001)), 'summary is 1001 characters, over the 1000 limit');
+  // At the limit, a complete otherwise-valid review is accepted outright, including astral characters (two UTF-16 units each).
+  assert.equal(problem('S'.repeat(1000)), null);
+  assert.equal(problem('\u{1F600}'.repeat(500)), null);
+  assert.equal(problem('\u{1F600}'.repeat(500) + 'S'), 'summary is 1001 characters, over the 1000 limit');
+  assert.ok(!String(problem('SENTINEL_SUMMARY_TEXT'.repeat(60))).includes('SENTINEL'), 'the refusal never repeats the summary');
+});
 
 const failed = checks.filter((c) => !c.passed);
 console.log(JSON.stringify({ node: process.version, passed: checks.length - failed.length, total: checks.length, checks: failed.length ? failed : undefined }, null, 2));
