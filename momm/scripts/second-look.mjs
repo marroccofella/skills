@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { scopeProblem } from "./review-contract.mjs";
+import { scopeProblem, summaryProblem } from "./review-contract.mjs";
 import { resolveGit, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { evidenceDir, evidenceReference, evidenceFile } from "./evidence-location.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
@@ -31,8 +31,6 @@ const RUN_ID = /^rev_[A-Za-z0-9_]+$/;
 const MAX_EVIDENCE_BYTES = 8_000_000;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const text = (s, max) => typeof s === "string" && s.trim().length > 0 && s.length <= max;
-// Which summary rule an answer broke, with only its type or length, never its text.
-const summaryProblem = (s, max) => s === undefined || s === null ? "missing summary" : typeof s !== "string" ? `summary is not text (${Array.isArray(s) ? "array" : typeof s})` : !s.trim() ? "blank summary" : s.length > max ? `summary is ${s.length} characters, over the ${max} limit` : null;
 const refuse = (message) => { throw Object.assign(new Error(`second look refused: ${message}`), { code: "MOMM_SECOND_LOOK_REFUSED" }); };
 
 // A regular file inside the project, reached without following any link, bounded in size. A logical

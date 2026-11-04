@@ -429,11 +429,11 @@ await check('a refused summary says which rule it broke; a complete review at th
   assert.equal(problem(42), 'summary is not text (number)');
   assert.equal(problem(['SENTINEL_SUMMARY_TEXT']), 'summary is not text (array)');
   assert.equal(problem({ text: 'SENTINEL_SUMMARY_TEXT' }), 'summary is not text (object)');
-  assert.equal(problem('S'.repeat(1001)), 'summary is 1001 characters, over the 1000 limit');
+  assert.equal(problem('S'.repeat(1001)), 'summary is 1001 characters (UTF-16 units), over the 1000 limit');
   // At the limit, a complete otherwise-valid review is accepted outright, including astral characters (two UTF-16 units each).
   assert.equal(problem('S'.repeat(1000)), null);
   assert.equal(problem('\u{1F600}'.repeat(500)), null);
-  assert.equal(problem('\u{1F600}'.repeat(500) + 'S'), 'summary is 1001 characters, over the 1000 limit');
+  assert.equal(problem('\u{1F600}'.repeat(500) + 'S'), 'summary is 1001 characters (UTF-16 units), over the 1000 limit');
   assert.ok(!String(problem('SENTINEL_SUMMARY_TEXT'.repeat(60))).includes('SENTINEL'), 'the refusal never repeats the summary');
 });
 

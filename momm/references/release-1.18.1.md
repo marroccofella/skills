@@ -17,12 +17,14 @@ automatic updates off: none of that changes, and neither does the review contrac
   "off: used only when named", is left out of the default preflight, and is used only when
   you name it, for example `--reviewers codex,grok,bab`. Leaving the setting out means on, so
   existing setups behave exactly as before. Any value other than `true` or `false` is refused
-  when the file is read.
+  when the file is read. Saving a name replaces its whole entry, so typing the name of a saved
+  Bumbler in the Setup Center sets the box from that entry: re-saving a switched-off Bumbler to
+  change its model keeps it off.
 - **A refused summary says which rule it broke.** A review or a second look whose summary is
   unusable was refused with "missing or oversized summary" whatever the cause. It now says
   `missing summary`, `blank summary`, `summary is not text (number)` (or the type it was), or
-  `summary is 1001 characters, over the 1000 limit`. Only the type or length is given, never
-  the summary text. Which answers are accepted is unchanged: a summary of 1 to 1000 UTF-16
+  `summary is 1001 characters (UTF-16 units), over the 1000 limit`. Only the type or length is
+  given, never the summary text. Both validators share one rule. Which answers are accepted is unchanged: a summary of 1 to 1000 UTF-16
   code units that is not blank. This came from a live review in which Antigravity's answer was
   refused and the old message could not say why.
 

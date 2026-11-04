@@ -92,7 +92,8 @@ function writeSaved(saved,env){
 export function loadBumblers(env=process.env){
  const saved=readSaved(env),routes=Object.create(null),seen=new Set();
  // One model server is one reviewer, so a second name cannot add a second vote.
- for(const [name,entry] of Object.entries(saved)){const key=`${entry.base_url}|${entry.model}`;if(seen.has(key))throw problem(name,'repeats a model server already saved under another name');seen.add(key);routes[name]={base_url:entry.base_url,model:entry.model,max_tokens:entry.max_tokens,timeout_ms:entry.timeout_seconds*1000,guidance:entry.guidance??'',rest_ms:(entry.rest_seconds??0)*1000,parallel:entry.parallel??1,wait_when_busy:entry.wait_when_busy!==false,enabled:entry.enabled!==false};}
+ // A switched-off Bumbler still holds its server: one model server is saved under one name only.
+  for(const [name,entry] of Object.entries(saved)){const key=`${entry.base_url}|${entry.model}`;if(seen.has(key))throw problem(name,'repeats a model server already saved under another name');seen.add(key);routes[name]={base_url:entry.base_url,model:entry.model,max_tokens:entry.max_tokens,timeout_ms:entry.timeout_seconds*1000,guidance:entry.guidance??'',rest_ms:(entry.rest_seconds??0)*1000,parallel:entry.parallel??1,wait_when_busy:entry.wait_when_busy!==false,enabled:entry.enabled!==false};}
  return routes;
 }
 // How long to wait after a 429. A stated wait, in seconds or as an HTTP date, is honoured in

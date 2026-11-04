@@ -18,7 +18,7 @@ summary is refused.
 | Gate | Evidence | Status |
 |---|---|---|
 | 1. Independent review of the summary change (Codex), test gaps closed | Codex review of PR 67; mutation check | passed |
-| 2. MOMM review of the whole candidate, governor-recorded complete | Run id | pending |
+| 2. MOMM review of the candidate's code, governor-recorded complete | Run `rev_20261104104358_3e3c91ecec19`, completion receipt | passed |
 | 3. Hosted matrix on the sealed commit and on `main` | Run ids | pending |
 | 4. Full pack on the sealed commit | Run output | pending |
 | 5. Signed `main-checkpoint` and the six lifecycle drill cells on it | Run ids | pending |
@@ -37,3 +37,20 @@ blank, number, array, object, 1000 and 1001, astral Unicode) and requires a comp
 otherwise-valid answer at the limit to be accepted outright. In disposable copies, each of
 three mutants (both of Codex's, plus the limit bug in the second-look validator) now fails
 its suite, and the unmutated copy passes both.
+
+## Gate 2: MOMM review of the candidate
+
+Run `rev_20261104104358_3e3c91ecec19`, 4 November 2026: `--range 333ba26..ee65d8d` limited to
+`momm/scripts` and `momm/assets`, reviewers Codex, Antigravity, Copilot and Grok, governor Claude.
+Codex, Copilot and Grok accepted (quorum 3); Antigravity's answer was refused because its quotes did
+not match the artifact, a status and no vote. No findings; 11 suggestions, each ruled:
+
+- **Applied, failing before and passing after:** Grok found that re-saving a switched-off Bumbler in
+  the Setup Center put it back into default reviews, because the box always started ticked; typing a
+  saved name now sets the box from that entry. `summaryProblem` is shared from
+  `review-contract.mjs` (Codex, Copilot, Grok), and the over-limit refusal names UTF-16 units
+  (Copilot, Grok).
+- **Applied as style:** a comment that a switched-off Bumbler still holds its model server (Copilot).
+- **Rejected:** a default-dispatch test, which would launch real reviewer CLIs; a pending-save test,
+  since the save already compares the switch before resetting; reformatting one-line assertions; and
+  a test-only assertion with no failing baseline, deferred to 1.18.2.
