@@ -1,9 +1,7 @@
-# MOMM 1.18.1 — release candidate
+# MOMM 1.18.1 — released 4 November 2026
 
-Sealed for release on 4 November 2026 at the owner's request ("get 1.18.1 reviewed and
-released"), to be merged and signed only once every gate passes on the sealed commit; see the
-[gate record](gates-1.18.1.md). Until the signed tag `momm-1.18.1` exists, 1.18.0 remains the
-stable release.
+Signed tag `momm-1.18.1`, published 4 November 2026 after every gate passed on the sealed commit;
+see the [gate record](gates-1.18.1.md).
 
 1.18.1 is a small patch to 1.18.0. One writer, read-only reviewers, account logins only and
 automatic updates off: none of that changes, and neither does the review contract.

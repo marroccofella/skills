@@ -1,4 +1,8 @@
-# 1.18.1 gate record
+# 1.18.1 gate record — released 4 November 2026
+
+The signed tag `momm-1.18.1` was published on 4 November 2026 at 20:44:42 UTC on `99b5819`, the squash
+merge of sealed candidate `d6ab7cf` with its tree unchanged. This record was completed after the tag;
+later documentation changes do not retag the release or change its seal.
 
 ## Why this release exists
 
@@ -19,11 +23,11 @@ summary is refused.
 |---|---|---|
 | 1. Independent review of the summary change (Codex), test gaps closed | Codex review of PR 67; mutation check | passed |
 | 2. MOMM review of the candidate's code, governor-recorded complete | Run `rev_20261104104358_3e3c91ecec19`, completion receipt | passed |
-| 3. Hosted matrix on the sealed commit and on `main` | Run ids | pending |
-| 4. Full pack on the sealed commit | Run output | pending |
-| 5. Signed `main-checkpoint` and the six lifecycle drill cells on it | Run ids | pending |
-| 6. Privacy and history scan before every push | Scanner exit 0 | passed so far |
-| 7. Signed tag `momm-1.18.1` and fresh-clone verification | Release workflow run | pending |
+| 3. Hosted matrix on the sealed commit and on `main` | Run ids | passed: sealed `d6ab7cf` run 41867188021, 15/15; `main` `99b5819` push run 41888040488, 15/15. macOS cells that GitHub never assigned a runner ("not acquired by Runner of type hosted", no step run) were re-run until they ran; no job failed |
+| 4. Full pack on the sealed commit | Run output | passed: 182/182 locally on `d6ab7cf` (Windows, Node 24.22.1, clean tree). Two earlier runs failed only on leftover temporary test copies in the worktree, never tracked; removed before the passing run |
+| 5. Signed `main-checkpoint` and the six lifecycle drill cells on it | Run ids | passed: checkpoint run 41900035785 (`momm-main-99b5819…`, gitsign good signature from the main release-workflow identity); lifecycle run 41901216598 on drills commit `137068b`, six GitHub-hosted cells (Windows, macOS, Linux; Node 18 and 24), upgrading from 1.18.0 and 1.17.3; the macOS Node 18 cell re-run after no runner was assigned. A first checkpoint dispatch, 41888081358, stopped at its first step because main's matrix had not finished; nothing was signed |
+| 6. Privacy and history scan before every push | Scanner exit 0 | passed: exit 0, tree and history clean, before every push of the release branch and the drills branch |
+| 7. Signed tag `momm-1.18.1` and fresh-clone verification | Release workflow run | passed: signing run 41908726068, gitsign verified against the main release-workflow identity and the Actions OIDC issuer; a fresh clone of the tag resolves to `99b5819` (tree identical to `d6ab7cf`) and `momm-release.mjs --check` verifies seal `96150aa8…` |
 
 ## Gate 1: Codex's review of the summary change
 

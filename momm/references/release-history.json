@@ -271,9 +271,18 @@
   },
   {
     "version": "1.18.1",
-    "kind": "version-notes",
-    "source_url": "https://github.com/marroccofella/skills/pull/73",
+    "kind": "release",
+    "tag": "momm-1.18.1",
+    "published_date": "2026-11-04T20:44:42Z",
+    "source_url": "https://github.com/marroccofella/skills/releases/tag/momm-1.18.1",
     "notes_path": "momm/references/release-1.18.1.md",
-    "summary": "Sealed: a saved Bumbler can be switched off for default reviews and still used by name; a review refused for its summary says which rule it broke."
+    "verification": {
+      "revision": "99b5819e4bae01542ecaa53bdaf7d6eb0e3d6885",
+      "matrix_run": "41888040488",
+      "checkpoint_run": "41900035785",
+      "lifecycle_run": "41901216598",
+      "signing_run": "41908726068"
+    },
+    "summary": "A saved Bumbler can be switched off for default reviews and still used by name; a review or second look refused for its summary says which rule it broke. Signed lifecycle drills passed on six hosted Windows/macOS/Linux Node 18/24 cells, upgrading from 1.18.0 and 1.17.3."
   }
 ]
