@@ -11,7 +11,7 @@
         "A review or second look refused for its summary now says which rule it broke: missing, blank, not text, or over the 1000-character limit, giving only the type or length and never the summary text. Before, every case read \"missing or oversized summary\".",
         "No change to the reviewer CLIs, OAuth-only authentication, the review contract or what counts as a valid review."
       ],
-      "sha256": "7caddbaa29b2bc1db4ba70824f3e464b5c128cac181d7afae68a50984b69481c",
+      "sha256": "96150aa8caf2e65381c61ea12acfd02c6c5a53b7151de4d9a3682a7a299a72c6",
       "hash_covers": "git-tree-blobs-excluding-versions/1"
     },
     {
