@@ -140,9 +140,10 @@ again at release. This is candidate frame custody only: no OAuth transport,
 issuer registration, native activation, backend release observer or reviewer-pool
 eligibility is inferred. The issued-key shadow worker remains separate and disabled.
 
-**Published manifest version:** `versions.json` (`momm`) names the current release.
-Today they say **1.18.0** for publication. Stable is **1.18.0**, signed tag `momm-1.18.0`,
-released on 3 November 2026 after exact-main CI and six hosted lifecycle cells passed.
+**Published manifest version:** `versions.json` (`momm`) names the sealed release candidate.
+Today they say **1.18.1** for publication, which takes effect only when the signed tag
+`momm-1.18.1` is made after its gates pass. Until then stable remains **1.18.0**, signed tag
+`momm-1.18.0`, released on 3 November 2026 after exact-main CI and six hosted lifecycle cells passed.
 1.17.4 was folded into 1.18.0 and has no tag of its own. Nothing else
 in this file gets to say "current". Website notes live in
 [references/site-changelog.md](references/site-changelog.md).

@@ -1,8 +1,17 @@
 {
   "_comment": "Source of truth for published skill versions. Skills read this (cached daily, fail-silent) to tell users when an update is available. Bump the entry whenever you bump a skill's version.",
-  "momm": "1.18.0",
+  "momm": "1.18.1",
   "momm_release_schema": "momm-releases/1",
   "momm_releases": [
+    {
+      "version": "1.18.1",
+      "tag": "momm-1.18.1",
+      "changes": [
+        "A saved Bumbler can be switched off for default reviews: untick \"Joins default reviews\" in the Setup Center, or set \"enabled\": false in bumblers.json. It stays saved and listed, and is used only when you name it in --reviewers.",
+        "A review or second look refused for its summary now says which rule it broke: missing, blank, not text, or over the 1000-character limit, giving only the type or length and never the summary text. Before, every case read \"missing or oversized summary\".",
+        "No change to the reviewer CLIs, OAuth-only authentication, the review contract or what counts as a valid review."
+      ]
+    },
     {
       "version": "1.18.0",
       "tag": "momm-1.18.0",
