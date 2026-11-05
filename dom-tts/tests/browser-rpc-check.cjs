@@ -23,7 +23,24 @@ async function main(){
  const bounded=createBrowserRpc({token,port:()=>port,now:()=>clock,maxNonces:2}),first=encrypted(inner,port);bounded.open(first);bounded.open(encrypted(inner,port));assert.throws(()=>bounded.open(encrypted(inner,port)),/browser-rpc-refused/);assert.throws(()=>bounded.open(first),/browser-rpc-refused/);clock+=TTL_MS+1;assert.equal(bounded.open(encrypted({...inner,timestamp:clock},port)).data.text,text);
  let replayClock=100000;const rollback=createBrowserRpc({token,port:()=>port,now:()=>replayClock}),old=encrypted({...inner,route:'/api/enable',timestamp:replayClock},port);rollback.open(old);replayClock+=TTL_MS+1;rollback.open(encrypted({...inner,timestamp:replayClock},port));replayClock=100000;assert.throws(()=>rollback.open(old),/browser-rpc-refused/);assert.throws(()=>rollback.open(encrypted({...inner,timestamp:replayClock},port)),/browser-rpc-refused/);replayClock=110002;assert.throws(()=>rollback.open(old),/browser-rpc-refused/);rollback.open(encrypted({...inner,timestamp:replayClock},port));
  assert.throws(()=>server.seal(captured.nonce,200,{text:'x'.repeat(8192)}),/browser-rpc-refused/);
- for(const fault of ['request-reflection','request-binding','port','nonce','cipher','tag','malformed-utf8','outer-status','plaintext','oversized']){
+ // Fetch can resolve its headers before the body stream fails. Only failures
+ // from reading that stream may retain a recoverable transport classification.
+ const bodyOutcomes=[];
+ for(const name of ['TypeError','AbortError','TimeoutError','Error']){
+  let headersReturned=false,pulls=0,interrupted=false;
+  const tested=browser.create({token,port,now:()=>clock,fetch:async(route,options)=>{
+   const opened=server.open(JSON.parse(options.body)),envelope=server.seal(opened.nonce,200,{ok:true},3);if(interrupted)return json(envelope);interrupted=true;
+   const bytes=new TextEncoder().encode(JSON.stringify(envelope)),cause=name==='TypeError'?new TypeError('PRIVATE_FIXTURE_TRANSPORT_DETAIL'):name==='Error'?Error('PRIVATE_FIXTURE_TRANSPORT_DETAIL'):new DOMException('PRIVATE_FIXTURE_TRANSPORT_DETAIL',name);
+   const body=new ReadableStream({start(controller){controller.enqueue(bytes.subarray(0,5));},pull(controller){pulls++;controller.error(cause);}});
+   headersReturned=true;return new Response(body,{status:200,headers:{'content-type':'application/json'}});
+  }});
+  let error;try{await tested.request('/api/status');assert.fail('Interrupted response body was accepted');}catch(caught){error=caught;}
+  assert.equal(headersReturned,true);assert.equal(pulls,1);assert.equal(error.cause,undefined);assert(!error.message.includes('PRIVATE_FIXTURE'));
+  bodyOutcomes.push({source:name,name:error.name,message:error.message});
+  assert.equal(tested.epoch(),0,'Interrupted unauthenticated body cannot advance the known epoch');assert.equal((await tested.request('/api/status')).ok,true);assert.equal(tested.epoch(),3,'Same client recovers only after a fresh authenticated response');
+ }
+ assert.deepEqual(bodyOutcomes,['TypeError','AbortError','TimeoutError','Error'].map(name=>({source:name,name:name==='Error'?'Error':name,message:name==='Error'?'browser-server-identity-unverified':'browser-response-transport-interrupted'})));
+ for(const fault of ['request-reflection','request-binding','port','nonce','cipher','tag','malformed-utf8','malformed-json','response-schema','outer-malformed-utf8','outer-malformed-json','outer-schema','locked-body','outer-status','plaintext','oversized']){
   const tested=browser.create({token,port,now:()=>clock,fetch:async(route,options)=>{const request=JSON.parse(options.body),nonce=request.nonce;let envelope=encrypted({epoch:0,status:200,data:{ok:true}},port,{direction:'response',requestNonce:nonce});
    if(fault==='request-reflection')envelope=request;
    if(fault==='request-binding')envelope=encrypted({epoch:0,status:200,data:{}},port,{direction:'response',requestNonce:Buffer.alloc(12,7).toString('base64')});
@@ -32,6 +49,12 @@ async function main(){
    if(fault==='cipher')envelope.ciphertext=alterCipher(envelope.ciphertext);
    if(fault==='tag')envelope.ciphertext=alter(envelope.ciphertext);
    if(fault==='malformed-utf8')envelope=encrypted(null,port,{direction:'response',requestNonce:nonce,bytes:Buffer.from([0xc3,0x28])});
+   if(fault==='malformed-json')envelope=encrypted(null,port,{direction:'response',requestNonce:nonce,bytes:Buffer.from('{')});
+   if(fault==='response-schema')envelope=encrypted({epoch:0,status:200,data:{},extra:true},port,{direction:'response',requestNonce:nonce});
+   if(fault==='outer-malformed-utf8')return new Response(Buffer.from([0xc3,0x28]),{status:200,headers:{'content-type':'application/json'}});
+   if(fault==='outer-malformed-json')return new Response('{',{status:200,headers:{'content-type':'application/json'}});
+   if(fault==='outer-schema')envelope.extra=true;
+   if(fault==='locked-body'){const response=json(envelope);response.body.getReader();return response;}
    if(fault==='outer-status')return new Response(JSON.stringify(envelope),{status:201,headers:{'content-type':'application/json'}});
    if(fault==='plaintext')return json({status:200,data:{ok:true}});
    if(fault==='oversized')return new Response('x'.repeat(12289),{status:200,headers:{'content-type':'application/json'}});
@@ -52,6 +75,6 @@ async function main(){
  const stolen=[];const fake=http.createServer(async(req,res)=>{let body='';for await(const part of req)body+=part;stolen.push({body,headers:req.headers});res.writeHead(200,{'content-type':'application/json'});res.end('{"error":"old-or-fake-server"}');});const fakePort=await listen(fake);
  try{const untrusted=browser.create({token,port:fakePort,fetch:(route,options)=>fetch('http://127.0.0.1:'+fakePort+route,options)});await assert.rejects(untrusted.request('/api/queue/enqueue',{text}),/browser-server-identity-unverified/);assert.equal(stolen.length,1);assert(!stolen[0].body.includes(token));assert(!stolen[0].body.includes(text));assert.equal(stolen[0].headers['x-dom-tts-token'],undefined);}finally{await close(fake);}
  const screen=fs.readFileSync(path.join(__dirname,'../assets/browser/screen.js'),'utf8');assert.doesNotMatch(screen,/x-dom-tts-token|sessionStorage\.(?:setItem|getItem)|fetch\(/);assert.match(screen,/sessionStorage.removeItem/);assert.match(screen,/api\('\/api\/disable',\{client\},\{keepalive:true\}\)/);
- console.log('PASS: actual browser WebCrypto/Node AES-GCM round trips, no token/plaintext at fake port, request/response direction+port+nonce binding, modified nonce/cipher/tag and UTF-8/schema/size refusal, short TTL/live replay bound with no eviction, encrypted real-loopback queue/Stop, no raw UI fallback or token persistence. No audio or existing state.');
+ console.log('PASS: actual browser WebCrypto/Node AES-GCM round trips; header-success/body-stream TypeError, AbortError and TimeoutError retain sanitized transport classification; unknown reader errors and locked/malformed JSON/UTF-8/schema/oversized/tampered bodies remain identity failures; no token/plaintext at fake port; direction+port+nonce binding, short TTL/live replay bound, encrypted loopback queue/Stop, no raw UI fallback or token persistence. No audio or existing state.');
 }
 main().catch(error=>{console.error(error.stack);process.exitCode=1;});

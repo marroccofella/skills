@@ -8,7 +8,7 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "3f5ea5ece7137a94f66a75cdefa134c60f1d4f28eaf83fe8ad26efaf8c749585"
+      "sha256": "c9a38733cf26d8649b0c6e2a90cb466b566d9ba7a7ecf26807334db208084878"
     },
     {
       "path": "COMPATIBILITY.md",
@@ -44,11 +44,11 @@
     },
     {
       "path": "assets/browser/rpc.js",
-      "sha256": "fe37ba945cbfa3bcfb463ea5f5d84faf353465fe291ddbf4255b8d386c7715d0"
+      "sha256": "6b55d8d3663efaa526075598b159bf53aa4510304c9b7ef52c9d12fc9c9f23c5"
     },
     {
       "path": "assets/browser/screen.js",
-      "sha256": "63b352dc97f2548a5754b34e662a855986217d8a2010bad9568f770fc7e9c5bc"
+      "sha256": "df15370c3e4f74b55cf6a1b67d59ec2fce2d384c01066fd9efb28016bc50d2dc"
     },
     {
       "path": "assets/browser/style.css",
@@ -92,7 +92,7 @@
     },
     {
       "path": "references/browser-speech.md",
-      "sha256": "2ccb9c2781a69bebe6de1c57ccba3fa5ee979f71fa32507c832d4dae4cd9cec1"
+      "sha256": "99dbce2128a9d2e13c4ea4c1198fd4e7c1614d1bf5e851eab6452a3aa4e95eb9"
     },
     {
       "path": "references/codex-default-speech.md",
@@ -184,7 +184,7 @@
     },
     {
       "path": "scripts/experimental/browser-session.js",
-      "sha256": "9b5784d0342920582a95ba030f5e604a7920cfe36bdf644d5e560d25023aa701"
+      "sha256": "7d8023424c861efd32735e507e24052941e432277ec2d22eb7ad6d77ef75ec4e"
     },
     {
       "path": "scripts/experimental/control-server.js",
@@ -448,7 +448,7 @@
     },
     {
       "path": "tests/browser-recovery-check.cjs",
-      "sha256": "769a3050d4b703c6fbf2e189c47234e1a3fac8ca6a827973ce0e24710643ceb5"
+      "sha256": "643b3af37fe8ffe0c3ef83d837cad3083f417dd41c222571e5f3ecd1460cba74"
     },
     {
       "path": "tests/browser-restart-check.cjs",
@@ -456,7 +456,7 @@
     },
     {
       "path": "tests/browser-rpc-check.cjs",
-      "sha256": "c696527d71f91f94495e8fb4cdbcefd683440531e952abdc35f0f66ec79eae7f"
+      "sha256": "b56d101ac374b8e549dd0b31eb4d73ab3198c8183dba80e9c6eb35effffff8ec"
     },
     {
       "path": "tests/browser-screen-check.cjs",
@@ -464,7 +464,7 @@
     },
     {
       "path": "tests/browser-session-check.cjs",
-      "sha256": "7cd0e2142f88c16e7a4609dd000f992bd4b3230cb14a32a8d43fab263b462c78"
+      "sha256": "14f3b525562049bff3483f995d6f2e29c12e879ce752a47c9eb2d9e236d1f327"
     },
     {
       "path": "tests/browser-source-check.cjs",

@@ -9,7 +9,24 @@
   function decode(value,min,max){if(typeof value!=='string'||value.length>Math.ceil(max/3)*4||value.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(value))throw fail();let bytes;try{bytes=Uint8Array.from(atob(value),value=>value.charCodeAt(0));}catch{throw fail();}if(bytes.length<min||bytes.length>max||encode(bytes)!==value)throw fail();return bytes;}
   const aad=(direction,requestNonce='')=>encoder.encode(SCHEMA+'\0'+port+'\0'+direction+(direction==='response'?'\0'+requestNonce:''));
   const key=engine.subtle.importKey('raw',Uint8Array.from(token.match(/../g),byte=>parseInt(byte,16)),{name:'AES-GCM'},false,['encrypt','decrypt']);let stopEpoch=0;
-  async function read(response){if(!response.body?.getReader)throw fail();const reader=response.body.getReader(),chunks=[];let bytes=0;try{for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>12288)throw fail();chunks.push(next.value);}const all=new Uint8Array(bytes);let at=0;for(const chunk of chunks){all.set(chunk,at);at+=chunk.byteLength;}return JSON.parse(decoder.decode(all));}catch{await reader.cancel().catch(()=>{});throw fail();}finally{reader.releaseLock();}}
+  async function read(response){
+   let reader;try{if(!response.body?.getReader)throw fail();reader=response.body.getReader();}catch{throw fail();}
+   const chunks=[];let bytes=0,transport;
+   try{
+    for(;;){
+     let next;try{next=await reader.read();}catch(error){
+      // Only the body read can establish a transport interruption. UTF-8
+      // decoding also throws TypeError and must remain an identity failure.
+      if(error?.name==='TypeError')transport=new TypeError('browser-response-transport-interrupted');
+      else if(error?.name==='AbortError'||error?.name==='TimeoutError'){transport=Error('browser-response-transport-interrupted');transport.name=error.name;}
+      throw fail();
+     }
+     if(next.done)break;bytes+=next.value.byteLength;if(bytes>12288)throw fail();chunks.push(next.value);
+    }
+    const all=new Uint8Array(bytes);let at=0;for(const chunk of chunks){all.set(chunk,at);at+=chunk.byteLength;}return JSON.parse(decoder.decode(all));
+   }catch{try{await reader.cancel();}catch{}throw transport||fail();}
+   finally{try{reader.releaseLock();}catch{throw fail();}}
+  }
   async function request(route,data,{keepalive=false,epoch=stopEpoch}={}){
    if(typeof route!=='string'||!/^\/api\/[a-z0-9/-]{1,160}$/.test(route)||[ROUTE,'/api/server-proof'].includes(route)||data!==undefined&&(!data||typeof data!=='object'||Array.isArray(data)||encoder.encode(JSON.stringify(data)).byteLength>MAX_DATA))throw fail();
    if(!Number.isSafeInteger(epoch)||epoch<0)throw fail();const nonce=engine.getRandomValues(new Uint8Array(12)),nonceText=encode(nonce),plain=encoder.encode(JSON.stringify({route,method:data===undefined?'GET':'POST',timestamp:now(),epoch,...(data===undefined?{}:{data})}));if(plain.byteLength>MAX_PLAIN)throw fail();

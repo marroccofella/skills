@@ -10,6 +10,19 @@ Stop with `node scripts/browser-speak.js --command stop`; it clears queued text 
 
 An enabled document keeps retrying transient health requests with backoff capped at10seconds. Visibility/online events wake one polling loop. Interrupted speech is cancelled, terminal acknowledgement is reconciled and never automatically replayed. Stop requested offline settles before another speech poll. Reload, server restart, Disable, authentication or session change requires explicit Enable. This is same-document recovery, not a permanent speech grant.
 
+Network interruption while reading a response body remains a transport failure;
+malformed UTF-8/JSON, oversized data and failed authentication remain unverified.
+An ambiguous unverified response pauses delivery while the already-enabled page
+performs bounded fresh authenticated read-only status revalidation. It resumes
+ordinary owned acknowledgement/polling only after verification, without retrying
+an admission, Enable or Restart. Persistent failed verification requires explicit
+operator action. A valid proof does not override Stop, Disable or client ownership.
+
+A late speaking acknowledgement for a retained settled job is an idempotent
+no-op after the current-client ownership check. It does not renew the lease,
+change another active job or undo Stop. Wrong-client and unknown-job requests
+remain refused; retired receipts outside the bounded history are not restored.
+
 Doctor distinguishes state-not-found, state-inaccessible, descriptor-invalid, owner-unobservable, loopback-denied, transport-unreachable/timeout, browser-page-not-enabled/disabled, lease-expired and build mismatch. A restricted caller's owner-unobservable or inaccessible result does not prove the service died. Check the actual authorized context before restarting; never bypass owner/ACL checks or kill a saved PID. DOM_TTS_STATE_DIR explicitly selects one shared private state location for launcher, CLI and notification integration.
 
 ## Connection identity and upgrade
