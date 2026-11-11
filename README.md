@@ -85,7 +85,7 @@ The root installer discovers every top-level skill directory containing `SKILL.m
 
 ## momm — local multi-CLI code review with a reproduction gate
 
-> **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. A deprecated alias remains at [`multi-llm-review/`](multi-llm-review/) whose scripts forward to `momm/scripts/`, so existing commands and skill links keep working with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The alias will be removed in a future release.
+> **Migration note (2026-08-17):** this skill was renamed from `multi-llm-review` to `momm`. The old name is no longer a separate skill folder: its two forwarding scripts now live inside MOMM at [`momm/legacy/multi-llm-review/`](momm/legacy/multi-llm-review/) and still run `momm/scripts/` with a deprecation notice. To migrate, re-run `node momm/scripts/install.mjs --target all` (it links the new name) and delete your old `multi-llm-review` links. The forwarders will be removed in a future release.
 
 Have the other AI CLIs on your machine review your code, over the logins you already have. Each selected provider receives sanitized review input; redaction is not a guarantee that confidential material is gone. Separately, the daily notice requests a public version manifest, and explicit maintenance checks may query package metadata. Set `NO_UPDATE_CHECK=1` or `DO_NOT_TRACK=1` to suppress the daily check. One ready external reviewer is enough to begin; a release gate should set an explicit quorum.
 

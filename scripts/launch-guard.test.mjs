@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const results = [];
 const check = (name, fn) => { try { fn(); results.push({name, passed: true}); } catch (e) { results.push({name, passed: false, error: e.message}); process.exitCode = 1; } };
 const scripts = fs.readdirSync(path.join(root, 'momm/scripts')).filter(n => n.endsWith('.mjs') && !n.endsWith('.test.mjs')).map(n => 'momm/scripts/' + n)
-  .concat(['install.mjs', 'multi-llm-review/scripts/install.mjs'].filter(f => fs.existsSync(path.join(root, f))));
+  .concat(['install.mjs', 'momm/legacy/multi-llm-review/scripts/install.mjs'].filter(f => fs.existsSync(path.join(root, f))));
 check('every process-launching script sets the guard on its own process', () => {
   const missing = [];
   for (const rel of scripts) {
