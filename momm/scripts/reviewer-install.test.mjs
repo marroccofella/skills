@@ -7,6 +7,8 @@ import {providers} from './reviewer-providers.mjs';
 import {createStandardInstallJob} from './standard-install-job.mjs';
 import {setupReviewerClis as installReviewers} from './reviewer-install.mjs';
 
+delete process.env.MOMM_EVIDENCE_HOME; // this suite owns its fixtures
+
 const lockRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'momm-test-install-lock-'));
 const lockFile = path.join(lockRoot, 'reviewer-install');
 const setupReviewerClis = options => installReviewers({...options, lockFile});

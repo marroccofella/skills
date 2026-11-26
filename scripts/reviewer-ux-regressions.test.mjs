@@ -20,7 +20,9 @@ await test('attachment child failure retains safe timing and termination diagnos
 await test('same-document private launch link restarts authenticated bootstrap without leaking authority',async()=>{
  const listeners=new Map(),stored=new Map();let reloads=0,calls=0;
  const location={hash:'',pathname:'/',search:'',reload(){reloads++;}};
- const c=vm.createContext({URLSearchParams,location,session:null,summary:{},showToast(){},
+ const nodes=new Map();
+ const document={querySelector(id){if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);}};
+ const c=vm.createContext({document,URLSearchParams,location,session:null,summary:{},showToast(){},
   sessionStorage:{getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)},history:{replaceState(){location.hash='';}},
   window:{addEventListener:(name,fn)=>listeners.set(name,fn)},
   api:async()=>{calls++;throw Error('Synthetic denied session');},refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){}});
@@ -29,6 +31,8 @@ await test('same-document private launch link restarts authenticated bootstrap w
  vm.runInContext(client.slice(seamStart,seamEnd),c);
  vm.runInContext(client.slice(client.indexOf('function launchToken() {')),c);
  await new Promise(r=>setImmediate(r));
+ assert.equal(nodes.get('#install-standard').disabled,true);
+ assert.match(nodes.get('#standard-install-summary').textContent,/launcher/);
  assert.equal(calls,0,'bare shell must not call authenticated API');
  assert.equal(typeof listeners.get('hashchange'),'function','same-document navigation must be handled');
  for(const hash of ['#section','#momm-token=invalid','']){location.hash=hash;listeners.get('hashchange')();assert.equal(reloads,0);}

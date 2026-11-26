@@ -1,5 +1,6 @@
 // Offline regressions for the public independent audit. No real harness targets,
 // account sessions, network calls or provider executions. Fixtures are disposable.
+import {reviewerInstallerFiles} from '../momm/development-tests/installer-fixture-files.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +39,7 @@ function write(repo, name, data) {
 }
 function fixture(name) {
   const repo = path.join(temp, name); fs.mkdirSync(repo);
-  for (const file of ['install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs', 'momm/scripts/bootstrap.mjs', 'momm/scripts/installations.mjs']) write(repo, file, read(file));
+  for (const file of [...reviewerInstallerFiles, 'install.mjs', 'momm/scripts/install.mjs', 'momm/scripts/update.mjs', 'momm/scripts/bootstrap.mjs', 'momm/scripts/installations.mjs']) write(repo, file, read(file));
   write(repo, 'versions.json', JSON.stringify({ momm: FIXTURE_VERSION }));
   write(repo, 'momm/SKILL.md', 'Synthetic protocol fixture.');
   write(repo, 'momm/scripts/multi-review.mjs', `const MOMM_VERSION = ${JSON.stringify(FIXTURE_VERSION)}; // Parsed as version evidence; no provider calls.`);
@@ -56,7 +57,7 @@ try {
       const repo = fixture(`${name}-partial`);
       const first = path.join(temp, `${name} first é`), blocked = path.join(temp, `${name}-file`), last = path.join(temp, `${name} last`);
       fs.writeFileSync(blocked, 'Preserve this existing fixture.');
-      const args = [path.join(repo, script), ...extra, '--custom-dir', first, '--custom-dir', blocked, '--custom-dir', last, '--pretty'];
+      const args = [path.join(repo, script), ...extra, '--links-only', '--custom-dir', first, '--custom-dir', blocked, '--custom-dir', last, '--pretty'];
       const initial = run(process.execPath, args, repo);
       assert.equal(initial.status, 1, 'Partial failure must exit nonzero');
       assert(initial.stdout.trim(), 'Successful links disappeared from structured stdout');
@@ -81,7 +82,7 @@ try {
     test(`${name} installer retains link results when receipt storage also fails`, () => {
       const repo = fixture(`${name}-receipt`), good = path.join(temp, `${name}-receipt-target`);
       fs.mkdirSync(path.join(repo, '.git', 'momm', 'momm.lock'), { recursive: true });
-      const result = run(process.execPath, [path.join(repo, script), ...extra, '--custom-dir', good], repo);
+      const result = run(process.execPath, [path.join(repo, script), ...extra, '--links-only', '--custom-dir', good], repo);
       assert.equal(result.status, 1);
       const report = JSON.parse(result.stdout);
       assert.equal(report.results.flatMap(r => r.links || [r])[0].status, 'linked');
@@ -142,8 +143,8 @@ try {
     vm.runInContext(extract(source, 'const LOGIN_HINTS =', '\n};') + '\n};'
       + '\nconst report = {' + extract(source, 'reviewers: results.map((result) => ({', '\n    // 1.16: what the CLIs') + '}; this.rows = report.reviewers;', reportContext);
     assert.equal(reportContext.rows[0].login_hint, 'copilot login   (GitHub account, browser flow)');
-    assert.equal(reportContext.rows[1].login_hint, 'claude   then run /login inside it   (Anthropic account, browser flow)');
-    assert.equal(reportContext.rows[2].login_hint, 'agy login   (Google account, browser flow)');
+    assert.equal(reportContext.rows[1].login_hint, 'claude auth login   (opens Claude sign-in in your browser)');
+    assert.equal(reportContext.rows[2].login_hint, 'agy   (opens Google sign-in when required)');
     assert.equal(reportContext.rows[3].login_hint, undefined);
     assert.equal(reportContext.rows[4].login_hint, undefined);
   });

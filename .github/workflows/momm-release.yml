@@ -200,6 +200,7 @@ jobs:
           node momm/scripts/media-bytes.test.mjs
           node momm/scripts/scope-closure.test.mjs
           node momm/scripts/install-completion.test.mjs
+          node momm/scripts/reviewer-install.test.mjs
           node momm/scripts/expiry-regression.test.mjs
           node momm/scripts/attempts.test.mjs
           node momm/scripts/evidence-location.test.mjs
