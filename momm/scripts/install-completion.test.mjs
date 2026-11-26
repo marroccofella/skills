@@ -45,9 +45,9 @@ for (const script of ['../../install.mjs','./install.mjs']) {
     const context={process:processStub,path,os:{homedir:()=>'/synthetic/home'},repoRoot:'/synthetic/repo',skillRoot:'/synthetic/repo/momm',
       parseArgs:()=>({targets:['codex'],customDirs,dryRun,skills:['momm']}),discoverSkills:()=>['momm'],
       linkAll:()=>[{skill:'momm',status:dryRun?'would_link':'linked'}],linkSkill:()=>({status:dryRun?'would_link':'linked'}),
-      readiness:()=>({}),recordInstall:()=>({updater_available:true}),
+      prepareReviewerSetup:()=>null,readiness:()=>({}),recordInstall:()=>({updater_available:true}),
       installationCompletion:options=>{seen=options;if(mode==='throw')throw new Error('synthetic scan failure');return mode==='malformed'?null:{upgrade:{complete:mode==='complete',reason:'synthetic conflict'}};}};
-    vm.runInNewContext(source.slice(source.indexOf('function main()')),context);
+    await vm.runInNewContext(source.slice(source.indexOf('async function main()')),context);
     assert(stdout.trim(),`${script}: inventory ${mode} must not discard link results`);
     const output=JSON.parse(stdout);assert(output.results.length>0);assert.equal(output.installation.updater_available,true);
     assert.deepEqual(seen.customDirs,customDirs);

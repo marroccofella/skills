@@ -291,6 +291,7 @@ their own first statement is what is exercised.
 - `momm/scripts/review-answer.test.mjs`
 - `momm/scripts/reviewer-auth-choice.test.mjs`
 - `momm/scripts/reviewer-endpoint.test.mjs`
+- `momm/scripts/reviewer-install.test.mjs` — missing-only installs, local discovery, progress, retry and worker cleanup.
 - `momm/scripts/reviewer-registry.test.mjs`
 - `momm/scripts/roles.test.mjs`
 - `momm/scripts/run-notices.test.mjs`

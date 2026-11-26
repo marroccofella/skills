@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 
+import { providers } from "./reviewer-providers.mjs";
+import {createStandardInstallJob} from "./standard-install-job.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
+import { createInterface } from "node:readline";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createProcessScope, windowsTool, desktopTool } from "./process-scope.mjs";
+import { createProcessScope, windowsTool, desktopTool, pathEntryOutside, windowsReviewerInstallDirs } from "./process-scope.mjs";
 import { readGuidanceFile, validateGuidance, resolveGuidance, trustProject, isTrusted, formatEffectivePrompt, projectGuidanceFiles, userGuidancePath, sha256, GUIDANCE_BUDGET } from "./guidance.mjs";
 import { createUpdateClock, applyUpdates, writeSettings, timerCommand, installTimer, removeTimer, localSkillVersion } from "./update-clock.mjs";
 import { runProbes, recordProbe, windowsLauncher, runModalityProbes, generativeCells, routeDisclosure, latestModalityProbes } from "./probes.mjs";
 import { rollupUsage } from "./usage.mjs";
 import { evidenceDir } from "./evidence-location.mjs";
 import {ReviewerRegistry} from './reviewer-registry.mjs';
-import {listBumblers,removeBumbler,saveBumbler} from './bumbler-route.mjs';
+import {sampleTargetId,listBumblers,probeBumblerModels,removeBumbler,saveBumbler} from './bumbler-route.mjs';
+import {requirePrivateEvidence} from './evidence-permissions.mjs';
 
 // Windows: a bare command name (git.exe, powershell.exe, cmd.exe, a CLI version
 // probe) is looked up in the WORKING DIRECTORY before PATH, by cmd.exe and by
@@ -57,98 +61,6 @@ const CONNECTIVITY_TIMEOUT_MS = 300_000;
 // `modalities` mirrors what the dispatcher's adapters bind for --attach
 // (multi-review.mjs MODALITY_SUPPORT ∩ ADAPTER_MEDIA) — the self-test keeps the
 // two in sync; at dispatch the effective capability registry is the authority.
-const providers = Object.freeze({
-  codex: {
-    label: "Codex",
-    modalities: ["text", "image"],
-    docs: "https://developers.openai.com/codex/cli/",
-    login: { win32: "codex login", darwin: "codex login", linux: "codex login" },
-    update: { win32: "npm install -g @openai/codex@latest", darwin: "npm install -g @openai/codex@latest", linux: "npm install -g @openai/codex@latest" },
-    models: { win32: "codex", darwin: "codex", linux: "codex" },
-    install: {
-      win32: "npm install -g @openai/codex",
-      darwin: "npm install -g @openai/codex",
-      linux: "npm install -g @openai/codex",
-    },
-    loginNote: "Complete the ChatGPT sign-in in the browser window that opens.",
-    modelsNote: "When Codex opens, type /model to view models available to this account.",
-  },
-  claude: {
-    label: "Claude Code",
-    modalities: ["text", "image", "pdf"],
-    docs: "https://docs.anthropic.com/en/docs/claude-code/getting-started",
-    login: { win32: "claude", darwin: "claude", linux: "claude" },
-    update: { win32: "claude update", darwin: "claude update", linux: "claude update" },
-    models: { win32: "claude", darwin: "claude", linux: "claude" },
-    install: {
-      win32: "npm install -g @anthropic-ai/claude-code",
-      darwin: "npm install -g @anthropic-ai/claude-code",
-      linux: "npm install -g @anthropic-ai/claude-code",
-    },
-    loginNote: "When Claude opens, type /login and follow the browser flow.",
-    modelsNote: "When Claude opens, type /model to view models available to this account.",
-  },
-  gemini: {
-    label: "Gemini",
-    modalities: ["text", "image", "pdf", "audio", "video"],
-    docs: "https://github.com/google-gemini/gemini-cli",
-    login: { win32: "gemini", darwin: "gemini", linux: "gemini" },
-    update: { win32: "npm install -g @google/gemini-cli@latest", darwin: "npm install -g @google/gemini-cli@latest", linux: "npm install -g @google/gemini-cli@latest" },
-    models: { win32: "gemini", darwin: "gemini", linux: "gemini" },
-    install: {
-      win32: "npm install -g @google/gemini-cli",
-      darwin: "npm install -g @google/gemini-cli",
-      linux: "npm install -g @google/gemini-cli",
-    },
-    loginNote: "When Gemini opens, run /auth and complete the Google sign-in. Requires a Code Assist organization license; individual tiers were retired.",
-    modelsNote: "When Gemini opens, the selector shows models available to the signed-in organization account.",
-  },
-  antigravity: {
-    label: "Antigravity",
-    modalities: ["text", "image", "pdf"],
-    docs: "https://antigravity.google/docs/cli/install/",
-    login: { win32: "agy login", darwin: "agy login", linux: "agy login" },
-    update: { win32: "agy update", darwin: "agy update", linux: "agy update" },
-    models: { win32: "agy models", darwin: "agy models", linux: "agy models" },
-    install: {
-      win32: "irm https://antigravity.google/cli/install.ps1 | iex",
-      darwin: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-      linux: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-    },
-    loginNote: "Complete Google sign-in in the browser window that opens.",
-    modelsNote: "The terminal lists models available to the signed-in Google account.",
-  },
-  copilot: {
-    label: "GitHub Copilot",
-    modalities: ["text", "image", "pdf"],
-    docs: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
-    login: { win32: "copilot login", darwin: "copilot login", linux: "copilot login" },
-    update: { win32: "copilot update", darwin: "copilot update", linux: "copilot update" },
-    models: { win32: "copilot", darwin: "copilot", linux: "copilot" },
-    install: {
-      win32: "npm install -g @github/copilot",
-      darwin: "npm install -g @github/copilot",
-      linux: "npm install -g @github/copilot",
-    },
-    loginNote: "Use the one-time GitHub device code shown in the terminal.",
-    modelsNote: "When Copilot opens, type /models to view models available to this account.",
-  },
-  grok: {
-    label: "Grok",
-    modalities: ["text"],
-    docs: "https://docs.x.ai/build/cli/reference",
-    login: { win32: "grok login", darwin: "grok login", linux: "grok login" },
-    update: { win32: "grok update", darwin: "grok update", linux: "grok update" },
-    models: { win32: "grok models", darwin: "grok models", linux: "grok models" },
-    install: {
-      win32: "irm https://x.ai/cli/install.ps1 | iex",
-      darwin: "curl -fsSL https://x.ai/cli/install.sh | bash",
-      linux: "curl -fsSL https://x.ai/cli/install.sh | bash",
-    },
-    loginNote: "Complete xAI sign-in in the browser, or use device authentication if prompted.",
-    modelsNote: "The terminal lists Grok models visible to this installation and account.",
-  },
-});
 
 function parseArgs(argv) {
   const options = { port: 0, browser: true, selfTest: false };
@@ -180,7 +92,8 @@ const npmPackages = Object.freeze({ codex: '@openai/codex', claude: '@anthropic-
 function detectInstallation(agent, env = process.env, platform = process.platform) {
   const name = agent === 'antigravity' ? 'agy' : agent;
   const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
-  for (const directory of pathValue.split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
+  const fallback = platform === 'win32' ? windowsReviewerInstallDirs(name, env).filter(dir => pathEntryOutside(dir, process.cwd())) : [];
+  for (const directory of new Set([...pathValue.split(platform === 'win32' ? ';' : ':').filter(Boolean), ...fallback])) {
     for (const extension of platform === 'win32' ? ['.exe', '.cmd', '.bat'] : ['']) {
       const candidate = path.join(directory.replace(/^"|"$/g, ''), name + extension);
       try {
@@ -260,6 +173,7 @@ function actionNote(provider, action) {
   if (provider === "skills" && action === "update") return "The terminal previews a signed update and its protocol diff. It does not install. Applying requires your explicit update --apply command and protocol acceptance when changed.";
   if (provider === "skills" && action === "diff") return "The terminal shows the current skill changes without modifying them.";
   if (provider === "skills" && action === "commit") return "The terminal shows Git status and leaves staging and the commit message under your control.";
+  if (action === "install") return "Finish the installer in the terminal. MOMM will check for the CLI version. Sign in and verify the reviewer from its card.";
   if (action === "models") return providers[provider]?.modelsNote;
   if (action === "update") return `The terminal runs ${providers[provider]?.label || provider}'s updater. Opening it is not proof of success. Finish there, then check versions again.`;
   return providers[provider]?.loginNote;
@@ -314,7 +228,7 @@ function supervise(child, { timeoutMs, stdoutLimit, stderrLimit, resolve }) {
   });
 }
 
-function runNode(script, args, { input = "", timeoutMs = 45_000 } = {}) {
+function runNode(script, args, { input = "", timeoutMs = 45_000, onEvent } = {}) {
   return new Promise((resolve) => {
     const child = processScope.spawn(process.execPath, [script, ...args], {
       cwd: process.cwd(),
@@ -323,6 +237,14 @@ function runNode(script, args, { input = "", timeoutMs = 45_000 } = {}) {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    if (onEvent) {
+      const lines = createInterface({input: child.stderr, crlfDelay: Infinity});
+      lines.on("line", line => {
+        if (!line.startsWith("{") || line.length > 8192) return;
+        try { onEvent(JSON.parse(line)); } catch { /* A malformed event cannot settle a check. */ }
+      });
+      child.once("close", () => lines.close());
+    }
     supervise(child, { timeoutMs, stdoutLimit: 2_000_000, stderrLimit: 100_000, resolve });
     child.stdin.on("error", () => {});
     child.stdin.end(input);
@@ -544,12 +466,35 @@ async function maintenanceReport(governor) {
 // Returns true only if a terminal process was actually spawned. Commands are
 // fixed single-line strings; a newline would let the macOS AppleScript "do
 // script" run extra statements, so reject it defensively on every platform.
-function launchTerminal(command) {
+function launchTerminal(command, provider, action) {
   if (/[\r\n]/.test(command)) return false;
   try {
     let child;
     if (process.platform === "win32") {
-      child = spawn(windowsTool("powershell.exe"), ["-NoExit", "-NoProfile", "-Command", command], { detached: true, shell: false, stdio: "ignore", windowsHide: false });
+      // A detached PowerShell with ignored stdio can have a PID but no usable
+      // console. Ask Windows to create a normal interactive window instead.
+      let interactiveCommand = command;
+      if (action === "login") {
+        const [name, ...args] = command.split(" ");
+        const launcher = windowsLauncher(name, args, process.env);
+        if (launcher.error) return false;
+        const quote = value => "'" + value.replaceAll("'", "''") + "'";
+        interactiveCommand = "& " + [launcher.command, ...launcher.args].map(quote).join(" ");
+      }
+      const title = providers[provider]?.label || "Setup";
+      const script = `$Host.UI.RawUI.WindowTitle = 'MOMM - ${title}'; ${interactiveCommand}`;
+      // Encoding preserves paths and quoting across Start-Process's argument
+      // boundary. Only the server's allowlisted action supplies the script.
+      const encoded = Buffer.from(script, "utf16le").toString("base64");
+      // Close the sign-in terminal when agy exits so an expired code cannot land at a shell prompt.
+      const googleSignIn = provider === "antigravity" && action === "login";
+      // A dedicated console keeps the code prompt visible even when Windows Terminal groups new tabs.
+      // Start-Process needs the complete quoted child executable in its argument string.
+      const open = googleSignIn
+        ? `$ErrorActionPreference='Stop'; $shellPath=Join-Path $PSHOME 'powershell.exe'; $childArgs='"'+$shellPath+'" -NoLogo -NoProfile -EncodedCommand ${encoded}'; Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'conhost.exe') -WindowStyle Normal -ArgumentList $childArgs`
+        : `$ErrorActionPreference='Stop'; Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -WindowStyle Normal -ArgumentList '-NoLogo -NoProfile -NoExit -EncodedCommand ${encoded}'`;
+      return runCommand(windowsTool("powershell.exe"), ["-NoProfile","-NonInteractive","-Command",open], {timeoutMs: 10000})
+        .then(result => result.code === 0);
     } else if (process.platform === "darwin") {
       const escaped = command.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
       child = spawn(systemHelper("osascript"), ["-e", `tell application "Terminal" to do script "${escaped}"`], { detached: true, shell: false, stdio: "ignore" });
@@ -585,34 +530,62 @@ function safeDetail(value) {
 }
 
 // Both job kinds enter the bounded map through admitJob (Modalities section below).
-function startConnectivityJob(provider, governor) {
+function sampleCheckDetail(status, stderr = '', reviewer) {
+  if (reviewer?.agent === 'antigravity' && status === 'authentication_required') return 'Antigravity could not use a signed-in session. Choose Sign in with Antigravity. If Google shows a code, paste it into the terminal that opened the page and press Enter. Verify when the Antigravity prompt returns.';
+  if (reviewer?.agent === 'copilot' && status === 'invalid_output' && reviewer.detail?.startsWith('Copilot machine output refused: unrecognized event type')) return 'Copilot responded, but MOMM could not read this CLI event format. Check for a MOMM compatibility update. Signing in again will not fix this error.';
+  if (/cannot verify private evidence-folder permissions/i.test(stderr)) return 'MOMM could not verify private evidence-folder permissions. Run the evidence status check from the project terminal.';
+  if (/selected reviewer changed/.test(stderr)) return 'The saved model or address changed. Refresh the Bumbler list and confirm the destination again.';
+  const messages = {
+    success: 'The reviewer returned a valid sample report.',
+    missing: 'Launcher unavailable. Retry discovery in the project environment.',
+    authentication_required: 'Sign in through the official provider and verify again.',
+    ineligible_tier: 'Check this provider’s account tier requirements.',
+    invalid_output: 'The reviewer replied, but its response did not pass review validation. See the private ledger.',
+    timeout: 'The reviewer timed out. Check its availability before trying again.',
+    provider_unavailable: 'The provider is unavailable. Check its service status.',
+    quota: 'Check the provider’s remaining allowance.',
+    route_not_configured: 'Refresh the saved reviewer settings and confirm the model and address.',
+  };
+  return messages[status] || 'The check did not produce a valid review. Check the private ledger and reviewer availability.';
+}
+function startConnectivityJob(provider, governor, targetId = 'builtin') {
   const id = crypto.randomUUID();
   const job = { id, provider, status: "running", started_at: new Date().toISOString() };
   if (!admitJob(job)) return null;
-  const input = "Synthetic MOMM connectivity validation only. No repository source, filenames, or user data are included. Return the required structured review report.";
+  // The dispatcher supplies fixed sample text and excludes custom guidance.
   runNode(dispatcherScript, [
     "--governor", governor,
     "--reviewers", provider,
     "--min-success", "1",
     "--timeout", "120",
-    "--label", "setup-center connectivity validation",
-  ], { input, timeoutMs: CONNECTIVITY_TIMEOUT_MS }).then((result) => {
+    "--label", "setup-center connectivity validation", "--setup-sample", targetId, "--stream",
+  ], { timeoutMs: CONNECTIVITY_TIMEOUT_MS, onEvent(event) {
+    if (event.reviewer !== provider) return;
+    if (event.event === 'reviewer.started') job.phase = 'waiting';
+    if (event.event === 'reviewer.progress') {
+      job.phase = 'waiting';
+      job.received_output = event.stdout_bytes > 0 || event.stderr_bytes > 0;
+    }
+    if (event.event === 'reviewer.completed') job.phase = 'recording';
+  } }).then((result) => {
     let report = null;
     try { report = JSON.parse(result.stdout); } catch {}
     const reviewer = report?.reviewers?.find((item) => item.agent === provider);
     job.status = reviewer?.status === "success" ? "success" : "failed";
     job.completed_at = new Date().toISOString();
+    const routeStatus = reviewer?.status || (result.timedOut ? "timeout" : "error");
     job.result = {
-      route_status: reviewer?.status || (result.timedOut ? "timeout" : "error"),
+      route_status: routeStatus,
       verdict: reviewer?.verdict || null,
       duration_ms: reviewer?.duration_ms || null,
-      detail: safeDetail(reviewer?.detail || result.stderr || "The reviewer did not return a readable report."),
+      detail: sampleCheckDetail(routeStatus, result.stderr, reviewer),
+      run_id: report?.run_id || null,
       ledger_url: report?.evidence?.ledger_url || null,
     };
   }).catch((error) => {
     job.status = "failed";
     job.completed_at = new Date().toISOString();
-    job.result = { route_status: "error", detail: safeDetail(error.message), ledger_url: null };
+    job.result = { route_status: "error", detail: 'The setup check could not start. Check the local launcher and the project evidence folder.', ledger_url: null };
   });
   return job;
 }
@@ -807,6 +780,51 @@ function evidenceFolder(cwd = process.cwd()) {
   try { return evidenceDir({ cwd, env: process.env }); } catch { return null; }
 }
 
+// Only fixed diagnostics and validated identifiers cross into the Setup Center.
+// Provider messages and report content stay in the private ledger.
+function recentReviewerResults(cwd = process.cwd()) {
+  const evidence = evidenceFolder(cwd);
+  if (!evidence) return {};
+  const dir = path.join(evidence, 'reports');
+  const latest = Object.create(null);
+  try {
+    requirePrivateEvidence(evidence);
+    if (!fs.lstatSync(dir).isDirectory()) return latest;
+    const files = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && /^rev_[A-Za-z0-9_]+\.json$/.test(entry.name))
+      .sort((a, b) => b.name.localeCompare(a.name)).slice(0, 20);
+    for (const file of files) {
+      try {
+        const reportPath = path.join(dir, file.name);
+        const stat = fs.lstatSync(reportPath);
+        if (!stat.isFile() || stat.nlink !== 1 || stat.size > REPORT_READ_LIMIT) continue;
+        const fd = fs.openSync(reportPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+        let report;
+        try {
+          const opened = fs.fstatSync(fd);
+          if (!opened.isFile() || opened.nlink !== 1 || opened.ino !== stat.ino || opened.dev !== stat.dev) continue;
+          const bytes = Buffer.alloc(stat.size + 1);
+          let size = 0, count;
+          while (size < bytes.length && (count = fs.readSync(fd, bytes, size, bytes.length - size, null)) > 0) size += count;
+          if (size !== stat.size) continue;
+          report = JSON.parse(bytes.subarray(0, size).toString('utf8'));
+        } finally { fs.closeSync(fd); }
+        if (report.run_id + '.json' !== file.name || !Array.isArray(report.reviewers)) continue;
+        for (const row of report.reviewers) {
+          if (typeof row?.agent !== 'string' || typeof row?.status !== 'string' ||
+            !/^[a-z][a-z0-9-]{0,31}$/.test(row.agent) || latest[row.agent] || !/^[a-z][a-z_]{0,31}$/.test(row.status)) continue;
+          if (['self_excluded', 'not_dispatched'].includes(row.status)) continue;
+          const diagnostic = row.agent === 'copilot' && row.status === 'invalid_output' && typeof row.detail === 'string' &&
+            row.detail.startsWith('Copilot machine output refused: unrecognized event type') ? 'copilot_event_format' : null;
+          latest[row.agent] = { run_id: report.run_id, status: row.status, diagnostic, recorded_at: stat.mtime.toISOString(),
+            dispatcher_version: /^\d+\.\d+\.\d+$/.test(report.dispatcher_version ?? '') ? report.dispatcher_version : null };
+        }
+      } catch { /* Skip incomplete or unreadable history. */ }
+    }
+  } catch { /* No private project reports can be shown. */ }
+  return latest;
+}
+
 function usageReport({ cwd = process.cwd(), limit = USAGE_REPORT_LIMIT } = {}) {
   const evidence = evidenceFolder(cwd);
   const dir = evidence ? path.join(evidence, "reports") : null;
@@ -916,7 +934,7 @@ function clockRunUpdater(args) {
 }
 
 async function cliVersion(agent) {
-  const result = await runCommand(agent === "antigravity" ? "agy" : agent, ["--version"], { timeoutMs: 15_000 });
+  const result = await probeExec(agent === "antigravity" ? "agy" : agent, ["--version"], { timeout: 15_000 });
   return result.code === 0 ? safeDetail(result.stdout || result.stderr) : null;
 }
 
@@ -1456,19 +1474,25 @@ function authorized(request) {
 const STATIC_ASSETS = Object.freeze({
   "/": ["index.html", "text/html; charset=utf-8"],
   "/momm-theme.css": ["momm-theme.css", "text/css; charset=utf-8"],
+  "/favicon.svg": ["favicon.svg", "image/svg+xml"],
   "/styles.css": ["styles.css", "text/css; charset=utf-8"],
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/bumblers.js": ["bumblers.js", "text/javascript; charset=utf-8"],
 });
 
-function serveAsset(response, file, contentType) {
-  try {
-    const bytes = fs.readFileSync(path.join(assetDir, file));
-    response.writeHead(200, securityHeaders(contentType));
-    response.end(bytes);
-  } catch {
-    sendJson(response, 404, { error: "Asset not found" });
+// A running server keeps the UI it started with, even if an update replaces
+// the files on disk before a user opens or refreshes the tab.
+function loadSetupAssets() {
+  const files = new Map();
+  for (const [file] of Object.values(STATIC_ASSETS)) {
+    try { files.set(file, fs.readFileSync(path.join(assetDir, file))); }
+    catch { /* Unavailable at launch. Preserve the per-asset 404. */ }
   }
+  return (response, file, contentType) => {
+    if (!files.has(file)) return sendJson(response, 404, { error: "Asset not found" });
+    response.writeHead(200, securityHeaders(contentType));
+    response.end(files.get(file));
+  };
 }
 
 // --- Setup Center <-> ledger cross-links (1.16) ------------------------------
@@ -1630,9 +1654,11 @@ let savedReviewerRegistry;
 function reviewerRegistryStore() { return savedReviewerRegistry ||= new ReviewerRegistry(); }
 
 function createServer() {
+  const serveAsset = loadSetupAssets();
   // Navigation cannot send a custom header. Exchange an authenticated request
   // for a short-lived, one-use ledger ticket, never a reusable session in a URL.
   const ledgerTickets = new Map();
+  let standardInstall;
   return http.createServer(async (request, response) => {
     if (!isLoopback(request.socket.remoteAddress)) return sendJson(response, 403, { error: "Loopback access only" });
     if (!isAllowedHost(request)) return sendJson(response, 403, { error: "Invalid Host header" });
@@ -1642,9 +1668,38 @@ function createServer() {
     try {
       if (request.method === "GET" && Object.hasOwn(STATIC_ASSETS, requestUrl.pathname)) return serveAsset(response, ...STATIC_ASSETS[requestUrl.pathname]);
       if (requestUrl.pathname.startsWith("/api/") && !authorized(request)) return sendJson(response, 403, { error: "Use the private Setup Center launch link from your terminal.", reason:'private_session' });
+      if (requestUrl.pathname === '/api/install-standard') {
+        standardInstall ??= createStandardInstallJob(platformKey(), async agent => {
+          try { return await runNode(path.join(scriptDir,'install-one-standard.mjs'), [agent], {timeoutMs:440_000}); }
+          finally { maintenanceCache = null; }
+        });
+        if (request.method === 'GET') return sendJson(response,200,standardInstall.snapshot());
+        if (request.method !== 'POST') return sendJson(response,405,{error:'Unsupported method.'});
+        if (request.headers.origin !== 'http://' + request.headers.host) return sendJson(response,403,{error:'Open the local Setup Center.'});
+        const result = standardInstall.start(await readBody(request,4096));
+        return sendJson(response,result.status,result.value);
+      }
+      if (requestUrl.pathname === '/api/bumblers/probe') {
+        if (request.method === 'GET') {
+          const name = requestUrl.searchParams.get('name');
+          let saved;
+          try { saved = listBumblers().find(entry => entry.name === name && entry.enabled !== false); }
+          catch { return sendJson(response, 400, {error:'Saved Bumbler settings could not be read.'}); }
+          if (!saved) return sendJson(response, 404, {error:'No enabled Bumbler with this name is saved on this computer.'});
+          return sendJson(response, 200, await probeBumblerModels(saved.base_url, saved.model));
+        }
+        if (request.method !== 'POST') return sendJson(response, 405, {error:'Unsupported method.'});
+        if (request.headers.origin !== `http://${request.headers.host}`) return sendJson(response, 403, {error:'Use the same local dashboard origin.'});
+        const body = await readBody(request, 2048);
+        if (typeof body?.base_url !== 'string' || body.base_url.length > 200 || typeof body.model !== 'string' || body.model.length > 200) {
+          return sendJson(response, 400, {error:'Enter a Bumbler address and, if known, a model ID.'});
+        }
+        try { return sendJson(response, 200, await probeBumblerModels(body.base_url.trim(), body.model.trim())); }
+        catch { return sendJson(response, 400, {error:'Enter an HTTP or HTTPS model address on loopback or your tailnet, ending in /v1.'}); }
+      }
       if (requestUrl.pathname === '/api/bumblers') {
         try {
-          if (request.method === 'GET') return sendJson(response,200,{bumblers:listBumblers()});
+          if (request.method === 'GET') return sendJson(response,200,{bumblers:listBumblers(),recent_results:recentReviewerResults()});
           if (request.method === 'POST') {
             if (!request.headers.origin || request.headers.origin !== `http://${request.headers.host}`) return sendJson(response,403,{error:'Use the same local dashboard origin.'});
             // 4000 characters of guidance can take six bytes each once JSON-escaped.
@@ -1686,13 +1741,40 @@ function createServer() {
         return serveLedger(response);
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/session") {
-        return sendJson(response, 200, { token: sessionToken, platform: platformKey(), providers });
+        const nativeAgy = platformKey() === "win32" && process.env.LOCALAPPDATA
+          ? path.join(process.env.LOCALAPPDATA, "agy", "bin", "agy.exe") : null;
+        return sendJson(response, 200, { token: sessionToken, platform: platformKey(), providers,
+          native_antigravity: Boolean(nativeAgy && !windowsLauncher(nativeAgy, [], process.env).error) });
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/api/antigravity-signin") {
+        if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
+        const check = await runNode(dispatcherScript, ["--preflight", "--governor", "other", "--reviewers", "antigravity"], { timeoutMs: 20_000 });
+        let auth = "unknown";
+        try {
+          const route = check.code === 0 && JSON.parse(check.stdout).routes.find(item => item.agent === "antigravity");
+          if (route && ["absent", "ok"].includes(route.auth)) auth = route.auth;
+        } catch { /* The next observation can recover from an interrupted CLI check. */ }
+        return sendJson(response, 200, { auth });
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/api/cli-version") {
+        const provider = requestUrl.searchParams.get('provider');
+        if (!Object.hasOwn(providers, provider)) return sendJson(response, 400, {error:'Unknown reviewer CLI.'});
+        const check = await runNode(dispatcherScript, ['--preflight','--governor','other','--reviewers',provider], {timeoutMs:15000});
+        let version = null;
+        if (check.code === 0) {
+          try {
+            const route = JSON.parse(check.stdout).routes.find(item => item.agent === provider);
+            if (route?.installed === true && typeof route.version === 'string') version = parseVersion(route.version);
+          } catch { /* Version unavailable while an installer replaces a launcher. */ }
+        }
+        return sendJson(response, 200, {provider, version});
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/status") {
         if (!authorized(request)) return sendJson(response, 403, {error:'Invalid local session'});
         const governor = String(requestUrl.searchParams.get("governor") || "codex").toLowerCase();
         if (!governors.has(governor)) return sendJson(response, 400, { error: "Unsupported governor" });
-        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null, ledger_url: ledgerFileUrl(), setup_center: setupCenterVersion() });
+        return sendJson(response, 200, { ...await readiness(governor), ledger: ledgerWatcher ? ledgerWatcher.status() : null, ledger_url: ledgerFileUrl(), setup_center: setupCenterVersion(),
+          context: { machine: os.hostname(), project: process.cwd() }, recent_results: recentReviewerResults() });
       }
       if (request.method === "GET" && requestUrl.pathname === "/api/guidance") {
         if (!authorized(request)) return sendJson(response, 403, { error: "Invalid local session" });
@@ -1742,10 +1824,17 @@ function createServer() {
         if (requestUrl.pathname === "/api/action") {
           const provider = String(body.provider || "").toLowerCase();
           const action = String(body.action || "").toLowerCase();
+          if (standardInstall?.running && ['install','update'].includes(action)) return sendJson(response,409,{error:'Reviewer installation is already running.'});
           const command = actionCommand(provider, action);
           if (!command) return sendJson(response, 400, { error: "Unsupported provider action" });
           const refuse = (status, reason, error) => sendJson(response, status, {error, receipt:{provider,action,status:'blocked',completion:'unobserved',reason}});
           if ((provider !== 'skills' && ['update','install'].includes(action) || body.expected_command) && body.expected_command !== command) return refuse(409, 'command_mismatch', 'Confirm the exact command first. Refresh versions if the installation changed.');
+          if (action === "install") {
+            const check = await runNode(dispatcherScript, ["--preflight", "--governor", "other", "--reviewers", provider]);
+            let route;
+            try { if (check.code === 0) route = JSON.parse(check.stdout).routes.find(item => item.agent === provider); } catch {}
+            if (route?.installed !== false || route.readiness_status !== "launcher_not_found") return refuse(409, "discovery_changed", "Refresh discovery. Installation requires a confirmed missing CLI.");
+          }
           if (provider === "skills" && action === "update") {
             const bootstrap = await bootstrapStatus();
             if (bootstrap.status !== 'ready_to_verify' || bootstrap.installation?.route !== 'updater_preview') { maintenanceCache=null; return sendJson(response, 409, { error: 'Update prerequisites or installation receipt need attention. Use the bootstrap guide; no update was launched.', guide: 'https://marroccofella.github.io/skills/momm/releases/bootstrap.html', update_readiness: bootstrap, receipt:{provider,action,status:'blocked',completion:'unobserved',reason:'update_prerequisites'} }); }
@@ -1754,7 +1843,7 @@ function createServer() {
             if (status.code !== 0) return refuse(409, 'git_check_failed', 'Git could not verify that the skills checkout is safe to update.');
             if (status.stdout.trim()) return refuse(409, 'dirty_checkout', 'Local skill changes are present. Handle them before updating.');
           }
-          if (!launchTerminal(command)) return sendJson(response, 500, { error: "Could not open a terminal for this action.", command, receipt: {provider, action, status:'launch_failed', completion:'unobserved'} });
+          if (!await launchTerminal(command, provider, action)) return sendJson(response, 500, { error: "Could not open a terminal for this action.", command, receipt: {provider, action, status:'launch_failed', completion:'unobserved'} });
           return sendJson(response, 202, { launched: true, command, note: actionNote(provider, action), receipt: {provider, action, status:'launch_requested', completion:'unobserved'} });
         }
         if (requestUrl.pathname === "/api/maintenance") {
@@ -1776,10 +1865,18 @@ function createServer() {
         if (requestUrl.pathname === "/api/test") {
           const provider = String(body.provider || "").toLowerCase();
           const governor = String(body.governor || "codex").toLowerCase();
-          if (!Object.hasOwn(providers, provider) || !governors.has(governor) || provider === governor) {
+          if (!governors.has(governor) || provider === governor) {
             return sendJson(response, 400, { error: "Unsupported reviewer/governor pairing" });
           }
-          const job = startConnectivityJob(provider, governor);
+          let targetId = 'builtin';
+          if (!Object.hasOwn(providers, provider)) {
+            if (typeof body.base_url !== 'string' || typeof body.model !== 'string') return sendJson(response, 400, {error:'Choose a saved Bumbler.'});
+            const saved = listBumblers().find(row => row.name === provider);
+            if (!saved || saved.base_url !== body.base_url || saved.model !== body.model) return sendJson(response, 409, {error:'The saved destination changed. Refresh the list before sending a sample.'});
+            targetId = sampleTargetId(saved);
+          }
+          if ([...jobs.values()].some(job => job.provider === provider && job.status === 'running')) return sendJson(response, 409, {error:'A check for this reviewer is already running.'});
+          const job = startConnectivityJob(provider, governor, targetId);
           return job ? sendJson(response, 202, job) : sendJson(response, 429, jobsFull());
         }
         if (requestUrl.pathname === "/api/shutdown") {
@@ -2535,6 +2632,7 @@ async function selfTest() {
     })(),
     timeout_reports_timed_out: timedOutProbe.timedOut === true && timedOutProbe.code === null,
     unknown_provider_rejected: actionCommand("unknown", "login") === null,
+    claude_starts_browser_signin: actionCommand("claude", "login") === "claude auth login",
     unknown_action_rejected: actionCommand("claude", "delete") === null,
     commands_are_fixed: Object.keys(providers).every((name) => ["login", "install", "models"].every((action) => actionCommand(name, action))),
     skill_actions_are_fixed: actionCommand("skills", "update")?.includes("update --dry-run") === true

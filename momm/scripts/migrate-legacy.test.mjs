@@ -1,3 +1,4 @@
+import {reviewerInstallerFiles} from '../development-tests/installer-fixture-files.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { resolveGit as resolveGitForTest } from './governor.mjs';
@@ -30,7 +31,7 @@ async function applyFixture(f,dep=f.dep){const preview=await migrate(f.options,d
 function fixture(name,link=false){
   const base=path.join(root,name),repo=path.join(base,'prepared'),skill=path.join(base,'harness','skills','momm'),backup=path.join(base,'backups','old-momm');
   fs.mkdirSync(repo,{recursive:true});fs.mkdirSync(path.dirname(backup),{recursive:true});
-  for(const file of ['momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs','momm/scripts/installations.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
+  for(const file of [...reviewerInstallerFiles,'momm/scripts/install.mjs','momm/scripts/update.mjs','momm/scripts/bootstrap.mjs','momm/scripts/installations.mjs'])write(path.join(repo,file),fs.readFileSync(path.join(source,file)));
   write(path.join(repo,'momm/scripts/multi-review.mjs'),'const MOMM_VERSION = "1.15.1"; // never executed\n');write(path.join(repo,'momm/SKILL.md'),'# New protocol\n');write(path.join(repo,'versions.json'),'{"momm":"1.15.1"}');
   const git=(...args)=>execute('git',args,repo).trim();git('-c','init.templateDir=','init','.');git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-m','fixture');
   const commit=git('rev-parse','HEAD'),original=link?path.join(base,'original-clone','momm'):skill;

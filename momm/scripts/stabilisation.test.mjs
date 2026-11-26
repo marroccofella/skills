@@ -99,24 +99,26 @@ test("a leftover Git lock is reported with its age through read-only calls and i
   assert.equal(outcome("Then retry recovery.", { checkoutOnly: true }), null); assert.equal(listed.length, 0);
   assert.equal(outcome("Then repeat the command that was refused.")?.code, "git_lock_present"); assert.equal(listed.length, 1, "one git directory: refs walked once");
 });
-for (const installer of ["install.mjs", "momm/scripts/install.mjs"]) test(`${installer} exposes successful links when receipt writing fails`, () => {
+for (const installer of ["install.mjs", "momm/scripts/install.mjs"]) {
   let stdout = "", stderr = "", links = 0, readinessChecks = 0;
   const updateReadiness = { status: "prerequisites_missing", network_used: false, signature_verified: false };
   const proc = { argv: ["node", installer], stdout: { write: s => stdout += s }, stderr: { write: s => stderr += s }, exitCode: 0 };
   const options = { targets: [], customDirs: ["fixture"], dryRun: false, pretty: false };
   const linked = () => { links++; return { destination: "fixture/momm", status: "linked", skill: "momm" }; };
-  const code = read(installer).slice(read(installer).indexOf("function main()"));
-  vm.runInNewContext(code, { process: proc, path, os, repoRoot: root, skillRoot: path.join(root, "momm"), parseArgs: () => options,
+  const code = read(installer).slice(read(installer).indexOf("async function main()"));
+  await vm.runInNewContext(code, { prepareReviewerSetup:()=>null, process: proc, path, os, repoRoot: root, skillRoot: path.join(root, "momm"), parseArgs: () => options,
     discoverSkills: () => ["momm"], commandExists: () => false, linkAll: () => [linked()], linkSkill: linked,
     readiness: () => { readinessChecks++; return updateReadiness; },
     installationCompletion: () => ({upgrade:{complete:true}}),
     recordInstall: () => { throw Object.assign(new Error("receipt blocked"), { code: "EACCES" }); } });
-  assert.equal(links, 1); assert.equal(proc.exitCode, 1);
-  assert.equal(readinessChecks, 1); assert(stdout.trim(), `installer returned no structured report: ${stderr}`);
-  const result = JSON.parse(stdout); assert.equal(result.results.length, 1); assert.equal(result.installation.updater_available, false);
-  assert.deepEqual(result.update_readiness, updateReadiness);
-  assert.match(result.installation.error, /receipt blocked/); assert.match(stderr, /receipt|install/i);
-});
+  test(`${installer} exposes successful links when receipt writing fails`, () => {
+    assert.equal(links, 1); assert.equal(proc.exitCode, 1);
+    assert.equal(readinessChecks, 1); assert(stdout.trim(), `installer returned no structured report: ${stderr}`);
+    const result = JSON.parse(stdout); assert.equal(result.results.length, 1); assert.equal(result.installation.updater_available, false);
+    assert.deepEqual(result.update_readiness, updateReadiness);
+    assert.match(result.installation.error, /receipt blocked/); assert.match(stderr, /receipt|install/i);
+  });
+}
 test("release check refuses dirty worktree rather than certifying HEAD alone", () => {
   const manifest = { momm: "1.15.0", momm_releases: [{ version: "1.15.0", tag: "momm-1.15.0", sha256: "seal", hash_covers: "git-tree-blobs-excluding-versions/1" }] };
   const text = read("scripts/momm-release.mjs").replace(/^import .*;\r?\n/gm, "").replaceAll("import.meta.url", JSON.stringify("file:///fixture/scripts/momm-release.mjs"));
@@ -148,14 +150,27 @@ test("preview stream failures are handled and unsupported methods declare Allow"
   assert.equal(status, 405); assert.equal(headers.Allow, "GET, HEAD");
 });
 let click, change, pageshow, nextTimer = 0;
-const timers = new Map(), button = { dataset: { copy: "copy-source" }, textContent: "Copy", addEventListener: (_event, fn) => { click = fn; } };
+const exampleEvents = {}, copied = [];
+const example = { textContent: "command", setAttribute() {}, addEventListener(event, fn) { exampleEvents[event] = fn; } };
+const notice = { setAttribute() {} };
+const timers = new Map(), button = { before() {}, getAttribute() { return "Copy example"; }, dataset: { copy: "copy-source" }, textContent: "Copy", addEventListener: (_event, fn) => { click = fn; } };
 const harness = { value: "claude", addEventListener: (_event, fn) => { change = fn; } }, preview = { textContent: "codex" }, apply = { textContent: "codex" };
 vm.runInNewContext(read("docs/momm/site.js"), { document: {
-  querySelectorAll: () => [button], getElementById: id => id === "harness" ? harness : { textContent: "command" },
+  querySelectorAll: () => [button], createElement: () => notice, getElementById: id => id === "harness" ? harness : example,
   querySelector: selector => selector === "#install-preview code" ? preview : apply,
-}, navigator: { clipboard: { writeText: async () => {} } }, window: { addEventListener: (event, fn) => { if (event === "pageshow") pageshow = fn; } },
+}, navigator: { clipboard: { writeText: async text => { copied.push(text); } } }, window: { addEventListener: (event, fn) => { if (event === "pageshow") pageshow = fn; } },
 setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; }, clearTimeout: id => timers.delete(id) });
 test("restored harness selection synchronizes install commands immediately", () => { assert.match(preview.textContent, /--target claude/); assert.match(apply.textContent, /--target claude/); });
+await exampleEvents.click();
+example.textContent = "new command";
+let prevented = false;
+exampleEvents.keydown({ key: " ", preventDefault() { prevented = true; } });
+await Promise.resolve();
+test("clicking an example or pressing Space copies its current text and announces completion", () => {
+  assert.deepEqual(copied, ["command", "new command"]);
+  assert.equal(prevented, true);
+  assert.equal(notice.textContent, "Copied to clipboard.");
+});
 await click(); const earlierReset = [...timers.values()][0]; await click();
 test("earlier copy feedback cannot clear the newer result", () => { earlierReset(); assert.equal(button.textContent, "Copied"); assert.equal(timers.size, 1); });
 test("back-forward page restore resynchronizes harness selection", () => { harness.value = "gemini"; assert.equal(typeof pageshow, "function"); pageshow(); assert.match(apply.textContent, /--target gemini/); });

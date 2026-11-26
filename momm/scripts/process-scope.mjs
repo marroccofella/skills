@@ -55,6 +55,21 @@ export function executableOutside(resolved, root, { platform = process.platform,
   return !within(rootLiteral, resolved) && !within(rootReal, resolved);
 }
 
+// Known Windows install locations when a desktop process has an older PATH.
+// Callers must still apply their normal real-path and launcher checks.
+export function windowsReviewerInstallDirs(command, env = process.env) {
+  const variable = name => Object.entries(env).find(([key]) => key.toLowerCase() === name)?.[1];
+  const win = nodePath.win32;
+  const local = variable('localappdata'), roaming = variable('appdata'), profile = variable('userprofile');
+  const at = (base, ...parts) => typeof base === 'string' && win.isAbsolute(base) ? [win.join(base, ...parts)] : [];
+  const name = String(command).toLowerCase().replace(/\.exe$/, '');
+  if (name === 'grok') return at(profile, '.grok', 'bin');
+  if (name === 'agy') return at(local, 'agy', 'bin');
+  if (name === 'claude') return [...at(profile, '.local', 'bin'), ...at(roaming, 'npm')];
+  if (['codex', 'copilot', 'gemini'].includes(name)) return at(roaming, 'npm');
+  return [];
+}
+
 // `project` (1.17 A1) is MOMM's own working directory, the reviewed project, when the child runs
 // somewhere else (Grok's model listing runs in a private temporary directory): a PATH entry or an
 // executable must then lie outside both. Left out, only the working directory counts, as before.
@@ -250,6 +265,22 @@ export function createProcessScope(deps = {}) {
       if (graceful) record.timer = later(() => { if (owned.has(child)) group(child, 'SIGKILL'); }, 1000);
     }
   }
+  // Installers can mutate shared programs. Determine whether the OS accepted the
+  // tree stop before allowing setup to advance to another package.
+  function stopInstallerTree(child) {
+    if (!owned.has(child) || !Number.isInteger(child.pid) || child.pid <= 1 || child.pid === proc.pid) return false;
+    try {
+      if (proc.platform !== 'win32') {
+        proc.kill(-child.pid, 'SIGKILL');
+        return true;
+      }
+      const result = launchSync(taskkill(), ['/pid',String(child.pid),'/T','/F'],
+        {windowsHide:true,stdio:'ignore',timeout:2000});
+      if (result.status === 0 && !result.error) return true;
+    } catch { /* Only the direct child can be stopped with certainty below. */ }
+    direct(child);
+    return false;
+  }
   function release(child) {
     const record = owned.get(child); if (!record) return;
     // The leader may exit normally while ignored-stdio helpers remain. Kill the
@@ -334,6 +365,6 @@ export function createProcessScope(deps = {}) {
       // An error with a PID can mean failed kill/IPC, not a terminated process.
       child.on('error', () => { if (!child.pid) release(child); });
       return child;
-    }, terminate, release, stop, force, installSignalHandlers,
+    }, terminate, stopInstallerTree, release, stop, force, installSignalHandlers,
   };
 }

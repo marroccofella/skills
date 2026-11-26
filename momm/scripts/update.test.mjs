@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Real temporary Git repositories; only the trust service is stubbed for
 // successful transaction tests. Production unsigned rejection is also tested.
+import {reviewerInstallerFiles} from '../development-tests/installer-fixture-files.mjs';
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -47,7 +48,7 @@ try {
     } finally { fs.unlinkSync(alias); }
   });
   git(remote, "init");
-  for (const file of ["momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
+  for (const file of [...reviewerInstallerFiles, "momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs", "install.mjs"]) write(remote, file, fs.readFileSync(path.join(source, file)));
   // Headings as well as text, so the consent-gate summary (S8) has sections to compare.
   write(remote, "momm/SKILL.md", "# Fixture skill\n\nOriginal protocol\n\n## Kept section\n\nsame text\n\n## Retired section\n\nold text\n");
   write(remote, "sibling/SKILL.md", "A separately installed sibling\n");
@@ -57,14 +58,14 @@ try {
   const first = commit(remote, "fixture one");
   git(fixture, "clone", remote, installed);
   const custom = path.join(fixture, "harness");
-  run(process.execPath, ["momm/scripts/install.mjs", "--custom-dir", custom], installed);
+  run(process.execPath, ["momm/scripts/install.mjs", "--links-only", "--custom-dir", custom], installed);
   await test("explicit_install_records_exact_custom_harness", () => {
     assert.deepEqual(readLock(installed).custom_dirs, [custom]);
     assert.deepEqual(readLock(installed).targets, []);
     assert.equal(fs.realpathSync(path.join(custom, "momm")), fs.realpathSync(path.join(installed, "momm")));
   });
   const secondHarness = path.join(fixture, "second-harness");
-  run(process.execPath, ["install.mjs", "--skills", "momm,sibling", "--custom-dir", secondHarness], installed);
+  run(process.execPath, ["install.mjs", "--skills", "momm,sibling", "--links-only", "--custom-dir", secondHarness], installed);
   write(remote, 'intermediate.txt', 'first intervening change\n'); commit(remote, 'intermediate one');
   write(remote, 'intermediate.txt', 'second intervening change\n'); commit(remote, 'intermediate two');
   write(remote, "momm/SKILL.md", "# Fixture skill\n\nExplicit new protocol\n\n## Kept section\n\nsame text\n\n## Added section\n\nnew text\n");
@@ -428,7 +429,7 @@ try {
   });
   await test('adding_harness_preserves_matching_verified_release_provenance', () => {
     const thirdHarness = path.join(fixture, 'third-harness');
-    run(process.execPath, ['momm/scripts/install.mjs', '--custom-dir', thirdHarness], installed);
+    run(process.execPath, ['momm/scripts/install.mjs', '--links-only', '--custom-dir', thirdHarness], installed);
     assert.equal(provenance(installed).release_verified, true);
   });
   await test("mixed_harness_scopes_do_not_expand_on_update", () => {
@@ -511,8 +512,8 @@ try {
   });
   await test("archive_install_links_but_reports_updater_unavailable", () => {
     const archive = path.join(fixture, "archive"), destination = path.join(fixture, "archive-harness");
-    for (const file of ["momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/scripts/installations.mjs", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
-    const output = JSON.parse(run(process.execPath, ["momm/scripts/install.mjs", "--custom-dir", destination], archive));
+    for (const file of [...reviewerInstallerFiles, "momm/SKILL.md", "momm/scripts/multi-review.mjs", "momm/scripts/installations.mjs", "momm/scripts/install.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"]) write(archive, file, fs.readFileSync(path.join(installed, file)));
+    const output = JSON.parse(run(process.execPath, ["momm/scripts/install.mjs", "--links-only", "--custom-dir", destination], archive));
     assert.equal(output.installation.updater_available, false);
     assert(['ready_to_verify', 'prerequisites_missing'].includes(output.update_readiness.status));
     assert.equal(output.update_readiness.signature_verified, false);
@@ -847,7 +848,7 @@ try {
     };
     // An installed-from-an-archive tree: the files both installers need, in a folder that is not a Git clone,
     // so nothing here writes a receipt.
-    const INSTALLER_FILES = ["install.mjs", "momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"];
+    const INSTALLER_FILES = [...reviewerInstallerFiles, "install.mjs", "momm/scripts/install.mjs", "momm/scripts/installations.mjs", "momm/scripts/update.mjs", "momm/scripts/bootstrap.mjs"];
     const skillFiles = (root, version) => { write(root, "momm/SKILL.md", "# Fixture skill\n"); write(root, "momm/scripts/multi-review.mjs", `const MOMM_VERSION = '${version}'; console.log('fixture dispatcher');\n`); write(root, "versions.json", JSON.stringify({ momm: version })); };
     const tree = (root, siblings = []) => { for (const file of INSTALLER_FILES) write(root, file, fs.readFileSync(path.join(source, file))); skillFiles(root, "1.0.0"); for (const name of siblings) write(root, `${name}/SKILL.md`, "A sibling skill\n"); return root; };
     const INSTALLERS = [["skill", "momm/scripts/install.mjs", []], ["root", "install.mjs", ["--skills", "momm"]]];
@@ -879,7 +880,7 @@ try {
     const each = async (dir, root, targets, { stand, limit } = {}) => Promise.all(INSTALLERS.flatMap(([label, script, extra]) => targets.map(async target => {
       const home = path.join(dir, `home-${label}-${target}`), bin = path.join(dir, `bin-${label}-${target}`); fs.mkdirSync(home); fs.mkdirSync(bin);
       const fake = stand ? fakeHarness(bin, target, stand) : null;
-      const result = await launch(path.join(root, script), [...extra, "--target", target], { cwd: root, env: childEnv([bin], home, limit) });
+      const result = await launch(path.join(root, script), [...extra, "--links-only", "--target", target], { cwd: root, env: childEnv([bin], home, limit) });
       return { what: `${label} installer, ${target}`, target, home, fake, result, said: result.stdout + result.stderr };
     })));
     const asked = (fake, ...words) => fake.calls().filter(call => words.every((word, index) => call[index] === word));
@@ -922,7 +923,7 @@ try {
       const dir = path.join(slow, "link-never"), root = tree(path.join(dir, "tree"), ["sibling"]), started = Date.now();
       const runs = await Promise.all([["skill", "momm/scripts/install.mjs", []], ["root", "install.mjs", ["--skills", "momm,sibling"]]].map(async ([label, script, extra]) => {
         const bin = path.join(dir, `bin-${label}`), home = path.join(dir, `home-${label}`), fake = fakeHarness(bin, "gemini", { versionAfter: null, link: "never" }); fs.mkdirSync(home);
-        return { label, fake, home, result: await launch(path.join(root, script), [...extra, "--target", "gemini"], { cwd: root, env: childEnv([bin], home, 1_500) }) };
+        return { label, fake, home, result: await launch(path.join(root, script), [...extra, "--links-only", "--target", "gemini"], { cwd: root, env: childEnv([bin], home, 1_500) }) };
       }));
       for (const { label, fake, home, result } of runs) {
         assert.doesNotMatch(result.stdout + result.stderr, /not installed/i, `${label}: a command that is on PATH was called not installed`);
@@ -996,7 +997,7 @@ try {
       const dir = path.join(slow, "from-home"), bin = path.join(dir, "home-folder", "bin"), root = tree(path.join(dir, "tree"));
       fakeHarness(bin, "claude");
       for (const [label, script, extra] of INSTALLERS) {
-        const result = await launch(path.join(root, script), [...extra, "--target", "claude", "--dry-run"], { cwd: path.dirname(bin), env: childEnv([bin], path.dirname(bin)) });
+        const result = await launch(path.join(root, script), [...extra, "--links-only", "--target", "claude", "--dry-run"], { cwd: path.dirname(bin), env: childEnv([bin], path.dirname(bin)) });
         assert.deepEqual(rowsOf(report(result, label)).map(r => [r.status, r.command?.state]), [["would_link", "present"]], `${label}: ${result.stdout.slice(0, 300)}`);
       }
     });
@@ -1044,7 +1045,7 @@ try {
       skillFiles(origin, "1.0.0"); const one = commit(origin, "fixture one");
       git(base, "clone", origin, clone);
       fakeHarness(bin, harness);
-      const installed = await launch(path.join(clone, script), [...extra, "--target", harness], { cwd: clone, env: childEnv([bin, ...gitFolders], home) });
+      const installed = await launch(path.join(clone, script), [...extra, "--links-only", "--target", harness], { cwd: clone, env: childEnv([bin, ...gitFolders], home) });
       assert.equal(installed.status, 0, `fixture installation failed: ${installed.stderr.slice(0, 300)}`);
       assert.deepEqual(readLock(clone).targets, [harness], "the receipt lists the harness");
       skillFiles(origin, "1.1.0"); const two = commit(origin, "fixture two");

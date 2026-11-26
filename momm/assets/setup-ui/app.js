@@ -88,10 +88,16 @@ const liveResults = new Map();
 const updateAttempts = new Map();
 // Tab-local, fixed-field receipts. A detached terminal's exit/login outcome is not observable here.
 const actionReceipts = new Map();
-const LOGIN_COMMANDS = Object.freeze({codex:'codex login',claude:'claude',gemini:'gemini',antigravity:'agy login',copilot:'copilot login',grok:'grok login'});
+const LOGIN_COMMANDS = Object.freeze({codex:'codex login',claude:'claude auth login',gemini:'gemini',antigravity:'agy',copilot:'copilot login',grok:'grok login'});
 const ACTION_LABELS = Object.freeze({launching:'Launching terminal…',launch_requested:'Launch request accepted. Terminal and login completion are not observed.',launch_failed:'Terminal was not launched.',launch_unconfirmed:'Launch could not be confirmed. Check for an open terminal before trying again.',blocked:'Action blocked. Refresh discovery and confirm the command again.'});
-const ACTION_REASONS = Object.freeze({dirty_checkout:'Action blocked: handle local skill changes before updating. Nothing was launched.',git_check_failed:'Action blocked: Git could not verify the checkout. Inspect its state before updating.',no_git_checkout:'Action blocked: this is not a Git checkout. Follow the bootstrap guide.',update_prerequisites:'Action blocked: Check update prerequisites and the installation receipt. Follow the bootstrap guide.',command_mismatch:'Action blocked: refresh versions and confirm the exact command again.',private_session:'Action blocked: reopen the private Setup Center launch link.',unsupported_action:'Unsupported provider action. Nothing was launched.'});
+const ACTION_REASONS = Object.freeze({discovery_changed:'Refresh discovery. The CLI is present or its version check was inconclusive.',dirty_checkout:'Action blocked: handle local skill changes before updating. Nothing was launched.',git_check_failed:'Action blocked: Git could not verify the checkout. Inspect its state before updating.',no_git_checkout:'Action blocked: this is not a Git checkout. Follow the bootstrap guide.',update_prerequisites:'Action blocked: Check update prerequisites and the installation receipt. Follow the bootstrap guide.',command_mismatch:'Action blocked: refresh versions and confirm the exact command again.',private_session:'Action blocked: reopen the private Setup Center launch link.',unsupported_action:'Unsupported provider action. Nothing was launched.'});
 
+function manualLoginCommand(provider) {
+  if (provider === 'antigravity' && session?.platform === 'win32' && session.native_antigravity === true) {
+    return '& "$env:LOCALAPPDATA/agy/bin/agy.exe"';
+  }
+  return LOGIN_COMMANDS[provider];
+}
 function receiptCopy(provider) {
   const receipt = actionReceipts.get(provider);
   return receipt ? JSON.stringify({provider:receipt.provider,action:receipt.action,status:receipt.status,completion:receipt.completion}, null, 2) : null;
@@ -99,6 +105,13 @@ function receiptCopy(provider) {
 function receiptHtml(provider, state) {
   const receipt = actionReceipts.get(provider);
   if (!receipt) return '';
+  if (receipt.action === "install" && receipt.completion === "version_detected") return `<p class="card-copy card-hint" role="status">CLI version detected after installation. ${state === "ready" ? "The sample review passed." : "Connect your account if prompted, then verify with a sample review."}</p>`;
+  if (provider === 'antigravity' && receipt.action === 'login' && receipt.status === 'launch_requested' && receipt.watch && state !== 'ready' && state !== 'testing') {
+    const message = receipt.watch === 'checking' ? 'Waiting for Antigravity to recognize your sign-in…'
+      : receipt.watch === 'found' ? 'Antigravity recognized your sign-in.'
+      : 'Automatic sign-in checks have ended. Choose Check sign-in when you finish in the terminal.';
+    return `<p class="card-copy card-hint" role="status">${escapeHtml(message)}</p><button class="inline-action" data-copy-receipt="antigravity">Copy action receipt</button>`;
+  }
   const next = receipt.status !== 'launch_requested' || state === 'ready' || state === 'testing' ? '' : receipt.action === 'login' ? ' Finish the provider login yourself, then choose Verify after login (one synthetic provider request).' : ' Finish in the terminal, then check again.';
   return `<p class="card-copy card-hint" role="status">Last terminal action: ${escapeHtml(ACTION_REASONS[receipt.reason] || ACTION_LABELS[receipt.status])}${next}${state === 'ready' ? ' A separate live check has passed; this does not observe terminal completion.' : ''}</p><button class="inline-action" data-copy-receipt="${escapeHtml(provider)}">Copy action receipt</button>`;
 }
@@ -106,10 +119,43 @@ function renderActionViews() {
   try { render(); if (maintenance) renderMaintenance(); return true; }
   catch { return false; }
 }
-async function copySetupText(text, kind) {
+function commandButton(command, destination, loginAgent = '') {
+  const label = 'Copy ' + command + ' to the clipboard';
+  const attribute = loginAgent ? 'data-copy-login="' + escapeHtml(loginAgent) + '"' : 'data-copy-command';
+  return `<button type="button" class="command-button" ${attribute} title="${escapeHtml(label + ' for ' + destination)}" aria-label="${escapeHtml(label)}"><code>${escapeHtml(command)}</code><span class="copy-label">Copy</span></button>`;
+}
+
+async function copySetupText(text, kind, button) {
   if (!text) return;
-  try { await navigator.clipboard.writeText(text); showToast(kind === 'login' ? 'Login command copied. Run it yourself in a terminal when sign-in is needed.' : 'Action receipt copied. Fixed fields only, not commands or private diagnostics.'); }
-  catch { showToast('Clipboard unavailable. The safe login command is shown on the card.'); }
+  const label = button?.querySelector?.('.copy-label');
+  const oldFallback = button?.nextElementSibling;
+  if (oldFallback?.classList.contains('manual-copy')) oldFallback.remove();
+  try {
+    await navigator.clipboard.writeText(text);
+    if (label) {
+      label.textContent = 'Copied';
+      clearTimeout(label.copyTimer);
+      label.copyTimer = setTimeout(() => { label.textContent = 'Copy'; }, 3000);
+    }
+    const name = kind === 'receipt' ? 'Action receipt' : kind === 'login' ? 'Login command' : 'Command';
+    showToast(name + ' copied to clipboard.');
+  } catch {
+    if (label) { clearTimeout(label.copyTimer); label.textContent = 'Copy'; }
+    const instruction = 'Clipboard access is blocked. Use Ctrl+C (⌘C on Mac) to copy the selected text.';
+    if (button?.isConnected) {
+      const fallback = document.createElement('label');
+      fallback.className = 'manual-copy';
+      fallback.textContent = instruction;
+      const field = document.createElement('textarea');
+      field.readOnly = true;
+      field.rows = kind === 'receipt' ? 4 : 1;
+      field.value = text;
+      fallback.append(field);
+      button.after(fallback);
+      field.focus(); field.select();
+    }
+    showToast(instruction);
+  }
 }
 // Governor transitions: the epoch is bumped on every change, so a status poll
 // or verification job started under the previous governor is recognised as
@@ -139,12 +185,18 @@ function showToast(message) {
 
 // In-page confirmation keeps the command preview visible without a blocking browser dialog.
 // The fallback serves older browsers and the DOM-only regression fixture, never skips consent.
-async function confirmSetupAction(message) {
+async function confirmSetupAction(message, installCommands = null) {
   if (confirmationPending) return false;
   const dialog = document.querySelector('#action-confirm');
-  if (typeof dialog?.showModal !== 'function') return window.confirm(message);
+  if (typeof dialog?.showModal !== 'function') return window.confirm(installCommands ? message + "\n\n" + installCommands : message);
   confirmationPending = true;
   const previous = document.activeElement;
+  document.querySelector("#action-confirm-title").textContent = installCommands ? "Install standard reviewers?" : "Confirm terminal action";
+  document.querySelector("#action-confirm-accept").textContent = installCommands ? "Install" : "Confirm and open terminal";
+  document.querySelector("#confirm-terminal-note").hidden = Boolean(installCommands);
+  const details = document.querySelector("#confirm-install-details");
+  details.hidden = !installCommands; details.open = false;
+  document.querySelector("#confirm-install-commands").textContent = installCommands || "";
   document.querySelector('#action-confirm-copy').textContent = message;
   return new Promise(resolve => {
     const finish = accepted => {
@@ -163,16 +215,24 @@ async function confirmSetupAction(message) {
 }
 
 function renderOperation() {
-  const testing = reviewerRoutes().filter(route=>routeState(route)==='testing');
-  const batchText = batchProgress ? `${batchRunning ? 'CLI update batch' : 'Last CLI update batch'}: ${batchProgress.processed} of ${batchProgress.total} actions accounted for (${Math.round(100 * batchProgress.processed / batchProgress.total)}%). ${batchProgress.phase}` : '';
-  const text = batchRunning ? batchText
+  const testing = [...runningTests.keys()];
+  const batchText = batchProgress ? `${batchProgress.phase} ${batchProgress.confirmed} of ${batchProgress.total} version changes confirmed.` : '';
+  const text = standardSnapshot?.status === "running" ? "Setting up your reviewer programs…" : batchRunning ? batchText
     : quickSetupRunning ? quickProgress ? `Connection checks: ${quickProgress.completed} of ${quickProgress.total} finished. ${quickProgress.current || ''}` : 'Quick Setup: checking discovery and CLI compatibility.'
-    : testing.length ? `Verifying ${testing.length} reviewer connection${testing.length===1?'':'s'}: ${testing.map(route=>providerLabel(route.agent)).join(', ')}. Waiting for a final synthetic check result.`
-    : refreshing ? 'Checking reviewer discovery. No model call.' : batchText || 'No operation running.';
+    : testing.length ? `Verifying ${testing.length} reviewer connection${testing.length===1?'':'s'}: ${testing.map(providerLabel).join(', ')}. Waiting for a final synthetic check result.`
+    : refreshing ? 'Checking reviewer discovery. No model call.' : 'No operation running.';
   const node = document.querySelector('#operation-status');
-  if (node) node.textContent = text;
+  if (node && node.textContent !== text) node.textContent = text;
   const batchNode = document.querySelector('#batch-progress');
-  if (batchNode) batchNode.textContent = batchText ? batchText + ' Action progress is not successful installation.' : '';
+  if (batchNode && batchNode.textContent !== batchText) batchNode.textContent = batchText;
+  const activity = document.querySelector('#batch-activity');
+  if (activity && batchProgress) {
+    const html = batchProgress.rows.map(row => '<li><strong>' + escapeHtml(providerLabel(row.agent)) + '</strong> ' + escapeHtml(row.detail) + '</li>').join('');
+    if (activity.innerHTML !== html) activity.innerHTML = html;
+  }
+  const elapsed = document.querySelector('#batch-elapsed');
+  if (elapsed && batchProgress) elapsed.textContent = 'Elapsed ' + Math.floor(((batchProgress.finished || Date.now()) - batchProgress.started) / 1000) + 's';
+
 }
 
 // The server is long-running: after an update it still serves the code it started
@@ -226,8 +286,8 @@ async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
   const response = await fetch(path, { ...options, headers });
-  const value = await response.json();
   if (!response.ok) {
+    const value = (await response.json().catch(() => null)) || {};
     const error = new Error(value.error || "Setup Center could not complete that action.");
     error.status = response.status;
     error.action_receipt = value.receipt;
@@ -235,7 +295,7 @@ async function api(path, options = {}) {
     error.setup_center = value.setup_center; // a failed refresh still says when the server is stale
     throw error;
   }
-  return value;
+  return response.json();
 }
 
 function reviewerRoutes() {
@@ -253,15 +313,16 @@ function routeState(route) {
   // 1.17.1 R1: preflight remembered that this CLI version and its configured model did not work
   // together. That is an update, never a sign-in, and it explains a failed check on the same card.
   if (route.compatibility && route.installed !== false) return "update";
-  if (live?.status === "failed") return "failed";
-  if (route.ready) return "detected";
   if (route.installed === false) return "install";
-  if (route.installed === null || route.version_status === "timeout" || route.version_status === "error") return "unknown";
+  if (live?.status === "failed") return "failed";
+  if (route.agent === "antigravity" && route.auth === "unknown" && !route.ready) return "unknown";
+  if (route.ready) return "detected";
+  if (route.status === "unsupported" || route.installed === null || route.version_status === "timeout" || route.version_status === "error") return "unknown";
   return "login";
 }
 
 function stateLabel(state) {
-  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Install", testing: "Verifying", failed: "Needs attention", unknown: "Check inconclusive", update: "CLI update needed" })[state] || "Check";
+  return ({ detected: "Session found", ready: "Verified", login: "Sign in", install: "Launcher not found", testing: "Verifying", failed: "Needs attention", unknown: "Check inconclusive", update: "CLI update needed" })[state] || "Check";
 }
 
 function routeCopy(route, state) {
@@ -271,19 +332,28 @@ function routeCopy(route, state) {
     const model = typeof record.model === "string" && record.model ? `the configured model ${record.model.slice(0, 80)}` : "its configured model";
     return `The installed CLI${version} needs an update to work with ${model}.`;
   }
+  if (state === "unknown" && route.agent === "antigravity" && route.installed === true && route.auth === "unknown") return "Antigravity could not confirm model access. Retry discovery or verify with a sample review.";
+  if (state === "unknown" && route.status === "unsupported") return "The launcher was found but cannot be used by MOMM. Check this provider’s supported CLI and retry discovery.";
   if (state === "unknown") return `${route.version_status === 'error' ? 'The version check failed or its result was unreadable' : 'The version check did not complete'}; installation and account readiness are unknown. Retry discovery (no model call), or run the version command below in a fresh terminal so PATH changes are loaded. This is not proof that login or an update is needed.`;
-  if (state === "ready") return "Connection verified with a harmless synthetic sentence. Ready for peer review.";
+  if (state === "ready") return "Connection verified with a harmless synthetic example. Ready for peer review.";
   if (state === "detected") return route.agent === 'antigravity'
-    ? "Local OAuth evidence was found, but it is weak/shared with Gemini CLI. This account is not live-verified. Verify it without sending repository code."
-    : "Local OAuth evidence was found; this account is not live-verified. Verify it without sending repository code.";
-  if (state === "testing") return "Checking the connection with a synthetic sentence. This can take about a minute.";
+    ? (route.auth === 'ok' ? "Antigravity can list models. Verify that it can return a sample review." : "Only shared Google setup files were found. Antigravity is not yet verified.")
+    : "Sign-in found. Verify the connection with a sample review.";
+  if (state === "testing") {
+    const check = liveResults.get(route.agent);
+    const seconds = Math.floor((Date.now() - check.startedAt) / 1000);
+    const stage = check.phase === 'recording' ? 'Saving the review result'
+      : check.phase === 'waiting' ? (check.received_output ? 'Reviewer produced output. Waiting for the final review' : 'Waiting for the reviewer to respond')
+      : 'Starting the sample check';
+    return stage + ' · ' + seconds + 's elapsed.' + (route.agent === 'antigravity' && check.phase === 'waiting' ? ' If Google asks for a code, complete sign-in in the interactive Antigravity terminal before trying again.' : '');
+  }
   if (state === "failed") {
     const result = liveResults.get(route.agent)?.result;
     if (result?.route_status === 'authentication_required') return result.detail || 'Sign in using this provider’s browser login, then verify again.';
     return result?.detail || 'The check did not complete. Inspect the error; an update, quota limit, timeout or service outage is not an expired login.';
   }
-  if (state === "install") return "The reviewer CLI is not installed. Installation opens visibly in a terminal.";
-  return "The CLI is installed, but this provider account is not connected yet.";
+  if (state === "install") return "MOMM could not find this reviewer's command-line program on this computer. If you already installed it, open a new terminal or restart the app to refresh its search path. The desktop app may be a separate install.";
+  return "MOMM found the CLI and could not confirm a signed-in session. If you already signed in, choose Verify connection.";
 }
 
 function providerMaintenance(agent) {
@@ -298,10 +368,27 @@ function modelFact(route, state, modelReport) {
   if (state === "update") return "Needs CLI update";
   if (modelReport?.models?.length) return `${modelReport.models.length} available`;
   if (modelReport?.status === "interactive_selector" && route.ready) return "Available in selector";
-  if (modelReport?.status === "login_required" || state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) return "Needs sign-in";
+  if (state === "login") return "Access unverified";
+  if (modelReport?.status === "login_required" || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) return "Needs sign-in";
   if (state === 'failed') return 'Check failed';
   if (route.ready) return "Ready to verify";
   return "Not checked";
+}
+
+function recentResultLine(agent) {
+  const recent = report?.recent_results?.[agent];
+  if (!recent) return '';
+  const descriptions = {
+    success: 'Valid review', timeout: 'Review timed out', invalid_output: 'Review output was rejected',
+    authentication_required: 'Provider sign-in required', quota: 'Provider quota reached',
+    provider_unavailable: 'Provider unreachable', cancelled: 'Review cancelled', error: 'Review ended with an error'
+  };
+  const outcome = recent.diagnostic === 'copilot_event_format'
+    ? 'Copilot ran, but MOMM rejected the CLI event format. Check adapter compatibility in the ledger.'
+    : descriptions[recent.status] ?? recent.status.replaceAll('_', ' ');
+  const when = new Date(recent.recorded_at).toLocaleString();
+  const version = recent.dispatcher_version ? ` · MOMM ${recent.dispatcher_version}` : '';
+  return `<p class="card-copy card-hint">Latest project result: ${escapeHtml(outcome)} · ${escapeHtml(when)} · ${escapeHtml(recent.run_id + version)}</p>`;
 }
 
 function providerCard(route) {
@@ -310,24 +397,61 @@ function providerCard(route) {
   const { cli, models } = providerMaintenance(route.agent);
   const detectedVersion = String(cli?.current || route.version || (route.installed === false ? "Not detected" : "Version unknown")).split("\n")[0];
   const cliText = cli?.status === "update_available" ? `${detectedVersion} → ${cli.latest}` : detectedVersion;
-  const authText = state === "ready" ? "Live verified" : state === 'testing' ? 'Live check running' : state === 'failed' ? "Not verified" : state === 'detected' ? "Local evidence only" : state === "unknown" || state === "update" ? "Not checked" : route.installed === false ? "Unavailable" : "Not connected";
+  const authText = state === "ready" ? "Live verified" : state === 'testing' ? 'Live check running' : state === 'failed' ? "Not verified" : state === 'detected' ? "Local evidence only" : state === "unknown" || state === "update" ? "Not checked" : route.installed === false ? "Unavailable" : "Sign-in unconfirmed";
   const receipt = actionReceipts.get(route.agent);
   const verifyLabel = receipt?.action === 'login' ? 'Verify after login' : 'Verify connection';
-  const loginCommand = LOGIN_COMMANDS[route.agent];
-  const loginCopy = loginCommand && !['update','ready','testing','install'].includes(state) ? `<p class="card-copy card-hint">Safe login command: <code>${escapeHtml(loginCommand)}</code>${route.agent === 'claude' ? ' — then type /login.' : route.agent === 'gemini' ? ' — then type /auth (eligible organization account only).' : ''}</p><button class="inline-action" data-copy-login="${route.agent}">Copy login command</button>` : '';
+  const live = liveResults.get(route.agent);
+  const finished = live?.result;
+  const runReference = finished?.run_id && /^rev_[a-zA-Z0-9_]+$/.test(finished.run_id) ? finished.run_id : '';
+  const timing = Number.isFinite(finished?.duration_ms) ? Math.round(finished.duration_ms / 1000) + 's' : '';
+  const loginCommand = manualLoginCommand(route.agent);
+  const name = route.agent === 'claude' ? 'Claude' : provider.label;
+  const offersLogin = state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required');
+  const loginRequested = receipt?.action === 'login' && receipt.status === 'launch_requested' && !receipt.needsSignIn;
+  const loginButton = `<button class="button primary" data-action="login" data-provider="${route.agent}" title="Start ${escapeHtml(name)} sign-in on this computer" ${receipt?.status === 'launching' ? 'disabled' : ''}>Sign in with ${escapeHtml(name)}</button>`;
+  const verifyButton = `<button class="button ${loginRequested ? 'primary' : 'ghost'}" title="Send a small sample review to check this account" data-test="${route.agent}">${verifyLabel}</button>`;
+  const loginCopy = loginCommand && (offersLogin || state === 'detected')
+    ? `<details class="signin-guide" data-card-detail="signin"><summary>Sign-in help</summary>
+        ${!offersLogin || loginRequested ? loginButton : ''}
+        <p>${escapeHtml(provider.loginNote || 'Follow the instructions in the provider window.')}</p>
+        ${route.agent === 'antigravity' ? '<p>If the terminal closed before you pasted the code, start sign-in again and use the new Google page. If the terminal shows a theme or data-use screen, return here and choose Check sign-in. You can decide about sharing interaction data separately.</p>' : ''}
+        <p>To start sign-in yourself, paste this command into ${session.platform === 'win32' ? 'PowerShell' : 'your terminal'} and press Enter.</p>
+        ${commandButton(loginCommand,'your terminal',route.agent)}
+        ${route.agent === 'gemini' ? commandButton('/auth',provider.label) : ''}
+        <a class="docs-link" href="${escapeHtml(provider.docs)}" target="_blank" rel="noreferrer">${escapeHtml(name)} sign-in guide ↗</a></details>`
+    : '';
+  let instruction = routeCopy(route, state);
+  if (offersLogin || (state === 'detected' && loginRequested)) {
+    instruction = offersLogin && receipt?.needsSignIn ? 'The check still needs a signed-in account. Sign in again.'
+      : loginRequested ? 'Look for the provider’s sign-in window. If nothing opened, use Sign-in help below. Once signed in, choose Verify after login.'
+      : route.agent === 'claude' ? 'Claude opens its sign-in page in your browser.' : 'Follow the sign-in prompts, then return here.';
+  }
+  if (route.agent === 'antigravity' && (offersLogin || (state === 'detected' && loginRequested))) {
+    instruction = state === 'failed' && !loginRequested ? routeCopy(route, state)
+      : provider.loginNote || 'Complete sign-in in the Antigravity terminal, then verify here.';
+  }
+  const agySignedOut = route.agent === 'antigravity' && route.auth === 'absent' && offersLogin;
+  if (agySignedOut) {
+    instruction = loginRequested
+      ? 'In the Antigravity window, select 1. Google OAuth and press Enter. If Google shows a code, choose Copy to Clipboard. Return to the same terminal, paste at the code prompt and press Enter.'
+      : 'Open Antigravity to connect your Google account. Already finished in the terminal? Choose Check sign-in.';
+  } else if (route.agent === 'antigravity' && state === 'detected' && route.auth === 'ok') {
+    instruction = routeCopy(route, state);
+  }
   let mainAction = "";
   // The update state offers the existing update action, with the command this Setup Center verified
   // for the installation. Without one, the official command from preflight is shown as text only.
   const canUpdate = state === "update" && cli?.installed === true && Boolean(cli.update_command);
   const hint = typeof route.update_hint === "string" && /^[^\r\n]{1,200}$/.test(route.update_hint) ? route.update_hint : null;
-  const updateCopy = state !== "update" || canUpdate ? "" : `<p class="card-copy card-hint">${hint ? `Run this in a terminal, then choose Check again: <code>${escapeHtml(hint)}</code>` : "Use the provider’s official update command (see Help), then choose Check again."}</p>`;
-  if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button>`;
+  const updateCopy = state !== "update" || canUpdate ? "" : `<p class="card-copy card-hint">${hint ? `Run this in a terminal, then choose Check again. ${commandButton(hint,'your terminal')}` : "Use the provider’s official update command (see Help), then choose Check again."}</p>`;
+  if (state === "install") mainAction = `<button class="button primary" data-action="install" data-provider="${route.agent}">Install CLI</button><button class="button ghost" data-discovery="${route.agent}">Retry discovery</button>`;
   else if (state === "update") mainAction = canUpdate ? `<button class="button primary" data-action="update" data-provider="${route.agent}">Update CLI…</button>` : "";
-  else if (state === "unknown") mainAction = `<button class="button ghost" data-discovery="${route.agent}">Retry discovery</button><button class="button ghost" data-test="${route.agent}">${verifyLabel}</button>`;
-  else if (state === 'login' || (state === 'failed' && liveResults.get(route.agent)?.result?.route_status === 'authentication_required')) mainAction = `<button class="button primary" data-action="login" data-provider="${route.agent}" ${receipt?.status === 'launching' ? 'disabled' : ''}>Sign in</button><button class="button ghost" data-test="${route.agent}">Verify after login</button>`;
-  else if (state === 'failed') mainAction = `<button class="button ghost" data-test="${route.agent}">Retry check</button>`;
-  else if (state === "detected") mainAction = `<button class="button primary" data-test="${route.agent}">${verifyLabel}</button>`;
-  else if (state === "ready") mainAction = `<button class="button ghost" data-test="${route.agent}">Verify again</button>`;
+  else if (state === "unknown") mainAction = `<button class="button ghost" data-discovery="${route.agent}">Retry discovery</button><button class="button ghost" title="Send a sample review to check this provider’s connection" data-test="${route.agent}">${verifyLabel}</button>`;
+  else if (agySignedOut) mainAction = (loginRequested ? '' : loginButton) + '<button class="button ghost" data-discovery="antigravity" title="Check sign-in without sending a review">Check sign-in</button>';
+  else if (offersLogin) mainAction = loginRequested ? verifyButton : loginButton + verifyButton;
+  else if (state === 'failed') mainAction = `<button class="button ghost" title="Send a sample review to check this provider’s connection" data-test="${route.agent}">Retry check</button>`;
+  else if (state === "detected") mainAction = `<button class="button primary" title="Send a sample review to check this provider’s connection" data-test="${route.agent}">${verifyLabel}</button>`;
+  else if (state === "ready") mainAction = `<button class="button ghost" title="Send a sample review to check this provider’s connection" data-test="${route.agent}">Verify again</button>`;
   else mainAction = '<button class="button primary" disabled>Verifying…</button>';
   const updateAction = !canUpdate && cli?.status === "update_available" && cli.update_command ? `<button class="inline-action" data-action="update" data-provider="${route.agent}">Update</button>` : "";
   return `
@@ -336,19 +460,23 @@ function providerCard(route) {
         <div class="provider-name"><span class="provider-icon">${escapeHtml(provider.label.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(provider.label)}</h3><small class="version">Peer reviewer</small></div></div>
         <span class="chip status ${({ ready: "chip-good", login: "chip-warn", detected: "chip-warn", install: "chip-warn", update: "chip-warn", failed: "chip-bad" })[state] || "chip-neutral"}">${stateLabel(state)}</span>
       </div>
-      <p class="card-copy">${escapeHtml(routeCopy(route, state))}</p>${updateCopy}${state === 'unknown' && loginCommand ? `<p class="card-copy card-hint">Version command: <code>${escapeHtml((route.agent === 'antigravity' ? 'agy' : route.agent) + ' --version')}</code></p>` : ''}
-      <div class="provider-facts">
+      <p class="card-copy" data-check-progress="${route.agent}">${escapeHtml(instruction)}</p>${updateCopy}${route.agent === "gemini" ? '<p class="card-copy card-hint">Legacy Gemini requires an eligible Code Assist organization account. For an individual Google account, choose Antigravity.</p>' : ''}${['unknown', 'install'].includes(state) && loginCommand ? `<p class="card-copy card-hint">Check the version in your terminal. ${commandButton((route.agent === 'antigravity' ? loginCommand : route.agent) + ' --version','your terminal')}</p>` : ''}
+      <div class="card-actions">${mainAction}${!loginCopy ? `<a class="docs-link" href="${escapeHtml(provider.docs)}" target="_blank" rel="noreferrer">Help ↗</a>` : ''}</div>
+      ${loginCopy}
+      <details class="reviewer-details" data-card-detail="status"><summary>Reviewer details</summary><div class="provider-facts">
         <div class="provider-fact"><span>CLI</span><div class="provider-fact-line"><strong title="${escapeHtml(cliText)}">${escapeHtml(cliText)}</strong>${updateAction}</div></div>
         <div class="provider-fact"><span>Account</span><strong>${escapeHtml(authText)}</strong></div>
         <div class="provider-fact"><span>Models</span><strong>${escapeHtml(modelFact(route, state, models))}</strong></div>
         <div class="provider-fact"><span>Modalities</span><strong title="What this reviewer can consume via --attach; text-only routes sit out media reviews as unsupported">${escapeHtml((provider.modalities || ["text"]).join(" · "))}</strong></div>
       </div>
-      <div class="card-actions">${mainAction}<a class="docs-link" href="${provider.docs}" target="_blank" rel="noreferrer">Help ↗</a></div>
-      ${loginCopy}${receiptHtml(route.agent, state)}
+      ${receiptHtml(route.agent, state)}</details>
+      ${runReference ? `<p class="card-copy card-hint">This check · ${escapeHtml([timing,runReference].filter(Boolean).join(' · '))}</p>` : !live ? recentResultLine(route.agent) : ''}
+      ${receipt && !(receipt.action === 'login' && receipt.status === 'launch_requested') ? `<p class="card-copy" role="status">${escapeHtml(ACTION_REASONS[receipt.reason] || ACTION_LABELS[receipt.status])}</p>` : ''}
       ${cli?.status === 'update_available' ? '<p class="card-copy card-hint">CLI updates and account recovery are separate. Updating does not fix missing authentication, quota, a retired tier or a provider outage.</p>' : ''}
     </article>`;
 }
 
+let lastCardMarkup;
 function render() {
   if (!report) return;
   const routes = reviewerRoutes();
@@ -358,34 +486,43 @@ function render() {
   const failedChecks = routes.filter(route => routeState(route) === 'failed' && liveResults.get(route.agent)?.result?.route_status !== 'authentication_required').length;
   const installs = routes.filter((route) => routeState(route) === "install").length;
   const verifications = routes.filter((route) => routeState(route) === "detected").length;
-  const updates = maintenance?.cli_updates.filter((item) => item.status === "update_available").length || 0;
   const remaining = [];
   const unknownChecks = routes.filter((route) => routeState(route) === 'unknown').length;
   if (unknownChecks) remaining.push(`${unknownChecks} inconclusive version check${unknownChecks === 1 ? '' : 's'}`);
   const outdated = routes.filter((route) => routeState(route) === "update").length;
-  if (installs) remaining.push(`${installs} CLI${installs === 1 ? "" : "s"} to install`);
+  if (installs) remaining.push(`${installs} reviewer launcher${installs === 1 ? "" : "s"} not found here`);
   if (outdated) remaining.push(`${outdated} CLI${outdated === 1 ? " to update for its configured model" : "s to update for their configured models"}`);
-  if (signIns) remaining.push(`${signIns} account${signIns === 1 ? "" : "s"} to connect`);
+  if (signIns) remaining.push(`${signIns} account${signIns === 1 ? "" : "s"} to check for sign-in`);
   if (failedChecks) remaining.push(`${failedChecks} failed check${failedChecks === 1 ? '' : 's'} to investigate`);
   if (verifications) remaining.push(`${verifications} detected session${verifications === 1 ? "" : "s"} to verify`);
-  if (updates) remaining.push(`${updates} provider CLI update${updates === 1 ? "" : "s"}`);
   setupPercent.textContent = percent === null ? '—' : `${percent}%`;
   const compact = document.querySelector('#setup-percent-compact');
   if (compact) compact.textContent = setupPercent.textContent;
   const detail = document.querySelector('#setup-progress-detail');
-  if (detail) detail.textContent = `${verified} of ${routes.length} reviewers live-verified. Installation and session hints are not verification.`;
+  if (detail) detail.textContent = `${verified} of ${routes.length} built-in CLI reviewers live-verified. Saved Bumblers have individual results below.`;
   progress.style.width = `${percent ?? 0}%`;
   const meter = document.querySelector('#readiness-progress');
   meter?.setAttribute?.('aria-valuenow', String(percent ?? 0));
-  meter?.setAttribute?.('aria-valuetext', `${verified} of ${routes.length} reviewers live-verified`);
+  meter?.setAttribute?.('aria-valuetext', `${verified} of ${routes.length} built-in CLI reviewers live-verified`);
   document.querySelector(".status-meter")?.style?.setProperty?.("--pct", String(percent ?? 0));
   const anyTesting = routes.some((route) => routeState(route) === "testing");
   Array.from(document.querySelectorAll?.(".progress-track") ?? []).forEach((track) => track.classList?.toggle?.("running", anyTesting));
-  statusTitle.textContent = percent === null ? 'No reviewers selected' : percent === 100 ? 'All reviewer connections verified' : `${percent}% of reviewer connections verified`;
-  summary.textContent = !routes.length ? 'No reviewer routes are selected. CLI maintenance is separate from review readiness.' : remaining.length ? remaining.join(" · ") : "Every reviewer is installed, connected, and verified.";
-  quickSetupButton.textContent = quickSetupRunning ? "Running checks…" : verifications ? `Verify ${verifications} detected session${verifications === 1 ? "" : "s"}` : "Run Quick Setup";
-  quickSetupNote.textContent = signIns ? "Verifies detected sessions automatically. Provider sign-in opens visibly and still needs you." : "Uses harmless synthetic text only—never project content.";
-  grid.innerHTML = routes.map(providerCard).join("");
+  statusTitle.textContent = percent === null ? 'No built-in CLI reviewers selected' : percent === 100 ? 'All built-in CLI reviewer connections verified' : `${percent}% of built-in CLI reviewer connections verified`;
+  summary.textContent = !routes.length ? 'No reviewer CLIs are selected. Use a saved Bumbler’s card to check its sample result.' : remaining.length ? remaining.join(" · ") : "Every selected CLI reviewer is verified.";
+  quickSetupButton.textContent = quickSetupRunning ? "Running checks…" : verifications ? `Verify ${verifications} detected session${verifications === 1 ? "" : "s"}` : "Verify detected sessions";
+  quickSetupButton.disabled = quickSetupRunning || !routes.some(route => route.ready && !['ready', 'testing', 'update'].includes(routeState(route)));
+  quickSetupNote.textContent = signIns ? "Verifies detected CLI sessions. Complete sign-in yourself. Check saved Bumblers on their own cards." : "For a saved Bumbler, choose Run sample review on its card.";
+  const nextCards = routes.map(providerCard).join("");
+  if (nextCards !== lastCardMarkup) {
+    const expanded = Array.from(grid.querySelectorAll?.('details[open][data-card-detail]') || [],
+      detail => [detail.closest('[data-card]').dataset.card, detail.dataset.cardDetail]);
+    grid.innerHTML = nextCards;
+    lastCardMarkup = nextCards;
+    for (const [agent, detail] of expanded) {
+      const control = grid.querySelector(`[data-card="${agent}"] [data-card-detail="${detail}"]`);
+      if (control) control.open = true;
+    }
+  }
   // Stagger the entrance animation in render order (motion layer reads --i).
   Array.from(grid.children ?? []).forEach((card, index) => card.style?.setProperty?.("--i", String(index)));
   renderOperation();
@@ -468,6 +605,9 @@ function renderMaintenance() {
     <article class="health-card wide">
       <div class="health-card-head"><div><h3>CLI versions & updates</h3><span class="health-count">All six installations, including your controller</span></div><div class="skill-actions"><button id="update-all" class="mini-button" type="button" disabled>Update all available CLIs…</button><button id="batch-update" class="mini-button" type="button" disabled>Update selected…</button></div></div>
       <p id="batch-progress" class="batch-progress" aria-live="off"></p>
+      <small id="batch-elapsed"></small>
+      <ol id="batch-activity" aria-label="CLI update activity"></ol>
+      <p id="batch-availability" class="environment-note"></p>
       <div class="cli-table-scroll"><table class="momm-table cli-table"><thead><tr><th><span class="sr-only">Select for batch update</span></th><th>Provider</th><th>Installed</th><th>Latest checked</th><th>Status</th><th>Action</th></tr></thead><tbody>${maintenance.cli_updates.map(cliRow).join('')}</tbody></table></div>
       <p class="environment-note">Checks never install updates. Update all available CLIs includes only known updates with verified commands; unknown, missing and package-manager-owned installations stay separate. Every command is shown before your confirmation. Updates run one after another with a version re-check between; the batch stops if a launch or version change is unconfirmed. Installation versions do not prove account access or a successful review.</p>
     </article>
@@ -558,7 +698,29 @@ async function refresh() {
   try {
     const fresh = await api(`/api/status?governor=${encodeURIComponent(governorSelect.value)}`);
     if (refreshEpoch !== governorEpoch) return; // answered for a governor that is no longer selected
+    const previousAntigravityAuth = report?.routes?.find(route => route.agent === 'antigravity')?.auth;
     report = fresh;
+    for (const route of fresh.routes || []) {
+      const receipt = actionReceipts.get(route.agent);
+      if (route.agent === 'antigravity' && route.auth === 'ok' && route.ready) {
+        if ((previousAntigravityAuth === 'absent' || receipt?.watch === 'checking') &&
+            liveResults.get(route.agent)?.result?.route_status === 'authentication_required') liveResults.delete(route.agent);
+        if (receipt?.action === 'login' && receipt.status === 'launch_requested' && !receipt.needsSignIn) {
+          receipt.watch = 'found';
+          receipt.completion = 'session_detected';
+          receipt.needsSignIn = false;
+        }
+      } else if (route.agent === 'antigravity' && receipt?.watch === 'found' && route.auth === 'absent') {
+        receipt.watch = 'ended';
+        receipt.completion = 'unobserved';
+        receipt.needsSignIn = true;
+      }
+      if (receipt?.action === "install" && receipt.status === "launch_requested") {
+        receipt.completion = route.installed === true && route.version ? "version_detected" : "unobserved";
+      }
+    }
+    const setupContext = document.querySelector('#setup-context');
+    if (setupContext && fresh.context) setupContext.textContent = `This computer: ${fresh.context.machine} · Project: ${fresh.context.project}`;
     renderStaleNotice(fresh.setup_center, asked);
     // The topbar pill links to /ledger on this origin; its tooltip names the
     // file on disk once the ledger exists, so the page can also be opened directly.
@@ -583,6 +745,26 @@ async function refresh() {
   }
 }
 
+function watchAntigravitySignIn(receipt) {
+  const epoch = governorEpoch;
+  const deadline = Date.now() + 5 * 60_000;
+  receipt.watch = 'checking';
+  renderActionViews();
+  const active = () => actionReceipts.get('antigravity') === receipt && receipt.watch === 'checking' && governorEpoch === epoch;
+  async function observe() {
+    if (!active()) return;
+    try {
+      const result = await api('/api/antigravity-signin', {signal: AbortSignal.timeout(25_000)});
+      if (!active()) return;
+      if (result.auth === 'ok') await refresh();
+    } catch { /* A single missed check can recover during the observation window. */ }
+    if (!active()) return;
+    if (Date.now() < deadline) setTimeout(observe, 5000);
+    else { receipt.watch = 'ended'; renderActionViews(); }
+  }
+  setTimeout(observe, 5000);
+}
+
 async function launchAction(provider, action, options = {}) {
   if (!['login','install','update','models','diff','commit'].includes(action) || (provider !== 'skills' && !Object.hasOwn(LOGIN_COMMANDS, provider))) { showToast(ACTION_REASONS.unsupported_action); return; }
   if (actionReceipts.get(provider)?.status === 'launching' || (batchRunning && !options.batch)) return;
@@ -590,7 +772,10 @@ async function launchAction(provider, action, options = {}) {
   // An observation timeout cannot cancel or disprove the server's terminal launch.
   // A retry is a new explicit owner decision, not an automatic reconciliation or resend.
   const previousAction = actionReceipts.get(provider);
-  if ((previousAction?.status === 'launch_unconfirmed' || previousAction?.status === 'launch_requested' && previousAction.action === 'update' && updateAttempts.get(provider)?.observed !== true) && !await confirmSetupAction('The previous terminal launch is unconfirmed or its completion is still unobserved. Check for an existing terminal first. Do you explicitly want to try this action again?')) return;
+  if (provider === 'antigravity' && action === 'login' && previousAction?.action === 'login' &&
+      previousAction.status === 'launch_requested' && previousAction.watch !== 'found' &&
+      !await confirmSetupAction('A sign-in window was already requested. Starting again requires using the code from the new Google page. Start a new sign-in?')) return;
+  if ((previousAction?.status === 'launch_unconfirmed' || previousAction?.status === 'launch_requested' && (previousAction.action === 'update' && updateAttempts.get(provider)?.observed !== true || previousAction.action === 'install' && previousAction.completion !== 'version_detected')) && !await confirmSetupAction('The previous terminal launch is unconfirmed or its completion is still unobserved. Check for an existing terminal first. Do you explicitly want to try this action again?')) return;
   const cli = maintenance?.cli_updates.find(item => item.agent === provider);
   const command = action === 'update' ? cli?.update_command : action === 'install' ? (cli?.install_command || session.providers[provider]?.install?.[session.platform]) : null;
   if (['install','update'].includes(action) && provider !== 'skills' && !command) { showToast('No verified update command for this installation. Use its update guide.'); return; }
@@ -615,14 +800,15 @@ async function launchAction(provider, action, options = {}) {
     // A confirmed new login invalidates only a prior success, never the evidence that login is needed.
     if (result.launched === true && ['login','update'].includes(action) && liveResults.get(provider)?.status === 'success') liveResults.delete(provider);
     if (!renderActionViews()) { showToast(result.launched === true ? 'Launch request accepted, but this page could not refresh. Check the terminal, then reload this page before another action.' : 'Terminal was not launched, and this page could not refresh. Reload this page before another action.'); return receipt; }
-    showToast(ACTION_LABELS[receipt.status]);
+    showToast(action === 'login' && result.launched === true ? 'Sign-in requested. Follow the provider’s prompts.' : ACTION_LABELS[receipt.status]);
     if (result.launched !== true) return receipt;
-    if (["login", "install"].includes(action)) {
+    if (provider === 'antigravity' && action === 'login') watchAntigravitySignIn(receipt);
+    else if (["login", "install"].includes(action)) {
       let attempts = 0;
       const poll = setInterval(async () => {
         attempts += 1;
         await refresh();
-        if (attempts >= 75) clearInterval(poll);
+        if (attempts >= 75 || actionReceipts.get(provider) !== receipt || receipt.completion === "version_detected") clearInterval(poll);
       }, 4000);
     }
     if (action === 'update' && provider !== 'skills') {
@@ -659,16 +845,19 @@ async function launchAction(provider, action, options = {}) {
 // job's identity: a second click reuses it, a governor change clears it, and
 // an answer arriving for an entry that is no longer current is dropped rather
 // than written over whatever owns the card now.
-async function runTest(provider, notify = true) {
+async function runTest(provider, notify = true, destination = {}) {
+  const signInReceipt = actionReceipts.get(provider);
   const inFlight = runningTests.get(provider);
   if (inFlight) return inFlight.promise;
-  const entry = {};
+  const entry = { startedAt: Date.now() };
   runningTests.set(provider, entry);
   const current = () => runningTests.get(provider) === entry;
   const settle = (value, message) => {
     if (!current()) return { status: "cancelled" };
     runningTests.delete(provider);
     liveResults.set(provider, value);
+    if (signInReceipt?.action === 'login' && actionReceipts.get(provider) === signInReceipt &&
+        value.result?.route_status === 'authentication_required') signInReceipt.needsSignIn = true;
     render();
     if (notify && message) showToast(message);
     return value;
@@ -677,10 +866,10 @@ async function runTest(provider, notify = true) {
   return entry.promise;
 
   async function verify() {
-    liveResults.set(provider, { status: "running" });
+    liveResults.set(provider, { status: "running", startedAt: entry.startedAt });
     render();
     try {
-      const job = await api("/api/test", { method: "POST", body: JSON.stringify({ provider, governor: governorSelect.value }) });
+      const job = await api("/api/test", { method: "POST", signal: AbortSignal.timeout(20000), body: JSON.stringify({ provider, governor: governorSelect.value, ...destination }) });
       const deadline = Date.now() + TEST_DEADLINE_MS;
       // Sequential polling: the next request goes out only after the previous
       // one answered, so a slow answer can neither overlap the next poll nor
@@ -689,7 +878,13 @@ async function runTest(provider, notify = true) {
       while (current()) {
         await sleep(TEST_POLL_MS);
         if (!current()) break;
-        const state = await api(`/api/job/${job.id}`);
+        const state = await api(`/api/job/${job.id}`, {signal: AbortSignal.timeout(20000)});
+        if (!current()) break;
+        if (state.status === 'running') {
+          liveResults.set(provider, {status:'running', startedAt:entry.startedAt, phase:state.phase, received_output:state.received_output});
+          const line = document.querySelector(`[data-check-progress="${provider}"]`);
+          if (line) line.textContent = routeCopy({agent:provider}, 'testing');
+        }
         if (state.status !== "running") {
           const live = current();
           const value = settle(state, state.status === "success" ? `${providerLabel(provider)} passed the synthetic check.` : `${providerLabel(provider)}: ${state.result?.route_status || "check failed"}. See the card for details.`);
@@ -702,7 +897,14 @@ async function runTest(provider, notify = true) {
       }
       return { status: "cancelled" };
     } catch (error) {
-      return settle({ status: "failed", error: error.message }, error.message);
+      const detail = error.name === 'TimeoutError' || error.name === 'AbortError'
+        ? 'The local dashboard stopped answering. The review may still finish. Check the private ledger before starting another check.'
+        : error.status === 403 ? 'The dashboard session expired. Reopen Setup Center from the shortcut.'
+        : error.status === 404 ? 'This dashboard no longer has the running check. Check the private ledger for its result.'
+        : error.status === 409 ? 'Another check is running or the saved reviewer changed. Refresh the dashboard before verifying again.'
+        : error.status === 429 ? 'Setup Center is busy. Wait for the current checks to finish.'
+        : 'Could not get the verification result from the local dashboard. Check the private ledger before trying again.';
+      return settle({ status:'failed', result:{route_status:'unconfirmed', detail} }, detail);
     }
   }
 }
@@ -720,9 +922,7 @@ async function runQuickSetup() {
     // allowance on that failure. The state the card shows decides, whatever the readiness flag says.
     const eligible = reviewerRoutes().filter((route) => route.ready && !["ready", "testing", "update"].includes(routeState(route)));
     if (!eligible.length) {
-      const disconnected = reviewerRoutes().filter((route) => !route.ready);
-      const outdated = reviewerRoutes().some((route) => routeState(route) === "update");
-      showToast(outdated ? "Detected sessions are checked. Follow the remaining provider cards." : disconnected.length ? "Detected sessions are checked. Use Sign in on the remaining provider cards." : "All available reviewer connections are already verified.");
+      showToast("No additional reviewer sessions are ready to verify. Check the provider cards for the next step.");
       return;
     }
     let passed = 0;
@@ -1123,12 +1323,15 @@ function updateBatchButton() {
     button.disabled = batchRunning || !count;
     button.textContent = batchRunning ? "Updating…" : count ? `Update ${count} selected…` : "Update selected…";
   }
+  if (standardSnapshot && !standardNeedsCheck) renderStandardInstall();
   const available = availableUpdates().length;
+  const availability = document.querySelector('#batch-availability');
+  if (availability) availability.textContent = !available && !batchRunning ? 'No confirmed updates can be started together. Check the Installed, Latest checked and Status columns for each CLI.' : '';
   for (const selector of ['#update-all','#update-all-top']) {
     const all = document.querySelector(selector);
     if (!all) continue;
     all.disabled = batchRunning || !available;
-    all.textContent = available ? `Update all available CLIs (${available})…` : 'Update all available CLIs…';
+    all.textContent = batchRunning ? 'Update in progress…' : available ? `Update all available CLIs (${available})…` : 'Update all available CLIs…';
   }
 }
 
@@ -1146,23 +1349,35 @@ async function runAllUpdates() {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitForVersionChange(provider, before, attempts = 60) {
+async function waitForVersionChange(provider, before, row) {
   const deadline = Date.now() + 120_000;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    await sleep(attempt === 0 ? 5_000 : 10_000);
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) return null;
-    let timer;
-    try { await Promise.race([loadMaintenance(true), new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Version observation timed out')),Math.min(30_000,remaining));})]); }
-    catch { return null; }
-    finally { clearTimeout(timer); }
-    const current = maintenance?.cli_updates.find((item) => item.agent === provider)?.current;
-    if (current && current !== before) return current;
+  for (let number = 1; Date.now() < deadline; number++) {
+    await sleep(Math.min(number === 1 ? 5000 : 10000, deadline - Date.now()));
+    if (Date.now() >= deadline) break;
+    row.detail = 'Checking the installed version (check ' + number + ')…';
+    renderOperation();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(20000, deadline - Date.now()));
+    try {
+      const result = await api('/api/cli-version?provider=' + encodeURIComponent(provider), {signal:controller.signal});
+      if (result.provider !== provider || !result.version) {
+        row.detail = 'Check ' + number + ' could not read the version. Check the updater terminal for a prompt.';
+      } else if (before && result.version !== before) {
+        return result.version;
+      } else {
+        row.detail = 'Check ' + number + ' detected ' + result.version + '. Waiting to check again. See the updater terminal for output.';
+      }
+    } catch (error) {
+      if (error.status === 403) { row.detail = 'The dashboard session expired. Reopen Setup Center before checking the version.'; return null; }
+      row.detail = 'Check ' + number + ' could not reach the version checker. Check the updater terminal while MOMM retries discovery.';
+    } finally { clearTimeout(timer); }
+    renderOperation();
   }
   return null;
 }
 
 async function runBatchUpdate(agents = null) {
+  if (standardPending || standardSnapshot?.status === "running") { showToast("Wait for reviewer installation to finish."); return; }
   if (batchRunning || !maintenance) return;
   const selected = (agents || selectedBatch()).map((agent) => maintenance.cli_updates.find((item) => item.agent === agent)).filter(Boolean);
   const runnable = selected.filter((item) => item.installed && item.update_command).map(item=>({...item}));
@@ -1172,27 +1387,45 @@ async function runBatchUpdate(agents = null) {
   if (!await confirmSetupAction(`Open a visible terminal for each of these ${runnable.length} update command${runnable.length === 1 ? "" : "s"}, one after another, re-checking the detected version after each?\n\n${list}${refused.length ? `\n\nSkipped (no verified command): ${refused.map((item) => providerLabel(item.agent)).join(", ")}` : ""}`)) return;
   if (batchRunning) return;
   batchRunning = true;
-  batchProgress = {total:runnable.length,processed:0,phase:'Starting confirmed commands.'};
+  batchProgress = {total:runnable.length, processed:0, confirmed:0, started:Date.now(), phase:'Starting confirmed commands.',
+    rows:runnable.map(item=>({agent:item.agent,detail:'Queued'}))};
+  const ticker = setInterval(renderOperation, 1000);
   updateBatchButton();
   renderOperation();
   const outcomes = [], completedAgents = [];
   try {
     for (const item of runnable) {
       const before = item.current;
+      const row = batchProgress.rows[batchProgress.processed];
+      if (!before) {
+        row.detail = 'Starting version unavailable. Choose Check everything before updating this CLI.';
+        batchProgress.phase = 'Stopped: the starting version could not be verified.';
+        break;
+      }
+      row.detail = 'Requesting the updater terminal…';
       batchProgress.phase = `Requesting ${providerLabel(item.agent)} update…`; renderOperation();
       const receipt = await launchAction(item.agent,'update',{batch:true,expectedCommand:item.update_command});
       if (receipt?.status === 'launch_requested') {
         const attempt = updateAttempts.get(item.agent);
-        if (!attempt) { batchProgress.processed += 1; batchProgress.phase='Stopped: launch accepted but version tracking is unavailable. Remaining commands were not launched.'; outcomes.push(`${providerLabel(item.agent)}: accepted, tracking unavailable`); break; }
-        batchProgress.phase = `Waiting for ${providerLabel(item.agent)} version evidence, not estimated installation progress.`;
+        if (!attempt) { row.detail='Launch accepted. Check the updater terminal and recheck the installed version.'; batchProgress.processed += 1; batchProgress.phase='Stopped: launch accepted but version tracking is unavailable. Remaining commands were not launched.'; outcomes.push(`${providerLabel(item.agent)}: accepted, tracking unavailable`); break; }
+        row.detail = `Launch accepted. Waiting for the first version check (installed: ${before || "unknown"}).`;
+        batchProgress.phase = `Watching ${providerLabel(item.agent)} for a version change.`;
         renderMaintenance(); renderOperation();
-        const after = await waitForVersionChange(item.agent, before);
+        const after = await waitForVersionChange(item.agent, before, row);
         attempt.observed = Boolean(after); if (after) completedAgents.push(item.agent);
         attempt.message = after ? `Detected ${before || "unknown"} → ${after}. Verify connection again.` : "No version change observed. Finish in the terminal, then Check everything.";
+        row.detail = after ? before + ' → ' + after + '. Version change verified.' : row.detail + ' Version change unconfirmed. Finish or inspect the updater terminal, then choose Check everything.';
+        if (after) {
+          batchProgress.confirmed++;
+          const current = maintenance.cli_updates.find(entry => entry.agent === item.agent);
+          if (current) { current.current = after; current.status = after === current.latest ? 'current' : 'unknown'; }
+          liveResults.delete(item.agent);
+        }
         outcomes.push(`${providerLabel(item.agent)} ${after ? `${before || "?"} → ${after}` : "not verified"}`);
         batchProgress.processed += 1;
         if (!after) { batchProgress.phase = 'Stopped: version change unconfirmed; remaining commands were not launched.'; break; }
       } else {
+        row.detail = ACTION_REASONS[receipt?.reason] || ACTION_LABELS[receipt?.status] || 'Action not launched. Check the provider card.';
         outcomes.push(`${providerLabel(item.agent)}: ${ACTION_REASONS[receipt?.reason] || ACTION_LABELS[receipt?.status] || 'not launched'}`);
         batchProgress.processed += 1;
         if (!receipt) { batchProgress.phase='Stopped: action not launched; remaining commands were not launched.'; break; }
@@ -1201,8 +1434,15 @@ async function runBatchUpdate(agents = null) {
       }
       renderMaintenance();
     }
-    if (batchProgress.processed === batchProgress.total && !batchProgress.phase.startsWith('Stopped')) batchProgress.phase = 'All action outcomes recorded. Check versions and verify connections separately.';
+    if (batchProgress.processed === batchProgress.total && !batchProgress.phase.startsWith('Stopped')) batchProgress.phase = 'Batch finished. Verify reviewer connections from their cards.';
+  } catch {
+    batchProgress.phase = 'Stopped: update tracking was interrupted. Check the updater terminal and recheck versions.';
+    const row = batchProgress.rows[batchProgress.processed];
+    if (row) row.detail = 'Tracking interrupted. Inspect the terminal before retrying.';
   } finally {
+    clearInterval(ticker);
+    batchProgress.finished = Date.now();
+    for (const row of batchProgress.rows) if (row.detail === 'Queued') row.detail = 'Skipped after the batch stopped.';
     batchRunning = false;
     for (const agent of completedAgents) batchSelected.delete(agent);
     renderMaintenance(); render();
@@ -1393,11 +1633,144 @@ capabilitiesGrid.addEventListener("click", (event) => {
 capabilitiesRefreshButton.addEventListener("click", loadCapabilities);
 planForm.addEventListener("submit", runPlan);
 
+let standardSnapshot = null;
+let standardPending = false;
+let standardTimer = null;
+let standardNeedsCheck = false;
+let standardReadFailures = 0;
+let standardReading = false;
+let standardUnavailable = false;
+let unconfirmedInstallId = null;
+const standardButton = document.querySelector('#install-standard');
+const standardLabels = {
+  queued:'Waiting', checking_or_installing:'Checking and installing if missing…',
+  already_installed:'Already installed', installed_verified:'Installed and checked',
+  install_failed:'Installer reported a failure.',
+  deferred:'Waiting until the interrupted setup has been checked.',
+  timed_out:'Setup exceeded its time limit. Retry after checking for a running vendor installer.',
+  worker_failed:'Setup ended without a valid result. Retry to check the installed version first.',
+  installer_busy:'Another MOMM installation is active. Wait for it to finish, then retry.',
+  lock_unavailable:'Setup could not lock the user settings folder. Check write access and retry.',
+  version_unverified:'Version unconfirmed. Check again from the provider card.',
+  discovery_inconclusive:'Could not check this program. Retry discovery on its card.'
+};
+function standardRowDetail(row) {
+  const hints = {
+    timeout:'The installer timed out. Check for a running installer before retrying.',
+    cleanup_unconfirmed:'Setup timed out and could not confirm that the vendor installer stopped. Close or finish it before retrying.',
+    architecture:'The vendor installer could not select a download for this processor. Check its supported Windows architectures in Help.',
+    disk_full:'Free disk space, then retry.',
+    permission:'Check write access to the install location, then retry.',
+    network:'Check the network or proxy connection, then retry.'
+  };
+  if (row.reason) return hints[row.reason] || (/^exit [0-9]{1,3}$/.test(row.reason) ? 'Installer ' + row.reason + '. See the provider card before retrying.' : 'See the provider card before retrying.');
+  if (row.status === 'checking_or_installing' && Number.isFinite(row.started_at)) {
+    return Math.max(0, Math.floor((Date.now() - row.started_at) / 1000)) + ' s elapsed';
+  }
+  return '';
+}
+function renderStandardInstall(message) {
+  const state = standardSnapshot;
+  const running = state?.status === 'running';
+  if (standardUnavailable) {
+    standardButton.disabled = true;
+    standardButton.textContent = 'Bulk installation unavailable';
+    document.querySelector('#standard-install-result').hidden = false;
+    document.querySelector('#standard-install-summary').textContent = 'This Setup Center server does not support Install everything. Open the latest Setup Center from your MOMM launcher, or use Install CLI on an individual provider card here.';
+    document.querySelector('#standard-install-rows').textContent = '';
+    return;
+  }
+  standardButton.disabled = standardPending || batchRunning || (!standardNeedsCheck && (!state || running));
+  standardButton.textContent = standardNeedsCheck ? 'Check installation' : running ? 'Installing reviewers…' : state?.status === 'needs_attention' && state.selective_retry ? 'Retry unfinished reviewers' : 'Install everything';
+  const panel = document.querySelector('#standard-install-result');
+  panel.hidden = !message && (!state || state.status === 'idle');
+  if (panel.hidden) return;
+  const rows = state?.rows || [];
+  const verified = rows.filter(row => ['already_installed','installed_verified'].includes(row.status)).length;
+  document.querySelector('#standard-install-summary').textContent = message || (running
+    ? verified + ' of ' + rows.length + ' reviewer programs ready.'
+    : state?.status === 'complete' ? 'All five programs are installed. Sign in on the provider cards, then choose Verify detected sessions.'
+    : verified + ' of ' + rows.length + ' standard programs installed and version-checked. See each unfinished program below.');
+  document.querySelector('#standard-install-rows').innerHTML = rows.map(row =>
+    '<li><strong>' + escapeHtml(providerLabel(row.agent)) + '</strong> · ' + escapeHtml(standardLabels[row.status] || 'Check status') + (row.version ? ' · ' + escapeHtml(row.version) : '') + ' ' + escapeHtml(standardRowDetail(row)) + '</li>').join('');
+}
+function missingStandardInstall(error) {
+  if (![404, 405, 410].includes(error?.status)) return false;
+  clearTimeout(standardTimer);
+  standardUnavailable = true;
+  standardSnapshot = null;
+  standardNeedsCheck = false;
+  renderOperation();
+  renderStandardInstall();
+  return true;
+}
+async function syncStandardInstall() {
+  if (standardReading || standardUnavailable) return;
+  standardReading = true;
+  clearTimeout(standardTimer);
+  const wasRunning = standardSnapshot?.status === 'running';
+  try {
+    standardSnapshot = await api('/api/install-standard',{signal:AbortSignal.timeout(10000)});
+    standardReadFailures = 0;
+    standardNeedsCheck = false;
+    renderOperation();
+    if (unconfirmedInstallId === standardSnapshot.id && standardSnapshot.status !== 'running') {
+      renderStandardInstall('No new installation is recorded. Choose the install or retry button when ready.');
+    } else {
+      unconfirmedInstallId = null;
+      renderStandardInstall();
+    }
+    if (standardSnapshot.status === 'running') standardTimer = setTimeout(syncStandardInstall,2000);
+    else if (wasRunning) void refresh(); // A slow dashboard scan must never block a new job from polling.
+  } catch (error) {
+    if (missingStandardInstall(error)) return;
+    standardNeedsCheck = true;
+    const transient = !error?.status || [408, 429].includes(error.status) || error.status >= 500;
+    if (++standardReadFailures <= 3 && transient) {
+      renderStandardInstall('Connection interrupted. Reconnecting to check installation progress…');
+      standardTimer = setTimeout(syncStandardInstall, 1000 * 2 ** standardReadFailures);
+    } else {
+      renderStandardInstall('Could not read installation progress. Choose Check installation or reopen Setup Center.');
+    }
+  } finally { standardReading = false; }
+}
+standardButton?.addEventListener('click', async () => {
+  if (standardUnavailable) return;
+  if (standardNeedsCheck) return syncStandardInstall();
+  if (standardPending || batchRunning || !standardSnapshot || standardSnapshot.status === 'running') return;
+  const {id,rows} = standardSnapshot;
+  const retry = standardSnapshot.status === 'needs_attention' && standardSnapshot.selective_retry === true;
+  const plan = retry ? standardSnapshot.plan.filter(item => rows.some(row => row.agent === item.agent &&
+    !['installed_verified','already_installed'].includes(row.status))) : standardSnapshot.plan;
+  const labels = plan.map(item => item.label).join(', ');
+  const commands = plan.map(item => item.label + ': ' + item.command).join('\n');
+  if (!await confirmSetupAction((retry ? 'Retry ' : 'Set up ') + labels + '? MOMM installs only missing programs and checks each version. Sign-in comes afterward.', commands)) return;
+  if (standardPending || batchRunning || standardSnapshot.id !== id) return;
+  unconfirmedInstallId = null;
+  standardPending = true; renderStandardInstall('Starting reviewer setup…');
+  try {
+    standardSnapshot = await api('/api/install-standard',{method:'POST',signal:AbortSignal.timeout(10000),body:JSON.stringify({previous_id:id,retry_failed:retry,commands:plan.map(item=>item.command)})});
+    await syncStandardInstall();
+  } catch (error) {
+    if (missingStandardInstall(error)) return;
+    standardNeedsCheck = true;
+    unconfirmedInstallId = id;
+    renderStandardInstall('Checking whether setup started…');
+    await syncStandardInstall();
+  } finally {
+    standardPending = false;
+    if (standardUnavailable || (!standardNeedsCheck && unconfirmedInstallId === null)) renderStandardInstall();
+    else standardButton.disabled = false;
+  }
+});
+
 grid.addEventListener("click", async (event) => {
   const loginCopy = event.target.closest('[data-copy-login]');
   const receiptButton = event.target.closest('[data-copy-receipt]');
-  if (loginCopy) return copySetupText(LOGIN_COMMANDS[loginCopy.dataset.copyLogin], 'login');
-  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt');
+  if (loginCopy) return copySetupText(manualLoginCommand(loginCopy.dataset.copyLogin), 'login',loginCopy);
+  const command = event.target.closest('[data-copy-command]');
+  if (command) return copySetupText(command.querySelector('code').textContent,'command',command);
+  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt',receiptButton);
   if (event.target.closest('[data-discovery]')) return refresh();
   const actionButton = event.target.closest("[data-action]");
   const testButton = event.target.closest("[data-test]");
@@ -1406,7 +1779,7 @@ grid.addEventListener("click", async (event) => {
 });
 maintenanceGrid.addEventListener("click", (event) => {
   const receiptButton = event.target.closest('[data-copy-receipt]');
-  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt');
+  if (receiptButton) return copySetupText(receiptCopy(receiptButton.dataset.copyReceipt), 'receipt',receiptButton);
   const button = event.target.closest("[data-maint-action]");
   if (button) launchAction(button.dataset.maintProvider, button.dataset.maintAction);
   const clockButton = event.target.closest("[data-clock-action]");
@@ -1435,6 +1808,8 @@ document.querySelector('#walkthrough-open')?.addEventListener('click', () => { c
 // stale job, and a fresh poll is queued for the new selection.
 function changeGovernor() {
   governorEpoch += 1;
+  const signIn = actionReceipts.get('antigravity');
+  if (signIn?.watch === 'checking') signIn.watch = 'ended';
   liveResults.clear();
   runningTests.clear();
   refresh();
@@ -1492,6 +1867,7 @@ function forgetLaunchToken(token) {
     // tab storage: header authority never depends on the reply repeating it.
     session = { ...(await api("/api/session")), token: session.token };
     reviewerSessionValidated=true;publishReviewerSession(session.token);
+    syncStandardInstall();
     await refresh();
     loadMaintenance(false);
     loadGuidance();
@@ -1504,6 +1880,15 @@ function forgetLaunchToken(token) {
     if (error?.status === 403) { forgetLaunchToken(session?.token); session = null; }
     if (!reviewerSessionValidated && reviewerSessionState !== 'invalid') publishReviewerSession(null);
     summary.textContent = "Setup Center could not start.";
+    if (!session?.token) {
+      const guidance = 'Open Setup Center from the MOMM launcher to enable installation in a private tab. A bookmarked dashboard address can open without install access.';
+      summary.textContent = guidance;
+      document.querySelector('#standard-install-result').hidden = false;
+      document.querySelector('#standard-install-summary').textContent = guidance;
+      const button = document.querySelector('#install-standard');
+      button.disabled = true;
+      button.textContent = 'Open Setup Center to install';
+    }
     showToast(error.message);
   }
 })();

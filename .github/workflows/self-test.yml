@@ -57,6 +57,10 @@ jobs:
         if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: node momm/scripts/install-completion.test.mjs
+      - name: Reviewer installation and recovery
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        run: node momm/scripts/reviewer-install.test.mjs
       - name: Capability expiry refusal
         if: ${{ !cancelled() }}
         timeout-minutes: 2

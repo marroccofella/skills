@@ -16,9 +16,9 @@ const maintenance = () => ({cli_updates:[
 ],models:[],skills:{versions:[],repository_dirty:false},environment:{},runtime:{node_ready:true,node:'22',git:'2',powershell:'7',platform:'win32'},checked_at:'2026-10-09T00:00:00Z'});
 
 function fixture(variant=client) {
-  const begin=suite.indexOf('function fakeTimers('),end=suite.indexOf("await test('six CLI rows",begin);
+  const begin=suite.indexOf('function fakeTimers('),end=suite.indexOf('// End shared dashboard fixture.',begin);
   assert(begin>=0&&end>begin,'fixture extraction must be exact');
-  const host=vm.createContext({vm,client:variant,assert,flush,same});
+  const host=vm.createContext({vm,client:variant,assert,flush,same,AbortSignal});
   vm.runInContext(suite.slice(begin,end)+';this.make=ui;this.timers=fakeTimers;',host);
   return host;
 }

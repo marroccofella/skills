@@ -22,6 +22,17 @@ function fixture(fetch){
 }
 const response=(value,status=200)=>({ok:status<400,status,json:async()=>value});
 const cases={
+  async savedSample(){
+    const row={name:'bee',model:'example',base_url:'http://127.0.0.1:9/v1'};
+    const f=fixture(async url=>response(url==='/api/bumblers'?{bumblers:[row]}:snapshot()));
+    await flush();
+    let requests=0;
+    f.context.runTest=async (name,notify,destination)=>{assert.equal(name,row.name);assert.equal(destination.base_url,row.base_url);requests++;return {status:'success',result:{run_id:'sample-1'}};};
+    const click=()=>f.node('bump-list').onclick({target:{dataset:{sample:row.name}}});
+    const cancelled=click();f.node('bee-confirm-cancel').onclick();await cancelled;assert.equal(requests,0);
+    const confirmed=click();f.node('bee-confirm-accept').onclick();await confirmed;assert.equal(requests,1);
+    assert.match(f.node('bump-sample-result-bee').textContent,/succeeded.*sample-1/);
+  },
   async legacyCards(){const f=fixture(async()=>response({...snapshot(),profiles:[{...profile,state:'active',auth_mode:'api_key'}]}));await flush();const html=f.node('bee-cards').innerHTML;assert.match(html,/Unsupported saved authentication/);assert.match(html,/data-bee="archive"/);for(const op of ['edit','wording','duplicate','test'])assert(!html.includes('data-bee="'+op+'"'),'quarantined cards must not offer '+op);},
   async legacyAuthToggle(){const posts=[],f=fixture(async(_url,options)=>{if(options.method==='POST'){posts.push(JSON.parse(options.body));return response({});}return response(snapshot());});await flush();f.core.edit({...profile,auth_mode:'api_key'});f.elements.kind.value='cli';f.elements.kind.onchange();f.elements.kind.value='bumbler';f.elements.kind.onchange();f.elements.auth_mode.value='oauth';await f.node('bee-form').onsubmit({preventDefault(){},currentTarget:{elements:f.elements}});assert.equal(posts.length,0,'legacy saved mode must not be converted through type toggles');assert.match(f.node('bee-editor-error').textContent,/OAuth|unsupported/i);},
   async authChoice(){const posts=[],f=fixture(async(_url,options)=>{if(options.method==='POST'){posts.push(JSON.parse(options.body));return response({});}return response(snapshot());});await flush();f.core.edit(profile);assert.equal(f.elements.auth_mode.value,'oauth');f.elements.auth_mode.value='api_key';await f.node('bee-form').onsubmit({preventDefault(){},currentTarget:{elements:f.elements}});assert.equal(posts.length,0);assert.match(f.node('bee-editor-error').textContent,/OAuth/);f.elements.kind.value='cli';f.elements.kind.onchange();assert.equal(f.elements.auth_mode.value,'api_key');assert.equal(f.elements.auth_mode.disabled,true);},
@@ -31,7 +42,7 @@ const cases={
   async stale(){let revision=1,posts=0;const f=fixture(async(url,options)=>{if(options.method==='POST'){posts++;if(posts===1){revision=2;return response({code:'stale_revision',error:'Stale revision'},409);}assert.equal(JSON.parse(options.body).revision,2);return response({});}return response(snapshot(revision));});await flush();await assert.rejects(f.core.mutate('wording',{id:profile.id,wording:'keep'}));await f.core.mutate('wording',{id:profile.id,wording:'keep'});},
   async payload(){const posts=[];const f=fixture(async(url,options)=>{if(options.method==='POST'){posts.push(JSON.parse(options.body));return response({});}return response(snapshot());});await flush();f.core.edit(profile);await f.node('bee-form').onsubmit({preventDefault(){},currentTarget:{elements:f.elements}});assert(!Object.hasOwn(posts[0].profile,'route'),'remote profile payload must omit a CLI route');},
   async errorjson(){const f=fixture(async()=>({ok:false,status:502,json:async()=>{throw Error('PRIVATE_HTML_PARSER');}}));await flush();assert(!f.node('bee-status').textContent.includes('PRIVATE_HTML_PARSER'));assert.equal(f.node('bee-status').textContent,'Settings request refused.');},
-  async session(){let calls=0;const f=fixture(async()=>{calls++;return response(snapshot());});await flush();f.listeners['momm-reviewer-session']({detail:{token:'a'.repeat(48)}});await flush();assert.equal(calls,2,'a validated same-token session event must permit recovery');},
+  async session(){let calls=0;const f=fixture(async(url)=>{if(url==='/api/bumblers')return response({bumblers:[]});calls++;return response(snapshot());});await flush();f.listeners['momm-reviewer-session']({detail:{token:'a'.repeat(48)}});await flush();assert.equal(calls,2,'a validated same-token session event must permit draft recovery');},
   async baseline(){const f=fixture(async()=>response(snapshot()));await flush();assert(f.node('bee-cards').innerHTML.includes('Bab'));assert(f.node('bee-cards').innerHTML.includes('Not qualified'));assert(f.node('bee-clis').innerHTML.includes('Restore')===false);}
 };
 const focus=process.argv[2];if(focus){assert(cases[focus]);await cases[focus]();}else for(const fn of Object.values(cases))await fn();

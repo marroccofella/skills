@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { prepareReviewerSetup } from "./reviewer-install.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,7 +46,7 @@ function runCommand(command, args, options = {}) {
 }
 
 function parseArgs(argv) {
-  const options = { targets: [], customDirs: [], dryRun: false, pretty: false };
+  const options = { reviewerMode: "install", targets: [], customDirs: [], dryRun: false, pretty: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => {
@@ -55,6 +56,8 @@ function parseArgs(argv) {
     };
     if (arg === "--target") options.targets = next().split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
     else if (arg === "--custom-dir") options.customDirs.push(path.resolve(next()));
+    else if (arg === "--install-reviewers") options.reviewerMode = "install";
+    else if (arg === "--links-only") options.reviewerMode = "skip";
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--pretty") options.pretty = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
@@ -140,14 +143,15 @@ function linkGemini(options) {
     : { status: "error", detail: (result.stderr || result.stdout || result.error?.message || "native link failed").trim().slice(0, 1000) };
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write("Usage: node scripts/install.mjs [--target auto|all|codex|gemini|claude|antigravity] [--custom-dir <skill-parent>] [--dry-run] [--pretty]\n");
+    process.stdout.write("Usage: node scripts/install.mjs [--target auto|all|codex|gemini|claude|antigravity] [--custom-dir <skill-parent>] [--dry-run] [--install-reviewers | --links-only] [--pretty]\nReviewer CLIs: install missing standard providers by default. Use --links-only to skip reviewer setup. --dry-run previews changes.\n");
     return;
   }
   let targets = options.targets;
   if (!targets.length && !options.customDirs.length) throw new Error("--target is required. Choose codex, claude, gemini or antigravity; use --dry-run to preview. No harness is selected automatically.");
+  const reviewerSetup = await prepareReviewerSetup(options, path.dirname(skillRoot));
   if (targets.includes("auto")) {
     targets = ["codex"];
     if (harnessInstalled("gemini")) targets.push("gemini");
@@ -222,12 +226,18 @@ function main() {
     output.exit_reason = summaries.join("; ");
     process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
+  if (reviewerSetup) {
+    output.reviewer_setup = reviewerSetup;
+    if (reviewerSetup.mode === "install" && !reviewerSetup.complete) {
+      process.exitCode = 1;
+      process.stderr.write("Reviewer CLI setup needs attention. Open Setup Center for the next step under each provider.\n");
+    }
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   if (results.some((result) => ["error", "conflict", "unsupported"].includes(result.status))) process.exitCode = 1;
 }
 
-try { main(); }
-catch (error) {
+main().catch(error => {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
   process.exitCode = 1;
-}
+});

@@ -53,6 +53,16 @@ await test('21-event native shape reaches the unchanged full review contract',as
   const r=await invoke();assert.equal(r.status,'success',r.detail);assert.equal(r.review.summary,payload.summary);
   assert.equal(r.review.review_contract,PEER_CONTRACT);assert(!JSON.stringify(r).includes('_SENTINEL'));
 });
+await test('reported Copilot 1.0.112 session events preserve the final-answer and failure gates',async()=>{
+  const metadata=[event('session.start'),event('session.skills_loaded',{skills:[{name:'PRIVATE_SKILL_METADATA'}]}),event('session.model_change')];
+  const valid=await invoke([...metadata,...events()]);
+  assert.equal(valid.status,'success',valid.detail);
+  assert(!JSON.stringify(valid).includes('PRIVATE_SKILL_METADATA'));
+  const failed=events();failed.splice(-1,0,event('session.abort'));
+  assert.equal((await invoke([...metadata,...failed])).status,'error');
+  assert.equal((await invoke([...metadata,event('session.future_terminal'),...events()])).status,'invalid_output');
+  assert.equal((await invoke([...metadata,{type:'result',exitCode:0}])).status,'invalid_output');
+});
 await test('adapter selects machine output without changing read-only permissions or leaking artifact to argv',async()=>{
   await invoke();assert.equal(invocation.args[invocation.args.indexOf('--output-format')+1],'json');
   for(const flag of ['--available-tools=view','--allow-tool=view','--no-custom-instructions','--disable-builtin-mcps','--no-remote-export'])assert(invocation.args.includes(flag));
@@ -171,6 +181,14 @@ function events1091(content=JSON.stringify(payload),callResult='success') {
 await test('Copilot 1.0.91 shape: a session warning and per-call final results reach the full review contract',async()=>{
   const r=await invoke(events1091());assert.equal(r.status,'success',r.detail);assert.equal(r.review.summary,payload.summary);
   assert.equal(r.review.review_contract,PEER_CONTRACT);assert(!JSON.stringify(r).includes('_SENTINEL'),'no warning, tool or reasoning text may leak');
+});
+await test('instruction.update is bookkeeping and cannot supply a missing review',async()=>{
+  const rows=events1091();
+  rows.splice(1,0,event('instruction.update',{content:'INSTRUCTION_SENTINEL'}));
+  const accepted=await invoke(rows);
+  assert.equal(accepted.status,'success',accepted.detail);
+  assert(!JSON.stringify(accepted).includes('INSTRUCTION_SENTINEL'));
+  assert.notEqual((await invoke(rows.filter(row=>row.type!=='assistant.message'))).status,'success');
 });
 await test('a model call whose final result is not success is refused, and so is one without a result',async()=>{
   // MISSING removes the field: a default parameter would silently turn undefined back into success.

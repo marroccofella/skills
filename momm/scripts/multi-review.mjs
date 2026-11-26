@@ -14,14 +14,14 @@ import { CLAIM_TYPES, PEER_CONTRACT, reviewProblem, quotationDiagnostics } from 
 import {REVIEW_JSON_SCHEMA} from './review-contract-schema.mjs';
 import { captureSourceSnapshot, RANGE_DIFF_FLAGS } from "./governor.mjs";
 import { inventory as installationsInventory } from "./installations.mjs";
-import { createProcessScope, executableOutside } from "./process-scope.mjs";
+import { createProcessScope, executableOutside, pathEntryOutside, windowsReviewerInstallDirs } from "./process-scope.mjs";
 import { parseUsage, inputEstimate, rollupUsage } from "./usage.mjs";
 import { readMedia } from "./media-bytes.mjs";
 import { attemptRecord, startAttempt, persistAttempt, attemptTotals } from "./attempts.mjs";
 import { ARTIFACT_DELIMITER, resolveGuidance, assemblePrompt, guidanceReportFields, writeGuidanceSidecar, trustProject, validateGuidance } from "./guidance.mjs";
 import { splitDiff, headerOnlyQuote } from "./split.mjs";
 import { createScheduler } from "./scheduler.mjs";
-import { BUILT_IN_ROUTES, BUMBLER_CLIENT, BUMBLER_GUIDANCE, bumblerAnswer, bumblerReadiness, bumblerRest, loadBumblers } from "./bumbler-route.mjs";
+import { BUILT_IN_ROUTES, BUMBLER_CLIENT, BUMBLER_GUIDANCE, sampleTargetId, bumblerAnswer, bumblerReadiness, bumblerRest, loadBumblers } from "./bumbler-route.mjs";
 import { ROLE_NAMES, loadRole, loadAllRoles, roleBrief, roleSection, roleGuidanceLayer, staleBriefNotices } from "./roles.mjs";
 import { ATTEMPT_BUDGET, COVERABLE_STATUSES, MODEL_FAMILIES, runPieceCovers, coverSection, coverReportRow, pieceCoverSummary } from "./cover.mjs";
 import { runSecondLook } from "./second-look.mjs";
@@ -192,8 +192,8 @@ const FORBIDDEN_ENV_NAMES = new Set([
 // only — never API keys.
 const LOGIN_HINTS = {
   codex: "codex login   (ChatGPT account, browser flow)",
-  claude: "claude   then run /login inside it   (Anthropic account, browser flow)",
-  antigravity: "agy login   (Google account, browser flow)",
+  claude: "claude auth login   (opens Claude sign-in in your browser)",
+  antigravity: "agy   (opens Google sign-in when required)",
   copilot: "copilot login   (GitHub account, browser flow)",
   gemini: "gemini   then /auth   (Standard or Enterprise Code Assist organization licenses; individual tiers were retired 2026-06-18)",
 };
@@ -934,6 +934,7 @@ function parseArgs(argv) {
     };
 
     if (arg === "--governor") options.governor = normalizeAgentName(next());
+    else if (arg === "--setup-sample") { options.setupSample = next(); options.noRetry = true; }
     else if (arg === "--input" || arg === "--patch") options.input = next();
     else if (arg === "--range") {
       const match = /^([^.\s][^\s]*?)\.\.([^.\s][^\s]*)$/.exec(next());
@@ -1100,7 +1101,8 @@ function platformCommand(command, args, env = process.env) {
   // Absolute PATH entries only: a relative entry or "." would resolve inside the project under review.
   const pathDirs = String(env[pathKey] ?? "").split(path.delimiter).filter(Boolean).map(p => p.replace(/^"|"$/g, "")).filter(p => path.isAbsolute(p))
     .filter(p => { const rel = path.relative(process.cwd(), p); return !(rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel))); }); // nor entries inside the project
-  const dirs = path.dirname(command) !== "." ? [path.dirname(path.resolve(command))] : pathDirs;
+  const fallback = windowsReviewerInstallDirs(name, env).filter(dir => pathEntryOutside(dir, process.cwd()));
+  const dirs = path.dirname(command) !== "." ? [path.dirname(path.resolve(command))] : [...new Set([...pathDirs, ...fallback])];
   for (const dir of dirs) {
     const native = path.join(dir, `${name}.exe`);
     if (fs.existsSync(native)) return { command: native, args };
@@ -1310,7 +1312,9 @@ function answerShapeEvidence(answer) {
 function copilotReviewPayload(stdout) {
   const invalid = detail => ({ payload: null, status: "invalid_output", detail: `Copilot machine output refused: ${detail}` });
   const failed = () => ({ payload: null, status: "error", detail: "Copilot returned a terminal failure event; no earlier answer was accepted." });
-  const known = new Set(["session.info", "session.auto_mode_resolved", "session.mcp_servers_loaded", "session.tools_updated",
+  // Copilot 1.0.112 can emit these session metadata events before a review response.
+  const known = new Set(["session.start", "session.skills_loaded", "session.model_change",
+    "instruction.update", "session.info", "session.auto_mode_resolved", "session.mcp_servers_loaded", "session.tools_updated",
     "user.message", "assistant.turn_start", "model.call_start", "model.call_finished", "assistant.message",
     "tool.execution_start", "tool.execution_complete", "assistant.turn_end", "assistant.reasoning",
     "session.usage_checkpoint", "assistant.idle", "result", "session.warning", "model.call_final_result"]);
@@ -1615,6 +1619,10 @@ async function invokeReviewer(agent, artifact, options) {
 
 async function dispatchReviewer(agent, artifact, options, settings) {
   if (agent === options.governor) return { agent, status: "self_excluded" };
+  if (agent === "antigravity" && options.antigravitySignedOut) {
+    return {agent, status:"authentication_required", login_hint:LOGIN_HINTS.antigravity,
+      detail:"Antigravity reported that sign-in is required to list available models. No review was sent. Complete sign-in in the interactive Antigravity terminal."};
+  }
   // Modality gate: a route missing any attached modality fails closed here,
   // before any process is spawned — it must never review a text caption of
   // media it cannot see and return a verdict that looks informed.
@@ -2370,9 +2378,16 @@ function authEvidence(agent) {
     if (agent === "copilot") return fs.existsSync(path.join(home, ".copilot", "config.json")) ? "present" : "absent";
     if (agent === "gemini") return fs.existsSync(path.join(home, ".gemini", "oauth_creds.json")) ? "present" : "absent";
     if (agent === "grok") return fs.existsSync(path.join(home, ".grok", "auth.json")) ? "present" : "absent";
-    if (agent === "antigravity") return fs.existsSync(path.join(home, ".gemini")) ? "present" : "absent";
   } catch {}
   return "unknown";
+}
+
+// The CLI model catalog checks the same OS keyring as a review without starting OAuth.
+function antigravityCatalogAuth(result) {
+  if (result.error || result.timedOut) return "unknown";
+  if (result.code === 0 && (result.stdout || "").trim()) return "ok";
+  const diagnostic = String(result.stderr || "") + "\n" + String(result.stdout || "");
+  return result.code !== 0 && /please sign in to [^\r\n]{0,60}available models|user is not logged in/i.test(diagnostic) ? "absent" : "unknown";
 }
 
 // Zero model calls: version probes plus auth evidence for every requested
@@ -2386,21 +2401,24 @@ async function preflightCheck(reviewers, governor, bumblers = Object.create(null
     if (bumblers[agent]) return bumblerReadiness(agent, bumblers[agent]);
     // Only probe adapters we ship: an arbitrary --reviewers name must never
     // become a command execution, even of "<name> --version".
-    if (!knownAdapters.has(agent)) return { agent, installed: false, ready: false, auth: "n/a", note: "no reviewed adapter exists" };
+    if (!knownAdapters.has(agent)) return { agent, installed: false, ready: false, auth: "n/a", readiness_status: "route_not_configured", note: "No built-in or saved Bumbler route with this name was found in this process." };
     const version = await commandVersion(agent === "antigravity" ? antigravityCommand() : agent === "grok" ? grokCommand() : agent);
     if (version.status === "unsupported") return { agent, installed: true, status: "unsupported", ready: false, auth: "n/a", note: version.detail };
     if (version.installed === false) {
-      return { agent, installed: false, ready: false, auth: "n/a", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI not installed" };
+      return { agent, installed: false, ready: false, auth: "n/a", readiness_status: "launcher_not_found", install_hint: INSTALL_HINTS[agent] ?? null, login_hint: LOGIN_HINTS[agent] ?? null, note: "CLI launcher not found by this process" };
     }
     if (version.installed === null) return { agent, installed: null, version: null, version_status: version.version_status, ready: false, auth: "unknown", note: "Version check inconclusive; installation and account readiness are not established. Retry the check or explicitly verify the connection; do not reinstall or re-login solely on this result." };
     let auth = authEvidence(agent);
+    if (agent === "antigravity") {
+      auth = antigravityCatalogAuth(await runProcess(antigravityCommand(), ["models"], {timeoutMs: 10_000}));
+    }
     if (agent === "codex") {
       const status = await runProcess("codex", ["login", "status"], { timeoutMs: 5_000 });
       auth = status.code === 0 ? "ok" : "absent";
     }
     const ready = auth === "ok" || auth === "present";
     const entry = { agent, installed: true, version: version.version, ready, auth, modalities: ["text", ...(ADAPTER_MEDIA[agent] ?? [])].filter((m) => m in (MODALITY_SUPPORT[agent] ?? { text: true })) };
-    if (!ready) entry.login_hint = LOGIN_HINTS[agent] ?? null;
+    if (!ready && !(agent === "antigravity" && auth === "unknown")) entry.login_hint = LOGIN_HINTS[agent] ?? null;
     // Deprecation notice, not a removal (owner decision, 1.16.1). The route still works on an
     // enterprise Code Assist licence and is not being withdrawn; individual tiers were retired by
     // the provider on 2026-06-18, and Gemini models under an account login belong on antigravity.
@@ -2408,7 +2426,7 @@ async function preflightCheck(reviewers, governor, bumblers = Object.create(null
       entry.deprecated = true;
       entry.note = "deprecated route: individual Code Assist tiers were retired 2026-06-18, so this fails closed on individual accounts (enterprise Code Assist only). For Gemini models under an account login, route through antigravity. The route is not being removed.";
     }
-    if (agent === "antigravity" && auth === "present") entry.note = "weak evidence: ~/.gemini is shared with the Gemini CLI";
+    if (agent === "antigravity" && auth === "unknown") entry.note = "Antigravity model discovery was inconclusive. A live sample can verify access.";
     // 1.17.1 R1: this machine saw this CLI version fail with this configured model (compatibility.mjs).
     // The route reads not ready, with the reason and the official update command. Nothing is asked
     // of a model and no CLI setting is changed.
@@ -2702,6 +2720,15 @@ async function selfTest(pretty) {
       return unwrapReviewPayload(reply("intermediate", "tool_use") + "\n" + reply("completed", "end_turn"))?.summary === "completed";
     })(),
     nonfinal_wrapper_is_not_a_review: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "MODIFY", confidence: 0, findings: [], summary: "still loading" }), stopReason: "tool_use" })) === null,
+    antigravity_catalog_checks_session_without_model_call:
+      antigravityCatalogAuth({code:1, stderr:"Error: Please sign in to view available models."}) === "absent"
+      && antigravityCatalogAuth({code:0, stdout:"Gemini Pro"}) === "ok"
+      && antigravityCatalogAuth({code:0, stdout:""}) === "unknown"
+      && antigravityCatalogAuth({code:1, stderr:"network unavailable"}) === "unknown"
+      && antigravityCatalogAuth({code:null, timedOut:true, stdout:"partial"}) === "unknown",
+    antigravity_explicit_sign_out_never_launches_headless_oauth: (await invokeReviewer("antigravity","synthetic", {
+      governor:"codex", antigravitySignedOut:true, runProcess(){throw Error("unexpected launch");}
+    })).status === "authentication_required",
     parses_antigravity_structured_output: parsedStructured?.verdict === "ACCEPT",
     parses_grok_text_wrapper: unwrapReviewPayload(JSON.stringify({ text: JSON.stringify({ verdict: "ACCEPT", confidence: 0.9, findings: [], summary: "ok" }), stopReason: "end_turn" }))?.verdict === "ACCEPT",
     terminal_error_envelope_is_not_a_schema_failure: await (async () => {
@@ -3521,6 +3548,14 @@ async function main() {
       try { options.bumblers = loadBumblers(); }
       catch (error) { process.stderr.write(`momm: saved Bumblers were not added: ${error.message}\n`); }
     }
+    if (options.setupSample !== undefined) {
+      const [route] = options.reviewers;
+      if (!options.reviewersExplicit || options.reviewers.length !== 1 || options.attach?.length || options.input || options.range || options.cover || options.split || options.secondLook) throw Error("A setup sample requires one named reviewer and fixed synthetic input.");
+      const saved = options.bumblers?.[route];
+      const expected = saved ? sampleTargetId(saved) : BUILT_IN_ROUTES.has(route) ? "builtin" : null;
+      if (!expected || expected !== options.setupSample) throw Error("The selected reviewer changed. Refresh setup and confirm its destination again.");
+      if (saved) saved.guidance = "";
+    }
     reviewerSelection = applyReviewerSettings(options);
   }
   catch(error) { process.stderr.write(`Reviewer settings refused: ${error.message}\n`); process.exitCode=4; return; }
@@ -3575,7 +3610,7 @@ async function main() {
   const evidenceAt = evidenceLocation({ cwd: process.cwd(), env: process.env });
   const evidenceProtection = preparePrivateEvidence(evidenceAt.dir);
   recordEvidenceProject(evidenceAt);
-  const rawArtifact = await collectArtifact(options);
+  const rawArtifact = options.setupSample ? "Synthetic setup sample. The function returns its input unchanged.\nfunction identity(value) { return value; }" : await collectArtifact(options);
   const sourceSnapshot = captureSourceSnapshot(process.cwd(), rawArtifact, options.input, options.range ?? null);
   if (options.range && !sourceSnapshot.complete) throw new Error(`--range could not be bound to the repository: ${sourceSnapshot.reason}`);
   // 1.17.1 S4: a diff file given as --input is its own source snapshot. Said before anything is sent;
@@ -3640,7 +3675,7 @@ async function main() {
   // guidance produces the same prompt bytes as 1.15.
   let resolvedGuidance;
   try {
-    resolvedGuidance = resolveGuidance({
+    resolvedGuidance = options.setupSample ? { routes: {}, notices: [] } : resolveGuidance({
       cwd: process.cwd(), home: os.homedir(), routes: uniqueReviewers.filter((agent) => agent !== options.governor),
       personas: Object.fromEntries(uniqueReviewers.map((agent) => [agent, personaFor(agent, options) ? roleGuidanceLayer(roleBriefs[personaFor(agent, options)]) : null])),
       cli: { guidanceFile: options.guidanceFile, guidance: options.guidance, governor: options.guidanceGovernor },
@@ -3673,6 +3708,7 @@ async function main() {
   const preflightFirst = await preflightCheck(uniqueReviewers, options.governor, options.bumblers);
   for (const entry of preflightFirst) emitEvent(options.stream, { event: "preflight", ...entry });
   ui.preflight(preflightFirst);
+  options.antigravitySignedOut = preflightFirst.some(route => route.agent === "antigravity" && route.installed === true && route.auth === "absent");
   // 1.17.1 R1: a remembered CLI/model mismatch is said before any route is asked. The route still
   // runs. The live display shows it in its preflight row, so the full sentence waits for the end there.
   const compatibilityNotices = preflightFirst.filter((entry) => entry.compatibility).map((entry) => entry.compatibility.notice);

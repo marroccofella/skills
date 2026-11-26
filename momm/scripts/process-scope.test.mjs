@@ -11,6 +11,15 @@ const moduleUrl = new URL('./process-scope.mjs', import.meta.url);
 const scopeModule = fs.existsSync(moduleUrl) ? await import(moduleUrl.href) : null;
 const results = [], failures = [];
 async function test(name, fn) { try { await fn(); results.push(name); } catch(e) { failures.push({name,error:e.message}); } }
+if (scopeModule) await test('reviewer fallback directories are absolute, provider-specific and independent of PATH', () => {
+  const dirs = scopeModule.windowsReviewerInstallDirs;
+  const env = {UserProfile:'C:/example/user', AppData:'C:/example/roaming', LOCALAPPDATA:'C:/example/local', PATH:'C:/irrelevant'};
+  assert.deepEqual(dirs('claude',env),[path.win32.join(env.UserProfile,'.local','bin'),path.win32.join(env.AppData,'npm')]);
+  assert.deepEqual(dirs('copilot.exe',env),[path.win32.join(env.AppData,'npm')]);
+  assert.deepEqual(dirs('agy',env),[path.win32.join(env.LOCALAPPDATA,'agy','bin')]);
+  assert.deepEqual(dirs('git',env),[]);
+  assert.deepEqual(dirs('copilot',{AppData:'relative'}),[]);
+});
 // A POSIX filesystem double (1.17 A1): files maps a path to its mode, or to 'dir'; links maps a path
 // prefix to where it really points. Only what is listed exists, so a resolver cannot "find" a file the
 // test did not plant.

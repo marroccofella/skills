@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import {EventEmitter} from 'node:events';
+import {pathEntryOutside, windowsReviewerInstallDirs} from './process-scope.mjs';
 delete process.env.MOMM_EVIDENCE_HOME; // test isolation: this suite decides where its fixtures' evidence lives
 const source = fs.readFileSync(new URL('./setup-ui.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('function parseVersion('), end = source.indexOf('// Returns true only if a terminal');
@@ -62,7 +63,7 @@ await test('explicit native update availability survives equal semantic versions
 await test('installation discovery preserves npm and refuses unknown shims',()=>{
   const begin=source.indexOf('const npmPackages ='), finish=source.indexOf('function actionNote(');
   assert(begin>=0 && finish>begin);
-  const context=vm.createContext({fs,path,process,Buffer,platformKey:()=> 'win32',providers:{codex:{update:{win32:'unused'}},gemini:{update:{win32:'unused'}}}});
+  const context=vm.createContext({fs,path,process,Buffer,pathEntryOutside,windowsReviewerInstallDirs,platformKey:()=> 'win32',providers:{codex:{update:{win32:'unused'}},gemini:{update:{win32:'unused'}}}});
   vm.runInContext(source.slice(begin,finish)+'\nthis.detect=detectInstallation;this.action=actionCommand;',context);
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'momm-update-origin-'));
   try {
@@ -128,14 +129,15 @@ let defaultWatch=null;
 function handler(body,token=true,extra={},bootstrap={status:'prerequisites_missing',installation:{route:'legacy_bootstrap'}}) {
   const a=source.indexOf('function createServer('),b=source.indexOf('// The dispatcher',a);assert(a>=0&&b>a);
   let launched=0;
-  const context=vm.createContext({...{URL,process,governors:new Set(['codex']),http:{createServer:fn=>fn},isLoopback:()=>true,isAllowedHost:()=>true,authorized:()=>token,
+  const context=vm.createContext({...{URL,process,os,jobs:new Map(),recentReviewerResults:()=>({}),governors:new Set(['codex']),http:{createServer:fn=>fn},isLoopback:()=>true,isAllowedHost:()=>true,authorized:()=>token,
     sendJson:(_,status,value)=>({status,value}),readBody:async()=>body,actionCommand:()=> 'codex update',launchTerminal:()=>{launched++;return true;},
+    dispatcherScript:'dispatcher',runNode:async()=>({code:0,stdout:JSON.stringify({routes:[{agent:'codex',installed:false,readiness_status:'launcher_not_found'}]})}),
     actionNote:()=>'',readiness:async()=>({routes:[]}),safeDetail:s=>s,
     // 1.16: module-level singletons the server reads; absent under test so the routes must degrade, not throw.
     ledgerWatcher:{status:()=>({watching:true,last_regenerated_at:'2026-09-13T00:00:00.000Z'})},updateClock:null,setupPointer:null,
     // 1.16 cross-links: the static allowlist and the ledger route are stubbed so the dispatch itself is what is under test.
     STATIC_ASSETS:{'/':['index.html','text/html; charset=utf-8'],'/momm-theme.css':['momm-theme.css','text/css; charset=utf-8'],'/styles.css':['styles.css','text/css; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8']},
-    serveAsset:(_,file,contentType)=>({status:200,asset:file,contentType}),serveLedger:async()=>({status:200,ledger:true}),ledgerFileUrl:()=>'file:///C:/proj/.ensemble_reviews/ledger.html',Object,
+    loadSetupAssets:()=>(_,file,contentType)=>({status:200,asset:file,contentType}),serveLedger:async()=>({status:200,ledger:true}),ledgerFileUrl:()=>'file:///C:/proj/.ensemble_reviews/ledger.html',Object,
     guidanceSnapshot:()=>({project:null}),usageReport:()=>({rows:[]}),clockSnapshot:()=>({}),saveGuidance:()=>({status:200,value:{}}),handleUpdateClock:async()=>({status:503,value:{error:'no clock'}}),GUIDANCE_BODY_LIMIT:65536,
     // 1.16 E7: the Modalities routes hand the handler's status through untouched.
     capabilitiesSnapshot:async()=>({status:200,value:{routes:{codex:{}},blockers:[]}}),handleCapabilities:async(body)=>({status:body?.op==='probe'&&body.generate&&body.consent!==true?409:200,value:{op:body?.op}}),
@@ -199,7 +201,7 @@ await test('bootstrap keeps the launch capability when the session reply omits o
     const c=vm.createContext({URLSearchParams,location:{hash:`#momm-token=${token}`,pathname:'/',search:''},
       sessionStorage:{getItem:()=>null,setItem(){}},history:{replaceState(){}},
       fetch:async(url,options)=>{requests.push({url,headers:options.headers});return {ok:true,json:async()=>url==='/api/session'?reply:{url:'/ledger?ticket='+'0'.repeat(48)}};},
-      refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
+      refresh:async()=>{},syncStandardInstall(){},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
       window:{},summary:{},showToast:message=>finish(message)});
     vm.runInContext('var session=null;'+sessionCore(js)+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd)+';this.call=api;this.current=()=>session;',c);
     assert.equal(await started,null,'bootstrap must complete');
@@ -219,14 +221,14 @@ await test('a rejected stored launch token is forgotten; a transient failure kee
   assert(apiStart>=0&&apiEnd>apiStart&&bootStart>=0&&bootEnd>bootStart);
   const stale='a'.repeat(48),fresh='b'.repeat(48),stored=new Map([['momm-local-session',stale]]);
   const load=async(hash,respond)=>{
-    const requests=[];let finish;const done=new Promise(resolve=>{finish=resolve;});
+    const requests=[], nodes=new Map();let finish;const done=new Promise(resolve=>{finish=resolve;});
     const c=vm.createContext({URLSearchParams,location:{hash,pathname:'/',search:''},
       sessionStorage:{getItem:k=>stored.get(k)??null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},history:{replaceState(){}},
       fetch:async(url,options)=>{requests.push(options.headers['X-MOMM-Token']);return respond(options.headers['X-MOMM-Token']);},
-      refresh:async()=>{},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
-      window:{},summary:{},showToast:message=>finish(message)});
+      refresh:async()=>{},syncStandardInstall(){},loadMaintenance(){},loadGuidance(){},loadUsage(){},loadUpdateClock(){},loadCapabilities(){finish(null);},
+      window:{},document:{querySelector:key=>{if(!nodes.has(key))nodes.set(key,{});return nodes.get(key);}},summary:{},showToast:message=>finish(message)});
     vm.runInContext('var session=null;'+sessionCore(js)+js.slice(apiStart,apiEnd)+js.slice(bootStart,bootEnd),c);
-    return {message:await done,requests};
+    return {message:await done,requests,nodes};
   };
   const server=token=>token===fresh?{ok:true,status:200,json:async()=>({platform:'test',providers:{}})}
     :{ok:false,status:403,json:async()=>({error:'Use the private Setup Center launch link from your terminal.'})};
@@ -240,6 +242,9 @@ await test('a rejected stored launch token is forgotten; a transient failure kee
   const reloaded=await load('',server);
   assert.deepEqual(reloaded.requests,[],'the rejected token must not be sent again on reload');
   assert.match(reloaded.message,/private Setup Center launch link/);
+  assert.equal(reloaded.nodes.get('#install-standard').disabled,true);
+  assert.equal(reloaded.nodes.get('#standard-install-result').hidden,false);
+  assert.match(reloaded.nodes.get('#standard-install-summary').textContent,/launcher.*private tab/);
   const recovered=await load(`#momm-token=${fresh}`,server);
   assert.equal(recovered.message,null);assert.deepEqual(recovered.requests,[fresh]);assert.equal(stored.get('momm-local-session'),fresh);
   // A newer token stored by a fresh link is never removed by an older page's rejection.
@@ -276,6 +281,26 @@ await test('update endpoint requires the exact confirmed command',async()=>{
 await test('matching action confirmation launches and supplied mismatches never launch',async()=>{
   for(const action of ['update','install','login']){const h=handler({provider:'codex',action,expected_command:'codex update'});const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,202);assert.equal(h.launches(),1);}
   for(const provider of ['codex','skills']){const h=handler({provider,action:provider==='skills'?'update':'login',expected_command:'different command'});const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});assert.equal(r.status,409);assert.equal(h.launches(),0);}
+});
+await test('install rechecks discovery and refuses present, inconclusive and malformed results',async()=>{
+  for(const stdout of ['{"routes":[{"agent":"codex","installed":true}]}','{"routes":[{"agent":"codex","installed":null}]}','{}']) {
+    const h=handler({provider:'codex',action:'install',expected_command:'codex update'},true,{runNode:async()=>({code:0,stdout})});
+    const r=await h.serve({method:'POST',url:'/api/action',socket:{}},{});
+    assert.equal(r.status,409);assert.equal(h.launches(),0);assert.equal(r.value.receipt.reason,'discovery_changed');
+  }
+});
+await test('update observation reads only the named local CLI and requires the private session',async()=>{
+  let launches=0;
+  const extra={providers:{codex:{}},parseVersion:s=>s,runNode:async(script,args)=>{
+    launches++;same(Array.from(args),['--preflight','--governor','other','--reviewers','codex']);
+    return {code:0,stdout:JSON.stringify({routes:[{agent:'codex',installed:true,version:'2.3.4'}]})};
+  }};
+  const request=provider=>({method:'GET',url:'/api/cli-version?provider='+provider,socket:{}});
+  assert.equal((await handler({},false,extra).serve(request('codex'),{})).status,403);
+  assert.equal((await handler({},true,extra).serve(request('other'),{})).status,400);
+  assert.equal(launches,0);
+  const result=await handler({},true,extra).serve(request('codex'),{});
+  assert.equal(result.value.version,'2.3.4');assert.equal(launches,1);
 });
 await test('readiness endpoint requires local session before spawning probes',async()=>{
   const h=handler({},false);const r=await h.serve({method:'GET',url:'/api/status?governor=codex',socket:{}},{});assert.equal(r.status,403);
@@ -645,7 +670,7 @@ function ui(extra={}) {
   const node=()=>({value:'codex',textContent:'',innerHTML:'',title:'',hidden:false,disabled:false,style:{},dataset:{},options:[],classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;},querySelector:()=>null,querySelectorAll:()=>[]});
   const document={body:node(),querySelector:s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s);}};
   const inert=()=>({unref(){}});
-  const context=vm.createContext({document,Map,Number,console,setTimeout:inert,clearTimeout(){},setInterval:inert,clearInterval(){},localStorage:{getItem:()=>null,setItem(){}},window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');},...extra});
+  const context=vm.createContext({document,Map,Number,console,AbortSignal,setTimeout:inert,clearTimeout(){},setInterval:inert,clearInterval(){},localStorage:{getItem:()=>null,setItem(){}},window:{confirm:()=>false},fetch:()=>{throw Error('Unexpected network');},...extra});
   // Everything but the boot IIFE: the listener registrations stay in, so the
   // governor and Close handlers are reachable through node(...).listeners.
   const end=client.lastIndexOf('(async () => {');assert(end>0);
@@ -653,6 +678,37 @@ function ui(extra={}) {
   vm.runInContext(client.slice(0,end)+`\nthis.core={api,cliRow,miniStatus,launchAction,routeCopy,modelFact,renderMaintenance,loadMaintenance,render,providerCard,routeState,renderUsage,renderUpdateClock,loadUpdateClock,renderGuidance,renderGuidancePreview,draftGuidance,routeTotal,selectedBatch,refresh,runTest,runQuickSetup,saveGuidanceDraft,${['toggleBatch','runBatchUpdate','runAllUpdates','changeGovernor','closeSetupCenter','renderCapabilities','renderPlan','probeRoute','runPlan','pipelinesText','loadCapabilities','clockAction','renderStaleNotice'].map(optional).join(',')}};this.init=(s,m)=>{session=s;maintenance=m};this.setSession=s=>session=s;this.fail=(a,r)=>liveResults.set(a,{status:'failed',result:r});this.pass=a=>liveResults.set(a,{status:'success'});this.getLive=()=>new Map(liveResults);this.setReport=r=>report=r;this.getReport=()=>report;this.setApi=f=>api=f;this.getMaintenance=()=>maintenance;this.setUsage=u=>usage=u;this.setClock=c=>clockState=c;this.setGuidance=g=>guidance=g;this.getGuidance=()=>guidance;this.setCapabilities=c=>capabilities=c;this.node=s=>document.querySelector(s);const toastLog=this.toasts=[];showToast=m=>{toastLog.push(String(m));};`,context);
   return context;
 }
+// End shared dashboard fixture.
+await test('all six provider cards guide discovery, sign-in, sample verification and recovery',()=>{
+  const names=['codex','claude','gemini','antigravity','copilot','grok'];
+  const providers=Object.fromEntries(names.map(name=>[name,{label:name,docs:'https://example.invalid'}]));
+  for(const agent of names){
+    const c=ui();c.init({platform:'win32',providers},null);
+    const card=flags=>c.core.providerCard({agent,role:'reviewer',...flags});
+    const missing=card({installed:false,ready:false});
+    assert.match(missing,/Retry discovery/);assert.match(missing,/Launcher not found/);
+    if(agent==='gemini')assert.match(missing,/organization account/);
+    assert.match(card({installed:true,ready:false}),/Sign in/);
+    const detected={installed:true,ready:true};
+    assert.match(card(detected),/Verify connection/);
+    c.fail(agent,{route_status:'quota',detail:'Check remaining allowance.'});
+    assert.match(card(detected),/Check remaining allowance/);assert.doesNotMatch(card(detected),/data-action="login"/);
+    c.fail(agent,{route_status:'authentication_required',detail:'Sign in again.'});
+    assert.match(card(detected),/data-action="login"/);
+    c.pass(agent);assert.match(card(detected),/Live verified/);
+  }
+});
+await test('Claude offers browser sign-in first and keeps the copyable terminal command in help', () => {
+  const c = ui();
+  c.init({platform:'win32',providers:{claude:{label:'Claude Code',docs:'https://code.claude.com/docs/en/authentication'}}}, null);
+  const card = c.core.providerCard({agent:'claude', installed:true, ready:false});
+  const helpStart = card.indexOf('<details class="signin-guide"');
+  assert.ok(helpStart > 0);
+  assert.match(card.slice(0, helpStart), />Sign in with Claude</);
+  assert.doesNotMatch(card.slice(0, helpStart), /claude auth login|\/login/);
+  assert.match(card.slice(helpStart), /data-copy-login="claude"[^>]*><code>claude auth login<\/code>/);
+  assert.doesNotMatch(card, /\/login/);
+});
 await test('six CLI rows include controller, unknown latest and explicit native update',()=>{
   const c=ui();const names=['codex','claude','gemini','antigravity','copilot','grok'];
   c.init({platform:'win32',providers:Object.fromEntries(names.map(n=>[n,{label:n,docs:'https://example.invalid'}]))},null);
@@ -884,6 +940,21 @@ await test('a verification that never settles ends in a visible timeout state in
   assert.match(c.core.routeCopy({agent:'codex'},'failed'),/time|minute/i);
   assert.equal(timers.pending().length,0,'no timer keeps polling after the timeout');
   assert.equal((await run).status,'failed');
+});
+await test('verification shows real dispatcher progress and settles a lost status request visibly',async()=>{
+  const timers=fakeTimers(), c=ui({...timers});
+  c.init({platform:'win32',providers:{copilot:{label:'Copilot',docs:'x'}}},null);
+  c.setReport({routes:[{agent:'copilot',installed:true,ready:true}]});
+  const d=deferredApi();c.setApi(d.stub);
+  const run=c.core.runTest('copilot');await flush();
+  d.find('/api/test')[0].resolve({id:'j3'});await flush();await timers.tick();
+  d.find('/api/job/j3')[0].resolve({status:'running',phase:'waiting',received_output:true});await flush();
+  assert.match(c.core.routeCopy({agent:'copilot'},'testing'),/produced output.*elapsed/);
+  await timers.tick();const timeout=new Error('deadline');timeout.name='TimeoutError';
+  d.find('/api/job/j3')[1].reject(timeout);await flush();
+  assert.equal((await run).result.route_status,'unconfirmed');
+  assert.match(c.core.routeCopy({agent:'copilot'},'failed'),/private ledger/);
+  assert.equal(d.find('/api/test','POST').length,1);
 });
 // save-response-discards-new-edits: text typed while the POST is in flight
 // stays in the editor; the response refreshes sha/trust only.
@@ -1201,6 +1272,19 @@ await test('route validation uses the declared provider set, never inherited obj
   const r=await h.serve({method:'POST',url:'/api/test',socket:{}},{});assert.equal(r.status,400,'/api/test validates the same way');assert.equal(started,0);
   const ok=await handler({provider:'grok',governor:'codex'},true,{providers:{codex:{},grok:{}},startConnectivityJob:()=>{started++;return {id:'j'};}}).serve({method:'POST',url:'/api/test',socket:{}},{});
   assert.equal(ok.status,202);assert.equal(started,1);
+});
+await test('Bumbler sample admits only the confirmed saved destination and refuses concurrent requests', async () => {
+  const row = {name:'bee', base_url:'http://127.0.0.1:1234/v1', model:'local'};
+  const body = {provider:'bee', governor:'codex', base_url:row.base_url, model:row.model};
+  let starts = 0;
+  const deps = {providers:{}, jobs:new Map(), listBumblers:()=>[row], sampleTargetId:()=>'pinned',
+    startConnectivityJob:(name, governor, pin)=>{assert.equal(pin,'pinned'); starts++;return {id:'fixture'};}};
+  const post = value => handler(value,true,deps).serve({method:'POST',url:'/api/test',socket:{}},{});
+  assert.equal((await post({...body,model:'changed'})).status,409);
+  assert.equal((await post(body)).status,202);
+  deps.jobs.set('fixture',{provider:'bee',status:'running'});
+  assert.equal((await post(body)).status,409);
+  assert.equal(starts,1);
 });
 // app.js: poll-failure-locks-route + unhandled-api-error-in-poll-capability-job. The poll's
 // failure must be reported, the route released (only if it still owns the job) and the matrix
@@ -1588,7 +1672,14 @@ await test('a card with a compatibility record never says sign in, whatever else
   for(const hint of ['line one\nline two',{command:'x'},'x'.repeat(400)])assert.doesNotMatch(escaped.core.providerCard(compatRoute({update_hint:hint})),/<code>/,'only a short single-line string is shown as a command');
   // Control: a signed-out route without a record still reads Sign in.
   const signedOut={agent:'codex',role:'reviewer',installed:true,ready:false,auth:'absent',version:'0.157.1'};
-  assert.equal(escaped.core.routeState(signedOut),'login');assert.match(escaped.core.providerCard(signedOut),/data-action="login"[^>]*>Sign in</);
+  assert.equal(escaped.core.routeState(signedOut),'login');assert.match(escaped.core.providerCard(signedOut),/data-action="login"[^>]*>Sign in with Codex</i);
+});
+await test('an installed reviewer without local sign-in evidence can verify its connection directly',()=>{
+  const c=ui();c.init(compatSession,null);
+  const html=c.core.providerCard({agent:'codex',installed:true,ready:false,auth:'absent',version:'1.2.3'});
+  assert.match(html,/Sign-in unconfirmed/);
+  assert.match(html,/Verify connection/);
+  assert.match(html,/Access unverified/);
 });
 await test('the status summary and Quick Setup count an outdated CLI as an update, not an account to connect',async()=>{
   const c=ui();c.init(compatSession,null);c.setReport({routes:[compatRoute()]});c.core.render();
@@ -1625,9 +1716,9 @@ await test('Quick Setup never verifies a CLI the card says needs an update, what
   for(const toast of only.c.toasts){assert.doesNotMatch(toast,/already verified/,toast);assert.doesNotMatch(toast,SIGN_IN,toast);}
   // As preflight reports it (not ready): the same answer.
   same((await run([compatRoute(),detected])).verified,['grok']);
-  // Control: without a record the same two routes are both verified, and nothing left reads "all verified".
+  // Control: without a record the same two routes are both verified. An empty pool cannot imply success.
   same((await run([{...withSession,compatibility:undefined,update_hint:undefined},detected])).verified,['codex','grok']);
-  const none=await run([]);same(none.verified,[]);assert(none.c.toasts.some(toast=>/already verified/.test(toast)),'control: with nothing left, Quick Setup says so');
+  const none=await run([]);same(none.verified,[]);assert(none.c.toasts.some(toast=>/No additional reviewer sessions are ready/.test(toast)),'an empty pool does not report verification');
 });
 await test('the update state follows the compatibility record for every readiness and installation combination',()=>{
   const c=ui();c.init(compatSession,null);
@@ -1639,7 +1730,8 @@ await test('the update state follows the compatibility record for every readines
   assert.match(card,/class="chip status chip-warn">CLI update needed</);assert.doesNotMatch(card,/data-test=|data-action="login"/);assert.doesNotMatch(card,SIGN_IN);
   c.setReport({routes:[compatRoute({ready:true})]});c.core.render();
   assert.match(c.node('#summary').textContent,/1 CLI to update for its configured model/);assert.doesNotMatch(c.node('#summary').textContent,/detected session/);
-  assert.equal(c.node('#quick-setup').textContent,'Run Quick Setup','an outdated CLI is not counted as a session to verify');
+  assert.equal(c.node('#quick-setup').textContent,'Verify detected sessions','an outdated CLI is not counted as a session to verify');
+  assert.equal(c.node('#quick-setup').disabled,true);
 });
 // missing-test-update-required-branch: modelStatus is the production function, sliced from
 // setup-ui.mjs and called directly. A route that is not ready is never asked for its models.
@@ -1710,8 +1802,21 @@ await test('the self-test passes whatever MOMM_EVIDENCE_HOME the caller has set,
   }finally{fs.rmSync(home,{recursive:true,force:true});}
 });
 // Issue #57: exercise the production handlers and client, not a second model of the UI.
-const journeySession={platform:'win32',providers:{antigravity:{label:'Antigravity',docs:'https://example.invalid',login:{win32:'agy login'}},copilot:{label:'Copilot',docs:'https://example.invalid',login:{win32:'copilot login'}}}};
+const journeySession={platform:'win32',providers:{antigravity:{label:'Antigravity',docs:'https://example.invalid',login:{win32:'agy'}},copilot:{label:'Copilot',docs:'https://example.invalid',login:{win32:'copilot login'}}}};
 const journeyRoute={agent:'antigravity',installed:true,ready:true,version:'1.3.1',note:'weak evidence: shared local account evidence'};
+await test('a missing CLI gets a repair button and a detected version still needs a sample review',async()=>{
+  const c=ui();c.init(journeySession,null);
+  const missing={agent:'antigravity',installed:false,ready:false};
+  c.setReport({routes:[missing]});c.core.render();
+  assert.match(c.core.providerCard(missing),/Install CLI/);
+  vm.runInContext("actionReceipts.set('antigravity',{provider:'antigravity',action:'install',status:'launch_requested',completion:'unobserved'})",c);
+  c.setApi(async()=>({routes:[journeyRoute]}));await c.core.refresh();
+  assert.doesNotMatch(c.core.providerCard(journeyRoute),/data-action="install"/);
+  assert.match(c.core.providerCard(journeyRoute),/CLI version detected after installation/);
+  assert.match(c.core.providerCard(journeyRoute),/Verify connection/);
+  assert.equal(c.node('#setup-percent').textContent,'0%');
+  c.pass('antigravity');c.core.render();assert.equal(c.node('#setup-percent').textContent,'100%');
+});
 await test('shared local evidence is not presented as a verified account',()=>{
   const c=ui();c.init(journeySession,null);
   const card=c.core.providerCard(journeyRoute);
@@ -1733,8 +1838,65 @@ await test('sign-in launch has persistent, truthful feedback and blocks duplicat
   await c.core.launchAction('antigravity','login');assert.equal(calls.calls.length,1);
   calls.calls[0].resolve({launched:true,note:'Finish in the terminal.'});await first;
   c.core.render();const card=c.core.providerCard(journeyRoute);
-  assert.match(card,/launch.*accepted/i);assert.match(card,/not.*observed/i);assert.match(card,/Verify after login/);
+  assert.match(card,/Waiting for Antigravity to recognize your sign-in/i);assert.match(card,/Verify after login/);
   assert.match(card,/data-copy-login="antigravity"/);
+});
+await test('Antigravity waits for the CLI session and requires a separate live review',async()=>{
+  const timers=fakeTimers(),c=ui({...timers});
+  const signedOut={...journeyRoute,ready:false,auth:'absent'},signedIn={...journeyRoute,auth:'ok'};
+  c.init(journeySession,null);c.setReport({routes:[signedOut]});
+  const paths=[];
+  let auth='absent';
+  c.setApi(async path=>{
+    paths.push(path);
+    if(path==='/api/action')return {launched:true};
+    if(path==='/api/antigravity-signin')return {auth};
+    if(path.startsWith('/api/status?'))return {routes:[signedIn]};
+    throw Error('Unexpected request');
+  });
+  await c.core.launchAction('antigravity','login');
+  const pendingCard=c.core.providerCard(signedOut);
+  assert.doesNotMatch(pendingCard,/data-test="antigravity"/);
+  assert.match(pendingCard,/select 1\. Google OAuth and press Enter/i);
+  assert.match(pendingCard,/Copy to Clipboard/i);
+  assert.match(pendingCard,/terminal closed before you pasted the code/);
+  assert.match(pendingCard,/sharing interaction data separately/);
+  await timers.tick();
+  assert.deepEqual(paths,['/api/action','/api/antigravity-signin']);
+  auth='ok';await timers.tick();
+  const card=c.core.providerCard(signedIn);
+  assert.match(card,/recognized your sign-in/);
+  assert.match(card,/data-test="antigravity"/);
+  assert.doesNotMatch(card,/Live verified/);
+  const count=paths.length;await timers.tick();assert.equal(paths.length,count);
+});
+await test('Windows Antigravity sign-in launches one named console with the resolved executable',async()=>{
+  const start=source.indexOf('function launchTerminal('),end=source.indexOf('function openBrowser(',start);
+  assert.ok(start>=0 && end>start);
+  const calls=[],exe="C:/Program Files/Antigravity/agy.exe";
+  const context=vm.createContext({process:{platform:'win32',env:{}},Buffer,
+    providers:{antigravity:{label:'Antigravity'}},windowsTool:name=>name,
+    windowsLauncher:()=>({command:exe,args:[]}),
+    runCommand:async(command,args)=>{calls.push({command,args});return {code:0};}});
+  vm.runInContext(source.slice(start,end),context);
+  assert.equal(await context.launchTerminal('agy','antigravity','login'),true);
+  assert.equal(calls.length,1);
+  const script=calls[0].args.at(-1);
+  assert.match(script,/conhost\.exe/);assert.doesNotMatch(script,/-NoExit/);
+  const payload=Buffer.from(script.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/)[1],'base64').toString('utf16le');
+  assert.ok(payload.includes("WindowTitle = 'MOMM - Antigravity'"));
+  assert.ok(payload.endsWith("& '"+exe+"'"));
+});
+await test('Antigravity sign-in status returns only a classified result and requires the private session',async()=>{
+  const req={method:'GET',url:'/api/antigravity-signin',socket:{}};
+  assert.equal((await handler({},false).serve(req,{})).status,403);
+  for(const status of ['ok','absent','unknown']){
+    const h=handler({},true,{runNode:async(script,args)=>{
+      assert.deepEqual(Array.from(args),['--preflight','--governor','other','--reviewers','antigravity']);
+      return {code:0,stdout:JSON.stringify({routes:[{agent:'antigravity',auth:status,detail:'PRIVATE_MARKER'}]})};
+    }});
+    const res=await h.serve(req,{});assert.equal(res.status,200);assert.equal(JSON.stringify(res.value),JSON.stringify({auth:status}));
+  }
 });
 await test('failed and uncertain launches do not echo sensitive diagnostics',async()=>{
   // The second action follows an uncertain result; the owner explicitly confirms that retry.
@@ -1755,7 +1917,10 @@ await test('login clears old verification and action receipt export contains fix
   const receipt=JSON.parse(copied);assert.equal(receipt.provider,'antigravity');assert.equal(receipt.action,'login');
   assert.equal(receipt.completion,'unobserved');assert.doesNotMatch(copied,/PRIVATE_|command|detail|account|path|token/i);
   await click({target:{closest:selector=>selector==='[data-copy-login]'?{dataset:{copyLogin:'antigravity'}}:null}});
-  assert.equal(copied,'agy login');
+  assert.equal(copied,'agy');
+  c.init({...journeySession,native_antigravity:true},null);
+  await click({target:{closest:selector=>selector==='[data-copy-login]'?{dataset:{copyLogin:'antigravity'}}:null}});
+  assert.equal(copied,'& "$env:LOCALAPPDATA/agy/bin/agy.exe"');
 });
 await test('action endpoint separates launch acceptance from unobserved completion',async()=>{
   const h=handler({provider:'copilot',action:'login'});
@@ -1803,7 +1968,7 @@ await test('copy messages identify the operation, and non-timeout discovery keep
   let copied='';const c=ui({navigator:{clipboard:{writeText:async t=>{copied=t;}}}});c.init(journeySession,null);
   const click=c.node('#provider-grid').listeners.click;
   await click({target:{closest:s=>s==='[data-copy-login]'?{dataset:{copyLogin:'antigravity'}}:null}});
-  assert.equal(copied,'agy login');assert.match(c.toasts.at(-1),/Login command copied/);
+  assert.equal(copied,'agy');assert.match(c.toasts.at(-1),/Login command copied/);
   c.setApi(async()=>({launched:false}));await c.core.launchAction('antigravity','login');assert.doesNotMatch(c.core.providerCard(journeyRoute),/Finish the provider login yourself/);
   const text=c.core.routeCopy({agent:'copilot',installed:null,version_status:'error',note:'PRIVATE_MARKER'},'unknown');assert.match(text,/failed|unreadable/);assert.doesNotMatch(text,/PRIVATE_MARKER/);
 });
@@ -1888,7 +2053,7 @@ await test('readiness percentage counts live-verified reviewers only and exposes
   assert.equal(c.node('#setup-percent-compact').textContent,'50%');
 });
 await test('an empty reviewer pool is unavailable rather than 100 percent complete',()=>{
-  const c=ui();c.init(dashboardSession,null);c.setReport({routes:[]});c.core.render();assert.equal(c.node('#setup-percent').textContent,'—');assert.equal(c.node('#setup-percent-compact').textContent,'—');assert.match(c.node('#status-title').textContent,/No reviewers/);
+  const c=ui();c.init(dashboardSession,null);c.setReport({routes:[]});c.core.render();assert.equal(c.node('#setup-percent').textContent,'—');assert.equal(c.node('#setup-percent-compact').textContent,'—');assert.match(c.node('#status-title').textContent,/No built-in CLI reviewers/);
 });
 await test('Update all is prominent and selects only known available updates with verified commands',()=>{
   const c=ui();c.init(dashboardSession,dashboardMaintenance());c.core.renderMaintenance();assert.match(c.node('#maintenance-grid').innerHTML,/id="update-all"/);
@@ -1941,6 +2106,18 @@ await test('a batch stops after unobserved version evidence',async()=>{
   const c=ui();c.init(dashboardSession,dashboardMaintenance());c.window.confirm=()=>true;c.waitForVersionChange=async()=>null;let calls=0;c.setApi(async()=>{calls++;return {launched:true};});
   await c.core.runBatchUpdate(['codex','copilot']);assert.equal(calls,1);assert.match(c.node('#batch-progress').textContent,/Stopped.*unconfirmed/);
 });
+await test('batch activity retains observed versions, the refusal, and skipped providers after refresh',async()=>{
+  const c=ui();c.init(dashboardSession,dashboardMaintenance());c.window.confirm=()=>true;
+  let actions=0;c.setApi(async()=>({launched:++actions===1}));
+  c.waitForVersionChange=async(agent,before,row)=>{
+    assert.equal(agent,'codex');assert.match(row.detail,/first version check/);
+    assert.match(c.node('#batch-activity').innerHTML,/Queued/);return '1.1.0';
+  };
+  await c.core.runBatchUpdate(['codex','copilot','grok']);c.core.renderMaintenance();
+  const html=c.node('#batch-activity').innerHTML;
+  assert.match(html,/1.0.0 → 1.1.0/);assert.match(html,/Copilot.*not launched/i);assert.match(html,/Grok.*Skipped/);
+  assert.equal(actions,2);assert.equal(c.getMaintenance().cli_updates[0].current,'1.1.0');
+});
 await test('a changed batch command is blocked before any terminal request',async()=>{
   const c=ui();c.init(dashboardSession,dashboardMaintenance());c.window.confirm=()=>{c.getMaintenance().cli_updates[0].update_command='different synthetic command';return true;};let calls=0;c.setApi(async()=>{calls++;return {launched:false};});
   await c.core.runBatchUpdate(['codex']);assert.equal(calls,0);assert.match(c.toasts.join('\n'),/confirm the exact command again/);
@@ -1981,6 +2158,55 @@ await test('accepted reply with render failure has phase-specific recovery copy'
 });
 await test('lost reply and render failure explicitly require page recovery',async()=>{
   const c=ui();c.init(dashboardSession,dashboardMaintenance());c.window.confirm=()=>true;c.setApi(async()=>{throw Error('synthetic lost reply');});let renders=0;vm.runInContext('this.replaceRender=f=>{render=f;};',c);c.replaceRender(()=>{if(++renders===2)throw Error('synthetic');});const receipt=await c.core.launchAction('codex','update');assert.equal(receipt.status,'launch_unconfirmed');assert.match(c.toasts.at(-1),/reload/i);assert.doesNotMatch(c.toasts.join('\n'),/synthetic lost reply/);
+});
+await test('an older setup server produces one installation status request and a persistent recovery message',async()=>{
+  for (const status of [404,405,410]) {
+    let requests=0,timers=0;
+    const c=ui({AbortSignal,setTimeout(){timers++;},fetch:async()=>{
+      requests++;
+      return {ok:false,status,json:async()=>{throw Error('plain-text response');}};
+    }});
+    c.init(dashboardSession,dashboardMaintenance());
+    await vm.runInContext('syncStandardInstall()',c);
+    await c.node('#install-standard').listeners.click();
+    await vm.runInContext('syncStandardInstall()',c);
+    assert.equal(requests,1);
+    assert.equal(timers,0);
+    assert.equal(c.node('#install-standard').disabled,true);
+    assert.match(c.node('#standard-install-summary').textContent,/Open the latest Setup Center/);
+  }
+});
+await test('a running setup server keeps serving the frontend from its launch',()=>{
+  const start=source.indexOf('function loadSetupAssets()');
+  const end=source.indexOf('// --- Setup Center <->',start);
+  assert(start>=0 && end>start);
+  let contents='first';
+  const c=vm.createContext({fs:{readFileSync:()=>Buffer.from(contents)},path,assetDir:'assets',
+    STATIC_ASSETS:{'/app.js':['app.js','text/javascript']},securityHeaders:()=>({}),Buffer,Map});
+  const first=vm.runInContext(source.slice(start,end)+';loadSetupAssets()',c);
+  contents='second';
+  let served;
+  const response={writeHead(){},end(value){served=value.toString();}};
+  first(response,'app.js','text/javascript');
+  assert.equal(served,'first');
+  vm.runInContext('loadSetupAssets()',c)(response,'app.js','text/javascript');
+  assert.equal(served,'second');
+});
+await test('a retry can poll while the last installation is refreshing the slower dashboard',async()=>{
+  const c=ui({AbortSignal});
+  c.init(dashboardSession,dashboardMaintenance());
+  let releaseScan,reads=0;
+  const scan=new Promise(resolve=>{releaseScan=resolve;});
+  c.scan=()=>scan;
+  vm.runInContext("standardSnapshot={id:1,status:'running',rows:[]}; refresh=scan; this.syncInstall=syncStandardInstall;",c);
+  c.setApi(async()=>({id:++reads,status:reads===1?'needs_attention':'running',rows:[]}));
+  const first=c.syncInstall();
+  try {
+    await flush();
+    await c.syncInstall();
+    assert.equal(reads,2,'a fresh job must always get a new progress read');
+    assert.match(c.node('#install-standard').textContent,/Installing/);
+  } finally {releaseScan();await first;}
 });
 console.log(JSON.stringify({passed:passed.length,checks:passed,failures},null,2));
 if(failures.length) process.exitCode=1;

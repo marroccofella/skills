@@ -1,7 +1,7 @@
 // A Bumbler is an ordinary pool reviewer: a lower-powered open model the owner
 // runs on their own tailnet. Saved settings say where it answers. This route
 // carries no credential, so it refuses any address outside the tailnet range.
-import {randomBytes} from 'node:crypto';import fs from 'node:fs';import http from 'node:http';import https from 'node:https';import net from 'node:net';import path from 'node:path';import {fileURLToPath} from 'node:url';
+import {createHash,randomBytes} from 'node:crypto';import fs from 'node:fs';import http from 'node:http';import https from 'node:https';import net from 'node:net';import path from 'node:path';import {fileURLToPath} from 'node:url';
 import {defaultRegistryHome} from './reviewer-registry.mjs';
 import {preparePrivateEvidence,requirePrivateEvidence} from './evidence-permissions.mjs';
 export const BUMBLER_CLIENT=fileURLToPath(new URL('./bumbler-client.mjs',import.meta.url));
@@ -110,6 +110,9 @@ export function busyWait(header,waits,now=Date.now(),random=Math.random){
 export async function bumblerRest(last,agent,restMs,now=Date.now,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))){
  for(let wait;restMs&&last.has(agent)&&(wait=last.get(agent)+restMs-now())>0;)await sleep(wait);
 }
+export function sampleTargetId({base_url, model}) {
+  return createHash('sha256').update(JSON.stringify([base_url, model])).digest('hex');
+}
 export function listBumblers(env=process.env){return Object.entries(readSaved(env)).map(([name,entry])=>({name,...entry}));}
 export function saveBumbler(name,entry,env=process.env){const saved=readSaved(env),next=checked(name,entry);for(const [other,value] of Object.entries(saved))if(other!==name&&value.base_url===next.base_url&&value.model===next.model)throw problem(name,'repeats a model server already saved under another name');saved[name]=next;writeSaved(saved,env);return listAfterBumblerWrite(env);}
 export function removeBumbler(name,env=process.env){const saved=readSaved(env);if(!Object.hasOwn(saved,name))throw problem(name,'not saved');delete saved[name];writeSaved(saved,env);return listAfterBumblerWrite(env);}
@@ -131,11 +134,48 @@ export function bumblerAnswer(text){
  }
  return null;
 }
-// Preflight says whether the model answers. Like every route, it is informational.
-export function bumblerReadiness(agent,bumbler,timeoutMs=5000){
- return new Promise(resolve=>{
-  let timer;const finish=(ready,note)=>{clearTimeout(timer);resolve({agent,installed:true,version:null,ready,auth:'none',modalities:['text'],...(note?{note}:{})});};
-  const request=(bumbler.base_url.startsWith('https:')?https:http).get(`${bumbler.base_url}/models`,response=>{response.resume();response.on('error',()=>{});finish(response.statusCode>=200&&response.statusCode<300,response.statusCode<300?null:`model server answered HTTP ${response.statusCode}`);request.destroy();});
-  timer=setTimeout(()=>request.destroy(Error('timeout')),timeoutMs);request.on('error',()=>finish(false,'model server did not answer'));
- });
+// One metadata request. A reachable HTTP listener alone does not establish model availability.
+export function probeBumblerModels(baseUrl, model = '', timeoutMs = 5000) {
+  const base = bumblerBase(baseUrl);
+  return new Promise(resolve => {
+    const request = (base.startsWith('https:') ? https : http).get(`${base}/models`, response => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return finish('endpoint_http', `Model list returned HTTP ${response.statusCode}.`);
+      }
+      const chunks = [];
+      let size = 0;
+      response.on('error', () => finish('model_list_unreadable', 'The model list ended before it could be read.'));
+      response.on('data', chunk => {
+        size += chunk.length;
+        if (size > 256 * 1024) finish('model_list_unreadable', 'The model list exceeded the size limit.');
+        else chunks.push(chunk);
+      });
+      response.on('end', () => {
+        let data;
+        try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')).data; } catch {}
+        if (!Array.isArray(data)) return finish('model_list_unreadable', 'The server did not return an OpenAI-compatible model list.');
+        const ids = [...new Set(data.map(row => row?.id).filter(id => typeof id === 'string' && id.length > 0 && id.length <= 200 && !/[\x00-\x1f\x7f]/.test(id)))];
+        const suggestion = ids.length === 1 ? ids[0] : null;
+        if (model && ids.includes(model)) return finish('model_advertised', 'The expected model is advertised. No live review was sent.');
+        if (model) return finish('model_missing', 'The endpoint answered but did not advertise the selected model.', suggestion);
+        return finish('model_required', ids.length === 1 ? 'One model was advertised and selected. Verify it in a review when ready.' : 'Enter the exact model ID supplied by the operator.', suggestion);
+      });
+    });
+    let settled = false;
+    const timer = setTimeout(() => finish('endpoint_timeout', 'The model endpoint did not answer before the deadline.'), timeoutMs);
+    function finish(status, note, suggestedModel = null) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      request.destroy();
+      resolve({ status, note, suggested_model: suggestedModel });
+    }
+    request.on('error', () => finish('endpoint_unreachable', 'Could not reach the model endpoint. Check the device and listener.'));
+  });
+}
+
+export async function bumblerReadiness(agent, bumbler, timeoutMs) {
+  const result = await probeBumblerModels(bumbler.base_url, bumbler.model, timeoutMs);
+  return { agent, installed: true, version: null, ready: result.status === 'model_advertised', auth: 'none',
+    modalities: ['text'], readiness_status: result.status, note: result.note };
 }

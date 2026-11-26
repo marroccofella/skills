@@ -43,6 +43,8 @@ invent a missing receipt. The standalone bootstrap must itself be separately
 inspected/trusted; it cannot verify itself. Preparing a verified release does not
 authorize installation, protocol changes or discovery-link replacement.
 
+For a new user, include local reviewer installation in the scoped install. Preview `node momm/scripts/install.mjs --target <harness> --install-reviewers --dry-run --pretty` from the checkout, show the missing providers and their commands, then apply the previewed scope with user consent. Open Setup Center for account sign-in and a verified sample review. Existing reviewer versions are preserved.
+
 When the user asks to install, set up, or test MOMM—or preflight finds no ready external reviewer—read [references/getting-started.md](references/getting-started.md), then start the local Setup Center:
 
 ```text

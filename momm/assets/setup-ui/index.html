@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Connect and verify MOMM reviewers without handling API keys or repository source.">
     <title>MOMM Setup Center</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/momm-theme.css">
     <link rel="stylesheet" href="/styles.css">
   </head>
@@ -28,7 +29,7 @@
               <option value="other">Another agent · Active driver</option>
             </select>
           </div>
-          <div class="local-pill"><span></span> Runs only on this computer</div>
+          <div class="local-pill" id="setup-context"><span></span> Checking this computer and project…</div>
           <nav class="momm-nav" aria-label="Related pages"><a id="ledger-link" href="/ledger" title="Your private review ledger, built from this workspace's telemetry">Private ledger</a></nav>
           <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light or dark theme" aria-pressed="false" title="Light or dark: follows your system until you choose"><span class="orbit" aria-hidden="true"></span> <span id="theme-label">Theme</span></button>
         </div>
@@ -36,17 +37,17 @@
 
       <div id="stale-notice" class="stale-notice-region" role="status" aria-live="polite" aria-atomic="true"></div>
       <aside class="setup-toolbar" aria-label="Setup progress and CLI updates">
-        <div><strong id="setup-percent-compact">—</strong> <span>reviewers verified</span><small id="setup-progress-detail" aria-live="polite">Checking reviewer readiness…</small></div>
-        <div class="toolbar-actions"><button id="update-all-top" class="button primary" type="button" disabled>Update all available CLIs…</button><a id="walkthrough-open" class="button secondary" href="#setup-walkthrough">Setup walkthrough</a></div>
+        <div><strong id="setup-percent-compact">—</strong> <span>CLI reviewers verified</span><small id="setup-progress-detail" aria-live="polite">Checking reviewer readiness…</small></div>
+        <div class="toolbar-actions"><button id="install-standard" type="button" class="button primary" disabled>Install everything</button><a class="button secondary" href="#bumblers-panel">Check a Bumbler</a><a id="walkthrough-open" class="button secondary" href="#setup-walkthrough">Setup walkthrough</a></div>
         <p id="operation-status" role="status" aria-live="polite">No operation running.</p>
       </aside>
 
       <main id="top">
+        <div class="control-panel" id="standard-install-result" hidden><p id="standard-install-summary" role="status"></p><ul id="standard-install-rows"></ul></div>
         <section class="hero">
           <div>
-            <p class="eyebrow">A calm, guided setup</p>
-            <h1>Connect your reviewers.<br><em>Skip the terminal maze.</em></h1>
-            <p class="lede">We check what is installed, open the right sign-in flow, and verify each connection with a harmless sentence. Project content stays here during setup; a real review sends only the review input you choose.</p>
+            <h1>Set up your reviewers</h1>
+            <p class="lede">Choose Install everything to set up the five standard reviewer programs. Then sign in to the providers you use and verify their connections.</p>
           </div>
           <aside class="trust-card" aria-label="Privacy promises">
             <p class="trust-title">Setup safety</p>
@@ -60,7 +61,7 @@
         </section>
 
         <section class="status-banner" aria-labelledby="status-title">
-          <div class="status-meter"><strong id="setup-percent">—</strong><span>verified</span></div>
+          <div class="status-meter"><strong id="setup-percent">—</strong><span>CLI verified</span></div>
           <div class="status-copy">
             <p class="step-label">System status</p>
             <h2 id="status-title">Checking your setup…</h2>
@@ -68,35 +69,31 @@
             <div class="progress-track" id="readiness-progress" role="progressbar" aria-label="Live-verified reviewers" aria-valuemin="0" aria-valuemax="100"><span id="progress"></span></div>
           </div>
           <div class="status-actions">
-            <button id="quick-setup" class="button primary light" type="button">Run Quick Setup</button>
-            <button id="refresh" class="button ghost light" type="button">Check again</button>
+            <button id="refresh" class="button primary light" type="button">Check again</button>
+            <button id="quick-setup" class="button ghost light" type="button">Verify detected sessions</button>
             <small id="quick-setup-note">Verifies detected sessions. Interactive sign-in still needs you.</small>
           </div>
         </section>
 
         <details id="setup-walkthrough" class="diagnostics setup-walkthrough">
-          <summary><span>Setup walkthrough</span><span class="health-count">Check → update → sign in → verify</span></summary>
+          <summary><span>Setup walkthrough</span><span class="health-count">Detect → connect → verify</span></summary>
           <ol>
-            <li><strong>Check this computer.</strong> Use Check again for installation and account discovery, or Check everything for CLI versions. Neither proves a live connection.</li>
-            <li><strong>Update if needed.</strong> Update all available CLIs lists only known available updates with a verified command. Inspect the commands and confirm. Missing, unknown and package-manager-owned installations need their separate guides.</li>
-            <li><strong>Finish in your terminal.</strong> Launch accepted is not update or login success. If no terminal appears, use the safe command or guide on the card; do not keep clicking an unconfirmed launch.</li>
-            <li><strong>Sign in yourself.</strong> Use the provider card and complete its official terminal/browser flow. MOMM never collects passwords or authentication codes.</li>
-            <li><strong>Verify the connection.</strong> Quick Setup or Verify connection sends disclosed synthetic text to the selected provider. The readiness percentage counts only live checks that passed, not installations or local session hints.</li>
+            <li>Choose <strong>Install everything</strong> to get the reviewer programs.</li>
+            <li>On the reviewer you want, choose <strong>Sign in</strong> and follow the provider’s prompts.</li>
+            <li>Come back and choose <strong>Verify connection</strong>. This sends a small sample review and may use quota.</li>
           </ol>
         </details>
 
         <section class="control-panel" aria-labelledby="setup-title">
           <div class="panel-head">
             <div>
-              <p class="step-label">Peer review pool</p>
-              <h2 id="setup-title">One view per provider</h2>
-              <p class="summary">Installation, updates, account state, and model access are consolidated below.</p>
+              <h2 id="setup-title">Your reviewers</h2>
             </div>
           </div>
           <div id="provider-grid" class="provider-grid" aria-live="polite"></div>
         </section>
 
-        <section id="bumblers-panel" class="control-panel bumbler-panel" aria-label="Bumbler Bees"></section>
+        <section id="bumblers-panel" class="control-panel bumbler-panel" aria-label="Local and team model reviewers"></section>
         <section class="maintenance-panel usage-panel" aria-labelledby="usage-title">
           <div class="maintenance-head">
             <div>
@@ -192,7 +189,8 @@
     <dialog id="action-confirm" class="action-confirm" aria-labelledby="action-confirm-title" aria-describedby="action-confirm-copy">
       <h2 id="action-confirm-title">Confirm terminal action</h2>
       <pre id="action-confirm-copy"></pre>
-      <p>No sign-in or update is complete until you finish it and recheck.</p>
+      <details id="confirm-install-details" hidden><summary>See installer commands</summary><pre id="confirm-install-commands"></pre></details>
+      <p id="confirm-terminal-note">No sign-in or update is complete until you finish it and recheck.</p>
       <div class="toolbar-actions"><button id="action-confirm-cancel" class="button secondary" type="button">Cancel</button><button id="action-confirm-accept" class="button primary" type="button">Confirm and open terminal</button></div>
     </dialog>
   </body>
