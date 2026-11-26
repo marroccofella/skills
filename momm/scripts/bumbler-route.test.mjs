@@ -1,6 +1,6 @@
 // Real multi-review CLI against a local stand-in model server. No real model, credential or tailnet traffic.
 import assert from 'node:assert/strict';import {createHash} from 'node:crypto';import fs from 'node:fs';import http from 'node:http';import os from 'node:os';import path from 'node:path';import {spawn,spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
-import {bumblerAnswer,bumblerBase,bumblerRest,BUMBLER_CLIENT,busyWait,listBumblers,loadBumblers,removeBumbler,saveBumbler} from './bumbler-route.mjs';
+import {sampleTargetId,bumblerAnswer,bumblerBase,bumblerRest,BUMBLER_CLIENT,busyWait,listBumblers,loadBumblers,probeBumblerModels,removeBumbler,saveBumbler} from './bumbler-route.mjs';
 import {inspectCompletion} from './governor.mjs';
 import {privateTestFixture} from './private-test-fixture.mjs';
 delete process.env.MOMM_EVIDENCE_HOME;
@@ -64,8 +64,9 @@ const run=(args,input)=>new Promise(resolve=>{
 {const file=path.join(home,'bumblers.json'),bad=fs.readFileSync(file);fs.rmSync(file);const inherited=await run(['--preflight','--reviewers','constructor'],'');fs.writeFileSync(file,bad,{mode:0o600});assert.equal(inherited.code,0,inherited.stderr);assert.doesNotMatch(inherited.stderr,/TypeError/);}
 const broken=await run(['--reviewers','bab'],diff);assert.equal(broken.code,4,'a broken settings file is a clean refusal');assert.match(broken.stderr,/bumblers\.json/);
 let answer,seen=[],active=0,peak=0,delay=20;
+let listedModels = '{"data":[{"id":"synthetic-open-model"}]}';
 const server=http.createServer((request,response)=>{
- if(request.method==='GET'){response.writeHead(200,{'Content-Type':'application/json'});response.end('{"data":[]}');return;}
+ if(request.method==='GET'){response.writeHead(200,{'Content-Type':'application/json'});response.end(listedModels);return;}
  const chunks=[];request.on('data',b=>chunks.push(b));request.on('end',async()=>{seen.push({at:Date.now(),headers:request.headers,body:JSON.parse(Buffer.concat(chunks).toString('utf8'))});active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,delay));active--;answer(response);seen.at(-1).done=Date.now();});
 });
 const reply=(content,finish='stop')=>response=>{response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({choices:[{finish_reason:finish,message:{content}}]}));};
@@ -79,6 +80,26 @@ try{
  fs.writeFileSync(path.join(project,'change.diff'),diff);const gate=await run(['--reviewers','bab','--min-success','1','--input','change.diff'],'');assert.equal(row(gate)?.status,'success');assert.equal(gate.report.quorum.achieved,1,'a Bumbler that completes a valid review is a genuine reviewer and its vote counts');assert.equal(gate.code,0);assert.equal(row(gate).credential,'none');assert.equal(row(gate).model,'synthetic-open-model');assert.equal(row(gate).max_tokens,512);assert.equal(row(gate).timeout_ms,30000);assert.equal(row(gate).base_url,undefined,'reports reach the public evidence export, so the address stays out');assert.equal(row(gate).endpoint_sha256,createHash('sha256').update(`http://127.0.0.1:${server.address().port}/v1`).digest('hex'));assert(!JSON.stringify(gate.report).includes(`127.0.0.1:${server.address().port}`));
  process.env.MOMM_EVIDENCE_HOME=path.join(parent,'evidence');const recount=inspectCompletion(project,gate.report.run_id);delete process.env.MOMM_EVIDENCE_HOME;assert.equal(recount.quorum?.achieved,1,'the governor recount agrees');assert.equal(recount.quorum.met,true);
  const preflight=await run(['--preflight'],'');assert(preflight.report.routes.some(route=>route.agent==='bab'),'preflight lists every default recipient');
+ const modelBase = `http://127.0.0.1:${server.address().port}/v1`;
+ assert.equal(preflight.report.routes.find(route=>route.agent==='bab').readiness_status,'model_advertised');
+ const sampleArgs = ['--reviewers','bab','--min-success','1','--setup-sample'];
+ const sampleStart = seen.length;
+ assert.equal((await run([...sampleArgs,'stale-target'],diff)).code,4);
+ assert.equal(seen.length,sampleStart);
+ answer=reply(JSON.stringify({...review,reviewed_scope:[{quote:'function identity(value) { return value; }',assessment:'Returns the argument.'}]}));
+ const sample=await run([...sampleArgs,sampleTargetId({base_url:modelBase,model:'synthetic-open-model'}),'--guidance','*=private-sample-marker'],diff);
+ assert.equal(row(sample)?.status,'success',sample.stderr);
+ assert.equal(seen.length,sampleStart+1);
+ assert.doesNotMatch(JSON.stringify(seen.at(-1).body),/colourful language|private-sample-marker|const a = 2/);
+ assert.match(seen.at(-1).body.messages[1].content,/function identity/);
+ assert.equal((await probeBumblerModels(modelBase)).suggested_model,'synthetic-open-model');
+ listedModels = '{"data":[{"id":"different-model"}]}';
+ const mismatch=await run(['--preflight','--reviewers','bab'],'');
+ assert.equal(mismatch.report.routes[0].ready,false,'HTTP 200 with a different model is not ready');
+ assert.equal(mismatch.report.routes[0].readiness_status,'model_missing');
+ listedModels = '{}';
+ assert.equal((await probeBumblerModels(modelBase,'synthetic-open-model')).status,'model_list_unreadable');
+ listedModels = '{"data":[{"id":"synthetic-open-model"}]}';
  // A switched-off Bumbler stays saved but joins no default run; naming it still uses it.
  {save({bab:{base_url:`http://127.0.0.1:${server.address().port}/v1`,model:'synthetic-open-model',max_tokens:512,timeout_seconds:30,enabled:false}});answer=reply(JSON.stringify(review));
  const off=await run(['--preflight'],'');assert(!off.report.routes.some(route=>route.agent==='bab'),'a switched-off Bumbler is not a default recipient');

@@ -5,6 +5,20 @@ It covers the verifier prerequisite, signed release and package check, and expli
 installation approval. A downloaded clone is not automatically a verified release.
 The Setup Center instructions below assume a trusted installation.
 
+## Install the local reviewer programs
+
+From the release checkout, preview a new Codex setup with `node momm/scripts/install.mjs --target codex --install-reviewers --dry-run --pretty`. Choose your own harness in place of Codex. Apply the same command without `--dry-run` to install missing reviewer programs and check their versions. The standard set is Codex, Claude Code, GitHub Copilot, Antigravity, and Grok. Legacy Gemini is included when Gemini is the chosen harness and can also be added from Setup Center for an eligible organization account. Remote Bumblers use their configured endpoints.
+
+In Setup Center, choose **Install everything** and confirm once to set up the five standard reviewer programs. MOMM checks installed versions and shows the result for each provider. You can reload the tab while setup runs. After a partial failure, follow the message beside that reviewer and choose **Retry unfinished reviewers**. If Setup Center itself closed, reopen it and choose **Install everything** again. It checks what is on disk before installing anything missing. Sign in to the providers you use, then choose **Verify detected sessions**. Each card also offers individual repair. A reviewer counts as verified once its sample review passes. For skill linking alone use `--links-only`.
+
+### Connecting Antigravity
+
+Choose **Sign in with Antigravity**. Keep the terminal that opens. On Windows its title is **MOMM - Antigravity**. At **Select login method**, choose **1. Google OAuth** and press **Enter**. This opens Google in your browser. If Google displays a code, choose **Copy to Clipboard**, return to the same terminal, paste at the authorization code prompt, then press **Enter**. If you started sign-in twice, use the Google page and terminal from the same attempt.
+
+After Google sign-in, the CLI may show **Choose your color scheme** and **Terms of Service & Data Use**. If the terminal closed before you entered the code, start a fresh sign-in and use the new Google page. Once the CLI reaches the theme or data-use screen, you can return to Setup Center to test the saved sign-in while you decide whether to share interaction data.
+
+Setup Center checks for the session for five minutes. If you finish later or used your own terminal, choose **Check sign-in**. Once the card shows **Session found**, choose **Verify after login** (or **Verify connection**) to send one sample review. **Verified** means the reviewer returned a usable answer.
+
 ## CLI versions and explicit updates
 
 In the local Setup Center, open **CLI versions, skills & diagnostics**. The six-CLI table includes the active controller even though it cannot review itself. It shows the installed version, latest checked version, source and installation type. **Check everything** refreshes these observations without installing anything. An unknown latest version is not a current version; Antigravity has no verified check-only updater, so its **Check / update…** action needs explicit consent.
@@ -63,11 +77,15 @@ Add `--link` only when the user wants MOMM added to the current harness's skill 
 | `ready` | A harmless live check succeeded | Use it for the first review |
 | `detected` | Local OAuth evidence exists but has not been proven live | Click **Verify connection** |
 | `login` | CLI exists, but no account session was detected | Run the exact `login` action shown |
-| `install` | CLI is not on the current `PATH` | Run the exact `install` action shown, restart the terminal if required, then log in |
+| `install` | MOMM could not find a supported launcher in this process | Check the computer and launch environment. Use the install action if the CLI is missing. |
 | `governor` | This is the agent in control | It is deliberately excluded from reviewers |
 | `attention` | The probe is inconclusive | Run `multi-review.mjs --doctor` and inspect the route |
 
 OAuth presence is only local evidence, not proof that a session is live. The Setup Center makes that distinction visible and fails closed with **Needs login** when its synthetic verification finds an expired or shared session.
+
+For a Bumbler, check the address, save the model, then choose **Run sample review** on its card. Confirm the displayed destination. MOMM sends a fixed identity-function example and shows the outcome on the card. Open **Private ledger** for the run. The percentage at the top counts built-in CLI reviewers only.
+
+Start with one reviewer. The Setup Center identifies its own computer and project, so a local discovery result is about this session. On Windows, known per-user CLI locations are also checked using the reviewer's normal launch rules. The latest recorded project result can explain failures that occurred after a launch. Its private ledger has the full run.
 
 ### Setup action feedback (1.17.4)
 
@@ -114,7 +132,7 @@ The governor then reproduces plausible findings, authors any fixes itself, runs 
 
 A Bumbler is a lower-powered open model you run yourself, added to the pool as
 one more reviewer. Add it in the Setup Center under Bumblers in the review pool,
-which saves `bumblers.json`, or edit that file in your reviewer home, which is
+which saves `bumblers.json`. **Check endpoint and model** reads the model list before saving and fills an empty model field if the server advertises exactly one model. Opening the dashboard checks the model lists of saved, enabled Bumblers. These checks send no review text. A model-list match indicates the expected model is advertised. A successful review is recorded separately. You can also edit the file in your reviewer home, which is
 `~/.momm-reviewers` unless `MOMM_REVIEWER_HOME` says otherwise. Keep this file
 out of your project:
 

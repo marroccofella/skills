@@ -113,6 +113,22 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: var(--card); }
 .provider-fact-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .provider-fact-line strong { flex: 1; min-width: 0; }
 .inline-action { flex: none; padding: 0; border: 0; color: var(--amber); background: none; cursor: pointer; font-size: 9px; font-weight: 850; text-decoration: underline; text-underline-offset: 2px; }
+.signin-guide { margin: 16px 0 8px; padding: 14px 0 0; border-top: 1px solid var(--line); }
+.signin-guide summary, .reviewer-details summary { width: fit-content; padding: 5px 0; color: var(--green); cursor: pointer; font-size: 14px; }
+.signin-guide p { margin: 8px 0; font-size: 14px; line-height: 1.45; }
+.signin-guide .docs-link { display: inline-block; margin-top: 12px; }
+.reviewer-details { margin-top: 7px; }
+.reviewer-details .provider-facts { margin-block: 10px; }
+.signin-guide ol { margin: 0; padding-inline-start: 1.6em; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.signin-guide li + li { margin-top: 10px; }
+.signin-guide li::marker { color: var(--ink); font-weight: 650; }
+.command-button { box-sizing: border-box; width: 100%; min-height: 44px; margin: 7px 0 0; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: start; color: var(--ink); background: var(--mint); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.command-button code, .card-hint .command-button code { padding: 0; color: inherit; font: 13px/1.5 var(--font-mono); overflow-wrap: anywhere; }
+.command-button .copy-label { flex: none; color: var(--green); font-size: 12px; font-weight: 700; }
+.command-button:hover { border-color: var(--green); }
+.command-button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.manual-copy { display: grid; gap: 6px; width: 100%; margin-block: 8px; color: var(--ink); font-size: 13px; }
+.manual-copy textarea { box-sizing: border-box; width: 100%; font: 13px/1.5 var(--font-mono); }
 .card-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .card-actions .button { min-height: 37px; padding: 0 13px; font-size: 12px; }
 .docs-link { margin-left: auto; color: var(--muted); font-size: 12px; text-underline-offset: 3px; }
@@ -131,6 +147,19 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: var(--card); }
 .cli-table th:first-child { min-width: 150px; }
 .cli-table td:last-child { white-space: nowrap; }
 .cli-table td .button, .cli-table td .mini-button, .cli-table td label { font-family: var(--font-sans); }
+#setup-context { overflow-wrap: anywhere; white-space: normal; }
+#bump-form { display: grid; gap: 10px; max-width: 38rem; }
+#bump-form label { display: grid; gap: 4px; }
+#bump-form input:not([type="checkbox"]), #bump-form textarea { width: 100%; min-width: 0; }
+#bump-form button { justify-self: start; }
+@media (max-width: 800px) {
+  .cli-table, .cli-table tbody { display: block; width: 100%; min-width: 0; }
+  .cli-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cli-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr); border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .cli-table tbody td, .cli-table tbody th { display: block; min-width: 0; padding: 4px 8px; overflow-wrap: anywhere; white-space: normal; }
+  .cli-table tbody td:nth-child(3)::before { content: "Installed · "; }
+  .cli-table tbody td:nth-child(4)::before { content: "Latest checked · "; }
+}
 .health-card { min-width: 0; padding: 20px; color: var(--ink); background: var(--glass); border-radius: 18px; }
 .health-card.wide { grid-column: 1 / -1; }
 .health-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
@@ -158,7 +187,7 @@ select { padding: 0 34px 0 12px; color: var(--ink); background: var(--card); }
 .diagnostics summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 800; }
 .diagnostics summary::-webkit-details-marker { display: none; }
 .diagnostics summary::after { content: "+"; color: var(--green); font-size: 18px; }
-.diagnostics[open] summary::after { content: "−"; }
+.diagnostics[open] > summary::after { content: "−"; }
 .diagnostics-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 14px 14px; }
 .diagnostic-block { padding: 12px; border-radius: 11px; background: var(--glass); }
 .diagnostic-block h4 { margin: 0 0 8px; font-size: 10px; }
@@ -227,6 +256,9 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
 .action-confirm { max-width: min(680px, 92vw); border: 1px solid var(--line); border-radius: 18px; padding: 24px; background: var(--card); color: var(--ink); }
 .action-confirm::backdrop { background: rgba(0,0,0,.5); }
 .action-confirm pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; font: 12px/1.65 var(--font-mono); }
+#batch-activity:empty, #batch-elapsed:empty, #batch-availability:empty { display: none; }
+#batch-activity { padding-inline-start: 1.5rem; margin-block: .5rem 1rem; }
+#batch-activity li { margin-block: .3rem; }
 .batch-progress { margin: 10px 0; font-size: 12px; }
 
 /* 1.16 E7 Modalities panel: level chips, blocker badges, planner. */
@@ -279,9 +311,12 @@ footer { min-height: 90px; display: flex; align-items: center; justify-content: 
   .timer-row { flex-direction: column; align-items: stretch; }
 }
 
+@media (max-width: 680px), (max-height: 600px) {
+  .setup-toolbar { position: static; }
+}
 @media (max-width: 520px) {
   .shell { width: min(100% - 22px, 1180px); }
-  .local-pill { font-size: 0; padding: 10px; }
+  .local-pill { font-size: .78rem; padding: 10px; overflow-wrap: anywhere; }
   .controller-control span { display: none; }
   .controller-control select { max-width: 155px; }
   .hero { padding-top: 44px; }

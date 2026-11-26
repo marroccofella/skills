@@ -51,8 +51,11 @@ tag or claim that ordinary 1.15.0 self-update works.
 
 For a new installation, read the verified release's installer help. Install only
 MOMM into this harness's documented user-level skill scope: preview with
-`node momm/scripts/install.mjs --target <chosen-harness> --dry-run`, then ask
-before applying the same command without `--dry-run`. Do not use the repository-wide
+`node momm/scripts/install.mjs --target <chosen-harness> --install-reviewers --dry-run`
+when installer help lists --install-reviewers. Show me which reviewer CLIs are already
+installed and the official command for each missing CLI. Ask before applying the same
+command without --dry-run. If this release predates the option, use its scoped installer
+and finish reviewer installation from Setup Center. Do not use the repository-wide
 installer's default to install unrelated skills. For an unnamed harness, verify
 its documented custom skill directory; never invent paths or claim universal support.
 

@@ -14,7 +14,7 @@
 <!-- MOMM SEARCH END -->
 <link rel="stylesheet" href="technical.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="index.html" aria-label="MOMM overview"><span class="mark">◆</span> momm<span class="brand-note">by 42.uk</span></a><nav aria-label="Main navigation"><a href="index.html">Overview</a><a href="install.html" aria-current="page">Install</a><a href="start.html">Get started</a><a href="media.html">Media</a><a href="evidence.html">Evidence</a><a href="technical.html">Architecture</a><a href="improvement.html">Improve MOMM</a><a href="updates.html">Update safely</a><a href="reference.html">Reference</a><a href="releases/index.html">Versions</a></nav><a class="repo" href="https://github.com/marroccofella/skills">GitHub ↗</a></header><aside class="stable-banner" aria-label="Current stable release"><a href="releases/1.18.1.html"><span class="dot"></span> CURRENT STABLE <strong>MOMM 1.18.1</strong></a><a href="install.html">Install in one line →</a></aside>
-<main id="main"><!-- MOMM BREADCRUMB START --><nav class="doc-body wide" aria-label="Breadcrumb"><a href="https://marroccofella.github.io/skills/">Skills</a> / <a href="https://marroccofella.github.io/skills/momm/">MOMM</a> / <span aria-current="page">Install MOMM in One Line: Verified Install or Upgrade</span></nav><!-- MOMM BREADCRUMB END --><section class="page-hero"><p class="eyebrow">INSTALL OR UPGRADE</p><h1>One line.<br><span>Your agent does the rest.</span></h1><p class="lead">Paste this into Claude Code, Codex, Antigravity, Copilot or Grok. It works for a new installation and for an upgrade.</p></section>
+<main id="main"><!-- MOMM BREADCRUMB START --><nav class="doc-body wide" aria-label="Breadcrumb"><a href="https://marroccofella.github.io/skills/">Skills</a> / <a href="https://marroccofella.github.io/skills/momm/">MOMM</a> / <span aria-current="page">Install MOMM in One Line: Verified Install or Upgrade</span></nav><!-- MOMM BREADCRUMB END --><section class="page-hero"><p class="eyebrow">INSTALL OR UPGRADE</p><h1>One line.<br><span>Your agent does the rest.</span></h1><p class="lead">Click the install line below to copy it. Paste it into your coding agent, then send it. It works for a new installation and for an upgrade.</p></section>
 <div class="doc-body wide">
 <div class="code"><div class="code-label"><span>Paste into your coding agent</span><button type="button" data-copy="install-one-line" aria-label="Copy the install line">Copy</button></div><pre id="install-one-line" style="white-space:pre-wrap;overflow-wrap:anywhere"><code>Install MOMM for me by following https://marroccofella.github.io/skills/momm/install</code></pre></div>
 <aside class="notice"><strong>One prompt, several explicit choices.</strong><p>Your agent checks prerequisites and the signed release, shows an installation preview and asks before applying changes. If the signature verifier <code>gitsign</code> is missing, installing it needs separate approval. Read the protocol and default review-behavior changes before accepting them: these can affect future projects, not just this session. An upgrade can ask again when those terms or prerequisites change. Automatic updates are off by default; only you can opt in. <a href="releases/bootstrap.html#getting-the-verifier-gitsign-once">Verifier setup →</a></p></aside>
@@ -75,8 +75,11 @@ tag or claim that ordinary 1.15.0 self-update works.
 
 For a new installation, read the verified release&#39;s installer help. Install only
 MOMM into this harness&#39;s documented user-level skill scope: preview with
-`node momm/scripts/install.mjs --target &lt;chosen-harness&gt; --dry-run`, then ask
-before applying the same command without `--dry-run`. Do not use the repository-wide
+`node momm/scripts/install.mjs --target &lt;chosen-harness&gt; --install-reviewers --dry-run`
+when installer help lists --install-reviewers. Show me which reviewer CLIs are already
+installed and the official command for each missing CLI. Ask before applying the same
+command without --dry-run. If this release predates the option, use its scoped installer
+and finish reviewer installation from Setup Center. Do not use the repository-wide
 installer&#39;s default to install unrelated skills. For an unnamed harness, verify
 its documented custom skill directory; never invent paths or claim universal support.
 

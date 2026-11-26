@@ -143,7 +143,7 @@ function publishLock(file, content) {
 // stale/corrupt removal is described in `notices` so callers can record it.
 // Release removes the lock only while it still carries our pid: a lock another
 // process replaced (after reclaiming ours as stale) belongs to that process.
-function acquireLock(stateFile, isAlive) {
+export function acquireLock(stateFile, isAlive = pidAlive) {
   const file = `${stateFile}.lock`, notices = [], owner = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
   const release = () => { try { if (readLockOwner(file).pid === process.pid) fs.unlinkSync(file); } catch {} };
   for (let attempt = 0; attempt < 3; attempt++) {

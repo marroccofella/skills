@@ -86,7 +86,7 @@ function linkSkill(governor) {
   // The installer waits for a harness command that is found but silent: its `--version`, then one link command,
   // 30 seconds each (1.17.3). The 45 seconds given to every other step here stopped it before it could report,
   // and the only text left was "treated as installed". It gets what the updater gives one replayed scope.
-  const result = runNode(installer, ["--target", target], 180_000);
+  const result = runNode(installer, ["--target", target, "--links-only"], 180_000);
   if (result.error || result.status !== 0) {
     return { status: "error", detail: compact(result.stderr || result.stdout || result.error?.message) };
   }

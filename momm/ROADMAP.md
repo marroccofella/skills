@@ -1,5 +1,13 @@
 # MOMM Roadmap — alignment record
 
+Follow-up candidate on the published 1.18.1 source. First-run setup identifies the
+machine and project, explains launcher discovery, and leads with one reviewer.
+Saved Bumblers have a read-only model-list check and an explicit sample review bound to the displayed model and address. Setup samples exclude personal and project guidance. Local review cards
+show the last recorded result with its run ID. Copilot accepts the three session
+metadata events reported by Legion, while unknown events and terminal failures
+still refuse. Live Copilot and mixed-pool qualification remain separate from
+the offline compatibility checks. The local candidate also handles Copilot’s instruction.update event, launches Antigravity with agy, and reports the elapsed time and dispatcher phase during a connection check. Antigravity readiness uses its own model catalog. An explicit signed-out result routes users to interactive sign-in and keeps unattended verification from starting a browser consent flow.
+
 4 November 2026: 1.18.1 is released (signed tag `momm-1.18.1` on `99b5819`): a switch to keep a
 saved Bumbler out of default reviews, and a precise reason when a summary is refused. See the
 [gate record](references/gates-1.18.1.md). Deferred to 1.18.2: a pending-save test for the switch,

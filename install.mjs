@@ -8,6 +8,7 @@
 //   node install.mjs --dry-run          # preview every link, touch nothing
 //   node install.mjs --target codex,claude
 //
+import { prepareReviewerSetup } from "./momm/scripts/reviewer-install.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -102,12 +103,14 @@ function sameTarget(linkPath, sourcePath) {
 }
 
 function parseArgs(argv) {
-  const o = { targets: [], customDirs: [], dryRun: false, pretty: false, help: false };
+  const o = { reviewerMode: "install", targets: [], customDirs: [], dryRun: false, pretty: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`Missing value for ${a}`); return argv[++i]; };
     if (a === "--target") o.targets = next().split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
     else if (a === "--custom-dir") o.customDirs.push(path.resolve(next()));
+    else if (a === "--install-reviewers") o.reviewerMode = "install";
+    else if (a === "--links-only") o.reviewerMode = "skip";
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--pretty") o.pretty = true;
     else if (a === "--skills") o.skills = [...new Set(next().split(",").map(s => s.trim()).filter(Boolean))];
@@ -156,10 +159,10 @@ function linkGemini(skills, options) {
   });
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write("Usage: node install.mjs --target <codex|gemini|claude|antigravity|all|auto>[,…] [--custom-dir <skill-parent>] [--dry-run] [--pretty]\n\nLinks every skill (dir with a SKILL.md) in this repo into the harness skill directories you name.\n--target is required: this writes into an agent harness, so choose it explicitly. `--dry-run` previews.\n");
+    process.stdout.write("Usage: node install.mjs --target <codex|gemini|claude|antigravity|all|auto>[,…] [--custom-dir <skill-parent>] [--dry-run] [--install-reviewers | --links-only] [--pretty]\nReviewer CLIs: install missing standard providers by default. Use --links-only to skip reviewer setup. --dry-run previews changes.\n\nLinks every skill (dir with a SKILL.md) in this repo into the harness skill directories you name.\n--target is required: this writes into an agent harness, so choose it explicitly. `--dry-run` previews.\n");
     return;
   }
   const available = discoverSkills();
@@ -175,6 +178,7 @@ function main() {
     process.exitCode = 2;
     return;
   }
+  const reviewerSetup = skills.includes("momm") && await prepareReviewerSetup(options, repoRoot);
   if (targets.includes("auto")) {
     targets = ["codex"];
     if (harnessInstalled("gemini")) targets.push("gemini");
@@ -243,6 +247,13 @@ function main() {
     output.exit_reason = summaries.join("; ");
     process.stderr.write(`${dry ? "Dry run: " : ""}exit code 1: ${parts.join("; ")}. The installation inventory in the output describes copies that are already installed, not the result of this command.\n`);
   }
+  if (reviewerSetup) {
+    output.reviewer_setup = reviewerSetup;
+    if (reviewerSetup.mode === "install" && !reviewerSetup.complete) {
+      process.exitCode = 1;
+      process.stderr.write("Reviewer CLI setup needs attention. Open Setup Center for the next step under each provider.\n");
+    }
+  }
   process.stdout.write(`${JSON.stringify(output, null, options.pretty ? 2 : 0)}\n`);
   const flat = flatLinks;
   // Non-zero exit on any failure OR an unsupported target, so a typo'd
@@ -250,5 +261,4 @@ function main() {
   if (flat.some((l) => l.status === "error" || l.status === "conflict") || results.some((r) => r.status === "unsupported")) process.exitCode = 1;
 }
 
-try { main(); }
-catch (e) { process.stderr.write(`${JSON.stringify({ error: e.message })}\n`); process.exitCode = 1; }
+main().catch(e => { process.stderr.write(`${JSON.stringify({ error: e.message })}\n`); process.exitCode = 1; });

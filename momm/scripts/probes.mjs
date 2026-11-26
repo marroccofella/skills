@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { readMedia, validateMedia } from "./media-bytes.mjs";
 import { SUCCESS_EXPIRY_MS, ROUTE_SCOPED_BLOCKERS } from "./capabilities.mjs";
 import { grokIsolationEnv, GROK_ISOLATION_ARGS, mediaGrants, commandShapeSha256, shapeChangedSinceLegacy, codexIsolationArgs, codexReviewArgs, CODEX_REVIEW_ISOLATION_ARGS } from "./route-isolation.mjs";
-import { pathEntryOutside, executableOutside, posixTool, posixChildEnv } from "./process-scope.mjs";
+import { pathEntryOutside, executableOutside, posixTool, posixChildEnv, windowsReviewerInstallDirs } from "./process-scope.mjs";
 import { evidenceLocation, recordEvidenceProject } from "./evidence-location.mjs";
 import { preparePrivateEvidence } from "./evidence-permissions.mjs";
 // Windows launch guard (see launch-guard.mjs): a bare command launched without a shell is looked up in
@@ -259,7 +259,8 @@ export function windowsLauncher(command, args, env, platform = process.platform,
     // PATH entry, including one inside that project. Host path rules, because tests force win32.
     .filter(p => pathEntryOutside(p, cwd, { platform: process.platform }));
   let refusedShim = null;
-  for (const dir of dirs) {
+  const fallback = windowsReviewerInstallDirs(command, env).filter(dir => [cwd, project].every(root => pathEntryOutside(dir, root, { fs: files })));
+  for (const dir of new Set([...dirs, ...fallback])) {
     const native = path.join(dir, namesExe ? command : `${command}.exe`);
     if (fs.existsSync(native)) {
       let resolved = null; try { resolved = fs.realpathSync(native); } catch { /* unresolvable: refused */ }

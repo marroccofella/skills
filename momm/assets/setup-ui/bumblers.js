@@ -3,11 +3,12 @@
   const root=document.querySelector('#bumblers-panel');if(!root)return;
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const routes=['codex','claude','antigravity','copilot','grok','gemini'];
-  root.innerHTML=`<div class="panel-head"><div><p class="step-label">1.18 development · persistent reviewer profiles</p><h2>Bumbler Bees</h2><p>Save connections once. Add, edit and remove reviewers without changing MOMM source.</p></div><button id="bee-add" class="button primary" type="button"><span aria-hidden="true">＋</span> Add reviewer</button></div>
-    <p class="environment-note">Drafts are real saved settings, not connected or qualified reviewers. No credentialed remote calls are activated in this development build. The cards below are saved OAuth drafts. Bumblers that take part in reviews are under Bumblers in the review pool.</p>
+  root.innerHTML=`<div class="panel-head"><div><h2>Local and team model reviewers</h2><p>Check a trusted Bumbler endpoint and choose its model.</p></div></div>
+    <details id="bump-panel" class="diagnostics" open><summary>Bumblers in the review pool</summary><p>Add an endpoint you trust to receive review text. The connection check only reads its model list. Saved and enabled Bumblers join default reviews.</p><p id="bump-status" role="status"></p><p id="bump-write-warning" role="alert" hidden>A change may have been saved. Refresh and check the saved Bumblers before repeating it. <button id="bump-write-ack" type="button" disabled>I checked the saved Bumblers</button></p><button id="bump-refresh" type="button">Refresh saved Bumblers</button><div id="bump-list"></div><form id="bump-form"><label>Name<input name="name" required maxlength="32"></label><label>Address<input name="base_url" required maxlength="200" placeholder="http://100.64.0.1:8080/v1"></label><label>Model<input name="model" required maxlength="200"></label><button id="bump-probe" class="button secondary" type="button">Check endpoint and model</button><p id="bump-probe-result" role="status"></p><details class="diagnostics"><summary>Advanced review settings</summary><label>Max tokens<input name="max_tokens" type="number" min="1" max="65536" value="1024"></label><label>Seconds<input name="timeout_seconds" type="number" min="1" max="3600" value="180"></label><label>Rest seconds<input name="rest_seconds" type="number" min="0" max="3600" value="0"></label><label>At once<input name="parallel" type="number" min="1" max="8" value="1"></label><label><input name="enabled" type="checkbox" checked> Joins default reviews (off: used only when named)</label><label>Own guidance<textarea name="guidance" maxlength="4000" rows="3"></textarea></label></details><button class="button primary" type="submit">Save Bumbler</button></form></details>
+    <details class="diagnostics"><summary>Experimental reviewer drafts</summary><p class="environment-note">Drafts save connection details for later use. Open the Bumbler review pool above to add a reviewer that can participate today.</p><button id="bee-add" class="button secondary" type="button">Add reviewer draft</button>
     <div class="bee-tools"><label>Search<input id="bee-search" type="search" maxlength="200"></label><label>Show<select id="bee-filter"><option value="visible">Draft and disabled</option><option value="archived">Archived</option><option value="active">Active</option></select></label><button id="bee-refresh" class="button secondary" type="button">Refresh</button></div>
     <p id="bee-status" role="status" aria-live="polite">Waiting for the private dashboard session…</p><p id="bee-write-warning" role="alert" hidden><span id="bee-write-warning-copy"></span> <button id="bee-write-ack" class="button secondary" type="button" disabled>I checked the saved settings</button></p><div id="bee-cards" class="provider-grid"></div><div class="toolbar-actions"><button id="bee-prev" class="button secondary" type="button">Previous</button><button id="bee-next" class="button secondary" type="button">Next</button></div>
-    <details id="bump-panel" class="diagnostics"><summary>Bumblers in the review pool</summary><p>A Bumbler joins a review by name, for example --reviewers codex,bab. It has no login, so review text goes to this address with nothing else protecting it: add only a machine you trust. Saved Bumblers join reviews by default. A valid review counts like any reviewer's.</p><p id="bump-status" role="status"></p><p id="bump-write-warning" role="alert" hidden>A change may have been saved. Refresh and check the saved Bumblers before repeating it. <button id="bump-write-ack" type="button" disabled>I checked the saved Bumblers</button></p><button id="bump-refresh" type="button">Refresh saved Bumblers</button><div id="bump-list"></div><form id="bump-form"><label>Name<input name="name" required maxlength="32"></label><label>Address<input name="base_url" required maxlength="200" placeholder="http://100.64.0.1:8080/v1"></label><label>Model<input name="model" required maxlength="200"></label><label>Max tokens<input name="max_tokens" type="number" min="1" max="65536" value="1024"></label><label>Seconds<input name="timeout_seconds" type="number" min="1" max="3600" value="180"></label><label>Rest seconds<input name="rest_seconds" type="number" min="0" max="3600" value="0"></label><label>At once<input name="parallel" type="number" min="1" max="8" value="1"></label><label><input name="enabled" type="checkbox" checked> Joins default reviews (off: used only when named)</label><label>Own guidance<textarea name="guidance" maxlength="4000" rows="3"></textarea></label><button class="button primary" type="submit">Save Bumbler</button></form></details>
+    </details>
     <details class="diagnostics"><summary>Built-in CLI reviewers · remove/restore</summary><p>Removal excludes a route; it never uninstalls it or lowers review quorum.</p><div id="bee-clis"></div></details>`;
   const editor=document.createElement('dialog');editor.className='action-confirm bee-editor';editor.setAttribute('aria-label','Add or edit reviewer');
   editor.innerHTML=`<h2 id="bee-editor-title">Add reviewer</h2><form id="bee-form"><label>Name<input name="label" required maxlength="80" value="" placeholder="Reviewer name"></label><label>Type<select name="kind"><option value="bumbler">Bumbler remote model</option><option value="remote_api">Other remote API · adapter required</option><option value="cli">Supported CLI profile</option></select></label><label>Saved connection<select name="connector_id"></select></label><label>New server API URL<input name="base_url" type="url" maxlength="2048" placeholder="https://hostname:port/v1"></label><label>Model ID<input name="model_id" maxlength="160" placeholder="Exact model supplied by operator"></label><label>CLI route<select name="route">${routes.map(r=>`<option>${r}</option>`).join('')}</select></label><label>Authentication<select name="auth_mode"><option value="oauth">OAuth · default</option></select></label><label>Assigned check<input name="task_type" maxlength="120" value="source-grounded-check"></label><details><summary>Advanced connection details</summary><label>Pod/instance label · metadata only<input name="pod_id" maxlength="80"></label><label>Public certificate · never private key<textarea name="certificate" rows="3" maxlength="32768"></textarea></label></details><p>OAuth/account sessions only. Protected sign-in and live connections are still being built. Drafts remain disconnected and unqualified.</p><p>No network request or credential operation happens when saving.</p><p id="bee-editor-error" role="alert"></p><div class="toolbar-actions"><button id="bee-cancel" class="button secondary" type="button">Cancel</button><button class="button primary" type="submit">Save disabled draft</button></div></form>`;
@@ -28,7 +29,7 @@
   const markUncertain=()=>{uncertainWrite=true;requiredReadGeneration=generation+1;renderUncertainty();};
   const status=message=>{$('bee-status').textContent=message;renderUncertainty();};
   $('bee-write-ack').onclick=()=>{if(!reconciledView())return;uncertainWrite=false;render();};
-  function reset(){if(bumblerBusy)markBumblerUncertain();bumblerRequest++;bumblerMutation++;bumblerNeedsRead=bumblerUncertain;$('bump-list').innerHTML='';renderBumblerState();if(busy)markUncertain();generation++;sessionEpoch++;snapshot=null;editing=null;editingRevision=null;wordingId=null;wordingRevision=null;offset=0;cancelConfirmation?.();editor.close();wording.close();confirmation.close();$('bee-cards').innerHTML='';$('bee-clis').innerHTML='';for(const id of ['bee-add','bee-prev','bee-next'])$(id).disabled=true;$('bee-form').querySelector('[type="submit"]').disabled=true;renderUncertainty();}
+  function reset(){sampleResults.clear();savedBumblers=[];if(bumblerBusy)markBumblerUncertain();bumblerRequest++;bumblerMutation++;bumblerNeedsRead=bumblerUncertain;$('bump-list').innerHTML='';renderBumblerState();if(busy)markUncertain();generation++;sessionEpoch++;snapshot=null;editing=null;editingRevision=null;wordingId=null;wordingRevision=null;offset=0;cancelConfirmation?.();editor.close();wording.close();confirmation.close();$('bee-cards').innerHTML='';$('bee-clis').innerHTML='';for(const id of ['bee-add','bee-prev','bee-next'])$(id).disabled=true;$('bee-form').querySelector('[type="submit"]').disabled=true;renderUncertainty();}
   const obsoleteSession=()=>Object.assign(Error('Previous session response ignored. Its write may have committed; reopen settings before another change.'),{code:'session_changed'});
   async function api(body){
     if(!token)throw Error('Reopen the private dashboard launch link.');
@@ -90,23 +91,89 @@
       if(sentEpoch!==sessionEpoch||token!==sentToken){if(body)markBumblerUncertain();throw Error('The dashboard session changed. Refresh and check saved Bumblers before repeating a change.');}
       if(!response.ok||!Array.isArray(value?.bumblers)){if(body&&(response.ok||response.status>=500||value?.uncertain_write===true))markBumblerUncertain();throw Error(typeof value?.error==='string'?value.error:'Bumbler settings request refused.');}
       if(!body){if(bumblerBusy||readVersion!==bumblerMutation)throw Error('Saved Bumblers changed while loading. Refresh again.');}
-      return Object.assign(value.bumblers,{fresh:!body});
+      return Object.assign(value.bumblers,{fresh:!body,recent_results:value.recent_results});
     }finally{if(body){bumblerMutation++;bumblerBusy=false;renderBumblerState();}}
   }
+  const sampleResults = new Map();
+  const sampleKey = row => JSON.stringify([row.name, row.base_url, row.model]);
+  async function runSavedSample(name) {
+    const row = savedBumblers.find(item => item.name === name);
+    if (!row || bumblerBusy || bumblerUncertain || !token) return;
+    const key = sampleKey(row);
+    const epoch = sessionEpoch;
+    const current = () => epoch === sessionEpoch && savedBumblers.some(item => sampleKey(item) === key);
+    if (sampleResults.get(key)?.running || !await confirmChange(`Send a fixed identity-function example to ${row.model} at ${row.base_url}? This uses one review attempt. Your project files and saved guidance are excluded.`) || !current()) return;
+    function display(note, running) {
+      if (!current()) return;
+      sampleResults.set(key, {note, running});
+      const output = $(`bump-sample-result-${name}`);
+      if (output) output.textContent = note;
+      renderBumblerState();
+    }
+    display('Waiting for the sample review…', true);
+    try {
+      const state = await runTest(name, false, {base_url:row.base_url, model:row.model});
+      const status = state.result?.route_status || state.status;
+      const message = state.status === 'success' ? 'Sample review succeeded.' : `Sample review: ${String(status).replaceAll('_', ' ')}. ${state.result?.detail || state.error || 'Check the private ledger before trying again.'}`;
+      display(message + (state.result?.run_id ? ' Run ' + state.result.run_id : ''), false);
+    } catch {
+      display('The outcome is unknown. Check the private ledger before trying again.', false);
+    }
+  }
   let savedBumblers=[];
-  const showBumblers=list=>{savedBumblers=Array.isArray(list)?list:[];$('bump-list').innerHTML=list.map(b=>`<p>${esc(b.name)} · ${esc(b.model)} · ${esc(b.base_url)} · ${esc(b.max_tokens)} tokens · ${esc(b.timeout_seconds)} s${b.rest_seconds?` · rests ${esc(b.rest_seconds)} s`:''}${b.parallel>1?` · ${esc(b.parallel)} at once`:''}${b.wait_when_busy===false?' · never waits when busy':''}${b.enabled===false?' · off: used only when named':''} <button data-bump="${esc(b.name)}" class="button secondary" type="button">Remove</button></p>`).join('')||'<p>No Bumblers saved.</p>';};
+  const showBumblers=list=>{savedBumblers=Array.isArray(list)?list:[];$('bump-list').innerHTML=list.map(b=>`<div class="saved-bumbler"><p>${esc(b.name)} · ${esc(b.model)} · ${esc(b.base_url)} · ${esc(b.max_tokens)} tokens · ${esc(b.timeout_seconds)} s${b.rest_seconds?` · rests ${esc(b.rest_seconds)} s`:''}${b.parallel>1?` · ${esc(b.parallel)} at once`:''}${b.wait_when_busy===false?' · never waits when busy':''}${b.enabled===false?' · off: used only when named':''} <button data-sample="${esc(b.name)}" class="button primary" type="button">Run sample review</button> <button data-bump="${esc(b.name)}" class="button secondary" type="button">Remove</button></p><p id="bump-ready-${esc(b.name)}" role="status">${b.enabled===false ? 'Disabled for default reviews.' : 'Checking endpoint and model…'}</p><p id="bump-sample-result-${esc(b.name)}" role="status">${esc(sampleResults.get(sampleKey(b))?.note)}</p>${list.recent_results?.[b.name] ? `<p>Latest project result: ${esc(list.recent_results[b.name].status.replaceAll('_', ' '))} · ${esc(list.recent_results[b.name].run_id)}</p>` : ''}</div>`).join('')||'<p>No Bumblers saved.</p>';};
+  async function checkSavedBumblers(list, request) {
+    const enabled = list.filter(row => row.enabled !== false);
+    const checkedToken = token;
+    let index = 0;
+    const worker = async () => {
+      while (request === bumblerRequest && token === checkedToken && index < enabled.length) {
+        const name = enabled[index++].name;
+        let note = 'Could not check the saved endpoint.';
+        try {
+          const response = await fetch(`/api/bumblers/probe?name=${encodeURIComponent(name)}`, {headers:{'x-momm-token':checkedToken}});
+          if (response.ok) note = (await response.json()).note || note;
+          if (response.status === 403) window.mommSetupSession?.invalidate(checkedToken);
+        } catch {}
+        if (request === bumblerRequest && token === checkedToken) {
+          const node = $(`bump-ready-${name}`);
+          if (node) node.textContent = note;
+        }
+      }
+    };
+    await Promise.all(Array.from({length:Math.min(3, enabled.length)}, worker));
+  }
   let bumblerRequest=0,bumblerMutation=0,bumblerBusy=false,bumblerUncertain=false,bumblerNeedsRead=false;
-  function renderBumblerState(){const blocked=!token||bumblerBusy||bumblerUncertain;$('bump-form').querySelector('[type="submit"]').disabled=blocked;$('bump-list').querySelectorAll?.('button').forEach(button=>{button.disabled=blocked;});$('bump-write-warning').hidden=!bumblerUncertain;$('bump-write-ack').disabled=!token||bumblerBusy||bumblerNeedsRead;}
+  function renderBumblerState(){const blocked=!token||bumblerBusy||bumblerUncertain;$('bump-form').querySelector('[type="submit"]').disabled=blocked;$('bump-list').querySelectorAll?.('button').forEach(button=>{button.disabled=blocked || (button.dataset?.sample && savedBumblers.some(row => row.name === button.dataset.sample && sampleResults.get(sampleKey(row))?.running));});$('bump-write-warning').hidden=!bumblerUncertain;$('bump-write-ack').disabled=!token||bumblerBusy||bumblerNeedsRead;}
   function markBumblerUncertain(){bumblerUncertain=true;bumblerNeedsRead=true;renderBumblerState();}
   $('bump-write-ack').onclick=()=>{if(!token||bumblerBusy||bumblerNeedsRead)return;bumblerUncertain=false;renderBumblerState();};
   $('bump-refresh').onclick=()=>{if(!bumblerBusy)bumblerStep(()=>bumblerApi());};
-  const bumblerStep=async(step,done='')=>{const mine=++bumblerRequest;try{const list=await step();if(mine!==bumblerRequest)return false;showBumblers(list);if(list.fresh){bumblerNeedsRead=false;renderBumblerState();}renderBumblerState();$('bump-status').textContent=done;return true;}catch(error){if(mine===bumblerRequest)$('bump-status').textContent=error.message;return false;}};
+  $('bump-probe').onclick = async () => {
+    const form = $('bump-form').elements, button = $('bump-probe'), output = $('bump-probe-result');
+    if (!token || button.disabled) return;
+    const base_url = form.base_url.value.trim(), model = form.model.value.trim(), checkedToken = token, checkedEpoch = sessionEpoch;
+    if (!base_url) { output.textContent = 'Enter the model server address first.'; return; }
+    button.disabled = true;
+    output.textContent = 'Reading the model list…';
+    const current = () => token === checkedToken && sessionEpoch === checkedEpoch && base_url === form.base_url.value.trim() && model === form.model.value.trim();
+    try {
+      const response = await fetch('/api/bumblers/probe', {method:'POST', headers:{'x-momm-token':checkedToken, 'content-type':'application/json'}, body:JSON.stringify({base_url, model})});
+      if (response.status === 403) { window.mommSetupSession?.invalidate(checkedToken); return; }
+      const result = await response.json();
+      if (!current()) return;
+      if (response.ok && !model && result.suggested_model) form.model.value = result.suggested_model;
+      output.textContent = response.ok ? result.note : result.error;
+    } catch {
+      if (current()) output.textContent = 'The local dashboard could not complete the endpoint check.';
+    } finally { button.disabled = false; }
+  };
+  const bumblerStep=async(step,done='')=>{const mine=++bumblerRequest;try{const list=await step();if(mine!==bumblerRequest)return false;showBumblers(list);if(list.fresh){bumblerNeedsRead=false;renderBumblerState();}renderBumblerState();$('bump-status').textContent=done;checkSavedBumblers(list,mine);return true;}catch(error){if(mine===bumblerRequest)$('bump-status').textContent=error.message;return false;}};
   $('bump-panel').ontoggle=()=>{if($('bump-panel').open)bumblerStep(()=>bumblerApi());};
   $('bump-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,f=form.elements,typed=()=>['name','base_url','model','max_tokens','timeout_seconds','rest_seconds','parallel','guidance'].map(k=>f[k]?.value).concat(String(f.enabled?.checked)).join('\n'),sent=typed();if(await bumblerStep(()=>bumblerApi({op:'save',name:f.name.value.trim(),entry:{base_url:f.base_url.value.trim(),model:f.model.value,max_tokens:Number(f.max_tokens.value),timeout_seconds:Number(f.timeout_seconds.value),...(Number(f.rest_seconds?.value)?{rest_seconds:Number(f.rest_seconds.value)}:{}),...(Number(f.parallel?.value)>1?{parallel:Number(f.parallel.value)}:{}),...(f.enabled&&!f.enabled.checked?{enabled:false}:{}),...(f.guidance?.value?.trim()?{guidance:f.guidance.value}:{})}}),'Saved.')&&typed()===sent)form.reset();};
   // Saving a name replaces its whole entry, so typing a saved name sets the switch from that entry: re-saving a switched-off
   // Bumbler to change its model must not quietly put it back into default reviews.
-  $('bump-form').oninput=event=>{if(event.target?.name!=='name')return;const box=event.currentTarget?.elements?.enabled,saved=savedBumblers.find(b=>b.name===String(event.target.value).trim());if(box&&saved)box.checked=saved.enabled!==false;};
-  $('bump-list').onclick=async event=>{const name=event.target?.dataset?.bump;if(!name||!await confirmChange(`Remove Bumbler ${name} from the review pool?`))return;await bumblerStep(()=>bumblerApi({op:'remove',name}),'Removed.');};
+  $('bump-form').oninput=event=>{if(['base_url','model'].includes(event.target?.name))$('bump-probe-result').textContent='';if(event.target?.name!=='name')return;const box=event.currentTarget?.elements?.enabled,saved=savedBumblers.find(b=>b.name===String(event.target.value).trim());if(box&&saved)box.checked=saved.enabled!==false;};
+  $('bump-list').onclick=async event=>{if(event.target?.dataset?.sample)return runSavedSample(event.target.dataset.sample);const name=event.target?.dataset?.bump;if(!name||!await confirmChange(`Remove Bumbler ${name} from the review pool?`))return;await bumblerStep(()=>bumblerApi({op:'remove',name}),'Removed.');};
   $('bee-refresh').onclick=refresh;$('bee-filter').onchange=()=>{offset=0;refresh();};$('bee-search').onchange=()=>{offset=0;refresh();};$('bee-prev').onclick=()=>{offset=Math.max(0,offset-PAGE_SIZE);refresh();};$('bee-next').onclick=()=>{offset+=PAGE_SIZE;refresh();};
-  window.mommSetupSession?.subscribe(next=>{if(next!==token)reset();token=next;renderBumblerState();if(token)refresh();else{reset();status('Reopen the private dashboard launch link.');}});
+  window.mommSetupSession?.subscribe(next=>{if(next!==token)reset();token=next;renderBumblerState();if(token){refresh();bumblerStep(()=>bumblerApi());}else{reset();$('bump-probe-result').textContent='';status('Reopen the private dashboard launch link.');}});
 })();
